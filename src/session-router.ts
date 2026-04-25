@@ -5,47 +5,27 @@ import {
 	type InitialSessionContextOptions,
 } from "./profiles.js";
 import { createPiboRuntime, type PiboRuntimeOptions } from "./runtime.js";
+import type {
+	PiboEventListener,
+	PiboEventSource,
+	PiboExecutionAction,
+	PiboExecutionEvent,
+	PiboInputEvent,
+	PiboMessageEvent,
+	PiboOutputEvent,
+	PiboSessionStatus,
+} from "./events.js";
 
-export type PiboEventSource = "user" | "ui" | "service" | "actor";
-
-export type PiboMessageEvent = {
-	type: "message";
-	sessionKey: string;
-	text: string;
-	source?: PiboEventSource;
-	id?: string;
-};
-
-export type PiboExecutionAction = "status" | "session_id" | "clear_queue" | "abort" | "dispose";
-
-export type PiboExecutionEvent = {
-	type: "execution";
-	sessionKey: string;
-	action: PiboExecutionAction;
-	id?: string;
-};
-
-export type PiboInputEvent = PiboMessageEvent | PiboExecutionEvent;
-
-export type PiboSessionStatus = {
-	sessionKey: string;
-	queuedMessages: number;
-	processing: boolean;
-	streaming: boolean;
-	activeTools: string[];
-	cwd: string;
-	disposed: boolean;
-};
-
-export type PiboOutputEvent =
-	| { type: "message_queued"; sessionKey: string; eventId?: string; queuedMessages: number }
-	| { type: "message_started"; sessionKey: string; eventId?: string }
-	| { type: "message_finished"; sessionKey: string; eventId?: string }
-	| { type: "execution_result"; sessionKey: string; eventId?: string; action: PiboExecutionAction; result: unknown }
-	| { type: "session_error"; sessionKey: string; eventId?: string; error: string }
-	| { type: "pi_event"; sessionKey: string; event: unknown };
-
-export type PiboEventListener = (event: PiboOutputEvent) => void;
+export type {
+	PiboEventListener,
+	PiboEventSource,
+	PiboExecutionAction,
+	PiboExecutionEvent,
+	PiboInputEvent,
+	PiboMessageEvent,
+	PiboOutputEvent,
+	PiboSessionStatus,
+} from "./events.js";
 
 export type PiboSessionRouterOptions = Omit<PiboRuntimeOptions, "profile"> & {
 	profile?: InitialSessionContext;
@@ -73,10 +53,56 @@ function promptSource(source: PiboEventSource | undefined): "interactive" | "rpc
 	return source === "user" || source === "ui" ? "interactive" : "rpc";
 }
 
+function textFromMessage(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+
+	const content = (message as { content?: unknown }).content;
+	if (!Array.isArray(content)) return "";
+
+	return content
+		.map((part) => {
+			if (!part || typeof part !== "object") return "";
+			const candidate = part as { type?: unknown; text?: unknown };
+			return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : "";
+		})
+		.join("");
+}
+
+function normalizePiEvent(sessionKey: string, event: unknown): PiboOutputEvent | undefined {
+	if (!event || typeof event !== "object") return undefined;
+
+	const candidate = event as {
+		type?: unknown;
+		message?: unknown;
+		assistantMessageEvent?: { type?: unknown; delta?: unknown };
+	};
+
+	if (
+		candidate.type === "message_update" &&
+		candidate.assistantMessageEvent?.type === "text_delta" &&
+		typeof candidate.assistantMessageEvent.delta === "string"
+	) {
+		return { type: "assistant_delta", sessionKey, text: candidate.assistantMessageEvent.delta };
+	}
+
+	if (candidate.type === "message_end") {
+		const role = (candidate.message as { role?: unknown } | undefined)?.role;
+		if (role === "assistant") {
+			const text = textFromMessage(candidate.message);
+			if (text) {
+				return { type: "assistant_message", sessionKey, text };
+			}
+		}
+	}
+
+	return undefined;
+}
+
 class RoutedSession {
 	private readonly queue: PiboMessageEvent[] = [];
 	private processing = false;
 	private disposed = false;
+	private activeMessage?: PiboMessageEvent;
 	private unsubscribe?: () => void;
 
 	constructor(
@@ -85,11 +111,15 @@ class RoutedSession {
 		private readonly emit: PiboEventListener,
 		forwardPiEvents: boolean,
 	) {
-		if (forwardPiEvents) {
-			this.unsubscribe = this.runtime.session.subscribe((event) => {
+		this.unsubscribe = this.runtime.session.subscribe((event) => {
+			const normalized = normalizePiEvent(this.sessionKey, event);
+			if (normalized) {
+				this.emit(this.withActiveMessage(normalized));
+			}
+			if (forwardPiEvents) {
 				this.emit({ type: "pi_event", sessionKey: this.sessionKey, event });
-			});
-		}
+			}
+		});
 	}
 
 	enqueueMessage(event: PiboMessageEvent): PiboOutputEvent {
@@ -101,6 +131,8 @@ class RoutedSession {
 			sessionKey: this.sessionKey,
 			eventId: event.id,
 			queuedMessages: this.queue.length,
+			text: event.text,
+			source: event.source,
 		};
 		this.emit(output);
 		void this.drain();
@@ -151,9 +183,16 @@ class RoutedSession {
 		try {
 			while (this.queue.length > 0 && !this.disposed) {
 				const event = this.queue.shift()!;
-				this.emit({ type: "message_started", sessionKey: this.sessionKey, eventId: event.id });
+				this.emit({
+					type: "message_started",
+					sessionKey: this.sessionKey,
+					eventId: event.id,
+					text: event.text,
+					source: event.source,
+				});
 
 				try {
+					this.activeMessage = event;
 					await this.runtime.session.prompt(event.text, { source: promptSource(event.source) });
 					this.emit({ type: "message_finished", sessionKey: this.sessionKey, eventId: event.id });
 				} catch (error) {
@@ -163,6 +202,8 @@ class RoutedSession {
 						eventId: event.id,
 						error: errorMessage(error),
 					});
+				} finally {
+					this.activeMessage = undefined;
 				}
 			}
 		} finally {
@@ -194,6 +235,17 @@ class RoutedSession {
 		if (this.disposed) {
 			throw new Error(`Session "${this.sessionKey}" has been disposed`);
 		}
+	}
+
+	private withActiveMessage(event: PiboOutputEvent): PiboOutputEvent {
+		if (
+			this.activeMessage?.id &&
+			(event.type === "assistant_delta" || event.type === "assistant_message")
+		) {
+			return { ...event, eventId: this.activeMessage.id };
+		}
+
+		return event;
 	}
 }
 

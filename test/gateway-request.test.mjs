@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import net from "node:net";
+import test from "node:test";
+import { sendGatewayEvent, sendGatewayMessageAndWaitForReply } from "../dist/gateway/request.js";
+
+async function closeServer(server) {
+	await new Promise((resolve, reject) => {
+		server.close((error) => (error ? reject(error) : resolve()));
+	});
+}
+
+async function withMockGateway(handler) {
+	const receivedFrames = [];
+	const server = net.createServer((socket) => {
+		socket.setEncoding("utf-8");
+		socket.on("data", (chunk) => {
+			for (const line of chunk.trim().split("\n")) {
+				if (!line) continue;
+				const frame = JSON.parse(line);
+				receivedFrames.push(frame);
+				handler(frame, socket);
+			}
+		});
+	});
+
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+
+	return {
+		port: address.port,
+		receivedFrames,
+		close: () => closeServer(server),
+	};
+}
+
+test("sendGatewayEvent sends a request event and resolves the gateway response", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: true,
+				payload: {
+					type: "message_queued",
+					sessionKey: frame.event.sessionKey,
+					eventId: frame.event.id,
+					queuedMessages: 1,
+					text: frame.event.text,
+					source: frame.event.source,
+				},
+			})}\n`,
+		);
+	});
+
+	try {
+		const response = await sendGatewayEvent(
+			{ type: "message", sessionKey: "receiver", text: "hello", source: "actor" },
+			{ port: gateway.port },
+		);
+
+		assert.equal(response.ok, true);
+		assert.equal(response.payload.type, "message_queued");
+		assert.equal(response.payload.text, "hello");
+		assert.equal(gateway.receivedFrames.length, 1);
+		assert.equal(gateway.receivedFrames[0].event.type, "message");
+		assert.equal(typeof gateway.receivedFrames[0].event.id, "string");
+	} finally {
+		await gateway.close();
+	}
+});
+
+test("sendGatewayMessageAndWaitForReply resolves only the correlated assistant reply", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: true,
+				payload: {
+					type: "message_queued",
+					sessionKey: frame.event.sessionKey,
+					eventId: frame.event.id,
+					queuedMessages: 1,
+					text: frame.event.text,
+					source: frame.event.source,
+				},
+			})}\n`,
+		);
+		socket.write(
+			`${JSON.stringify({
+				type: "event",
+				event: "router",
+				payload: {
+					type: "assistant_message",
+					sessionKey: frame.event.sessionKey,
+					eventId: "unrelated",
+					text: "wrong reply",
+				},
+			})}\n`,
+		);
+		socket.write(
+			`${JSON.stringify({
+				type: "event",
+				event: "router",
+				payload: {
+					type: "assistant_message",
+					sessionKey: frame.event.sessionKey,
+					eventId: frame.event.id,
+					text: "right reply",
+				},
+			})}\n`,
+		);
+	});
+
+	try {
+		const result = await sendGatewayMessageAndWaitForReply(
+			{ type: "message", sessionKey: "receiver", text: "hello", source: "actor" },
+			{ port: gateway.port },
+		);
+
+		assert.equal(result.response.ok, true);
+		assert.equal(result.reply.text, "right reply");
+		assert.equal(result.reply.eventId, gateway.receivedFrames[0].event.id);
+	} finally {
+		await gateway.close();
+	}
+});
+
+test("sendGatewayMessageAndWaitForReply tolerates reply before response", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "event",
+				event: "router",
+				payload: {
+					type: "assistant_message",
+					sessionKey: frame.event.sessionKey,
+					eventId: frame.event.id,
+					text: "early reply",
+				},
+			})}\n`,
+		);
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: true,
+				payload: {
+					type: "message_queued",
+					sessionKey: frame.event.sessionKey,
+					eventId: frame.event.id,
+					queuedMessages: 1,
+					text: frame.event.text,
+					source: frame.event.source,
+				},
+			})}\n`,
+		);
+	});
+
+	try {
+		const result = await sendGatewayMessageAndWaitForReply(
+			{ type: "message", sessionKey: "receiver", text: "hello", source: "actor" },
+			{ port: gateway.port },
+		);
+
+		assert.equal(result.response.ok, true);
+		assert.equal(result.reply.text, "early reply");
+	} finally {
+		await gateway.close();
+	}
+});

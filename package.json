@@ -11,8 +11,12 @@
     "dev": "tsx src/index.ts",
     "profile": "tsx src/index.ts profile",
     "tui": "tsx src/index.ts tui",
+    "tui:gateway": "tsx src/index.ts tui gateway-producer",
+    "gateway": "tsx src/index.ts gateway",
+    "client": "tsx src/index.ts client",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
   },
