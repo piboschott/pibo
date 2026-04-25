@@ -16,6 +16,7 @@ For the current architecture snapshot, see `docs/architecture.md`.
 - `npm run client -- <sessionKey>` starts a console client connected to the gateway.
 - `npm run remote -- <sessionName> [profile]` starts the Pi-TUI remote controller.
 - `npm run remote:line -- <sessionName> [profile]` starts the minimal line-based remote client for debugging.
+- `npm run dev -- config keys` lists supported local config keys.
 - `npm run build` compiles to `dist/`.
 - `npm run start` runs the compiled entrypoint.
 - `npm test` builds and runs gateway transport tests.
@@ -96,9 +97,7 @@ The gateway producer profile adds `pibo_gateway_send`, a tool that sends a messa
 - `pibo.web-host` owns the HTTP server and dispatches same-origin web apps.
 - `pibo.chat-web` registers the chat app under `/apps/chat` and `/api/chat/*`.
 
-The command loads `.env` from the project root before it creates the Better Auth service.
-
-V1 uses Better Auth with Google OAuth, the Better Auth bearer plugin, and SQLite at `.pibo/auth.sqlite`. Add the exact Google OAuth redirect URI for your instance. For local QA with `BETTER_AUTH_URL=http://localhost:4788`, use:
+V1 uses Better Auth with Google OAuth, the Better Auth bearer plugin, and SQLite at `.pibo/auth.sqlite`. Add the exact Google OAuth redirect URI for your instance. For local QA with `auth.baseURL` set to `http://localhost:4788`, use:
 
 ```text
 http://localhost:4788/api/auth/callback/google
@@ -112,18 +111,33 @@ https://pibo.example.com/api/auth/callback/google
 
 Google OAuth redirect URIs are exact per instance. Wildcard or "all deployments" redirects are not supported for this web-server flow, so each self-hosted deployment needs its own Google OAuth client or an explicitly configured redirect URI.
 
-Required `.env` values:
+Required config values:
 
-```text
-BETTER_AUTH_URL=http://localhost:4788
-BETTER_AUTH_SECRET=<32+ character secret>
-GOOGLE_CLIENT_ID=<google oauth client id>
-GOOGLE_CLIENT_SECRET=<google oauth client secret>
-PIBO_AUTH_ALLOWED_EMAILS=you@example.com,friend@example.com
+```bash
+npm run dev -- config set auth.baseURL http://localhost:4788
+npm run dev -- config set auth.secret <32+ character secret>
+npm run dev -- config set auth.googleClientId <google oauth client id>
+npm run dev -- config set auth.googleClientSecret <google oauth client secret>
+npm run dev -- config set auth.allowedEmails you@example.com,friend@example.com
 ```
 
-`BETTER_AUTH_SECRET` must be at least 32 characters. `PIBO_AUTH_ALLOWED_EMAILS` must contain at least one email; pibo fails closed if the allowlist is missing or empty. Authenticated Google users whose email is not listed receive `403` from the pibo web API. Unauthenticated pibo API requests receive `401`.
+`auth.secret` must be at least 32 characters. `auth.allowedEmails` must contain at least one email; pibo fails closed if the allowlist is missing or empty. Authenticated Google users whose email is not listed receive `403` from the pibo web API. Unauthenticated pibo API requests receive `401`.
 
 All web chat API requests require Better Auth, including localhost. Private LAN IP Google OAuth redirects are not part of the supported V1 setup.
 
 The Google provider requests `prompt=select_account`, so signing out of pibo and signing in again lets the user choose a different Google account. Pibo signout clears the Better Auth session; it does not sign the user out of Google globally.
+
+## Config CLI
+
+Pibo reads local config from `.pibo/config.json`. The current CLI is intentionally small:
+
+```bash
+npm run dev -- config set auth.allowedEmails you@example.com,friend@example.com
+npm run dev -- config get auth.allowedEmails
+npm run dev -- config del auth.allowedEmails
+npm run dev -- config keys
+npm run dev -- config show
+```
+
+Supported V1 keys are `auth.baseURL`, `auth.secret`, `auth.googleClientId`, `auth.googleClientSecret`, `auth.allowedEmails`, and `auth.databasePath`.
+Secret keys such as `auth.secret` and `auth.googleClientSecret` are stored in full but redacted in `config get` and `config show` output.

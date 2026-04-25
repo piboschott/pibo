@@ -2,15 +2,17 @@
 
 This example starts pibo with Better Auth, the same-origin web host, and the chat web app.
 
-Set these values in `.env` or export them in the shell:
+Set the required values in `.pibo/config.json` through the CLI:
 
 ```bash
-export BETTER_AUTH_URL=http://localhost:4788
-export BETTER_AUTH_SECRET=<32+ character secret>
-export GOOGLE_CLIENT_ID=<google oauth client id>
-export GOOGLE_CLIENT_SECRET=<google oauth client secret>
-export PIBO_AUTH_ALLOWED_EMAILS=you@example.com
+npm run dev -- config set auth.baseURL http://localhost:4788
+npm run dev -- config set auth.secret <32+ character secret>
+npm run dev -- config set auth.googleClientId <google oauth client id>
+npm run dev -- config set auth.googleClientSecret <google oauth client secret>
+npm run dev -- config set auth.allowedEmails you@example.com
 ```
+
+`config get` and `config show` redact secret values in terminal output. Auth config is config-only; environment variables are not read for Better Auth.
 
 In Google Cloud Console, configure this exact OAuth redirect URI:
 
@@ -40,10 +42,10 @@ http://localhost:4788/apps/chat
 
 Expected behavior:
 
-- startup fails if `BETTER_AUTH_SECRET` is shorter than 32 characters
-- startup fails if `PIBO_AUTH_ALLOWED_EMAILS` is missing or empty
+- startup fails if `auth.secret` is shorter than 32 characters
+- startup fails if `auth.allowedEmails` is missing or empty
 - unauthenticated chat API requests return `401`, including localhost
-- authenticated users outside `PIBO_AUTH_ALLOWED_EMAILS` return `403`
+- authenticated users outside `auth.allowedEmails` return `403`
 - Google sign-in creates a Better Auth session
 - sign-out clears the Better Auth session and the next sign-in shows Google's account chooser
 - the chat app resolves a persistent binding with `channel: chat-web`

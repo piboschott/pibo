@@ -57,6 +57,8 @@ Auth is a thin core service boundary exposed to channels through `PiboChannelCon
 
 The first concrete implementation is Better Auth, registered through a built-in plugin for the web gateway path. It is intentionally not loaded by the default local gateway so trusted-local TCP and remote-agent flows do not require Google OAuth configuration. Web apps always require the web auth service, including localhost. The Auth plugin owns identity and allowlist checks; it does not own chat UI or agent routing.
 
+Runtime config lives in `.pibo/config.json` and is managed through `pibo config ...`. Better Auth reads this local config; environment variables are not part of the auth configuration path.
+
 ```text
 Same-Origin Web Host
   -> Better Auth /api/auth/*
@@ -71,12 +73,12 @@ The V1 chat web app uses Better Auth Google sign-in for every request path, incl
 The auth boundary is enforced before channel input reaches the session router:
 
 - no Better Auth session returns `401`
-- a missing or empty `PIBO_AUTH_ALLOWED_EMAILS` allowlist prevents Better Auth startup
-- a Google account outside `PIBO_AUTH_ALLOWED_EMAILS` returns `403`
+- a missing or empty `auth.allowedEmails` allowlist prevents Better Auth startup
+- a Google account outside `auth.allowedEmails` returns `403`
 - allowed users resolve a persistent `chat-web` session binding
 - chat mutation routes require same-origin JSON requests
 
-Google OAuth redirect URIs remain per deployment. Local QA can use `http://localhost:4788/api/auth/callback/google`; internet-facing deployments must configure their own `https://<host>/api/auth/callback/google` in Google Cloud Console and set `BETTER_AUTH_URL` to the same origin. Pibo does not attempt wildcard redirect support because Google requires exact redirect URI matching for web-server OAuth. Private LAN IP Google OAuth redirects are intentionally not a supported V1 mode.
+Google OAuth redirect URIs remain per deployment. Local QA can use `http://localhost:4788/api/auth/callback/google`; internet-facing deployments must configure their own `https://<host>/api/auth/callback/google` in Google Cloud Console and set `auth.baseURL` to the same origin. Pibo does not attempt wildcard redirect support because Google requires exact redirect URI matching for web-server OAuth. Private LAN IP Google OAuth redirects are intentionally not a supported V1 mode.
 
 ## Web Host And Apps
 

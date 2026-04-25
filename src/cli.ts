@@ -1,0 +1,152 @@
+import { Command } from "commander";
+import {
+	DEFAULT_PIBO_CONFIG_PATH,
+	PIBO_CONFIG_KEYS,
+	deletePiboConfigValue,
+	getDisplayPiboConfigValue,
+	loadPiboConfig,
+	redactPiboConfig,
+	savePiboConfig,
+	setPiboConfigValue,
+} from "./config/config.js";
+
+async function createCliProfile(profileName?: string) {
+	const { createDefaultPiboPluginRegistry } = await import("./plugins/builtin.js");
+	return createDefaultPiboPluginRegistry().createProfile(profileName ?? "pibo-minimal");
+}
+
+function printJson(value: unknown): void {
+	console.log(JSON.stringify(value, null, 2));
+}
+
+function printConfigKeys(): void {
+	const rows = PIBO_CONFIG_KEYS.map((definition) => ({
+		key: definition.key,
+		type: definition.type,
+		secret: definition.secret === true,
+		description: definition.description,
+	}));
+	console.table(rows);
+}
+
+export async function runPiboCli(argv = process.argv): Promise<void> {
+	const program = new Command();
+	program.name("pibo").description("Pibo CLI").showHelpAfterError();
+
+	const config = program.command("config").description(`Manage pibo config at ${DEFAULT_PIBO_CONFIG_PATH}`);
+	config
+		.command("set")
+		.argument("<key>")
+		.argument("<value>")
+		.description("Set a config value")
+		.action((key: string, value: string) => {
+			const nextConfig = setPiboConfigValue(loadPiboConfig(), key, value);
+			savePiboConfig(nextConfig);
+			console.log(`Set ${key}`);
+		});
+	config
+		.command("get")
+		.argument("<key>")
+		.description("Print a config value")
+		.action((key: string) => {
+			const value = getDisplayPiboConfigValue(loadPiboConfig(), key);
+			if (value === undefined) {
+				process.exitCode = 1;
+				return;
+			}
+			if (typeof value === "string") console.log(value);
+			else printJson(value);
+		});
+	config
+		.command("del")
+		.argument("<key>")
+		.description("Delete a config value")
+		.action((key: string) => {
+			savePiboConfig(deletePiboConfigValue(loadPiboConfig(), key));
+			console.log(`Deleted ${key}`);
+		});
+	config.command("keys").description("List supported config keys").action(printConfigKeys);
+	config
+		.command("show")
+		.description("Print the complete config")
+		.action(() => {
+			printJson(redactPiboConfig(loadPiboConfig()));
+		});
+
+	program
+		.command("profile")
+		.argument("[profile]")
+		.description("Inspect a pibo profile")
+		.action(async (profile?: string) => {
+			const { inspectPiboProfile } = await import("./core/runtime.js");
+			printJson(await inspectPiboProfile({ profile: await createCliProfile(profile) }));
+		});
+	program
+		.command("tui")
+		.argument("[profile]")
+		.description("Start the Pi TUI through pibo")
+		.action(async (profile?: string) => {
+			const { runPiboTui } = await import("./core/runtime.js");
+			await runPiboTui({ profile: await createCliProfile(profile) });
+		});
+	program
+		.command("router")
+		.argument("[sessionKey]", "Session key", "demo")
+		.description("Emit a demo router status event")
+		.action(async (sessionKey: string) => {
+			const { PiboSessionRouter } = await import("./core/session-router.js");
+			const router = new PiboSessionRouter({ persistSession: false });
+			const event = await router.emit({
+				type: "execution",
+				sessionKey,
+				action: "status",
+			});
+			printJson(event);
+			await router.disposeAll();
+		});
+	program
+		.command("gateway")
+		.description("Start the local pibo gateway daemon")
+		.action(async () => {
+			const { runGatewayServer } = await import("./gateway/server.js");
+			await runGatewayServer();
+		});
+	program
+		.command("gateway:web")
+		.description("Start the authenticated web gateway")
+		.action(async () => {
+			const { runWebGatewayServer } = await import("./gateway/web.js");
+			await runWebGatewayServer();
+		});
+	program
+		.command("client")
+		.argument("[sessionKey]", "Session key", "default")
+		.description("Start a console gateway client")
+		.action(async (sessionKey: string) => {
+			const { runGatewayClient } = await import("./gateway/client.js");
+			await runGatewayClient({ sessionKey });
+		});
+	program
+		.command("remote")
+		.argument("[sessionName]", "Remote session name", "default")
+		.argument("[profile]")
+		.description("Start the Pi-TUI remote controller")
+		.action(async (sessionName: string, profile?: string) => {
+			const { runRemoteAgentTui } = await import("./remote/examples/tui-controller.js");
+			await runRemoteAgentTui({ sessionName, profile });
+		});
+	program
+		.command("remote-line")
+		.argument("[sessionName]", "Remote session name", "default")
+		.argument("[profile]")
+		.description("Start the minimal line-based remote client")
+		.action(async (sessionName: string, profile?: string) => {
+			const { runRemoteAgentClient } = await import("./remote/client.js");
+			await runRemoteAgentClient({ sessionName, profile });
+		});
+
+	if (argv.length <= 2) {
+		argv = [...argv, "profile"];
+	}
+	await program.parseAsync(argv);
+}

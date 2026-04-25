@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { bearer } from "better-auth/plugins";
+import { loadPiboConfig } from "../config/config.js";
 import type { PiboAuthService, PiboAuthSession } from "./types.js";
 import { createForbiddenAuthError, createUnauthenticatedError } from "./types.js";
 
@@ -17,15 +18,15 @@ export type BetterAuthServiceOptions = {
 	allowedEmails?: string[];
 };
 
-function requiredOption(value: string | undefined, name: string): string {
-	if (!value) throw new Error(`${name} is required for pibo Better Auth`);
+function requiredOption(value: string | undefined, key: string): string {
+	if (!value) throw new Error(`${key} is required in pibo config for Better Auth`);
 	return value;
 }
 
 function requiredSecret(value: string | undefined): string {
-	const secret = requiredOption(value, "BETTER_AUTH_SECRET");
+	const secret = requiredOption(value, "auth.secret");
 	if (secret.length < 32) {
-		throw new Error("BETTER_AUTH_SECRET must be at least 32 characters for pibo Better Auth");
+		throw new Error("auth.secret must be at least 32 characters for pibo Better Auth");
 	}
 	return secret;
 }
@@ -42,33 +43,34 @@ function createDatabase(path: string): DatabaseSync {
 	return new DatabaseSync(resolvedPath);
 }
 
-function parseAllowedEmails(value: string | undefined): Set<string> | undefined {
-	const emails = (value ?? "").split(",");
-	const allowedEmails = createAllowedEmailSet(emails);
-	return allowedEmails.size > 0 ? allowedEmails : undefined;
-}
-
-function requiredAllowedEmails(options: BetterAuthServiceOptions): Set<string> {
+function requiredAllowedEmails(options: BetterAuthServiceOptions, configAllowedEmails: string[] | undefined): Set<string> {
 	const allowedEmails =
 		options.allowedEmails !== undefined
 			? createAllowedEmailSet(options.allowedEmails)
-			: parseAllowedEmails(process.env.PIBO_AUTH_ALLOWED_EMAILS);
+			: configAllowedEmails !== undefined
+				? createAllowedEmailSet(configAllowedEmails)
+				: undefined;
 	if (!allowedEmails || allowedEmails.size === 0) {
-		throw new Error("PIBO_AUTH_ALLOWED_EMAILS must contain at least one email for pibo Better Auth");
+		throw new Error("auth.allowedEmails must contain at least one email in pibo config for Better Auth");
 	}
 	return allowedEmails;
 }
 
 export function createBetterAuthService(options: BetterAuthServiceOptions = {}): PiboAuthService {
-	const baseURL = requiredOption(options.baseURL ?? process.env.BETTER_AUTH_URL, "BETTER_AUTH_URL");
-	const secret = requiredSecret(options.secret ?? process.env.BETTER_AUTH_SECRET);
-	const googleClientId = requiredOption(options.googleClientId ?? process.env.GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_ID");
-	const googleClientSecret = requiredOption(
-		options.googleClientSecret ?? process.env.GOOGLE_CLIENT_SECRET,
-		"GOOGLE_CLIENT_SECRET",
+	const config = loadPiboConfig();
+	const authConfig = config.auth;
+	const baseURL = requiredOption(options.baseURL ?? authConfig?.baseURL, "auth.baseURL");
+	const googleClientId = requiredOption(
+		options.googleClientId ?? authConfig?.googleClientId,
+		"auth.googleClientId",
 	);
-	const allowedEmails = requiredAllowedEmails(options);
-	const database = createDatabase(options.databasePath ?? ".pibo/auth.sqlite");
+	const googleClientSecret = requiredOption(
+		options.googleClientSecret ?? authConfig?.googleClientSecret,
+		"auth.googleClientSecret",
+	);
+	const secret = requiredSecret(options.secret ?? authConfig?.secret);
+	const allowedEmails = requiredAllowedEmails(options, authConfig?.allowedEmails);
+	const database = createDatabase(options.databasePath ?? authConfig?.databasePath ?? ".pibo/auth.sqlite");
 	const authOptions: BetterAuthOptions = {
 		appName: "Pibo",
 		baseURL,
@@ -100,7 +102,7 @@ export function createBetterAuthService(options: BetterAuthServiceOptions = {}):
 			if (!session) return undefined;
 
 			const user = session.user;
-				if (!allowedEmails.has(user.email.toLowerCase())) {
+			if (!allowedEmails.has(user.email.toLowerCase())) {
 				throw createForbiddenAuthError();
 			}
 

@@ -3,7 +3,6 @@ dist/
 .pibo/
 .env
 .env.*
-!.env.example
 client_secret*.json
 npm-debug.log*
 pnpm-debug.log*

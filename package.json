@@ -4,29 +4,33 @@
   "private": true,
   "type": "module",
   "description": "Minimal TypeScript wrapper around Pi Coding Agent.",
+  "bin": {
+    "pibo": "dist/bin/pibo.js"
+  },
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "profile": "tsx src/index.ts profile",
-    "tui": "tsx src/index.ts tui",
-    "tui:gateway": "tsx src/index.ts tui gateway-producer",
-    "gateway": "tsx src/index.ts gateway",
-    "gateway:web": "tsx src/index.ts gateway:web",
-    "client": "tsx src/index.ts client",
+    "dev": "tsx src/bin/pibo.ts",
+    "profile": "tsx src/bin/pibo.ts profile",
+    "tui": "tsx src/bin/pibo.ts tui",
+    "tui:gateway": "tsx src/bin/pibo.ts tui gateway-producer",
+    "gateway": "tsx src/bin/pibo.ts gateway",
+    "gateway:web": "tsx src/bin/pibo.ts gateway:web",
+    "client": "tsx src/bin/pibo.ts client",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/bin/pibo.js",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
-    "remote": "tsx src/index.ts remote",
-    "remote:line": "tsx src/index.ts remote-line"
+    "remote": "tsx src/bin/pibo.ts remote",
+    "remote:line": "tsx src/bin/pibo.ts remote-line"
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.70.2",
     "@mariozechner/pi-coding-agent": "^0.70.2",
-    "better-auth": "^1.6.9"
+    "better-auth": "^1.6.9",
+    "commander": "^14.0.3"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

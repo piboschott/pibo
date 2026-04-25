@@ -17,7 +17,7 @@ test("better auth requires an allowed email allowlist", () => {
 				...validOptions,
 				allowedEmails: [],
 			}),
-		/PIBO_AUTH_ALLOWED_EMAILS must contain at least one email/,
+			/auth.allowedEmails must contain at least one email/,
 	);
 });
 
@@ -28,6 +28,6 @@ test("better auth requires a strong secret", () => {
 				...validOptions,
 				secret: "too-short",
 			}),
-		/BETTER_AUTH_SECRET must be at least 32 characters/,
+		/auth.secret must be at least 32 characters/,
 	);
 });

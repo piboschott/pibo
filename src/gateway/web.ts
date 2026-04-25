@@ -1,6 +1,5 @@
 import { createDefaultPiboPlugins } from "../plugins/builtin.js";
 import type { BetterAuthServiceOptions } from "../auth/better-auth.js";
-import { loadDotEnv } from "../env.js";
 import { createPiboBetterAuthPlugin } from "../plugins/better-auth.js";
 import { createPiboChatWebPlugin, type ChatWebAppOptions } from "../plugins/chat-web.js";
 import { PiboPluginRegistry } from "../plugins/registry.js";
@@ -26,7 +25,6 @@ export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {
 }
 
 export async function runWebGatewayServer(options: WebGatewayServerOptions = {}): Promise<void> {
-	loadDotEnv();
 	const pluginRegistry = options.pluginRegistry ?? createWebPiboPluginRegistry(options);
 	const server = new PiboGatewayServer({
 		...options,

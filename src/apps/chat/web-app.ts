@@ -29,16 +29,7 @@ function requireSameOriginJsonRequest(request: Request): void {
 		throw new PiboWebHttpError("Origin header is required", 403);
 	}
 
-	const allowedOrigins = new Set([new URL(request.url).origin]);
-	const configuredBaseURL = process.env.BETTER_AUTH_URL;
-	if (configuredBaseURL) {
-		try {
-			allowedOrigins.add(new URL(configuredBaseURL).origin);
-		} catch {
-			throw new PiboWebHttpError("Configured auth origin is invalid", 500);
-		}
-	}
-	if (!allowedOrigins.has(origin)) {
+	if (origin !== new URL(request.url).origin) {
 		throw new PiboWebHttpError("Origin is not allowed", 403);
 	}
 }
