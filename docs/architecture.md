@@ -186,7 +186,7 @@ The MCP daemon keeps expensive stdio server connections warm between CLI invocat
 
 `pibo tools` keeps curated command-line tools discoverable without pushing their usage instructions into every agent context. Installed tool runtimes live under `~/.pibo/tools/<name>`. A tool can expose one or more guides, but those guides are only printed when requested through the CLI.
 
-The first bundled tool preset is `browser-use`. Its guides are available through:
+The first bundled tool preset is `browser-use`, pinned to `browser-use[cli]==0.12.6` so its CLI surface matches the bundled guide text. Its guides are available through:
 
 ```bash
 npm run dev -- tools guides browser-use

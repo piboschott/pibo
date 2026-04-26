@@ -31,7 +31,7 @@ Pibo is a minimal TypeScript wrapper around Pi Coding Agent. This file is a shor
 - A minimal Commander-based CLI manages local config values in `.pibo/config.json`.
 - `pibo mcp` provides local MCP server discovery, schema inspection, search, tool calls, `mcp_servers.json` config management, and a small opt-in registry for common external MCP servers.
 - The MCP registry command surface is in place, but there are currently no bundled presets.
-- `pibo tools` manages curated external CLI tools separately from MCP and from profile skills. The first bundled tool is `browser-use`, with on-demand install, doctor/path/env commands, and CLI guide output.
+- `pibo tools` manages curated external CLI tools separately from MCP and from profile skills. The first bundled tool is `browser-use`, pinned to `browser-use[cli]==0.12.6`, with on-demand install, doctor/path/env commands, and CLI guide output.
 
 ## Session Routing
 

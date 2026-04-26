@@ -42,7 +42,7 @@ Browser Use state is isolated under:
 ~/.pibo/tools/browser-use/home
 ```
 
-The installer uses `uv` to create the virtual environment and install `browser-use[cli]`. Browser Use system setup stays visible through `pibo tools doctor browser-use`; if Browser Use reports missing optional components, install them explicitly for the workflow that needs them.
+The installer uses `uv` to create the virtual environment and install the pinned package `browser-use[cli]==0.12.6`. The version is pinned so the Browser Use CLI surface stays aligned with the bundled guides. Browser Use system setup stays visible through `pibo tools doctor browser-use`; if Browser Use reports missing optional components, install them explicitly for the workflow that needs them.
 
 ## Requirements
 
@@ -52,6 +52,7 @@ The installer uses `uv` to create the virtual environment and install `browser-u
 - whether Python is available through `uv`
 - whether the virtual environment exists
 - whether the `browser-use` executable exists
+- whether a local Linux desktop display can be detected
 - whether `browser-use doctor` succeeds
 
 If `uv` is missing:
@@ -112,4 +113,29 @@ On Linux/macOS this prints:
 ```bash
 export PATH=".../.venv/bin:$PATH"
 export BROWSER_USE_HOME=".../home"
+```
+
+The PATH also includes `.../home/bin` so helper binaries installed by Browser Use, such as `profile-use`, are available after applying the environment.
+
+On Linux desktops, `env` also prints detected browser display variables when available:
+
+```bash
+export DISPLAY=":0"
+export WAYLAND_DISPLAY="wayland-0"
+export XAUTHORITY="/run/user/1000/.mutter-Xwaylandauth..."
+export XDG_RUNTIME_DIR="/run/user/1000"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus"
+```
+
+Apply these exports before headed Browser Use runs:
+
+```bash
+eval "$(npm run --silent dev -- tools env browser-use)"
+browser-use --headed --session debug open https://example.com
+```
+
+If no desktop display is detected, `pibo tools install browser-use` and `pibo tools doctor browser-use` warn that headed mode is unavailable. Headless Browser Use still works:
+
+```bash
+browser-use --session debug open https://example.com
 ```

@@ -19,34 +19,34 @@ The browser-use command provides persistent browser automation. A background dae
 
 ## Prerequisites
 
+Start each shell by applying the Pibo tool environment:
+
 \`\`\`bash
+eval "$(pibo tools env browser-use)"
 browser-use doctor
 \`\`\`
 
-If browser-use is not on PATH, run:
-
-\`\`\`bash
-pibo tools path browser-use
-pibo tools env browser-use
-\`\`\`
-
-Use the printed executable path directly, or apply the printed environment before running browser-use.
+Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, it includes detected desktop variables such as \`DISPLAY\`, \`WAYLAND_DISPLAY\`, and \`XAUTHORITY\` when a local desktop is available.
 
 ## Core Workflow
 
-1. Navigate: \`browser-use open <url>\`
+1. Navigate: \`browser-use --headed --session NAME open <url>\` when a desktop is available; otherwise use \`browser-use --session NAME open <url>\`
 2. Inspect: \`browser-use state\`
 3. Interact with indices from state: \`browser-use click 5\`, \`browser-use input 3 "text"\`
-4. Verify: \`browser-use state\` or \`browser-use screenshot\`
+4. Verify: \`browser-use state\`, \`browser-use get value <index>\`, \`browser-use eval "js"\`, or \`browser-use screenshot\`
 5. Repeat while the browser stays open
 
+Run browser-mutating commands one at a time per session. Do not issue parallel \`click\`, \`input\`, \`open\`, \`eval\`, or \`screenshot\` calls against the same session.
+
 If a command fails, run \`browser-use close\` first to clear the session, then retry.
+
+After navigation, submit, keypress navigation, major DOM changes, or scroll on complex pages, run \`state\` again before reusing element indices.
 
 ## Browser Modes
 
 \`\`\`bash
-browser-use open <url>                         # Default headless browser
-browser-use --headed open <url>                # Visible browser for debugging
+browser-use --headed open <url>                # Preferred local mode when pibo tools env detected a desktop
+browser-use open <url>                         # Headless mode for servers without display
 browser-use connect                            # Connect to local Chrome via CDP
 browser-use --profile "Default" open <url>     # Use a real Chrome profile
 \`\`\`
@@ -59,10 +59,8 @@ browser-use open <url>
 browser-use back
 browser-use scroll down
 browser-use scroll up
-browser-use tab list
-browser-use tab new [url]
-browser-use tab switch <index>
-browser-use tab close <index>
+browser-use switch <index>
+browser-use close-tab [index]
 
 # Page state
 browser-use state
@@ -95,7 +93,6 @@ browser-use get bbox <index>
 
 # Wait
 browser-use wait selector "css"
-browser-use wait selector ".loading" --state hidden
 browser-use wait text "Success"
 
 # Cookies
@@ -125,10 +122,19 @@ If \`browser-use connect\` cannot find Chrome, ask the user whether they want to
 
 ## Tips
 
-1. Always run \`state\` before using element indices.
-2. Use \`--headed\` when debugging browser behavior.
-3. Sessions persist until \`browser-use close\`.
-4. Use \`--session NAME\` for separate browser sessions.
+1. Always apply \`eval "$(pibo tools env browser-use)"\` before using the CLI from Pibo.
+2. Always run \`state\` before using element indices.
+3. Re-run \`state\` after navigation or large DOM changes because element indices can change.
+4. For forms, verify inputs with \`get value <index>\`; \`state\` does not always show current text values.
+5. For large pages, prefer \`get html --selector\`, \`get text <index>\`, or \`eval\` over dumping the full page with \`state\`.
+6. Use \`--headed\` when debugging browser behavior if the env output includes a display.
+7. Sessions persist until \`browser-use close\`.
+8. Use \`--session NAME\` for separate browser sessions.
+9. Wrap long waits or JavaScript-heavy mutations with an external timeout, for example \`timeout 30s browser-use --session NAME wait text "Success"\`.
+10. Prefer \`--json\` for machine-readable \`get\` and \`sessions\` results.
+11. \`select\` confirms the visible option text, while \`get value\` returns the underlying option value.
+12. Avoid \`browser-use --version\`; this CLI does not support it.
+13. Avoid \`extract\`; it is listed by the CLI but is not implemented in this version.
 `,
 };
 
@@ -147,24 +153,25 @@ This guide is for agents running in a sandbox, CI, cloud VM, or remote coding en
 
 ## Prerequisites
 
+Start each shell by applying the Pibo tool environment:
+
 \`\`\`bash
+eval "$(pibo tools env browser-use)"
 browser-use doctor
 \`\`\`
 
-If browser-use is not on PATH, run:
-
-\`\`\`bash
-pibo tools path browser-use
-pibo tools env browser-use
-\`\`\`
+Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, this lets Browser Use see a local desktop session when one exists.
 
 ## Core Workflow
 
-1. Navigate: \`browser-use open <url>\`
+1. Navigate: \`browser-use --headed --session NAME open <url>\` when a desktop is available; otherwise use \`browser-use --session NAME open <url>\`
 2. Inspect: \`browser-use state\`
 3. Interact with indices from state: \`browser-use click 5\`, \`browser-use input 3 "text"\`
-4. Verify: \`browser-use state\` or \`browser-use screenshot\`
+4. Verify: \`browser-use state\`, \`browser-use get value <index>\`, \`browser-use eval "js"\`, or \`browser-use screenshot\`
 5. Cleanup: \`browser-use close\`
+
+Run browser-mutating commands one at a time per session. Use separate session names for parallel workflows.
+After navigation, submit, keypress navigation, major DOM changes, or scroll on complex pages, run \`state\` again before reusing element indices.
 
 ## Browser Modes
 
@@ -189,9 +196,8 @@ browser-use wait selector "css"
 browser-use wait text "Success"
 browser-use get html
 browser-use eval "document.title"
-browser-use tab list
-browser-use tab new [url]
-browser-use tab switch <index>
+browser-use switch <index>
+browser-use close-tab [index]
 browser-use close
 \`\`\`
 
@@ -219,7 +225,10 @@ Use named sessions when multiple agents or workflows need separate browsers.
 
 - Browser will not start: run \`browser-use close\`, then retry.
 - Element not found: run \`browser-use scroll down\`, then \`browser-use state\`.
+- Form value unclear: use \`browser-use get value <index>\`.
+- Large page state is noisy: use \`get html --selector\`, \`get text <index>\`, or \`eval\`.
 - Need to debug visually: use \`--headed\`.
+- Long wait hangs: wrap the command with \`timeout 30s\`.
 - Tunnel not working: run \`browser-use tunnel list\`.
 `,
 };

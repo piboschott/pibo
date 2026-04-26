@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { printDesktopEnvStatus } from './desktop-env.js';
 import { type ToolGuide, BROWSER_USE_GUIDE, REMOTE_BROWSER_GUIDE } from './guides.js';
 import {
   type ToolPythonRuntimeSpec,
@@ -29,7 +30,7 @@ const REGISTRY: CliToolEntry[] = [
     name: 'browser-use',
     description: 'Browser automation CLI for web interaction, screenshots, and extraction.',
     runtime: {
-      packageName: 'browser-use[cli]',
+      packageName: 'browser-use[cli]==0.12.6',
       executableName: 'browser-use',
       pythonVersion: '3.12',
       homeEnvVar: 'BROWSER_USE_HOME',
@@ -37,6 +38,7 @@ const REGISTRY: CliToolEntry[] = [
     guides: [BROWSER_USE_GUIDE, REMOTE_BROWSER_GUIDE],
     notes: [
       'Installed on demand into an isolated Python virtual environment.',
+      'Pinned to browser-use 0.12.6 so the CLI surface matches the bundled guides.',
       'The tool uses BROWSER_USE_HOME under the pibo tool runtime directory.',
       'Guides are available through pibo tools guide and are not loaded into pibo profiles automatically.',
     ],
@@ -74,6 +76,8 @@ export async function installCliTool(entry: CliToolEntry, runSetup: boolean): Pr
   console.log(`${runSetup ? 'Installed' : 'Install target'} ${entry.name}`);
   console.log(`  executable: ${status.executablePath}`);
   console.log(`  home: ${status.homeDir}`);
+  printDesktopEnvStatus('  ');
+  console.log(`  env: pibo tools env ${entry.name}`);
 }
 
 export async function removeCliTool(entry: CliToolEntry): Promise<void> {

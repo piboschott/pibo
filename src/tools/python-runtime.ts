@@ -4,6 +4,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ErrorCode, formatCliError } from '../cli-errors.js';
+import { getDesktopProcessEnv, printDesktopEnvStatus } from './desktop-env.js';
 
 export interface ToolPythonRuntimeSpec {
   packageName: string;
@@ -58,7 +59,8 @@ export function getToolPythonRuntimeEnv(
   paths: ToolPythonRuntimePaths,
   spec: ToolPythonRuntimeSpec,
 ): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+  const env = { ...process.env, ...getDesktopProcessEnv() };
+  env.PATH = `${paths.binDir}:${join(paths.homeDir, 'bin')}:${env.PATH ?? ''}`;
   if (spec.homeEnvVar) env[spec.homeEnvVar] = paths.homeDir;
   return env;
 }
@@ -152,6 +154,7 @@ export async function printToolPythonRuntimeDoctor(
   console.log(`  home: ${paths.homeDir}`);
   console.log(`  venv: ${existsSync(paths.venvDir) ? 'present' : 'missing'}`);
   console.log(`  executable: ${existsSync(paths.executablePath) ? paths.executablePath : 'missing'}`);
+  printDesktopEnvStatus('  ');
 
   if (existsSync(paths.executablePath)) {
     const doctor = await runBuffered(paths.executablePath, ['doctor'], getToolPythonRuntimeEnv(paths, spec));

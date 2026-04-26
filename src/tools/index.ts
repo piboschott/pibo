@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { ErrorCode, formatCliError } from '../cli-errors.js';
+import { detectDesktopEnv } from './desktop-env.js';
 import {
   doctorCliTool,
   findCliToolEntry,
@@ -108,6 +109,7 @@ function printPath(name: string): void {
 function printEnv(name: string): void {
   const entry = requireEntry(name);
   const status = getCliToolStatus(entry);
+  const desktop = detectDesktopEnv();
 
   if (process.platform === 'win32') {
     console.log(`$env:PATH = "${status.executablePath.replace(/\\[^\\]+$/, '')};$env:PATH"`);
@@ -116,8 +118,15 @@ function printEnv(name: string): void {
   }
 
   const binDir = status.executablePath.replace(/\/[^/]+$/, '');
-  console.log(`export PATH="${binDir}:$PATH"`);
+  console.log(`export PATH="${binDir}:${status.homeDir}/bin:$PATH"`);
   if (entry.runtime.homeEnvVar) console.log(`export ${entry.runtime.homeEnvVar}="${status.homeDir}"`);
+  if (desktop.display) console.log(`export DISPLAY="${desktop.display}"`);
+  if (desktop.waylandDisplay) console.log(`export WAYLAND_DISPLAY="${desktop.waylandDisplay}"`);
+  if (desktop.xauthority) console.log(`export XAUTHORITY="${desktop.xauthority}"`);
+  if (desktop.xdgRuntimeDir) console.log(`export XDG_RUNTIME_DIR="${desktop.xdgRuntimeDir}"`);
+  if (desktop.dbusSessionBusAddress) {
+    console.log(`export DBUS_SESSION_BUS_ADDRESS="${desktop.dbusSessionBusAddress}"`);
+  }
 }
 
 export async function runToolsCli(argv = process.argv): Promise<void> {
