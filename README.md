@@ -69,7 +69,7 @@ The channel context exposes only the pibo boundary:
 - `resolveSession(...)` creates or reuses a persistent session binding.
 - `getGatewayActions()` exposes discoverable execution actions for channel UIs.
 
-Gateway session bindings are stored in SQLite by default at `.pibo/session-bindings.sqlite`. The binding remembers the stable `sessionKey`, channel, external id, original profile, optional current profile, and optional workspace.
+Gateway session bindings are stored in SQLite by default at `.pibo/session-bindings.sqlite`. The binding remembers the stable semantic `sessionKey`, short technical `sessionId`, channel, external id, original profile, optional current profile, optional parent identity, and optional workspace.
 
 The built-in remote agent plugin registers the local `remote-agent` channel on `127.0.0.1:4790`. It lets a local controller attach to a pibo session without speaking directly to Pi Coding Agent:
 

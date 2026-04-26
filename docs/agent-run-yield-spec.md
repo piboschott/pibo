@@ -38,7 +38,7 @@ Yielded runs are an add-on. Existing sync and async subagent behavior still work
 
 ## Core Model
 
-`sessionKey` identifies a routed Pibo conversation.
+`sessionKey` identifies a routed Pibo conversation. `sessionId` is the short technical Pi session identity behind that route and is used for Pi persistence and provider cache affinity.
 
 `threadKey` identifies continuity for a subagent conversation.
 

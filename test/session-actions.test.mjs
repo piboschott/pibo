@@ -125,6 +125,69 @@ test("session clone replaces the active Pi session at the current leaf", async (
 	}
 });
 
+test("routed session surfaces assistant provider errors with the active event id", async () => {
+	let listener;
+	const events = [];
+	const runtime = {
+		cwd: process.cwd(),
+		session: {
+			subscribe(callback) {
+				listener = callback;
+				return () => {};
+			},
+			async prompt() {
+				listener({
+					type: "message_end",
+					message: {
+						role: "assistant",
+						content: [],
+						stopReason: "error",
+						errorMessage: "Invalid prompt_cache_key",
+					},
+				});
+			},
+			isStreaming: false,
+			getActiveToolNames() {
+				return [];
+			},
+			getAllTools() {
+				return [];
+			},
+			sessionManager: {
+				getSessionId() {
+					return "session-id";
+				},
+				getSessionFile() {
+					return undefined;
+				},
+				getLeafId() {
+					return null;
+				},
+				getHeader() {
+					return undefined;
+				},
+			},
+		},
+		setRebindSession() {},
+		async dispose() {},
+	};
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.enqueueMessage({
+		type: "message",
+		sessionKey: "route:test",
+		id: "event-1",
+		text: "hello",
+		source: "actor",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+
+	const error = events.find((event) => event.type === "session_error");
+	assert.equal(error.eventId, "event-1");
+	assert.equal(error.error, "Invalid prompt_cache_key");
+});
+
 test("session tree navigation moves the active leaf inside the current Pi session", async () => {
 	const harness = await createSessionHarness();
 	try {

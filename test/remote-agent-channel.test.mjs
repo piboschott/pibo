@@ -9,6 +9,7 @@ class MemoryBindingStore {
 		const now = new Date().toISOString();
 		return {
 			sessionKey: input.sessionKey ?? `${input.channel}:${input.externalId}`,
+			sessionId: "session-" + input.externalId,
 			channel: input.channel,
 			externalId: input.externalId,
 			originalProfile: input.defaultProfile,

@@ -24,6 +24,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { PiboRunRegistry, type PiboRunNotification } from "../runs/registry.js";
 import type { PiboRunToolController } from "../runs/tools.js";
+import { createPiboSessionId, type PiboSessionBinding } from "../sessions/bindings.js";
 
 export type {
 	PiboEventListener,
@@ -48,12 +49,12 @@ export type PiboSessionRouterOptions = Omit<
 
 function profileForSession(
 	baseProfile: InitialSessionContext,
-	sessionKey: string,
+	sessionId: string,
 	parentSessionId?: string,
 ): InitialSessionContext {
 	const options: InitialSessionContextOptions = {
 		profileName: baseProfile.profileName,
-		sessionId: sessionKey,
+		sessionId,
 		parentSessionId,
 		skills: baseProfile.skills,
 		tools: baseProfile.tools,
@@ -109,8 +110,8 @@ export class PiboSessionRouter {
 	private readonly baseProfile: InitialSessionContext;
 	private readonly pluginRegistry: PiboPluginRegistry;
 	private readonly bindingStore?: PiboSessionBindingStore;
-	private readonly sessionProfileOverrides = new Map<string, string>();
-	private readonly sessionParentIds = new Map<string, string>();
+	private readonly sessionParentKeys = new Map<string, string>();
+	private readonly sessionBindings = new Map<string, PiboSessionBinding>();
 
 	constructor(private readonly options: PiboSessionRouterOptions = {}) {
 		this.pluginRegistry = options.pluginRegistry ?? createDefaultPiboPluginRegistry();
@@ -137,8 +138,8 @@ export class PiboSessionRouter {
 			this.runRegistry.cancelOwnerRuns(event.sessionKey);
 			this.scheduledRunNotifications.delete(event.sessionKey);
 			this.sessions.delete(event.sessionKey);
-			this.sessionProfileOverrides.delete(event.sessionKey);
-			this.sessionParentIds.delete(event.sessionKey);
+			this.sessionParentKeys.delete(event.sessionKey);
+			this.sessionBindings.delete(event.sessionKey);
 		}
 		return output;
 	}
@@ -194,8 +195,8 @@ export class PiboSessionRouter {
 		this.sessions.clear();
 		this.runRegistry.cancelAll("Pibo session router was disposed.");
 		this.scheduledRunNotifications.clear();
-		this.sessionProfileOverrides.clear();
-		this.sessionParentIds.clear();
+		this.sessionParentKeys.clear();
+		this.sessionBindings.clear();
 		await Promise.all(sessions.map((session) => session.dispose()));
 	}
 
@@ -216,11 +217,12 @@ export class PiboSessionRouter {
 	}
 
 	private async createRoutedSession(sessionKey: string): Promise<RoutedSession> {
+		const binding = this.resolveSessionBinding(sessionKey);
 		const profile = this.getProfileForSession(sessionKey);
 		const runtime = await createPiboRuntime({
 			cwd: this.options.cwd,
 			persistSession: this.options.persistSession,
-			profile: profileForSession(profile, sessionKey, this.sessionParentIds.get(sessionKey)),
+			profile: profileForSession(profile, binding.sessionId, binding.parentSessionId),
 			subagentRunner: this.createSubagentRunner(sessionKey),
 			runToolController: this.createRunToolController(sessionKey),
 		});
@@ -236,13 +238,8 @@ export class PiboSessionRouter {
 	}
 
 	private getProfileForSession(sessionKey: string): InitialSessionContext {
-		const binding = this.bindingStore?.get(sessionKey);
-		const profileName = binding?.currentProfile ?? binding?.originalProfile;
-		if (!profileName) {
-			const override = this.sessionProfileOverrides.get(sessionKey);
-			if (!override) return this.baseProfile;
-			return this.pluginRegistry.createProfile(override);
-		}
+		const binding = this.resolveSessionBinding(sessionKey);
+		const profileName = binding.currentProfile ?? binding.originalProfile;
 		return this.pluginRegistry.createProfile(profileName);
 	}
 
@@ -251,11 +248,8 @@ export class PiboSessionRouter {
 			runSubagent: async ({ subagent, message, threadKey, mode }): Promise<PiboSubagentRunResult> => {
 				this.assertSubagentDepth(parentSessionKey, subagent);
 				const sessionKey = createSubagentSessionKey(parentSessionKey, subagent.name, threadKey);
-				const targetProfile = this.resolveSubagentBinding(sessionKey, subagent);
-				this.sessionParentIds.set(sessionKey, parentSessionKey);
-				if (!this.bindingStore) {
-					this.sessionProfileOverrides.set(sessionKey, targetProfile);
-				}
+				this.sessionParentKeys.set(sessionKey, parentSessionKey);
+				this.resolveSubagentBinding(sessionKey, subagent);
 
 				const event: PiboMessageEvent = {
 					type: "message",
@@ -281,11 +275,8 @@ export class PiboSessionRouter {
 			startSubagent: async ({ subagent, message, threadKey, completionPolicy }) => {
 				this.assertSubagentDepth(parentSessionKey, subagent);
 				const sessionKey = createSubagentSessionKey(parentSessionKey, subagent.name, threadKey);
-				const targetProfile = this.resolveSubagentBinding(sessionKey, subagent);
-				this.sessionParentIds.set(sessionKey, parentSessionKey);
-				if (!this.bindingStore) {
-					this.sessionProfileOverrides.set(sessionKey, targetProfile);
-				}
+				this.sessionParentKeys.set(sessionKey, parentSessionKey);
+				this.resolveSubagentBinding(sessionKey, subagent);
 
 				const event: PiboMessageEvent = {
 					type: "message",
@@ -345,6 +336,8 @@ export class PiboSessionRouter {
 
 	private resolveSubagentBinding(sessionKey: string, subagent: SubagentProfile): string {
 		const targetProfile = this.pluginRegistry.resolveProfileName(subagent.targetProfile);
+		const parentSessionKey = this.sessionParentKeys.get(sessionKey);
+		const parentSessionId = parentSessionKey ? this.resolveSessionBinding(parentSessionKey).sessionId : undefined;
 		const existing = this.bindingStore?.get(sessionKey);
 		if (existing) {
 			const existingProfile = existing.currentProfile ?? existing.originalProfile;
@@ -360,9 +353,54 @@ export class PiboSessionRouter {
 			channel: "subagent",
 			externalId: sessionKey,
 			sessionKey,
+			parentSessionKey,
+			parentSessionId,
 			defaultProfile: targetProfile,
 		});
+		if (!this.bindingStore) {
+			this.resolveSessionBinding(sessionKey, targetProfile, parentSessionKey);
+		}
 		return targetProfile;
+	}
+
+	private resolveSessionBinding(
+		sessionKey: string,
+		defaultProfile?: string,
+		parentSessionKey = this.sessionParentKeys.get(sessionKey),
+	): PiboSessionBinding {
+		const existing = this.bindingStore?.get(sessionKey);
+		if (existing) return existing;
+
+		const parentSessionId = parentSessionKey ? this.resolveSessionBinding(parentSessionKey).sessionId : undefined;
+		const profileName = defaultProfile ?? this.baseProfile.profileName;
+		if (this.bindingStore) {
+			return this.bindingStore.resolve({
+				channel: "runtime",
+				externalId: sessionKey,
+				sessionKey,
+				parentSessionKey,
+				parentSessionId,
+				defaultProfile: profileName,
+			});
+		}
+
+		const inMemory = this.sessionBindings.get(sessionKey);
+		if (inMemory) return inMemory;
+
+		const now = new Date().toISOString();
+		const binding: PiboSessionBinding = {
+			sessionKey,
+			sessionId: createPiboSessionId(),
+			parentSessionKey,
+			parentSessionId,
+			channel: "runtime",
+			externalId: sessionKey,
+			originalProfile: profileName,
+			createdAt: now,
+			updatedAt: now,
+		};
+		this.sessionBindings.set(sessionKey, binding);
+		return binding;
 	}
 
 	private readonly emitOutput = (event: PiboOutputEvent): void => {

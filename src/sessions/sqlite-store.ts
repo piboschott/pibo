@@ -1,14 +1,18 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type {
-	PiboSessionBinding,
-	PiboSessionBindingStore,
-	ResolveSessionBindingInput,
+import {
+	createPiboSessionId,
+	type PiboSessionBinding,
+	type PiboSessionBindingStore,
+	type ResolveSessionBindingInput,
 } from "./bindings.js";
 
 type BindingRow = {
 	session_key: string;
+	session_id: string;
+	parent_session_key: string | null;
+	parent_session_id: string | null;
 	channel: string;
 	external_id: string;
 	original_profile: string;
@@ -30,6 +34,9 @@ export class SqliteSessionBindingStore implements PiboSessionBindingStore {
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS session_bindings (
 				session_key TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				parent_session_key TEXT,
+				parent_session_id TEXT,
 				channel TEXT NOT NULL,
 				external_id TEXT NOT NULL,
 				original_profile TEXT NOT NULL,
@@ -40,6 +47,7 @@ export class SqliteSessionBindingStore implements PiboSessionBindingStore {
 				UNIQUE(channel, external_id)
 			)
 		`);
+		this.migrate();
 	}
 
 	get(sessionKey: string): PiboSessionBinding | undefined {
@@ -55,10 +63,14 @@ export class SqliteSessionBindingStore implements PiboSessionBindingStore {
 
 		const now = new Date().toISOString();
 		const sessionKey = input.sessionKey ?? `${input.channel}:${input.externalId}`;
+		const sessionId = input.sessionId ?? createPiboSessionId();
 		this.db
 			.prepare(`
 				INSERT INTO session_bindings (
 					session_key,
+					session_id,
+					parent_session_key,
+					parent_session_id,
 					channel,
 					external_id,
 					original_profile,
@@ -66,9 +78,20 @@ export class SqliteSessionBindingStore implements PiboSessionBindingStore {
 					workspace,
 					created_at,
 					updated_at
-				) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
 			`)
-			.run(sessionKey, input.channel, input.externalId, input.defaultProfile, input.workspace ?? null, now, now);
+			.run(
+				sessionKey,
+				sessionId,
+				input.parentSessionKey ?? null,
+				input.parentSessionId ?? null,
+				input.channel,
+				input.externalId,
+				input.defaultProfile,
+				input.workspace ?? null,
+				now,
+				now,
+			);
 
 		const created = this.get(sessionKey);
 		if (!created) {
@@ -87,6 +110,34 @@ export class SqliteSessionBindingStore implements PiboSessionBindingStore {
 			.get(channel, externalId) as BindingRow | undefined;
 		return row ? bindingFromRow(row) : undefined;
 	}
+
+	private migrate(): void {
+		const columns = new Set(
+			(this.db.prepare("PRAGMA table_info(session_bindings)").all() as Array<{ name: string }>).map(
+				(column) => column.name,
+			),
+		);
+
+		if (!columns.has("session_id")) {
+			this.db.exec("ALTER TABLE session_bindings ADD COLUMN session_id TEXT");
+		}
+		if (!columns.has("parent_session_key")) {
+			this.db.exec("ALTER TABLE session_bindings ADD COLUMN parent_session_key TEXT");
+		}
+		if (!columns.has("parent_session_id")) {
+			this.db.exec("ALTER TABLE session_bindings ADD COLUMN parent_session_id TEXT");
+		}
+
+		const missingSessionIds = this.db
+			.prepare("SELECT session_key FROM session_bindings WHERE session_id IS NULL OR session_id = ''")
+			.all() as Array<{ session_key: string }>;
+		const update = this.db.prepare("UPDATE session_bindings SET session_id = ? WHERE session_key = ?");
+		for (const row of missingSessionIds) {
+			update.run(createPiboSessionId(), row.session_key);
+		}
+
+		this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_session_bindings_session_id ON session_bindings(session_id)");
+	}
 }
 
 export function createDefaultSessionBindingStore(cwd = process.cwd()): SqliteSessionBindingStore {
@@ -96,6 +147,9 @@ export function createDefaultSessionBindingStore(cwd = process.cwd()): SqliteSes
 function bindingFromRow(row: BindingRow): PiboSessionBinding {
 	return {
 		sessionKey: row.session_key,
+		sessionId: row.session_id,
+		parentSessionKey: row.parent_session_key ?? undefined,
+		parentSessionId: row.parent_session_id ?? undefined,
 		channel: row.channel,
 		externalId: row.external_id,
 		originalProfile: row.original_profile,

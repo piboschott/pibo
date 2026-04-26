@@ -105,11 +105,14 @@ The channel context intentionally exposes only the product boundary:
 - `subscribe(listener)` observes normalized `PiboOutputEvent` values.
 - `resolveSession(input)` creates or reuses a persistent binding.
 
-Session bindings keep the conversation key separate from the agent profile:
+Session bindings keep the semantic conversation key separate from the technical Pi session id and agent profile:
 
 ```ts
 type PiboSessionBinding = {
   sessionKey: string;
+  sessionId: string;
+  parentSessionKey?: string;
+  parentSessionId?: string;
   channel: string;
   externalId: string;
   originalProfile: string;
@@ -118,7 +121,7 @@ type PiboSessionBinding = {
 };
 ```
 
-The gateway uses SQLite for bindings by default. This keeps the original profile/workspace association durable without overloading the `sessionKey`.
+The gateway uses SQLite for bindings by default. Channels and tools route by stable `sessionKey`; Pi persistence and provider cache affinity use the short `sessionId`. Subagent bindings also store their parent key/id pair so the Pi session tree stays linked without overloading the routed key.
 
 ## Remote Agent Channel
 

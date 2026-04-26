@@ -34,7 +34,7 @@ Execution events are wrapper-level actions such as status, queue clear, abort, d
 
 ## Pi Session Controls
 
-Pibo follows Pi Coding Agent's session behavior instead of reimplementing it. The stable `sessionKey` belongs to the channel route, while the active Pi session underneath that route may change.
+Pibo follows Pi Coding Agent's session behavior instead of reimplementing it. The stable `sessionKey` belongs to the channel route, while `sessionId` is the short technical Pi session identity used for Pi persistence and provider cache affinity. The active Pi session underneath a route may still change through fork, clone, or switch actions.
 
 The built-in session actions are:
 
@@ -125,7 +125,7 @@ The channel context intentionally exposes only:
 - `resolveSession(input)` to create or reuse a persistent binding.
 - `getGatewayActions()` to discover execution actions for channel UIs.
 
-Session bindings are stored in SQLite by default at `.pibo/session-bindings.sqlite`. A binding keeps a stable `sessionKey` separate from the original agent profile and channel identity.
+Session bindings are stored in SQLite by default at `.pibo/session-bindings.sqlite`. A binding keeps a stable, semantic `sessionKey` separate from the technical `sessionId`, original agent profile, channel identity, and optional parent session identity. Channels and tools route by `sessionKey`; Pi and provider cache keys use `sessionId`.
 
 ## Auth
 

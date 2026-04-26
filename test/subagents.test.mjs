@@ -39,6 +39,9 @@ class MemoryBindingStore {
 		const now = new Date().toISOString();
 		const binding = {
 			sessionKey: input.sessionKey ?? `${input.channel}:${input.externalId}`,
+			sessionId: input.sessionId ?? `session-${this.bindings.size + 1}`,
+			parentSessionKey: input.parentSessionKey,
+			parentSessionId: input.parentSessionId,
 			channel: input.channel,
 			externalId: input.externalId,
 			originalProfile: input.defaultProfile,
@@ -157,6 +160,7 @@ test("profiles can expose subagents as active router tools", async () => {
 		bindingStore: new MemoryBindingStore([
 			{
 				sessionKey: "parent",
+				sessionId: "parent-session",
 				channel: "test",
 				externalId: "parent",
 				originalProfile: "parent-profile",

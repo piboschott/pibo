@@ -21,6 +21,7 @@ test("session router uses the binding original profile when creating a session",
 		persistSession: false,
 		bindingStore: new StaticBindingStore({
 			sessionKey: "web:user-1",
+			sessionId: "11111111-1111-4111-8111-111111111111",
 			channel: "web",
 			externalId: "user-1",
 			originalProfile: "pibo-example-plugin",
@@ -38,6 +39,14 @@ test("session router uses the binding original profile when creating a session",
 
 		assert.equal(output.type, "execution_result");
 		assert.equal(output.result.activeTools.includes("pibo_example_plugin_note"), true);
+
+		const current = await router.emit({
+			type: "execution",
+			sessionKey: "web:user-1",
+			action: "session.current",
+		});
+		assert.equal(current.type, "execution_result");
+		assert.equal(current.result.sessionId, "11111111-1111-4111-8111-111111111111");
 	} finally {
 		await router.disposeAll();
 	}

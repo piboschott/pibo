@@ -62,8 +62,21 @@ function normalizePiEvent(sessionKey: string, event: unknown): PiboOutputEvent |
 	}
 
 	if (candidate.type === "message_end") {
-		const role = (candidate.message as { role?: unknown } | undefined)?.role;
+		const message = candidate.message as
+			| { role?: unknown; stopReason?: unknown; errorMessage?: unknown }
+			| undefined;
+		const role = message?.role;
 		if (role === "assistant") {
+			if (message?.stopReason === "error" || typeof message?.errorMessage === "string") {
+				return {
+					type: "session_error",
+					sessionKey,
+					error:
+						typeof message.errorMessage === "string" && message.errorMessage.length > 0
+							? message.errorMessage
+							: "Assistant message failed.",
+				};
+			}
 			const text = textFromMessage(candidate.message);
 			if (text) {
 				return { type: "assistant_message", sessionKey, text };
@@ -367,7 +380,9 @@ export class RoutedSession {
 	private withActiveMessage(event: PiboOutputEvent): PiboOutputEvent {
 		if (
 			this.activeMessage?.id &&
-			(event.type === "assistant_delta" || event.type === "assistant_message")
+			(event.type === "assistant_delta" ||
+				event.type === "assistant_message" ||
+				event.type === "session_error")
 		) {
 			return { ...event, eventId: this.activeMessage.id };
 		}

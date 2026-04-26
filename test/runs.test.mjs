@@ -271,3 +271,41 @@ test("router coalesces run completion into a compact parent notification", async
 	assert.match(messages[0].text, /"completed"/);
 	assert.match(messages[0].text, /"runId":"run_/);
 });
+
+test("router converts correlated child session errors into failed run notifications", async () => {
+	const router = new PiboSessionRouter({ persistSession: false });
+	const messages = [];
+	router.getOrCreateSession = async () => ({
+		enqueueMessage(event) {
+			messages.push(event);
+			return {
+				type: "message_queued",
+				sessionKey: event.sessionKey,
+				eventId: event.id,
+				queuedMessages: 1,
+				text: event.text,
+				source: event.source,
+			};
+		},
+	});
+
+	const run = router.runRegistry.startSubagentRun({
+		ownerSessionKey: "parent",
+		subagentName: "helper",
+		childSessionKey: "child",
+		eventId: "event-1",
+	});
+	router.emitOutput({
+		type: "session_error",
+		sessionKey: "child",
+		eventId: "event-1",
+		error: "Invalid prompt_cache_key",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+
+	assert.equal(router.runRegistry.status("parent", run.runId).status, "failed");
+	assert.equal(messages.length, 1);
+	assert.equal(messages[0].sessionKey, "parent");
+	assert.match(messages[0].text, /"failed"/);
+	assert.match(messages[0].text, /"runId":"run_/);
+});
