@@ -29,6 +29,8 @@ const BLOCKED_PI_TUI_COMMANDS = new Set([
 	"resume",
 ]);
 
+const SUBMIT_KEYS = new Set(["\r", "\n"]);
+
 type LocalMessageDetails = {
 	role: "system" | "user" | "assistant" | "execution" | "error";
 	event?: PiboOutputEvent;
@@ -45,12 +47,24 @@ function createSlashCommandMap(capabilities: LocalRoutedTuiCapabilities): Map<st
 	return commands;
 }
 
+function getLeadingSlashCommand(text: string): string | undefined {
+	const trimmed = text.trimStart();
+	if (!trimmed.startsWith("/")) return undefined;
+	const command = trimmed.slice(1).split(/\s+/, 1)[0];
+	return command || undefined;
+}
+
+function isBlockedPiTuiCommandInput(text: string): boolean {
+	const command = getLeadingSlashCommand(text);
+	return command !== undefined && BLOCKED_PI_TUI_COMMANDS.has(command);
+}
+
 function bg(color: number, text: string): string {
 	return `\x1b[48;5;${color}m${text}\x1b[0m`;
 }
 
 function fg(color: number, text: string): string {
-	return `\x1b[38;5;${color}m${text}\x1b[0m`;
+	return `\x1b[38;5;${color}m${text}\x1b[39m`;
 }
 
 function bold(text: string): string {
@@ -59,14 +73,14 @@ function bold(text: string): string {
 
 function getLocalMessageStyle(role: LocalMessageDetails["role"]): {
 	label: string;
-	bgColor: number;
+	bgColor?: number;
 	labelColor: number;
 } {
 	if (role === "user") {
 		return { label: "you -> local", bgColor: 24, labelColor: 117 };
 	}
 	if (role === "assistant") {
-		return { label: "local assistant", bgColor: 22, labelColor: 120 };
+		return { label: "local assistant", labelColor: 120 };
 	}
 	if (role === "execution") {
 		return { label: "local execution", bgColor: 58, labelColor: 229 };
@@ -80,11 +94,11 @@ function getLocalMessageStyle(role: LocalMessageDetails["role"]): {
 function createLocalMessageComponent(content: string, details: LocalMessageDetails): Container {
 	const style = getLocalMessageStyle(details.role);
 	const container = new Container();
-	const box = new Box(1, 1, (text) => bg(style.bgColor, text));
+	const bgFn = style.bgColor === undefined ? undefined : (text: string) => bg(style.bgColor!, text);
+	const box = new Box(1, 0, bgFn);
 	box.addChild(new Text(bold(fg(style.labelColor, style.label)), 0, 0));
 	box.addChild(new Spacer(1));
 	box.addChild(new Text(content, 0, 0));
-	container.addChild(new Spacer(1));
 	container.addChild(box);
 	return container;
 }
@@ -162,6 +176,7 @@ export function createLocalRoutedTuiExtension(client: LocalRoutedTuiClientLike):
 		let autocompleteRefreshed = false;
 		let connected = false;
 		let unsubscribeEvents: (() => void) | undefined;
+		let unsubscribeSubmitGuard: (() => void) | undefined;
 		const slashCommands = createSlashCommandMap(client.capabilities);
 		const registeredCommands = new Set<string>();
 
@@ -228,6 +243,20 @@ export function createLocalRoutedTuiExtension(client: LocalRoutedTuiClientLike):
 				autocompleteRefreshed = true;
 			}
 
+			if (!unsubscribeSubmitGuard) {
+				unsubscribeSubmitGuard = ctx.ui.onTerminalInput((data) => {
+					if (!SUBMIT_KEYS.has(data)) return undefined;
+					const text = ctx.ui.getEditorText();
+					if (!isBlockedPiTuiCommandInput(text)) return undefined;
+
+					ctx.ui.setEditorText("");
+					sendTuiMessage(pi, `Command "${text.trim()}" is not available in local routed mode.`, {
+						role: "error",
+					});
+					return { consume: true };
+				});
+			}
+
 			unsubscribeEvents = client.onEvent(handleLocalEvent);
 			connected = true;
 			setStatus("local connected");
@@ -241,6 +270,8 @@ export function createLocalRoutedTuiExtension(client: LocalRoutedTuiClientLike):
 		pi.on("session_shutdown", () => {
 			unsubscribeEvents?.();
 			unsubscribeEvents = undefined;
+			unsubscribeSubmitGuard?.();
+			unsubscribeSubmitGuard = undefined;
 			connected = false;
 			void client.close();
 		});

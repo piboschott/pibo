@@ -32,14 +32,36 @@ function createFakeExtensionApi() {
 
 function createFakeExtensionContext(statuses) {
 	const autocompleteProviders = [];
+	const terminalInputHandlers = [];
+	let editorText = "";
 	return {
 		autocompleteProviders,
+		terminalInputHandlers,
+		get editorText() {
+			return editorText;
+		},
+		set editorText(value) {
+			editorText = value;
+		},
 		ui: {
 			setStatus(key, text) {
 				statuses.set(key, text);
 			},
 			addAutocompleteProvider(provider) {
 				autocompleteProviders.push(provider);
+			},
+			onTerminalInput(handler) {
+				terminalInputHandlers.push(handler);
+				return () => {
+					const index = terminalInputHandlers.indexOf(handler);
+					if (index !== -1) terminalInputHandlers.splice(index, 1);
+				};
+			},
+			getEditorText() {
+				return editorText;
+			},
+			setEditorText(text) {
+				editorText = text;
 			},
 		},
 	};
@@ -149,6 +171,73 @@ test("local routed TUI extension routes input through the local client", async (
 
 	await fake.handlers.get("session_shutdown")?.({ type: "session_shutdown" }, ctx);
 	assert.equal(client.closeCount, 1);
+});
+
+test("local routed TUI submit guard blocks leading conflicting Pi commands only", async () => {
+	const client = createFakeClient();
+	const statuses = new Map();
+	const fake = createFakeExtensionApi();
+	const ctx = createFakeExtensionContext(statuses);
+
+	createLocalRoutedTuiExtension(client)(fake.api);
+	await fake.handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+
+	assert.equal(ctx.terminalInputHandlers.length, 1);
+	const guard = ctx.terminalInputHandlers[0];
+
+	ctx.editorText = "  /fork";
+	assert.deepEqual(guard("\r"), { consume: true });
+	assert.equal(ctx.editorText, "");
+	assert.match(fake.messages.at(-1).content, /Command "\/fork" is not available in local routed mode/);
+
+	ctx.editorText = "Bitte erkläre /fork im Text";
+	assert.equal(guard("\r"), undefined);
+	assert.equal(ctx.editorText, "Bitte erkläre /fork im Text");
+
+	ctx.editorText = "/forked";
+	assert.equal(guard("\r"), undefined);
+	assert.equal(ctx.editorText, "/forked");
+
+	ctx.editorText = "/clone now";
+	assert.deepEqual(guard("\n"), { consume: true });
+	assert.equal(ctx.editorText, "");
+	assert.match(fake.messages.at(-1).content, /Command "\/clone now" is not available in local routed mode/);
+
+	await fake.handlers.get("session_shutdown")?.({ type: "session_shutdown" }, ctx);
+	assert.equal(ctx.terminalInputHandlers.length, 0);
+});
+
+test("local routed TUI renderer keeps assistant unboxed and fills boxed headers", async () => {
+	const client = createFakeClient();
+	const statuses = new Map();
+	const fake = createFakeExtensionApi();
+	const ctx = createFakeExtensionContext(statuses);
+
+	createLocalRoutedTuiExtension(client)(fake.api);
+	await fake.handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+
+	const renderer = fake.renderers.get("pibo.local-routed");
+	const userLines = renderer({
+		content: "Hallo",
+		details: { role: "user" },
+	}).render(24);
+	const assistantLines = renderer({
+		content: "Hallo",
+		details: { role: "assistant" },
+	}).render(24);
+	const executionLines = renderer({
+		content: "status: ok",
+		details: { role: "execution" },
+	}).render(24);
+
+	assert.equal(userLines[0].startsWith("\x1b[48;5;24m"), true);
+	assert.match(userLines[0], /\s+\x1b\[0m$/);
+	assert.equal(executionLines[0].startsWith("\x1b[48;5;58m"), true);
+	assert.match(executionLines[0], /\s+\x1b\[0m$/);
+	assert.equal(assistantLines.some((line) => line.includes("\x1b[48;5;")), false);
+	assert.equal(userLines.length, 3);
+	assert.equal(assistantLines.length, 3);
+	assert.equal(executionLines.length, 3);
 });
 
 test("local routed TUI client uses a profile-scoped local session key", async () => {

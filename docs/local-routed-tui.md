@@ -83,6 +83,8 @@ Execution actions registered by plugins can appear as routed slash commands only
 
 This keeps the user from accidentally operating on the controller shell when they expect to operate on the routed Pibo session.
 
+Because Pi handles built-in slash commands before extension `input` events, the local routed extension also installs a submit guard for the editor. The guard checks the current editor text only when Enter is pressed and consumes the submit if the text begins with a blocked command such as `/fork`, `/tree`, or `/clone`. Mentions later in normal text, such as `explain /fork`, are still routed as ordinary messages.
+
 ## Lifecycle
 
 `runLocalRoutedTui` creates one local client and disposes it in a `finally` block. Closing the client unsubscribes from router events and calls `router.disposeAll()`, which cancels owned runs and disposes routed sessions.

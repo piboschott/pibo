@@ -167,6 +167,8 @@ This mirrors the existing remote-controller approach, where controller-local com
 
 V1 should keep this minimal. `/quit` can stay local. Pibo execution actions can be registered as routed commands only after conflict filtering. Ambiguous Pi TUI session commands such as fork, clone, tree, session, compact, reload, and new should not be advertised as local commands in routed mode unless the UI makes their target explicit.
 
+Pi handles built-in slash commands before extension `input` handlers. To enforce this boundary without changing Pi, the local routed extension should install a narrow submit guard through the extension UI terminal-input hook. The guard should run only for submit keys, inspect only the current editor text, and consume the submit only when the trimmed text begins with a blocked command. A command name appearing later in ordinary prose must remain a normal routed message.
+
 ## Lifecycle
 
 The local routed TUI owns the in-process router lifetime.
