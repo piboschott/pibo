@@ -151,7 +151,7 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 	const metadata = await loadPiSessionMetadata(input.binding, input.binding.workspace ?? input.cwd);
 	const entries = metadata.sessionPath ? readEntries(metadata.sessionPath) : [];
 	const nodes = traceNodesFromEntries(input.binding.sessionKey, entries);
-	const byId = new Map(nodes.map((node) => [node.id, node]));
+	const byId = mapTraceNodesById(nodes);
 	const childByParent = mapChildren(input.bindings);
 	const hasPersistedTranscript = entries.some((entry) => entry.type === "message");
 	const openTranscriptEventIds = findOpenTranscriptEventIds(input.events);
@@ -189,7 +189,7 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 		}
 		if (node.eventId && byId.has(node.id)) continue;
 		nodes.push(node);
-		byId.set(node.id, node);
+		for (const indexed of flattenTraceNodes([node])) byId.set(indexed.id, indexed);
 	}
 
 	return {
@@ -238,11 +238,33 @@ function readEntries(path: string): SessionEntry[] {
 	return parseSessionEntries(content).filter((entry): entry is SessionEntry => entry.type !== "session");
 }
 
+function messageRole(entry: MessageSessionEntry): unknown {
+	return (entry.message as { role?: unknown }).role;
+}
+
+function messageContent(entry: MessageSessionEntry): unknown {
+	return (entry.message as { content?: unknown }).content;
+}
+
+function messageParts(entry: MessageSessionEntry): unknown[] {
+	const content = messageContent(entry);
+	if (typeof content === "string") return [{ type: "text", text: content }];
+	return Array.isArray(content) ? content : [];
+}
+
 export function traceNodesFromEntries(sessionKey: string, entries: SessionEntry[]): PiboTraceNode[] {
 	const nodes: PiboTraceNode[] = [];
-	for (const entry of entries) {
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
 		if (entry.type === "message") {
-			nodes.push(...traceNodesFromMessageEntry(sessionKey, entry));
+			const role = messageRole(entry);
+			if (role === "user") {
+				nodes.push(createUserMessageNode(sessionKey, entry, messageContent(entry)));
+			} else if (role === "assistant" || role === "toolResult") {
+				const turn = collectAssistantTurn(entries, index);
+				nodes.push(...createAssistantTurnNodes(sessionKey, turn.entries));
+				index = turn.nextIndex - 1;
+			}
 		} else if (entry.type === "session_info" && entry.name) {
 			nodes.push({
 				id: `entry:${entry.id}`,
@@ -260,12 +282,21 @@ export function traceNodesFromEntries(sessionKey: string, entries: SessionEntry[
 	return nodes;
 }
 
-function traceNodesFromMessageEntry(sessionKey: string, entry: MessageSessionEntry): PiboTraceNode[] {
-	const role = (entry.message as { role?: unknown }).role;
-	const content = (entry.message as { content?: unknown }).content;
-	if (role === "user") return [createUserMessageNode(sessionKey, entry, content)];
-	if (role === "assistant") return createAssistantPartNodes(sessionKey, entry, content);
-	return [];
+function collectAssistantTurn(
+	entries: SessionEntry[],
+	startIndex: number,
+): { entries: MessageSessionEntry[]; nextIndex: number } {
+	const turnEntries: MessageSessionEntry[] = [];
+	let index = startIndex;
+	while (index < entries.length) {
+		const entry = entries[index];
+		if (entry.type !== "message") break;
+		const role = messageRole(entry);
+		if (role !== "assistant" && role !== "toolResult") break;
+		turnEntries.push(entry);
+		index += 1;
+	}
+	return { entries: turnEntries, nextIndex: index };
 }
 
 function createUserMessageNode(sessionKey: string, entry: MessageSessionEntry, content: unknown): PiboTraceNode {
@@ -284,118 +315,143 @@ function createUserMessageNode(sessionKey: string, entry: MessageSessionEntry, c
 	};
 }
 
-function createAssistantPartNodes(sessionKey: string, entry: MessageSessionEntry, content: unknown): PiboTraceNode[] {
-	const status = messageStatus(entry.message);
-	const error = messageError(entry.message);
-	if (typeof content === "string") {
-		return [
-			createAssistantMessageNode({
-				id: `entry:${entry.id}`,
-				sessionKey,
-				entry,
-				status,
-				text: content,
-				error,
-			}),
-		];
-	}
-	if (!Array.isArray(content)) return [];
+function createAssistantTurnNodes(sessionKey: string, entries: MessageSessionEntry[]): PiboTraceNode[] {
+	const firstAssistant = entries.find((entry) => messageRole(entry) === "assistant");
+	if (!firstAssistant) return [];
 
-	const nodes: PiboTraceNode[] = [];
-	let errorAssigned = false;
-	for (const [index, part] of content.entries()) {
-		const node = createAssistantPartNode({
-			sessionKey,
-			entry,
-			index,
-			part: part as MessagePart,
-			status,
-			error: errorAssigned ? undefined : error,
-		});
-		if (!node) continue;
-		nodes.push(node);
-		if (node.type === "assistant.message") {
-			errorAssigned = true;
+	const reasoningNodes: PiboTraceNode[] = [];
+	const childNodes: PiboTraceNode[] = [];
+	const toolsByCallId = new Map<string, PiboTraceNode>();
+	const answerTextParts: string[] = [];
+	let responseEntry = firstAssistant;
+	let responseError: string | undefined;
+	let responseStatus: PiboTraceNodeStatus = "done";
+
+	for (const entry of entries) {
+		if (messageRole(entry) === "toolResult") {
+			mergePersistedToolResult(toolsByCallId, childNodes, entry, sessionKey);
+			continue;
+		}
+
+		const status = messageStatus(entry.message);
+		if (status === "error") responseStatus = "error";
+		responseError = responseError ?? messageError(entry.message);
+
+		for (const [index, part] of messageParts(entry).entries()) {
+			const typed = part as MessagePart;
+			if (typed.type === "thinking" && typeof typed.thinking === "string") {
+				reasoningNodes.push(createReasoningNode(sessionKey, entry, index, typed.thinking));
+			} else if (typed.type === "text" && typeof typed.text === "string" && typed.text !== "") {
+				answerTextParts.push(typed.text);
+				responseEntry = entry;
+			} else if (typed.type === "toolCall" && typeof typed.id === "string" && typeof typed.name === "string") {
+				const toolNode = createToolCallNode(sessionKey, entry, typed);
+				childNodes.push(toolNode);
+				toolsByCallId.set(typed.id, toolNode);
+			}
 		}
 	}
-	if (!nodes.some((node) => node.type === "assistant.message") && (extractText(content) || error)) {
-		const text = extractText(content);
-		nodes.push(createAssistantMessageNode({
-			id: `entry:${entry.id}:text`,
-			sessionKey,
-			entry,
-			status,
-			text,
-			error,
-		}));
-	}
-	return nodes;
+
+	const response = createAssistantMessageNode({
+		id: `entry:${firstAssistant.id}:response`,
+		sessionKey,
+		entry: responseEntry,
+		status: responseStatus,
+		text: answerTextParts.join(""),
+		error: responseError,
+		children: childNodes,
+		startedAt: firstAssistant.timestamp,
+		completedAt: responseEntry.timestamp,
+	});
+	return [...reasoningNodes, response];
 }
 
-function createAssistantPartNode(input: {
-	sessionKey: string;
-	entry: MessageSessionEntry;
-	index: number;
-	part: MessagePart;
-	status: PiboTraceNodeStatus;
-	error?: string;
-}): PiboTraceNode | undefined {
-	const { sessionKey, entry, index, part, status, error } = input;
-	if (part.type === "thinking" && typeof part.thinking === "string") {
-		return {
-			id: `entry:${entry.id}:thinking:${index}`,
-			entryId: entry.id,
-			sessionKey,
-			type: "model.reasoning",
-			title: "Thinking",
-			status: "done",
-			startedAt: entry.timestamp,
-			summary: part.thinking,
-			output: part.thinking,
-			children: [],
-		};
+function createReasoningNode(
+	sessionKey: string,
+	entry: MessageSessionEntry,
+	index: number,
+	thinking: string,
+): PiboTraceNode {
+	return {
+		id: `entry:${entry.id}:thinking:${index}`,
+		entryId: entry.id,
+		sessionKey,
+		type: "model.reasoning",
+		title: "Thinking",
+		status: "done",
+		startedAt: entry.timestamp,
+		summary: thinking,
+		output: thinking,
+		children: [],
+	};
+}
+
+function createToolCallNode(sessionKey: string, entry: MessageSessionEntry, part: MessagePart): PiboTraceNode {
+	const name = typeof part.name === "string" ? part.name : "Tool Call";
+	return {
+		id: `entry:${entry.id}:tool:${String(part.id)}`,
+		entryId: entry.id,
+		sessionKey,
+		toolCallId: typeof part.id === "string" ? part.id : undefined,
+		type: isSubagentToolName(name) ? "agent.delegation" : "tool.call",
+		title: name,
+		status: "done",
+		startedAt: entry.timestamp,
+		input: part.arguments ?? {},
+		children: [],
+	};
+}
+
+function mergePersistedToolResult(
+	toolsByCallId: Map<string, PiboTraceNode>,
+	childNodes: PiboTraceNode[],
+	entry: MessageSessionEntry,
+	sessionKey: string,
+): void {
+	const message = entry.message as {
+		toolCallId?: unknown;
+		toolName?: unknown;
+		content?: unknown;
+		details?: unknown;
+		isError?: unknown;
+	};
+	const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : undefined;
+	if (!toolCallId) return;
+
+	let toolNode = toolsByCallId.get(toolCallId);
+	if (!toolNode) {
+		toolNode = createMissingToolResultNode(sessionKey, entry, toolCallId);
+		childNodes.push(toolNode);
+		toolsByCallId.set(toolCallId, toolNode);
 	}
-	if (part.type === "text" && typeof part.text === "string" && part.text !== "") {
-		return createAssistantMessageNode({
-			id: `entry:${entry.id}:text:${index}`,
-			sessionKey,
-			entry,
-			status,
-			text: part.text,
-			error,
-		});
-	}
-	if (part.type === "toolCall" && typeof part.id === "string" && typeof part.name === "string") {
-		return {
-			id: `entry:${entry.id}:tool:${part.id}`,
-			entryId: entry.id,
-			sessionKey,
-			toolCallId: part.id,
-			type: isSubagentToolName(part.name) ? "agent.delegation" : "tool.call",
-			title: part.name,
-			status: "done",
-			startedAt: entry.timestamp,
-			input: part.arguments ?? {},
-			children: [],
-		};
-	}
-	if (part.type === "toolResult") {
-		const toolCallId = typeof part.toolCallId === "string" ? part.toolCallId : undefined;
-		return {
-			id: `entry:${entry.id}:tool-result:${toolCallId ?? index}`,
-			entryId: entry.id,
-			sessionKey,
-			toolCallId,
-			type: "tool.result",
-			title: typeof part.toolName === "string" ? part.toolName : "Tool Result",
-			status: part.isError === true ? "error" : "done",
-			startedAt: entry.timestamp,
-			output: part.result,
-			error: part.isError === true ? stringifyPreview(part.result) : undefined,
-			children: [],
-		};
-	}
-	return undefined;
+	toolNode.status = message.isError === true ? "error" : "done";
+	toolNode.completedAt = entry.timestamp;
+	toolNode.output = toolResultOutput(message);
+	toolNode.error = message.isError === true ? stringifyPreview(toolNode.output) : undefined;
+}
+
+function createMissingToolResultNode(
+	sessionKey: string,
+	entry: MessageSessionEntry,
+	toolCallId: string,
+): PiboTraceNode {
+	const message = entry.message as { toolName?: unknown };
+	return {
+		id: `entry:${entry.id}:tool-result:${toolCallId}`,
+		entryId: entry.id,
+		sessionKey,
+		toolCallId,
+		type: "tool.result",
+		title: typeof message.toolName === "string" ? message.toolName : "Tool Result",
+		status: "done",
+		startedAt: entry.timestamp,
+		children: [],
+	};
+}
+
+function toolResultOutput(message: { content?: unknown; details?: unknown }): unknown {
+	if (message.details === undefined) return { content: message.content };
+	return { content: message.content, details: message.details };
 }
 
 function createAssistantMessageNode(input: {
@@ -405,6 +461,9 @@ function createAssistantMessageNode(input: {
 	status: PiboTraceNodeStatus;
 	text: string;
 	error?: string;
+	children?: PiboTraceNode[];
+	startedAt?: string;
+	completedAt?: string;
 }): PiboTraceNode {
 	return {
 		id: input.id,
@@ -413,11 +472,12 @@ function createAssistantMessageNode(input: {
 		type: "assistant.message",
 		title: "Agent Message",
 		status: input.status,
-		startedAt: input.entry.timestamp,
+		startedAt: input.startedAt ?? input.entry.timestamp,
+		completedAt: input.completedAt,
 		summary: input.text,
 		output: input.text,
 		error: input.error,
-		children: [],
+		children: input.children ?? [],
 	};
 }
 
@@ -568,6 +628,16 @@ function messageTurnNodeId(eventId: string): string {
 	return `event:message:${eventId}`;
 }
 
+function mapTraceNodesById(nodes: PiboTraceNode[]): Map<string, PiboTraceNode> {
+	const byId = new Map<string, PiboTraceNode>();
+	for (const node of flattenTraceNodes(nodes)) byId.set(node.id, node);
+	return byId;
+}
+
+function flattenTraceNodes(nodes: PiboTraceNode[]): PiboTraceNode[] {
+	return nodes.flatMap((node) => [node, ...flattenTraceNodes(node.children)]);
+}
+
 function nestTraceNodes(nodes: PiboTraceNode[]): PiboTraceNode[] {
 	const byId = new Map<string, PiboTraceNode>();
 	for (const node of nodes) {
@@ -591,6 +661,7 @@ function mergeToolEvent(target: PiboTraceNode, update: PiboTraceNode): void {
 	target.input = update.input ?? target.input;
 	target.output = update.output ?? target.output;
 	target.error = update.error ?? target.error;
+	target.completedAt = update.completedAt ?? target.completedAt;
 	target.linkedSessionKey = update.linkedSessionKey ?? target.linkedSessionKey;
 }
 

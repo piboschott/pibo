@@ -6,25 +6,37 @@ import { createWebHostChannel } from "../dist/web/channel.js";
 
 class MemoryBindingStore {
 	bindings = new Map();
+	bindingsByChannelExternalId = new Map();
 
 	resolve(input) {
-		for (const binding of this.bindings.values()) {
-			if (binding.channel === input.channel && binding.externalId === input.externalId) {
-				return binding;
-			}
-		}
+		const channelExternalId = `${input.channel}:${input.externalId}`;
+		const existing = this.bindingsByChannelExternalId.get(channelExternalId);
+		if (existing) return existing;
 
 		const now = new Date().toISOString();
 		const binding = {
 			sessionKey: input.sessionKey ?? `${input.channel}:${input.externalId}`,
+			sessionId: input.sessionId ?? `session-${this.bindings.size + 1}`,
+			parentSessionKey: input.parentSessionKey,
+			parentSessionId: input.parentSessionId,
 			channel: input.channel,
 			externalId: input.externalId,
 			originalProfile: input.defaultProfile,
+			workspace: input.workspace,
 			createdAt: now,
 			updatedAt: now,
 		};
 		this.bindings.set(binding.sessionKey, binding);
+		this.bindingsByChannelExternalId.set(channelExternalId, binding);
 		return binding;
+	}
+
+	get(sessionKey) {
+		return this.bindings.get(sessionKey);
+	}
+
+	list() {
+		return [...this.bindings.values()];
 	}
 }
 
@@ -74,6 +86,9 @@ async function startWebHostChannel(options = {}) {
 		},
 		resolveSession(input) {
 			return bindings.resolve(input);
+		},
+		listSessions() {
+			return bindings.list();
 		},
 		getGatewayActions() {
 			return [];
@@ -132,6 +147,53 @@ test("chat web app maps authenticated users to chat bindings", async () => {
 		assert.equal(emitted.length, 1);
 		assert.equal(emitted[0].sessionKey, "chat-web:user-1");
 		assert.equal(emitted[0].text, "hello");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app creates user-owned sessions", async () => {
+	const { channel, baseURL, emitted } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const created = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: "{}",
+		});
+		assert.equal(created.status, 201);
+		const payload = await created.json();
+		assert.match(payload.sessionKey, /^chat-web:user-1:session:/);
+		assert.equal(payload.binding.parentSessionKey, "chat-web:user-1");
+		assert.equal(payload.binding.parentSessionId, undefined);
+
+		const bootstrap = await fetch(`${baseURL}/api/chat/bootstrap?sessionKey=${encodeURIComponent(payload.sessionKey)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrap.status, 200);
+		const data = await bootstrap.json();
+		assert.equal(data.selectedSessionKey, payload.sessionKey);
+		assert.equal(data.sessions[0].children.some((session) => session.sessionKey === payload.sessionKey), true);
+
+		const message = await fetch(`${baseURL}/api/chat/message`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ sessionKey: payload.sessionKey, text: "hello new session" }),
+		});
+		assert.equal(message.status, 200);
+		assert.equal(emitted.length, 1);
+		assert.equal(emitted[0].sessionKey, payload.sessionKey);
+		assert.equal(emitted[0].text, "hello new session");
 	} finally {
 		await channel.stop?.();
 	}

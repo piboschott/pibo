@@ -1,4 +1,4 @@
-import type { BootstrapData, PiboSessionTraceView } from "./types";
+import type { BootstrapData, CreateSessionData, PiboSessionTraceView } from "./types";
 
 export async function getBootstrap(sessionKey?: string): Promise<BootstrapData> {
 	const suffix = sessionKey ? `?sessionKey=${encodeURIComponent(sessionKey)}` : "";
@@ -7,6 +7,14 @@ export async function getBootstrap(sessionKey?: string): Promise<BootstrapData> 
 
 export async function getTrace(sessionKey: string): Promise<PiboSessionTraceView> {
 	return requestJson<PiboSessionTraceView>(`/api/chat/trace?sessionKey=${encodeURIComponent(sessionKey)}`);
+}
+
+export async function postSession(): Promise<CreateSessionData> {
+	return requestJson<CreateSessionData>("/api/chat/sessions", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	});
 }
 
 export async function postMessage(sessionKey: string, text: string): Promise<unknown> {

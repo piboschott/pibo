@@ -126,6 +126,19 @@ function resolveRequestedSession(
 	return binding;
 }
 
+function createPersonalChatSession(context: PiboWebAppContext, root: PiboWebSession): PiboSessionBinding {
+	const id = randomUUID();
+	const rootBinding = root.binding;
+	return context.channelContext.resolveSession({
+		channel: CHAT_WEB_CHANNEL,
+		externalId: `${root.authSession.identity.userId}:session:${id}`,
+		sessionKey: `${rootBinding.sessionKey}:session:${id}`,
+		parentSessionKey: rootBinding.sessionKey,
+		defaultProfile: rootBinding.currentProfile ?? rootBinding.originalProfile,
+		workspace: rootBinding.workspace,
+	});
+}
+
 function createEventStream(sessionKey: string, context: PiboWebAppContext): Response {
 	let unsubscribe: (() => void) | undefined;
 	const stream = new ReadableStream<Uint8Array>({
@@ -210,6 +223,8 @@ function createChatHtml(): string {
 		.sidebar, .inspector { background: #1a262b; border-right: 1px solid #1e293b; min-height: 0; overflow: auto; }
 		.inspector { border-right: 0; border-left: 1px solid #1e293b; background: #0e1116; }
 		.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 42px; padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #cbd5e1; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+		.panel-actions { display: flex; align-items: center; gap: 6px; }
+		.icon-button { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; line-height: 1; }
 		.session-tree { padding: 8px; }
 		.session-row { width: 100%; display: grid; grid-template-columns: 18px 1fr auto; gap: 7px; align-items: center; text-align: left; margin-bottom: 4px; border-color: transparent; background: transparent; padding: 7px 8px; }
 		.session-row.active { border-color: #11a4d4; background: rgba(17,164,212,.10); }
@@ -337,7 +352,13 @@ function createChatHtml(): string {
 		</header>
 		<div class="workspace">
 			<aside class="sidebar">
-				<div class="panel-head"><span id="sidebar-title">Sessions</span><button class="ghost" id="refresh">Refresh</button></div>
+				<div class="panel-head">
+					<span id="sidebar-title">Sessions</span>
+					<div class="panel-actions">
+						<button class="ghost icon-button" id="new-session" title="New Session" aria-label="New Session">+</button>
+						<button class="ghost" id="refresh">Refresh</button>
+					</div>
+				</div>
 				<div class="session-tree" id="session-tree"></div>
 			</aside>
 			<main class="main">
@@ -389,6 +410,7 @@ function createChatHtml(): string {
 		const messageInput = document.querySelector("#message");
 		const commandMenu = document.querySelector("#command-menu");
 		const forkModal = document.querySelector("#fork-modal");
+		const newSessionButton = document.querySelector("#new-session");
 		let eventSource;
 		let bootstrap;
 		let selectedSessionKey;
@@ -618,6 +640,7 @@ function createChatHtml(): string {
 				tab.classList.toggle("active", tab.dataset.area === area);
 			});
 			document.querySelector("#sidebar-title").textContent = area[0].toUpperCase() + area.slice(1);
+			newSessionButton.classList.toggle("hidden", area !== "sessions");
 			if (area === "sessions") {
 				renderSessions();
 				void refreshTrace();
@@ -650,6 +673,13 @@ function createChatHtml(): string {
 		}
 		async function selectSession(sessionKey) {
 			selectedSessionKey = sessionKey;
+			connectEvents();
+			await refreshBootstrap(false);
+			renderArea();
+		}
+		async function createSession() {
+			const created = await postJson("/api/chat/sessions", {});
+			selectedSessionKey = created.sessionKey;
 			connectEvents();
 			await refreshBootstrap(false);
 			renderArea();
@@ -815,6 +845,7 @@ function createChatHtml(): string {
 			return data;
 		}
 
+		newSessionButton.addEventListener("click", function() { void createSession(); });
 		composer.addEventListener("submit", async (event) => {
 			event.preventDefault();
 			const text = messageInput.value.trim();
@@ -977,6 +1008,16 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const bindings = listKnownBindings(context, session.binding);
 				return responseJson(await buildSessionNodes(bindings, state.readModel.listSessions()));
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/sessions` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const session = await requireSession(request, context);
+				await readJsonBody<Record<string, never>>(request);
+				const created = createPersonalChatSession(context, session);
+				state.readModel.upsertSession(session.binding);
+				state.readModel.upsertSession(created);
+				return responseJson({ sessionKey: created.sessionKey, binding: created }, { status: 201 });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace` && request.method === "GET") {

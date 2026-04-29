@@ -63,6 +63,17 @@ export type BootstrapData = {
 	capabilities: { actions: Array<{ name: string; description?: string; slashCommands: string[] }> };
 };
 
+export type CreateSessionData = {
+	sessionKey: string;
+	binding: {
+		sessionKey: string;
+		sessionId: string;
+		parentSessionKey?: string;
+		originalProfile: string;
+		currentProfile?: string;
+	};
+};
+
 export type SpanType =
 	| "agent.run"
 	| "tool.call"

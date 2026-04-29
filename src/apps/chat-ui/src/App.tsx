@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LogOut, RefreshCw, Settings, UserRound } from "lucide-react";
-import { getBootstrap, getTrace, postAction, postMessage, signInWithGoogle, signOut } from "./api";
+import { LogOut, MessageSquarePlus, RefreshCw, Settings, UserRound } from "lucide-react";
+import { getBootstrap, getTrace, postAction, postMessage, postSession, signInWithGoogle, signOut } from "./api";
 import type { BootstrapData, PiboSessionTraceView, PiboWebSessionNode } from "./types";
 import { adaptTrace } from "./tracing/adapt";
 import { TraceTimeline } from "./tracing/TraceTimeline";
@@ -16,6 +16,7 @@ export function App() {
 	const [error, setError] = useState<string | null>(null);
 	const [showThinking, setShowThinking] = useState(() => localStorage.getItem("pibo.chat.showThinking") === "true");
 	const [pendingFork, setPendingFork] = useState<unknown>(null);
+	const [creatingSession, setCreatingSession] = useState(false);
 
 	const loadBootstrap = useCallback(async (sessionKey?: string) => {
 		const data = await getBootstrap(sessionKey);
@@ -67,6 +68,22 @@ export function App() {
 		setSelectedSessionKey(sessionKey);
 		const data = await loadBootstrap(sessionKey);
 		if (area === "sessions") await loadTrace(data.selectedSessionKey);
+	};
+
+	const createSession = async () => {
+		if (creatingSession) return;
+		setCreatingSession(true);
+		try {
+			const created = await postSession();
+			setArea("sessions");
+			const data = await loadBootstrap(created.sessionKey);
+			await loadTrace(data.selectedSessionKey);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setCreatingSession(false);
+		}
 	};
 
 	const runCommand = async (text: string) => {
@@ -141,9 +158,29 @@ export function App() {
 				<aside className="min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800">
 					<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
 						<span>{area}</span>
-						<button type="button" onClick={() => void loadBootstrap(selectedSessionKey ?? undefined)} className="p-1 border border-slate-700 rounded-sm">
-							<RefreshCw size={13} />
-						</button>
+						<div className="flex items-center gap-1">
+							{area === "sessions" ? (
+								<button
+									type="button"
+									onClick={() => void createSession()}
+									disabled={creatingSession}
+									title="New Session"
+									aria-label="New Session"
+									className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+								>
+									<MessageSquarePlus size={13} />
+								</button>
+							) : null}
+							<button
+								type="button"
+								onClick={() => void loadBootstrap(selectedSessionKey ?? undefined)}
+								title="Refresh"
+								aria-label="Refresh"
+								className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+							>
+								<RefreshCw size={13} />
+							</button>
+						</div>
 					</div>
 					{area === "sessions" ? (
 						<div className="p-2">
