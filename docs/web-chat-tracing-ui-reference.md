@@ -187,12 +187,14 @@ This gives the center execution-flow layout.
 Useful behaviors:
 
 - computes flattened stats from nested spans
-- supports expand all and collapse all
+- supports default, expand all, collapse all, and expand-to-depth controls
 - auto-scrolls while streaming
 - shows active, done, and error counts
 - keeps the timeline readable even with nested children
 
 For Pibo, this should render one selected session's transcript and per-turn trace nodes, not just one standalone trace.
+
+Pibo's adapted timeline should default to a shallow expanded view: top-level user and assistant message spans are expanded so the chat remains readable, while nested tool, reasoning, and delegation details stay collapsed until inspected.
 
 ### `TraceSidebar.tsx`
 

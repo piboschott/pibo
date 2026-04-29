@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { GitBranch, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ChevronsDown, ChevronsUp, GitBranch, ListTree, RefreshCw, RotateCcw } from "lucide-react";
 import type { Span, Trace } from "../types";
-import { SpanNode } from "./SpanNode";
+import { SpanNode, type SpanExpansionDepth } from "./SpanNode";
 import { processSpanTree } from "./traceTree";
 
 type TraceTimelineProps = {
@@ -15,10 +15,13 @@ const timelineContentStyle = {
 	"--trace-readable-width": "clamp(44rem, 58vw, 64rem)",
 } as CSSProperties;
 
+const DEFAULT_EXPANSION_DEPTH = 1;
+
 export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: TraceTimelineProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const [expandAll, setExpandAll] = useState(false);
-	const [expandSignal, setExpandSignal] = useState(0);
+	const [expansionDepth, setExpansionDepth] = useState<SpanExpansionDepth>(DEFAULT_EXPANSION_DEPTH);
+	const [expansionSignal, setExpansionSignal] = useState(0);
+	const [levelInput, setLevelInput] = useState(String(DEFAULT_EXPANSION_DEPTH));
 
 	const spanTree = useMemo(() => {
 		if (!trace?.spans) return [];
@@ -58,10 +61,15 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 		);
 	}
 
-	const handleExpandAll = () => {
-		const nextValue = !expandAll;
-		setExpandAll(nextValue);
-		setExpandSignal((current) => current + 1);
+	const applyExpansionDepth = (depth: SpanExpansionDepth) => {
+		setExpansionDepth(depth);
+		if (typeof depth === "number" && depth > 0) setLevelInput(String(depth));
+		setExpansionSignal((current) => current + 1);
+	};
+
+	const applyLevelInput = () => {
+		const parsedLevel = Number.parseInt(levelInput, 10);
+		applyExpansionDepth(Number.isFinite(parsedLevel) && parsedLevel > 0 ? parsedLevel : DEFAULT_EXPANSION_DEPTH);
 	};
 
 	return (
@@ -78,13 +86,54 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 						{stats.error > 0 ? <Badge color="orange">{stats.error} Errors</Badge> : null}
 					</div>
 				</div>
-				<button
-					type="button"
-					onClick={handleExpandAll}
-					className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 hover:text-[#11a4d4] border border-transparent hover:border-slate-700 rounded-sm transition-all"
-				>
-					{expandAll ? "Collapse All" : "Expand All"}
-				</button>
+				<div className="flex items-center gap-1">
+					<TimelineIconButton
+						title="Default expansion"
+						active={expansionDepth === DEFAULT_EXPANSION_DEPTH}
+						onClick={() => applyExpansionDepth(DEFAULT_EXPANSION_DEPTH)}
+					>
+						<RotateCcw size={14} />
+					</TimelineIconButton>
+					<TimelineIconButton
+						title="Collapse all"
+						active={expansionDepth === 0}
+						onClick={() => applyExpansionDepth(0)}
+					>
+						<ChevronsUp size={14} />
+					</TimelineIconButton>
+					<TimelineIconButton
+						title="Expand all"
+						active={expansionDepth === "all"}
+						onClick={() => applyExpansionDepth("all")}
+					>
+						<ChevronsDown size={14} />
+					</TimelineIconButton>
+					<form
+						className="ml-1 flex h-8 items-center overflow-hidden rounded-sm border border-slate-700 bg-[#151f24]/80 focus-within:border-[#11a4d4]"
+						onSubmit={(event) => {
+							event.preventDefault();
+							applyLevelInput();
+						}}
+					>
+						<input
+							type="number"
+							min={1}
+							value={levelInput}
+							onChange={(event) => setLevelInput(event.target.value)}
+							title="Nesting level"
+							aria-label="Nesting level"
+							className="h-full w-11 bg-transparent px-1 text-center font-mono text-xs text-slate-300 outline-none"
+						/>
+						<button
+							type="submit"
+							title="Expand to nesting level"
+							aria-label="Expand to nesting level"
+							className="inline-flex h-full w-8 items-center justify-center border-l border-slate-700 text-slate-400 hover:text-[#11a4d4]"
+						>
+							<ListTree size={14} />
+						</button>
+					</form>
+				</div>
 			</div>
 
 			<div ref={scrollRef} className="flex-1 overflow-auto p-6">
@@ -94,10 +143,8 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 							key={span.id}
 							span={span}
 							startTime={startTime}
-							forceExpanded={expandSignal > 0 ? expandAll : undefined}
-							forceExpandedSignal={expandSignal}
-							forceContentExpanded={expandSignal > 0 ? expandAll : undefined}
-							forceContentExpandedSignal={expandSignal}
+							expansionDepth={expansionDepth}
+							expansionSignal={expansionSignal}
 							onFork={onFork}
 							onOpenSession={onOpenSession}
 						/>
@@ -109,7 +156,35 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 	);
 }
 
-function Badge({ color, children }: { color: "cyan" | "green" | "orange"; children: React.ReactNode }) {
+function TimelineIconButton({
+	title,
+	active,
+	onClick,
+	children,
+}: {
+	title: string;
+	active: boolean;
+	onClick: () => void;
+	children: ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			title={title}
+			aria-label={title}
+			className={`inline-flex h-8 w-8 items-center justify-center rounded-sm border transition-colors ${
+				active
+					? "border-[#11a4d4] bg-[#11a4d4]/10 text-[#11a4d4]"
+					: "border-slate-700 bg-[#151f24]/80 text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+			}`}
+		>
+			{children}
+		</button>
+	);
+}
+
+function Badge({ color, children }: { color: "cyan" | "green" | "orange"; children: ReactNode }) {
 	const className =
 		color === "cyan"
 			? "bg-[#11a4d4]/20 text-[#11a4d4]"

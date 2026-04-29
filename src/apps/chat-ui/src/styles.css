@@ -28,11 +28,6 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-button,
-textarea {
-	font: inherit;
-}
-
 code,
 pre {
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

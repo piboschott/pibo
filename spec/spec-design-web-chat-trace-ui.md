@@ -2,7 +2,7 @@
 title: Pibo Web Chat Trace UI
 version: 0.1
 date_created: 2026-04-28
-last_updated: 2026-04-29
+last_updated: 2026-04-30
 owner: Pibo
 tags: [design, web, chat, tracing, sessions, subagents]
 ---
@@ -53,6 +53,8 @@ Out of scope for V1:
 - **Source of Truth**: The canonical owner of state. Pi session JSONL files remain the source of truth for persisted agent transcript content.
 - **Execution Command**: A Pibo wrapper action such as `status`, `abort`, `clear_queue`, `session.clone`, `session.fork`, or `thinking`.
 - **Slash Command**: A command entered through the chat composer command menu, modeled after the Local Routed TUI command behavior.
+- **Composer**: The bottom chat input area containing the user message textarea, slash command menu, and send control.
+- **Trace Expansion Depth**: A UI-only integer depth rule for expanding trace nodes. Depth `0` collapses all nodes, depth `1` expands only top-level trace nodes, and the special all state expands every node.
 - **Agent Template**: A future persisted user-defined agent profile selection containing tools, skills, subagents, and runtime options.
 
 ## 3. Requirements, Constraints & Guidelines
@@ -84,6 +86,8 @@ Out of scope for V1:
 - **REQ-024**: Error messages must render inline as clear error cards or banners.
 - **REQ-025**: The chat composer must support a slash command menu that opens when the user types `/`.
 - **REQ-026**: The slash command menu must support keyboard navigation with up/down and selection with Enter.
+- **REQ-026A**: The slash command menu must keep the active keyboard-selected command scrolled into view.
+- **REQ-026B**: The slash command menu must stay visually anchored above the composer as the composer height changes.
 - **REQ-027**: Slash command availability must be derived from gateway/channel capabilities, not hardcoded only in the frontend.
 - **REQ-028**: Slash commands must dispatch to the same Pibo execution semantics as the local routed TUI when applicable.
 - **REQ-029**: V1 slash commands must include the Local Routed TUI routed commands `/status`, `/clear`, `/abort`, `/thinking`, `/session-current`, `/sessions`, and `/fork-candidates`; browser-local `/thinking-show`; and Web Chat V1-specific `/clone`.
@@ -103,8 +107,8 @@ Out of scope for V1:
 - **REQ-043**: Raw Pibo events in `.pibo/web-chat.sqlite` must be retained for as long as their associated Pi session exists, unless an explicit future session deletion feature removes them.
 - **REQ-044**: V1 must target personal sessions only.
 - **REQ-045**: V1 must not introduce team sharing behavior.
-- **REQ-046**: Trace nodes must be collapsed by default.
-- **REQ-047**: The UI must provide accessible controls to collapse all trace nodes, expand all trace nodes, and expand trace nodes up to a selected depth.
+- **REQ-046**: Trace nodes must use trace expansion depth `1` by default so top-level user and assistant messages are readable immediately while nested child spans remain collapsed until inspected.
+- **REQ-047**: The UI must provide accessible compact controls for default expansion, collapse all, expand all, and expand trace nodes up to a selected nesting level. Controls may be icon-only when they include accessible labels and hover titles.
 - **REQ-048**: Trace node expanded/collapsed UI state must be stored in the browser only, for example in component state or local storage.
 - **REQ-049**: Thinking display must be hidden by default.
 - **REQ-050**: When thinking display is enabled through `/thinking-show` or an equivalent UI toggle, historical thinking blocks in the currently visible reconstructed transcript must become visible.
@@ -118,6 +122,12 @@ Out of scope for V1:
 - **REQ-058**: The Raw Events inspector must compact adjacent `assistant_delta` and `thinking_delta` events with the same `piboSessionId` and `eventId` for readability.
 - **REQ-059**: Sidebar sessions must support manual rename and archive/unarchive operations.
 - **REQ-060**: Archived sessions must be hidden by default and retrievable through an explicit archived-session display control.
+- **REQ-061**: The chat composer textarea must default to one visible line.
+- **REQ-062**: The chat composer textarea must auto-grow as the user adds new lines until five visible lines are reached.
+- **REQ-063**: After five visible lines, the chat composer textarea must keep a stable height and use an internal vertical scrollbar for additional content.
+- **REQ-064**: The chat composer textarea must keep cursor position stable during ordinary typing and must not move the cursor to the end unless an explicit focus action, such as fork text insertion, requests that behavior.
+- **REQ-065**: The chat composer resize calculation must use the same rendered font size, line height, padding, and border metrics as the textarea so the cursor baseline and bottom padding do not shift when the internal scrollbar appears.
+- **REQ-066**: The send control must be a compact icon button, stay one-line high, and align to the bottom of the composer textarea instead of growing with the textarea.
 - **CON-001**: Pibo must not move channel, auth, profile, or UI policy into Pi Coding Agent.
 - **CON-002**: Pibo must preserve the existing product boundary: Pi owns agent execution and session JSONL; Pibo owns channels, routing, auth, policy, web UI, and read models.
 - **CON-003**: The Web App must consume Pibo view models derived from Pi JSONL and Pibo events, not raw Pi events directly.
@@ -269,18 +279,21 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
 - **AC-007**: Given a subagent is called, When the subagent session is created, Then the parent session shows an `agent.delegation` node and the sidebar shows the child session under the parent.
 - **AC-008**: Given an execution command runs, When an `execution_result` event is emitted, Then the result appears inline in the transcript as an execution command node.
 - **AC-009**: Given a `session_error` occurs, When the event is emitted, Then the UI displays an inline error card.
-- **AC-010**: Given the user types `/` in the composer, When commands are available, Then a keyboard-navigable slash command menu opens.
+- **AC-010**: Given the user types `/` in the composer, When commands are available, Then a keyboard-navigable slash command menu opens and the active command remains visible while arrow-key navigation changes selection.
 - **AC-011**: Given the user selects `/clone`, When the command completes, Then the Web App switches to the cloned session returned by Pibo.
 - **AC-012**: Given a user message trace node, When the user clicks its fork control and fork succeeds, Then the Web App shows a small modal asking whether to switch to the forked session.
 - **AC-013**: Given the server restarts, When the app reloads, Then previously persisted session transcript content is reconstructed from Pi JSONL and session relationships from Pibo Sessions/read model.
 - **AC-014**: Given live events were indexed before reload, When the app reloads, Then execution command/error/tool lifecycle display is reconstructed from Pi JSONL plus the raw Pibo event log where the stored data is sufficient.
 - **AC-015**: Given the transcript contains thinking blocks and thinking display is off, When the user enables `/thinking-show`, Then historical thinking blocks become visible without changing model thinking effort.
-- **AC-016**: Given trace nodes are visible for the first time, When the view renders, Then nested trace nodes are collapsed by default.
-- **AC-017**: Given the user uses expand/collapse controls, When they select collapse all, expand all, or expand to depth, Then the trace tree updates accordingly.
+- **AC-016**: Given trace nodes are visible for the first time, When the view renders, Then top-level trace nodes are expanded and nested child nodes are collapsed.
+- **AC-017**: Given the user uses expansion controls, When they select default, collapse all, expand all, or expand to a nesting level, Then the trace tree updates according to that selected expansion depth.
 - **AC-018**: Given a running turn has emitted many thinking deltas, When the trace endpoint returns a latest-event window that no longer contains `message_started`, Then subsequent `assistant_delta` events for the same `eventId` still appear as a live assistant response.
 - **AC-019**: Given a `thinking_finished` event is received, When no `message_finished` event has been received for that `eventId`, Then the selected session remains in a running state and the UI continues to accept assistant streaming updates.
 - **AC-020**: Given the Raw Events inspector is opened, When adjacent assistant or thinking delta events share `piboSessionId` and `eventId`, Then they are displayed as one compacted raw event with an aggregate count.
 - **AC-021**: Given a session is renamed or archived, When the sidebar reloads, Then the manual title or archive visibility state is reflected without changing the linked Pi Session ID.
+- **AC-022**: Given the composer contains one line, When the user inserts line breaks up to five lines, Then the textarea grows and the send icon button remains one-line high and bottom-aligned.
+- **AC-023**: Given the composer contains more than five lines, When the internal scrollbar appears, Then the textarea height remains stable and the cursor baseline and bottom spacing do not visually jump.
+- **AC-024**: Given the cursor is placed in the middle of composer text, When the user types a character, Then the cursor stays at the edited position instead of moving to the end.
 
 ## 6. Test Automation Strategy
 
@@ -305,6 +318,9 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
   - Tool call render lifecycle.
   - Subagent delegation render and navigation.
   - Slash command menu keyboard behavior.
+  - Slash command menu active-item scrolling.
+  - Composer cursor stability and auto-resize behavior.
+  - Composer send icon button alignment while the textarea grows.
   - Fork from a user message.
   - Clone current session.
 
@@ -314,6 +330,7 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
   - Long JSON arguments/results.
   - Error cards and execution command cards.
   - Sidebar, top bar, command menu, modal, agents mock, settings mock, and inspector consistency with `DESIGN.md`.
+  - Browser-driven composer geometry checks for one-line, five-line, and overflowing six-line textarea states.
 
 ## 7. Rationale & Context
 
@@ -402,6 +419,17 @@ Pibo executes session.clone
 Web App switches selected session to the cloned result
 ```
 
+### 9.5 Composer Growth
+
+```text
+Composer starts with one visible line
+User adds newline content up to five lines
+Textarea grows while the send icon remains one-line high and bottom-aligned
+User adds a sixth line
+Textarea keeps the five-line height and scrolls internally
+Cursor baseline and bottom spacing stay visually stable
+```
+
 ## 10. Validation Criteria
 
 - The app builds and typechecks.
@@ -411,6 +439,8 @@ Web App switches selected session to the cloned result
 - Tool calls render as nested trace cards with structured args/results.
 - Subagent sessions are visible in both sidebar nesting and inline delegation nodes.
 - Slash command keyboard selection works.
+- Slash command keyboard navigation keeps the selected command visible in long command lists.
+- Composer auto-resize preserves one-line, five-line, and overflowing states with a bottom-aligned send icon.
 - Clone switches the selected session after success.
 - Fork asks before switching to the forked session.
 - The read model does not replace or mutate Pi transcript history.

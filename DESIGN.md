@@ -156,7 +156,7 @@ Buttons are compact and squared-off with lightly softened corners.
 - **Primary buttons:** Terminal Cyan background (`#11a4d4`), white text, tiny radius, subtle shadow only when needed.
 - **Secondary buttons:** Transparent or surface-colored with slate text, gaining Terminal Cyan text or border on hover.
 - **Icon buttons:** 32px square, centered icon, slate border, dark header background, Terminal Cyan hover state.
-- **Trace controls:** Small uppercase text buttons with minimal borders; examples are `Expand All`, `Collapse All`, and execution controls.
+- **Trace controls:** Compact icon buttons with accessible labels and tooltips for familiar actions such as default expansion, collapse all, expand all, and expand to a selected nesting level. Text labels are optional when they would consume excessive header space.
 
 Buttons should use icons when the action is familiar and compact, especially for pause, play, download, search, user, notifications, expand, collapse, and refresh.
 
@@ -291,6 +291,15 @@ Inputs are compact technical fields:
 - monospaced text for IDs, Pibo Session IDs, trace IDs, and command fields
 
 Search fields should include a leading search icon and be sized for short identifiers.
+
+Chat composers are compact message inputs:
+
+- default to one visible line
+- grow with entered new lines until five visible lines
+- use an internal scrollbar after five visible lines
+- keep the send control one-line high and bottom-aligned
+- use a compact send icon button when the action is familiar
+- keep line-height and resize measurement aligned so cursor spacing does not shift when scrolling begins
 
 ### Tabs And Navigation
 

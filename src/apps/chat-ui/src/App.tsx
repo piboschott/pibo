@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
 	Archive,
 	ArchiveRestore,
@@ -9,6 +9,7 @@ import {
 	MessageSquarePlus,
 	RefreshCw,
 	Settings,
+	SendHorizontal,
 	UserRound,
 	X,
 } from "lucide-react";
@@ -599,16 +600,33 @@ function Composer({
 	onSend: (text: string) => Promise<void>;
 }) {
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const activeCommandRef = useRef<HTMLButtonElement>(null);
 	const [activeIndex, setActiveIndex] = useState(0);
 	const filtered = value.trim().startsWith("/")
 		? commands.filter((command) => command.slash.startsWith(value.trim().split(/\s+/)[0]))
 		: [];
 
 	useEffect(() => {
+		if (!filtered.length || activeIndex < filtered.length) return;
+		setActiveIndex(0);
+	}, [activeIndex, filtered.length]);
+
+	useEffect(() => {
+		activeCommandRef.current?.scrollIntoView({ block: "nearest" });
+	}, [activeIndex, filtered.length]);
+
+	useEffect(() => {
 		if (focusSignal <= 0) return;
-		inputRef.current?.focus();
-		inputRef.current?.setSelectionRange(value.length, value.length);
-	}, [focusSignal, value]);
+		const input = inputRef.current;
+		if (!input) return;
+		const cursorPosition = input.value.length;
+		input.focus();
+		input.setSelectionRange(cursorPosition, cursorPosition);
+	}, [focusSignal]);
+
+	useLayoutEffect(() => {
+		resizeComposerInput(inputRef.current);
+	}, [value]);
 
 	const submit = async () => {
 		const text = value.trim();
@@ -625,10 +643,11 @@ function Composer({
 	return (
 		<div className="relative p-3 bg-[#151f24] border-t border-slate-800">
 			{filtered.length ? (
-				<div className="absolute left-3 bottom-20 w-[min(520px,calc(100%-24px))] max-h-72 overflow-auto bg-[#0e1116] border border-[#11a4d4] rounded-sm shadow-xl">
+				<div className="absolute left-3 bottom-full mb-2 w-[min(520px,calc(100%-24px))] max-h-72 overflow-auto bg-[#0e1116] border border-[#11a4d4] rounded-sm shadow-xl">
 					{filtered.map((command, index) => (
 						<button
 							key={command.slash}
+							ref={index === activeIndex ? activeCommandRef : null}
 							type="button"
 							onClick={() => {
 								onValueChange(command.slash);
@@ -642,9 +661,10 @@ function Composer({
 					))}
 				</div>
 			) : null}
-			<div className="grid grid-cols-[1fr_auto] gap-2">
+			<div className="grid grid-cols-[1fr_auto] items-end gap-2">
 				<textarea
 					ref={inputRef}
+					rows={1}
 					value={value}
 					onChange={(event) => onValueChange(event.target.value)}
 					onKeyDown={(event) => {
@@ -661,14 +681,42 @@ function Composer({
 						}
 					}}
 					placeholder="Message selected session or type /"
-					className="min-h-12 max-h-40 resize-y bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4]"
+					className="h-10 min-h-10 resize-none overflow-hidden bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm leading-5 outline-none focus:border-[#11a4d4] [scrollbar-gutter:stable]"
 				/>
-				<button type="button" onClick={() => void submit()} className="px-4 bg-[#11a4d4] rounded-sm">
-					Send
+				<button
+					type="button"
+					onClick={() => void submit()}
+					title="Send message"
+					aria-label="Send message"
+					className="h-10 w-10 self-end inline-flex items-center justify-center bg-[#11a4d4] rounded-sm text-white"
+				>
+					<SendHorizontal size={16} />
 				</button>
 			</div>
 		</div>
 	);
+}
+
+function resizeComposerInput(input: HTMLTextAreaElement | null) {
+	if (!input) return;
+	const style = window.getComputedStyle(input);
+	const lineHeight = cssPx(style.lineHeight, 20);
+	const borderFrame = cssPx(style.borderTopWidth) + cssPx(style.borderBottomWidth);
+	const maxScrollHeight = lineHeight * 5 + cssPx(style.paddingTop) + cssPx(style.paddingBottom);
+
+	input.style.height = "auto";
+	const scrollHeight = input.scrollHeight;
+	const hasOverflow = scrollHeight > maxScrollHeight;
+	input.style.height = `${Math.min(scrollHeight, maxScrollHeight) + borderFrame}px`;
+	input.style.overflowY = hasOverflow ? "auto" : "hidden";
+	if (hasOverflow && input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+		input.scrollTop = scrollHeight;
+	}
+}
+
+function cssPx(value: string, fallback = 0): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function AgentsView({ agents }: { agents: BootstrapData["agents"] }) {

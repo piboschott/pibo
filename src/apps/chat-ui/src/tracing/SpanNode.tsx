@@ -22,13 +22,13 @@ type SpanNodeProps = {
 	span: Span;
 	startTime: number;
 	depth?: number;
-	forceExpanded?: boolean;
-	forceExpandedSignal?: number;
-	forceContentExpanded?: boolean;
-	forceContentExpandedSignal?: number;
+	expansionDepth: SpanExpansionDepth;
+	expansionSignal: number;
 	onFork?: (entryId: string) => void;
 	onOpenSession?: (piboSessionId: string) => void;
 };
+
+export type SpanExpansionDepth = number | "all";
 
 type SpanTypeConfig = {
 	color: string;
@@ -98,33 +98,31 @@ const spanTypeConfigs: Record<SpanType, SpanTypeConfig> = {
 
 const NESTING_INDENT_PX = 12;
 
+function isExpandedAtDepth(depth: number, expansionDepth: SpanExpansionDepth): boolean {
+	return expansionDepth === "all" || depth < expansionDepth;
+}
+
 export function SpanNode({
 	span,
 	startTime,
 	depth = 0,
-	forceExpanded,
-	forceExpandedSignal,
-	forceContentExpanded,
-	forceContentExpandedSignal,
+	expansionDepth,
+	expansionSignal,
 	onFork,
 	onOpenSession,
 }: SpanNodeProps) {
 	const [childrenExpanded, setChildrenExpanded] = useState(() => {
-		if (typeof forceExpanded === "boolean") return forceExpanded;
-		return span.status === "UNSET";
+		return isExpandedAtDepth(depth, expansionDepth);
 	});
 	const [contentExpanded, setContentExpanded] = useState(() => {
-		if (typeof forceContentExpanded === "boolean") return forceContentExpanded;
-		return span.status === "UNSET";
+		return isExpandedAtDepth(depth, expansionDepth);
 	});
 
 	useEffect(() => {
-		if (typeof forceExpanded === "boolean") setChildrenExpanded(forceExpanded);
-	}, [forceExpanded, forceExpandedSignal]);
-
-	useEffect(() => {
-		if (typeof forceContentExpanded === "boolean") setContentExpanded(forceContentExpanded);
-	}, [forceContentExpanded, forceContentExpandedSignal]);
+		const expanded = isExpandedAtDepth(depth, expansionDepth);
+		setChildrenExpanded(expanded);
+		setContentExpanded(expanded);
+	}, [depth, expansionDepth, expansionSignal]);
 
 	const config = spanTypeConfigs[span.spanType] || spanTypeConfigs["agent.run"];
 	const isActive = span.status === "UNSET";
@@ -179,10 +177,8 @@ export function SpanNode({
 								span={child}
 								startTime={startTime}
 								depth={depth + 1}
-								forceExpanded={forceExpanded}
-								forceExpandedSignal={forceExpandedSignal}
-								forceContentExpanded={forceContentExpanded}
-								forceContentExpandedSignal={forceContentExpandedSignal}
+								expansionDepth={expansionDepth}
+								expansionSignal={expansionSignal}
 								onFork={onFork}
 								onOpenSession={onOpenSession}
 							/>
