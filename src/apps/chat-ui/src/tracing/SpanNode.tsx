@@ -9,6 +9,7 @@ import {
 	ChevronRight,
 	Eye,
 	EyeOff,
+	ExternalLink,
 	GitBranch,
 	Lightbulb,
 	MessageSquare,
@@ -35,6 +36,8 @@ type SpanTypeConfig = {
 	borderColor: string;
 	label: string;
 };
+
+type SpanStatusStyles = ReturnType<typeof getStatusStyles>;
 
 const spanTypeConfigs: Record<SpanType, SpanTypeConfig> = {
 	"agent.run": {
@@ -153,42 +156,20 @@ export function SpanNode({
 					isActive ? statusStyles.glowClass : ""
 				}`}
 			>
-				<button
-					type="button"
-					className={`w-full px-4 py-2 ${contentExpanded ? `border-b ${config.borderColor}/20` : ""} ${
-						statusStyles.headerClass
-					} cursor-pointer text-left`}
-					onClick={handleToggle}
-				>
-					<div className="box-border flex w-full min-w-0 items-center gap-3" style={{ maxWidth: "var(--trace-readable-width)" }}>
-						<span className={`min-w-0 flex-1 text-xs font-bold ${config.color} uppercase tracking-wider flex items-center gap-2`}>
-							{contentExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-							<span
-								className={`relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${config.bgColor} border-2 ${config.borderColor} ${
-									isActive ? "shadow-[0_0_10px_rgba(17,164,212,0.4)]" : ""
-								}`}
-							>
-								<SpanIcon type={span.spanType} className={config.color} />
-								{isActive ? <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[#11a4d4] animate-pulse" /> : null}
-							</span>
-							{config.label}
-							{span.name ? (
-								<span className="min-w-0 truncate font-normal text-slate-500 dark:text-slate-400 normal-case">
-									: {span.name}
-								</span>
-							) : null}
-							{isActive ? <span className="w-1.5 h-1.5 rounded-full bg-[#11a4d4] animate-pulse" /> : null}
-						</span>
-						<div className="ml-auto flex w-36 shrink-0 items-center justify-end gap-2 font-mono tabular-nums">
-							{duration ? <span className="text-[10px] text-slate-500 dark:text-slate-400">{duration}</span> : null}
-							<span className="text-xs text-slate-400 dark:text-slate-500">{relativeTime}</span>
-						</div>
-					</div>
-				</button>
+				<SpanHeader
+					span={span}
+					config={config}
+					statusStyles={statusStyles}
+					isActive={isActive}
+					contentExpanded={contentExpanded}
+					duration={duration}
+					relativeTime={relativeTime}
+					onToggle={handleToggle}
+					onFork={onFork}
+					onOpenSession={onOpenSession}
+				/>
 
-				{contentExpanded ? (
-					<SpanContent span={span} onFork={onFork} onOpenSession={onOpenSession} />
-				) : null}
+				{contentExpanded ? <SpanContent span={span} /> : null}
 
 				{hasChildren && childrenExpanded && contentExpanded ? (
 					<div className="border-t border-slate-700 bg-slate-900/50 py-4">
@@ -213,15 +194,90 @@ export function SpanNode({
 	);
 }
 
-function SpanContent({
+function SpanHeader({
 	span,
+	config,
+	statusStyles,
+	isActive,
+	contentExpanded,
+	duration,
+	relativeTime,
+	onToggle,
 	onFork,
 	onOpenSession,
 }: {
 	span: Span;
+	config: SpanTypeConfig;
+	statusStyles: SpanStatusStyles;
+	isActive: boolean;
+	contentExpanded: boolean;
+	duration: string | null;
+	relativeTime: string;
+	onToggle: () => void;
 	onFork?: (entryId: string) => void;
 	onOpenSession?: (sessionKey: string) => void;
 }) {
+	const headerClassName = `${contentExpanded ? `border-b ${config.borderColor}/20` : ""} ${statusStyles.headerClass}`;
+
+	return (
+		<div className={headerClassName}>
+			<div className="box-border flex w-full min-w-0 items-center" style={{ maxWidth: "var(--trace-readable-width)" }}>
+				<button type="button" className="min-w-0 flex-1 px-4 py-2 cursor-pointer text-left" onClick={onToggle}>
+					<span className={`min-w-0 text-xs font-bold ${config.color} uppercase tracking-wider flex items-center gap-2`}>
+						{contentExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+						<SpanIconBadge spanType={span.spanType} config={config} isActive={isActive} />
+						<span className="shrink-0">{config.label}</span>
+						{span.name ? (
+							<span className="min-w-0 truncate font-normal text-slate-500 dark:text-slate-400 normal-case">
+								: {span.name}
+							</span>
+						) : null}
+						{isActive ? <span className="w-1.5 h-1.5 rounded-full bg-[#11a4d4] animate-pulse" /> : null}
+					</span>
+				</button>
+				<SpanHeaderActions
+					entryId={span.pibo?.entryId}
+					linkedSessionKey={span.pibo?.linkedSessionKey}
+					onFork={onFork}
+					onOpenSession={onOpenSession}
+				/>
+				<SpanHeaderTiming duration={duration} relativeTime={relativeTime} />
+			</div>
+		</div>
+	);
+}
+
+function SpanIconBadge({
+	spanType,
+	config,
+	isActive,
+}: {
+	spanType: SpanType;
+	config: SpanTypeConfig;
+	isActive: boolean;
+}) {
+	return (
+		<span
+			className={`relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${config.bgColor} border-2 ${config.borderColor} ${
+				isActive ? "shadow-[0_0_10px_rgba(17,164,212,0.4)]" : ""
+			}`}
+		>
+			<SpanIcon type={spanType} className={config.color} />
+			{isActive ? <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[#11a4d4] animate-pulse" /> : null}
+		</span>
+	);
+}
+
+function SpanHeaderTiming({ duration, relativeTime }: { duration: string | null; relativeTime: string }) {
+	return (
+		<div className="ml-2 mr-4 flex w-36 shrink-0 items-center justify-end gap-2 font-mono tabular-nums">
+			{duration ? <span className="text-[10px] text-slate-500 dark:text-slate-400">{duration}</span> : null}
+			<span className="text-xs text-slate-400 dark:text-slate-500">{relativeTime}</span>
+		</div>
+	);
+}
+
+function SpanContent({ span }: { span: Span }) {
 	const [showDetails, setShowDetails] = useState(false);
 	const { spanType, attributes, name } = span;
 	const content = attributes.content || attributes.input || attributes.output || attributes.message;
@@ -229,15 +285,6 @@ function SpanContent({
 	const toolName = typeof rawToolName === "string" ? rawToolName : null;
 	const toolOutput = attributes.output || attributes.result || attributes["tool.result"];
 	const toolArgs = attributes.arguments || attributes.args || attributes["tool.arguments"];
-
-	const actions = (
-		<SpanActions
-			entryId={span.pibo?.entryId}
-			linkedSessionKey={span.pibo?.linkedSessionKey}
-			onFork={onFork}
-			onOpenSession={onOpenSession}
-		/>
-	);
 
 	const errorBanner =
 		span.status === "ERROR" ? (
@@ -250,7 +297,6 @@ function SpanContent({
 	if (spanType === "user.prompt" || spanType === "user_input") {
 		return (
 			<div className="flex flex-col">
-				{actions}
 				{errorBanner}
 				<div className="p-4 font-mono text-sm text-slate-300 whitespace-pre-wrap">
 					"{typeof content === "string" ? content : JSON.stringify(content)}"
@@ -262,7 +308,6 @@ function SpanContent({
 	if (spanType === "model.response") {
 		return (
 			<div className="flex flex-col">
-				{actions}
 				{errorBanner}
 				<div className="p-4 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
 					{typeof content === "string" ? content : <JsonRenderer value={content} />}
@@ -274,7 +319,6 @@ function SpanContent({
 	if (spanType === "tool.result") {
 		return (
 			<div className="flex flex-col">
-				{actions}
 				{errorBanner}
 				<div className="p-4 bg-green-500/5 border-t border-green-500/20">
 					<div className="text-xs font-medium text-green-400 mb-2">Returned from {toolName || name}:</div>
@@ -290,7 +334,6 @@ function SpanContent({
 		const displayName = toolName ?? name;
 		return (
 			<>
-				{actions}
 				<div className="p-4 bg-[#0e1116] border-b border-slate-800">
 					<ToolSignature name={displayName} args={argsRecord} />
 				</div>
@@ -336,7 +379,6 @@ function SpanContent({
 		const reasoning = attributes.reasoning || attributes["model.reasoning"] || content;
 		return (
 			<div className="flex flex-col">
-				{actions}
 				{errorBanner}
 				<div className="p-4 font-mono text-sm text-slate-300 bg-amber-500/5 leading-relaxed whitespace-pre-wrap">
 					<span className="text-amber-500 opacity-60">// Model reasoning</span>
@@ -353,7 +395,6 @@ function SpanContent({
 		const resultStatus = attributes["result.status"] as string | undefined;
 		return (
 			<>
-				{actions}
 				{errorBanner}
 				<div className="p-4 border-b border-orange-500/20 bg-orange-500/5">
 					<div className="flex items-center gap-2 mb-2">
@@ -371,7 +412,6 @@ function SpanContent({
 	if (spanType === "agent.run") {
 		return (
 			<div className="flex flex-col">
-				{actions}
 				{errorBanner}
 			</div>
 		);
@@ -379,7 +419,6 @@ function SpanContent({
 
 	return (
 		<div className="flex flex-col">
-			{actions}
 			{errorBanner}
 			<div className="p-4 font-mono text-sm text-slate-300">
 				<JsonRenderer value={attributes} />
@@ -388,7 +427,7 @@ function SpanContent({
 	);
 }
 
-function SpanActions({
+function SpanHeaderActions({
 	entryId,
 	linkedSessionKey,
 	onFork,
@@ -399,17 +438,31 @@ function SpanActions({
 	onFork?: (entryId: string) => void;
 	onOpenSession?: (sessionKey: string) => void;
 }) {
-	if (!entryId && !linkedSessionKey) return null;
+	const forkEntryId = entryId && onFork ? entryId : undefined;
+	const childSessionKey = linkedSessionKey && onOpenSession ? linkedSessionKey : undefined;
+	if (!forkEntryId && !childSessionKey) return null;
 	return (
-		<div className="px-4 py-2 flex gap-2 border-b border-slate-800 bg-slate-900/20">
-			{entryId ? (
-				<button type="button" onClick={() => onFork?.(entryId)} className="px-2 py-1 text-[11px] border border-slate-700 rounded-sm hover:border-[#11a4d4]">
-					Fork From Here
+		<div className="flex shrink-0 items-center gap-1">
+			{forkEntryId ? (
+				<button
+					type="button"
+					onClick={() => onFork?.(forkEntryId)}
+					className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-slate-700 bg-[#151f24]/80 text-slate-400 transition-colors hover:border-[#11a4d4] hover:text-[#11a4d4]"
+					title="Fork from here"
+					aria-label="Fork from here"
+				>
+					<GitBranch size={14} />
 				</button>
 			) : null}
-			{linkedSessionKey ? (
-				<button type="button" onClick={() => onOpenSession?.(linkedSessionKey)} className="px-2 py-1 text-[11px] border border-slate-700 rounded-sm hover:border-[#11a4d4]">
-					Open Child Session
+			{childSessionKey ? (
+				<button
+					type="button"
+					onClick={() => onOpenSession?.(childSessionKey)}
+					className="inline-flex h-8 w-8 items-center justify-center rounded-sm border border-slate-700 bg-[#151f24]/80 text-slate-400 transition-colors hover:border-[#11a4d4] hover:text-[#11a4d4]"
+					title="Open child session"
+					aria-label="Open child session"
+				>
+					<ExternalLink size={14} />
 				</button>
 			) : null}
 		</div>
