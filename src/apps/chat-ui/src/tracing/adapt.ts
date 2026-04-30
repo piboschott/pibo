@@ -70,6 +70,8 @@ function adaptSpanType(type: PiboTraceNode["type"]): SpanType {
 			return "tool.result";
 		case "agent.delegation":
 			return "agent.delegation";
+		case "agent.async":
+			return "agent.async";
 		case "execution.command":
 			return "tool.result";
 		case "yielded.run":
@@ -121,6 +123,13 @@ function spanAttributes(node: PiboTraceNode): Record<string, unknown> {
 		attributes["result.status"] = node.status === "done" ? "completed" : node.status;
 		attributes.linked_pibo_session_id = node.linkedPiboSessionId;
 	}
+	if (node.type === "agent.async") {
+		attributes["async_agent.target_agent"] = node.title;
+		attributes["async_agent.started_by"] = isRecord(node.input) ? node.input.startedBy : "pibo_run_start";
+		attributes["async_agent.query"] = isRecord(node.input) ? node.input.arguments : node.input;
+		attributes["result.status"] = node.status === "done" ? "started" : node.status;
+		attributes.linked_pibo_session_id = node.linkedPiboSessionId;
+	}
 	if (node.type === "yielded.run") {
 		attributes["run.notification"] = true;
 		attributes["run.status"] = node.status;
@@ -142,4 +151,8 @@ function toMicros(value?: string): number | undefined {
 
 function flattenSpans(spans: Span[]): Span[] {
 	return spans.flatMap((span) => [span, ...(span.children ? flattenSpans(span.children) : [])]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

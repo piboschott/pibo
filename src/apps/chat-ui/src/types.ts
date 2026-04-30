@@ -6,6 +6,7 @@ export type PiboTraceNodeType =
 	| "tool.call"
 	| "tool.result"
 	| "agent.delegation"
+	| "agent.async"
 	| "execution.command"
 	| "yielded.run"
 	| "error";
@@ -109,6 +110,7 @@ export type SpanType =
 	| "model.response"
 	| "model.reasoning"
 	| "agent.delegation"
+	| "agent.async"
 	| "yielded.run"
 	| "user.prompt"
 	| "user_input";

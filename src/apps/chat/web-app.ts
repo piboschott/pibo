@@ -268,9 +268,16 @@ function visibleSessionsInRoom(input: {
 	includeArchived: boolean;
 }): PiboSession[] {
 	const roomSessions: PiboSession[] = [];
+	const defaultRoom = input.state.roomStore.ensureDefaultRoom({
+		ownerScope: input.webSession.ownerScope,
+		principalId: principalIdFor(input.webSession),
+	});
+	const selectedRoomIsDefault = input.selectedRoomId === defaultRoom.id;
 	for (const session of input.sessions) {
-		const room = ensureSessionRoom(input.state, input.context, session, input.webSession);
-		if (room.id === input.selectedRoomId) roomSessions.push(roomSessionWithRoom(session, room.id));
+		const roomId = chatRoomIdFromMetadata(session.metadata);
+		if (roomId === input.selectedRoomId || (selectedRoomIsDefault && !roomId)) {
+			roomSessions.push(roomSessionWithRoom(session, input.selectedRoomId));
+		}
 	}
 	if (!roomSessions.some((session) => session.id === input.selectedSession.id)) {
 		roomSessions.push(roomSessionWithRoom(input.selectedSession, input.selectedRoomId));
@@ -760,6 +767,7 @@ function createChatHtml(): string {
 		.trace-node[data-type="model.reasoning"] { border-color: rgba(245,158,11,.45); }
 		.trace-node[data-type="tool.call"] { border-color: rgba(168,85,247,.45); }
 		.trace-node[data-type="agent.delegation"] { border-color: rgba(249,115,22,.55); }
+		.trace-node[data-type="agent.async"] { border-color: rgba(249,115,22,.55); }
 		.trace-node[data-type="execution.command"] { border-color: rgba(17,164,212,.42); }
 		.trace-node[data-type="error"] { border-color: rgba(239,68,68,.65); }
 		.trace-header { width: 100%; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px; padding: 9px 10px; background: #151f24; border: 0; text-align: left; }
@@ -918,6 +926,7 @@ function createChatHtml(): string {
 				"tool.call": "Tool Call",
 				"tool.result": "Tool Result",
 				"agent.delegation": "Agent Delegation",
+				"agent.async": "Async Agent",
 				"execution.command": "Execution Command",
 				"yielded.run": "Yielded Run",
 				"error": "Error"
@@ -932,6 +941,7 @@ function createChatHtml(): string {
 				"tool.call": "T",
 				"tool.result": "O",
 				"agent.delegation": "D",
+				"agent.async": "A",
 				"execution.command": "$",
 				"yielded.run": "Y",
 				"error": "!"
@@ -946,6 +956,7 @@ function createChatHtml(): string {
 				"tool.call": "tool.call",
 				"tool.result": "tool.result",
 				"agent.delegation": "agent.delegation",
+				"agent.async": "agent.async",
 				"execution.command": "tool.result",
 				"yielded.run": "tool.call",
 				"error": "tool.result"
@@ -960,6 +971,7 @@ function createChatHtml(): string {
 				"model.response": "Model Response",
 				"model.reasoning": "Reasoning",
 				"agent.delegation": "Agent Delegation",
+				"agent.async": "Async Agent",
 				"user.prompt": "User Prompt"
 			}[mapped] || mapped;
 		}
@@ -1011,6 +1023,15 @@ function createChatHtml(): string {
 					'<div class="delegation-card"><div class="delegation-title">Agent Delegation · ' + escapeText(node.title || "subagent") + '</div><div class="delegation-query">' + escapeText(short(node.summary || pretty(node.input), 220)) + '</div></div>' +
 					'<div class="span-section"><div class="span-section-title">Input</div>' + renderJson(node.input || {}) + '</div>' +
 					(node.output !== undefined ? '<div class="span-section"><div class="span-section-title output">Output</div>' + renderJson(node.output) + '</div>' : "");
+			}
+			if (node.type === "agent.async") {
+				const input = node.input && typeof node.input === "object" ? node.input : {};
+				const startedBy = input.startedBy || "pibo_run_start";
+				const runId = input.runId || node.runId || "";
+				return actions +
+					'<div class="delegation-card"><div class="delegation-title">Async Agent · ' + escapeText(node.title || "subagent") + '</div><div class="delegation-query">Started by ' + escapeText(startedBy) + (runId ? ' · ' + escapeText(runId) : "") + '</div></div>' +
+					'<div class="span-section"><div class="span-section-title">Input</div>' + renderJson(node.input || {}) + '</div>' +
+					(node.output !== undefined ? '<div class="span-section"><div class="span-section-title output">Run</div>' + renderJson(node.output) + '</div>' : "");
 			}
 			if (node.type === "error") {
 				return actions + '<div class="span-section"><div class="span-section-title">Error</div>' + renderJson(node.error || node.output || "") + '</div>';

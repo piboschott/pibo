@@ -36,6 +36,10 @@ type ForkActionResponse = {
 	};
 };
 
+type LoadBootstrapOptions = {
+	selectSession?: boolean;
+};
+
 export function App() {
 	countRender("App");
 	const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -115,13 +119,18 @@ export function App() {
 		};
 	}, []);
 
-	const loadBootstrap = useCallback(async (piboSessionId?: string, includeArchived = showArchivedRef.current, roomId?: string) => {
+	const loadBootstrap = useCallback(async (
+		piboSessionId?: string,
+		includeArchived = showArchivedRef.current,
+		roomId?: string,
+		options: LoadBootstrapOptions = {},
+	) => {
 		const requestId = bootstrapRequestId.current + 1;
 		bootstrapRequestId.current = requestId;
 		const data = await getBootstrap(piboSessionId, includeArchived, roomId);
 		if (requestId !== bootstrapRequestId.current) return data;
 		setBootstrap(data);
-		setSelectedPiboSessionId(data.selectedPiboSessionId);
+		if (options.selectSession !== false) setSelectedPiboSessionId(data.selectedPiboSessionId);
 		setSelectedRoomId(data.selectedRoomId);
 		return data;
 	}, []);
@@ -248,8 +257,8 @@ export function App() {
 		setSelectedRoomId(roomId);
 		setSelectedPiboSessionId(null);
 		setTraceView(null);
-		const data = await loadBootstrap(undefined, showArchivedRef.current, roomId);
-		setTraceLoadingSessionId(data.selectedPiboSessionId);
+		await loadBootstrap(undefined, showArchivedRef.current, roomId, { selectSession: false });
+		setTraceLoadingSessionId(null);
 		setArea("sessions");
 	}, [loadBootstrap]);
 
@@ -536,7 +545,9 @@ export function App() {
 						<>
 							<div className="h-14 px-4 bg-[#151f24] border-b border-slate-800 flex items-center justify-between">
 								<div className="min-w-0">
-									<h1 className="text-base font-semibold truncate">{currentTraceView?.title ?? selectedPiboSessionId}</h1>
+									<h1 className="text-base font-semibold truncate">
+										{currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
+									</h1>
 									<div className="font-mono text-[11px] text-slate-500 truncate">
 										{bootstrap.room?.name ?? selectedRoomId ?? "Room"} · {currentTraceView?.piboSessionId}{" "}
 										{currentTraceView ? `· ${currentTraceView.piSessionId}` : ""}
@@ -585,7 +596,7 @@ export function App() {
 							</div>
 							<TraceTimeline
 								trace={selectedTrace}
-								isLoading={traceLoadingSessionId === selectedPiboSessionId}
+								isLoading={Boolean(selectedPiboSessionId && traceLoadingSessionId === selectedPiboSessionId)}
 								showThinking={showThinking}
 								expandThinking={expandThinking}
 								sessionAgentProfile={bootstrap.session.profile}
@@ -1069,7 +1080,7 @@ function Composer({
 							void submit();
 						}
 					}}
-					placeholder={disabled ? "Loading selected room…" : "Message selected session or type /"}
+					placeholder={disabled ? "Select a session to message" : "Message selected session or type /"}
 					className="h-10 min-h-10 resize-none overflow-hidden bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm leading-5 outline-none focus:border-[#11a4d4] disabled:opacity-50 [scrollbar-gutter:stable]"
 				/>
 				<button
@@ -1363,16 +1374,30 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 			break;
 		case "TOOL_CALL_RESULT":
 			nodes = updateTraceNode(nodes, toolNodeId(event.toolCallId), (node) => ({
-				...node,
-				status: event.isError ? "error" : "done",
-				completedAt: createdAt,
-				output: event.result,
-				error: event.isError ? stringifyUnknown(event.result) : node.error,
+				...withAsyncAgentRunChild(
+					{
+						...node,
+						status: event.isError ? "error" : "done",
+						completedAt: createdAt,
+						output: event.result,
+						error: event.isError ? stringifyUnknown(event.result) : node.error,
+					},
+					view.piboSessionId,
+					createdAt,
+				),
 			}));
 			break;
-		case "AGENT_DELEGATION":
+		case "AGENT_DELEGATION": {
+			const id = event.toolCallId ? toolNodeId(event.toolCallId) : `event:subagent:${event.childPiboSessionId}`;
+			const existing = findTraceNode(nodes, id);
+			if (existing && isRunStartToolNode(existing)) {
+				nodes = updateTraceNode(nodes, id, (node) =>
+					withAsyncAgentDelegationChild(node, event, view.piboSessionId, createdAt),
+				);
+				break;
+			}
 			nodes = upsertTraceNode(nodes, {
-				id: event.toolCallId ? toolNodeId(event.toolCallId) : `event:subagent:${event.childPiboSessionId}`,
+				id,
 				piboSessionId: view.piboSessionId,
 				toolCallId: event.toolCallId,
 				type: "agent.delegation",
@@ -1385,6 +1410,7 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 				children: [],
 			});
 			break;
+		}
 		case "EXECUTION_RESULT":
 			if (isInternalSessionOperation(event.action)) break;
 			nodes = upsertTraceNode(nodes, {
@@ -1544,6 +1570,114 @@ function thinkingNodeId(eventId: string): string {
 
 function toolNodeId(toolCallId: string): string {
 	return `tool:${toolCallId}`;
+}
+
+function withAsyncAgentDelegationChild(
+	parent: PiboTraceNode,
+	event: Extract<ChatStreamEvent, { type: "AGENT_DELEGATION" }>,
+	piboSessionId: string,
+	startedAt: string,
+): PiboTraceNode {
+	const child = createAsyncAgentRunNode(parent, piboSessionId, startedAt, {
+		toolName: event.toolName,
+		subagentName: event.subagentName,
+		threadKey: event.threadKey,
+		linkedPiboSessionId: event.childPiboSessionId,
+	});
+	return child ? withTraceChild(parent, child) : parent;
+}
+
+function withAsyncAgentRunChild(parent: PiboTraceNode, piboSessionId: string, startedAt: string): PiboTraceNode {
+	const child = createAsyncAgentRunNode(parent, piboSessionId, startedAt);
+	return child ? withTraceChild(parent, child) : parent;
+}
+
+function withTraceChild(parent: PiboTraceNode, child: PiboTraceNode): PiboTraceNode {
+	const existing = parent.children.find((candidate) => candidate.id === child.id);
+	if (!existing) return { ...parent, children: [...parent.children, child] };
+	return {
+		...parent,
+		children: parent.children.map((candidate) =>
+			candidate.id === child.id
+				? {
+						...candidate,
+						...child,
+						runId: child.runId ?? candidate.runId,
+						linkedPiboSessionId: child.linkedPiboSessionId ?? candidate.linkedPiboSessionId,
+						children: candidate.children,
+					}
+				: candidate,
+		),
+	};
+}
+
+function createAsyncAgentRunNode(
+	parent: PiboTraceNode,
+	piboSessionId: string,
+	startedAt: string,
+	delegation?: { toolName: string; subagentName: string; threadKey?: string; linkedPiboSessionId?: string },
+): PiboTraceNode | undefined {
+	if (!isRunStartToolNode(parent)) return undefined;
+	const run = extractRunSnapshot(parent.output);
+	const input = isRecord(parent.input) ? parent.input : {};
+	const toolName = stringField(run?.toolName) || stringField(input.toolName) || delegation?.toolName;
+	if (!toolName || !toolName.startsWith("pibo_subagent_")) return undefined;
+	const runId = stringField(run?.runId);
+	const runStatus = stringField(run?.status);
+	const subagentName = delegation?.subagentName || toolName.slice("pibo_subagent_".length);
+	const completionPolicy = stringField(run?.completionPolicy) || stringField(input.completionPolicy);
+
+	return {
+		id: `${parent.id}:async-agent`,
+		parentId: parent.id,
+		piboSessionId,
+		eventId: parent.eventId,
+		toolCallId: parent.toolCallId,
+		runId,
+		type: "agent.async",
+		title: subagentName,
+		status: asyncAgentStatus(parent, runStatus),
+		startedAt,
+		completedAt: runStatus === "completed" || runStatus === "cancelled" ? parent.completedAt : undefined,
+		summary: `Started by ${parent.title}`,
+		input: {
+			startedBy: parent.title,
+			startToolCallId: parent.toolCallId,
+			toolName,
+			subagentName,
+			runId,
+			completionPolicy,
+			arguments: input.arguments,
+			threadKey: delegation?.threadKey,
+		},
+		output: run,
+		error: parent.error,
+		linkedPiboSessionId: delegation?.linkedPiboSessionId ?? parent.linkedPiboSessionId,
+		children: [],
+	};
+}
+
+function isRunStartToolNode(node: PiboTraceNode): boolean {
+	return node.type === "tool.call" && node.title === "pibo_run_start";
+}
+
+function extractRunSnapshot(value: unknown): Record<string, unknown> | undefined {
+	if (!isRecord(value)) return undefined;
+	if (typeof value.runId === "string" && typeof value.toolName === "string") return value;
+	if (isRecord(value.details) && typeof value.details.runId === "string" && typeof value.details.toolName === "string") {
+		return value.details;
+	}
+	return undefined;
+}
+
+function stringField(value: unknown): string {
+	return typeof value === "string" ? value : "";
+}
+
+function asyncAgentStatus(parent: PiboTraceNode, runStatus: string): PiboTraceNode["status"] {
+	if (parent.status === "error" || runStatus === "failed") return "error";
+	if (runStatus === "completed" || runStatus === "cancelled") return "done";
+	return "running";
 }
 
 function isInternalSessionOperation(action: string): boolean {

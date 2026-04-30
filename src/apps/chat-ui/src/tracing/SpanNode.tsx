@@ -85,6 +85,12 @@ const spanTypeConfigs: Record<SpanType, SpanTypeConfig> = {
 		borderColor: "border-orange-500",
 		label: "Agent Delegation",
 	},
+	"agent.async": {
+		color: "text-orange-500",
+		bgColor: "bg-orange-500/20",
+		borderColor: "border-orange-500",
+		label: "Async Agent",
+	},
 	"yielded.run": {
 		color: "text-[#11a4d4]",
 		bgColor: "bg-[#11a4d4]/20",
@@ -449,6 +455,32 @@ const SpanContent = memo(function SpanContent({ span }: { span: Span }) {
 		);
 	}
 
+	if (spanType === "agent.async") {
+		const targetAgent = attributes["async_agent.target_agent"] as string | undefined;
+		const query = attributes["async_agent.query"];
+		const startedBy = attributes["async_agent.started_by"] as string | undefined;
+		const runId = attributes.run_id as string | undefined;
+		const resultStatus = attributes["result.status"] as string | undefined;
+		return (
+			<>
+				{errorBanner}
+				<div className="p-4 border-b border-orange-500/20 bg-orange-500/5">
+					<div className="flex flex-wrap items-center gap-2 mb-2">
+						<GitBranch size={14} className="text-orange-500" />
+						<span className="text-sm font-medium text-orange-500">Async agent started:</span>
+						<span className="text-sm font-semibold text-slate-200">{targetAgent || "unknown"} agent</span>
+						{resultStatus ? <span className="px-2 py-0.5 text-[10px] font-bold rounded-sm bg-orange-500/15 text-orange-400">{resultStatus.toUpperCase()}</span> : null}
+					</div>
+					<div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+						<span>Started by {startedBy || "pibo_run_start"}</span>
+						{runId ? <span>{runId}</span> : null}
+					</div>
+					{query ? <div className="text-xs text-slate-400 font-mono italic line-clamp-2">"{stringify(query)}"</div> : null}
+				</div>
+			</>
+		);
+	}
+
 	if (spanType === "agent.run") {
 		return (
 			<div className="flex flex-col">
@@ -546,6 +578,8 @@ function SpanIcon({ type, className }: { type: SpanType; className?: string }) {
 		case "model.reasoning":
 			return <Lightbulb {...props} />;
 		case "agent.delegation":
+			return <GitBranch {...props} />;
+		case "agent.async":
 			return <GitBranch {...props} />;
 		case "yielded.run":
 			return <Bell {...props} />;
