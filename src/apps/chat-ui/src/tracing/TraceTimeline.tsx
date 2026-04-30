@@ -168,10 +168,10 @@ export function TraceTimeline({
 				</div>
 			</div>
 
-			<div ref={scrollRef} onScroll={updateBottomLock} className="flex-1 overflow-auto p-6">
-				<div className="relative w-max min-w-full pr-6" style={timelineContentStyle}>
-					{spanTree.length ? (
-						spanTree.map((span) => (
+			<div ref={scrollRef} onScroll={updateBottomLock} className="flex-1 overflow-auto">
+				{spanTree.length ? (
+					<div className="relative w-max min-w-full p-6 pr-12" style={timelineContentStyle}>
+						{spanTree.map((span) => (
 							<SpanNode
 								key={span.id}
 								span={span}
@@ -182,12 +182,12 @@ export function TraceTimeline({
 								onFork={onFork}
 								onOpenSession={onOpenSession}
 							/>
-						))
-					) : (
-						<EmptyTraceState />
-					)}
-					{isStreaming ? <StreamingIndicator /> : null}
-				</div>
+						))}
+						{isStreaming ? <StreamingIndicator /> : null}
+					</div>
+				) : (
+					<EmptyTraceState />
+				)}
 			</div>
 		</section>
 	);
@@ -257,7 +257,7 @@ function TraceLoadingIndicator() {
 
 function EmptyTraceState() {
 	return (
-		<div className="flex min-h-[18rem] items-center justify-center" style={{ width: "var(--trace-readable-width)" }}>
+		<div className="flex min-h-full items-center justify-center p-6">
 			<div className="flex max-w-md flex-col items-center text-center">
 				<div className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm border border-[#11a4d4]/35 bg-[#11a4d4]/10 text-[#11a4d4]">
 					<MessageSquarePlus size={22} />
