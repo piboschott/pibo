@@ -739,6 +739,66 @@ test("chat trace renders run notifications as yielded run nodes", async () => {
 	assert.match(view.nodes[0].summary, /1 failed/);
 });
 
+test("chat trace shows async subagent runs under pibo_run_start tool calls", () => {
+	const nodes = traceNodesFromEntries("chat:test", [
+		{
+			type: "message",
+			id: "assistant-tools",
+			parentId: "user-1",
+			timestamp: "2026-04-29T08:00:01.000Z",
+			message: {
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "tool-1",
+						name: "pibo_run_start",
+						arguments: {
+							toolName: "pibo_subagent_qa_researcher",
+							arguments: { message: "inspect auth", threadKey: "qa" },
+							completionPolicy: "tracked",
+						},
+					},
+				],
+				stopReason: "toolUse",
+			},
+		},
+		{
+			type: "message",
+			id: "result-1",
+			parentId: "assistant-tools",
+			timestamp: "2026-04-29T08:00:02.000Z",
+			message: {
+				role: "toolResult",
+				toolCallId: "tool-1",
+				toolName: "pibo_run_start",
+				content: [{ type: "text", text: "Started yielded run run_1." }],
+				details: {
+					runId: "run_1",
+					kind: "tool",
+					ownerPiboSessionId: "chat:test",
+					status: "running",
+					completionPolicy: "tracked",
+					consumed: false,
+					toolName: "pibo_subagent_qa_researcher",
+					createdAt: "2026-04-29T08:00:02.000Z",
+					updatedAt: "2026-04-29T08:00:02.000Z",
+				},
+				isError: false,
+			},
+		},
+	]);
+
+	assert.equal(nodes.length, 1);
+	assert.equal(nodes[0].type, "tool.call");
+	assert.equal(nodes[0].title, "pibo_run_start");
+	assert.equal(nodes[0].children.length, 1);
+	assert.equal(nodes[0].children[0].type, "agent.async");
+	assert.equal(nodes[0].children[0].title, "qa_researcher");
+	assert.equal(nodes[0].children[0].runId, "run_1");
+	assert.equal(nodes[0].children[0].input.startedBy, "pibo_run_start");
+});
+
 test("chat trace groups tool calls with the final assistant response", () => {
 	const nodes = traceNodesFromEntries("chat:test", [
 		{
