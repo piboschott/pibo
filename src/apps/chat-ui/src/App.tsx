@@ -386,6 +386,7 @@ export function App() {
 	if (!bootstrap) {
 		return <div className="min-h-screen bg-[#101d22] text-slate-300 grid place-items-center">Loading Pibo Chat...</div>;
 	}
+	const roomsSupported = Boolean(bootstrap.selectedRoomId || bootstrap.room || bootstrap.rooms.length);
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[56px_1fr]">
@@ -425,7 +426,7 @@ export function App() {
 					<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
 						<span>{area}</span>
 						<div className="flex items-center gap-1">
-							{area === "sessions" ? (
+							{area === "sessions" && roomsSupported ? (
 								<button
 									type="button"
 									onClick={() => void createRoom()}
@@ -475,18 +476,20 @@ export function App() {
 					</div>
 					{area === "sessions" ? (
 						<div className="p-2 space-y-3">
-							<div>
-								<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Rooms</div>
-								{bootstrap.rooms.map((room) => (
-									<RoomNode
-										key={room.id}
-										room={room}
-										selectedRoomId={selectedRoomId}
-										onSelect={(roomId) => void selectRoom(roomId)}
-										onUpdate={(roomId, input) => void updateRoom(roomId, input)}
-									/>
-								))}
-							</div>
+							{roomsSupported ? (
+								<div>
+									<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Rooms</div>
+									{bootstrap.rooms.map((room) => (
+										<RoomNode
+											key={room.id}
+											room={room}
+											selectedRoomId={selectedRoomId}
+											onSelect={(roomId) => void selectRoom(roomId)}
+											onUpdate={(roomId, input) => void updateRoom(roomId, input)}
+										/>
+									))}
+								</div>
+							) : null}
 							<div>
 								<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Sessions</div>
 								{bootstrap.sessions.map((session) => (
