@@ -196,6 +196,16 @@ export type PiboAssistantMessageEvent = {
 	text: string;
 };
 
+export type PiboSubagentSessionEvent = {
+	type: "subagent_session";
+	piboSessionId: string;
+	toolCallId?: string;
+	toolName: string;
+	subagentName: string;
+	childPiboSessionId: string;
+	threadKey?: string;
+};
+
 export type PiboThinkingStartedEvent = {
 	type: "thinking_started";
 	piboSessionId: string;
@@ -267,6 +277,7 @@ export type PiboOutputEvent =
 	| PiboToolExecutionStartedEvent
 	| PiboToolExecutionUpdatedEvent
 	| PiboToolExecutionFinishedEvent
+	| PiboSubagentSessionEvent
 	| PiboAssistantMessageEvent
 	| { type: "execution_result"; piboSessionId: string; eventId?: string; action: PiboExecutionAction; result: unknown }
 	| { type: "session_error"; piboSessionId: string; eventId?: string; error: string }

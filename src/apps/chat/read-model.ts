@@ -211,6 +211,7 @@ function statusFromEvent(event: PiboOutputEvent): ChatWebSessionIndexItem["statu
 		event.type === "thinking_started" ||
 		event.type === "thinking_delta" ||
 		event.type === "thinking_finished" ||
+		event.type === "subagent_session" ||
 		event.type === "tool_execution_started" ||
 		event.type === "tool_execution_updated"
 	) {

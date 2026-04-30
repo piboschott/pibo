@@ -79,6 +79,7 @@ test("subagent tool definitions delegate execution to the provided runner", asyn
 
 	assert.equal(observed.message, "Find the relevant files.");
 	assert.equal(observed.threadKey, "files");
+	assert.equal(observed.toolCallId, "tool-call-1");
 	assert.equal(result.details.piboSessionId, "ps_child");
 	assert.equal(result.content[0].text, "helper result for helper");
 });
@@ -136,6 +137,48 @@ test("profiles can expose subagents as active router tools", async () => {
 
 		assert.equal(output.type, "execution_result");
 		assert.equal(output.result.activeTools.includes("pibo_subagent_helper"), true);
+	} finally {
+		await router.disposeAll();
+	}
+});
+
+test("subagent runner emits a parent link event before waiting for the child reply", async () => {
+	const store = new InMemoryPiboSessionStore();
+	store.create({
+		id: "ps_parent",
+		piSessionId: "parent-session",
+		channel: "pibo.test",
+		kind: "chat",
+		profile: "pibo-run-yield-qa",
+		ownerScope: "user:test",
+	});
+	const router = new PiboSessionRouter({ persistSession: false, sessionStore: store });
+	const events = [];
+	router.subscribe((event) => events.push(event));
+	router.emitMessageAndWaitForReply = async (event) => ({
+		type: "assistant_message",
+		piboSessionId: event.piboSessionId,
+		eventId: event.id,
+		text: "child reply",
+	});
+
+	try {
+		const runner = router.createSubagentRunner("ps_parent");
+		const result = await runner.runSubagent({
+			subagent: { name: "qa-researcher", targetProfile: "pibo-minimal" },
+			message: "check this",
+			threadKey: "qa",
+			toolCallId: "tool-1",
+		});
+		const linkEvent = events.find((event) => event.type === "subagent_session");
+
+		assert.equal(linkEvent.piboSessionId, "ps_parent");
+		assert.equal(linkEvent.toolCallId, "tool-1");
+		assert.equal(linkEvent.toolName, "pibo_subagent_qa_researcher");
+		assert.equal(linkEvent.subagentName, "qa-researcher");
+		assert.equal(linkEvent.childPiboSessionId, result.piboSessionId);
+		assert.equal(linkEvent.threadKey, "qa");
+		assert.equal(store.get(result.piboSessionId).parentId, "ps_parent");
 	} finally {
 		await router.disposeAll();
 	}

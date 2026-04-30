@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
 	ArrowDownToLine,
+	Bell,
 	Bolt,
 	Bot,
 	Brain,
@@ -81,6 +82,12 @@ const spanTypeConfigs: Record<SpanType, SpanTypeConfig> = {
 		bgColor: "bg-orange-500/20",
 		borderColor: "border-orange-500",
 		label: "Agent Delegation",
+	},
+	"yielded.run": {
+		color: "text-[#11a4d4]",
+		bgColor: "bg-[#11a4d4]/20",
+		borderColor: "border-[#11a4d4]",
+		label: "Yielded Run",
 	},
 	"user.prompt": {
 		color: "text-cyan-500",
@@ -371,6 +378,36 @@ function SpanContent({ span }: { span: Span }) {
 		);
 	}
 
+	if (spanType === "yielded.run") {
+		const notification = isRecord(toolOutput) ? toolOutput : isRecord(content) ? content : {};
+		return (
+			<div className="flex flex-col">
+				{errorBanner}
+				<div className="p-4 border-b border-[#11a4d4]/20 bg-[#11a4d4]/5">
+					<div className="flex items-center gap-2 mb-2">
+						<Bell size={14} className="text-[#11a4d4]" />
+						<span className="text-sm font-medium text-[#11a4d4]">Run notification</span>
+						<span className="text-xs font-mono text-slate-400">{typeof attributes.content === "string" ? attributes.content : name}</span>
+					</div>
+					<RunNotificationSummary notification={notification} />
+				</div>
+				<button
+					type="button"
+					onClick={() => setShowDetails((current) => !current)}
+					className="w-full px-4 py-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-200 bg-slate-900/40 hover:bg-slate-800/60 border-t border-slate-700/40 transition-colors"
+				>
+					{showDetails ? <EyeOff size={12} /> : <Eye size={12} />}
+					{showDetails ? "Hide Details" : "Show Details"}
+				</button>
+				{showDetails ? (
+					<div className="border-t border-slate-700/40 bg-[#0e1116] px-4 py-3">
+						<JsonRenderer value={notification} />
+					</div>
+				) : null}
+			</div>
+		);
+	}
+
 	if (spanType === "model.reasoning") {
 		const reasoning = attributes.reasoning || attributes["model.reasoning"] || content;
 		return (
@@ -503,6 +540,8 @@ function SpanIcon({ type, className }: { type: SpanType; className?: string }) {
 			return <Lightbulb {...props} />;
 		case "agent.delegation":
 			return <GitBranch {...props} />;
+		case "yielded.run":
+			return <Bell {...props} />;
 		case "user.prompt":
 			return <MessageSquare {...props} />;
 		case "user_input":
@@ -517,6 +556,45 @@ function getStatusStyles(status: SpanStatus, isActive: boolean) {
 	if (status === "OK") return { cardClass: "border-[#0bda57]/30", headerClass: "bg-[#0bda57]/5", glowClass: "" };
 	if (isActive) return { cardClass: "border-[#11a4d4]/50", headerClass: "bg-[#11a4d4]/5", glowClass: "shadow-[0_0_10px_rgba(17,164,212,0.1)]" };
 	return { cardClass: "border-slate-700", headerClass: "bg-[#151f24]", glowClass: "" };
+}
+
+function RunNotificationSummary({ notification }: { notification: Record<string, unknown> }) {
+	const groups = [
+		["completed", "text-green-500", notification.completed],
+		["failed", "text-red-400", notification.failed],
+		["cancelled", "text-slate-400", notification.cancelled],
+		["running", "text-[#11a4d4]", notification.running],
+	] as const;
+	const visible = groups
+		.map(([name, color, value]) => ({ name, color, runs: Array.isArray(value) ? value.filter(isRecord) : [] }))
+		.filter((group) => group.runs.length > 0);
+	if (visible.length === 0) {
+		return <div className="text-xs text-slate-400">No yielded run updates.</div>;
+	}
+	return (
+		<div className="grid gap-2">
+			{visible.map((group) => (
+				<div key={group.name}>
+					<div className={`mb-1 text-[10px] font-bold uppercase tracking-wider ${group.color}`}>{group.name}</div>
+					<div className="grid gap-1">
+						{group.runs.map((run, index) => (
+							<div key={`${group.name}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-sm border border-slate-700/60 bg-[#0e1116]/60 px-2 py-1.5">
+								<div className="min-w-0">
+									<div className="truncate font-mono text-xs text-slate-200">{stringField(run.toolName) || "yielded tool"}</div>
+									<div className="truncate font-mono text-[10px] text-slate-500">{stringField(run.runId)}</div>
+								</div>
+								<div className="font-mono text-[10px] uppercase text-slate-400">{stringField(run.status) || group.name}</div>
+							</div>
+						))}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function stringField(value: unknown): string {
+	return typeof value === "string" ? value : "";
 }
 
 function formatRelativeTime(currentUs: number, startUs: number): string {

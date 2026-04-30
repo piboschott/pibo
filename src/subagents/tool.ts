@@ -8,6 +8,7 @@ export type PiboSubagentRunInput = {
 	subagent: SubagentProfile;
 	message: string;
 	threadKey?: string;
+	toolCallId?: string;
 };
 
 export type PiboSubagentRunResult = {
@@ -79,11 +80,12 @@ function createSubagentToolDefinition(
 				}),
 			),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(toolCallId, params) {
 			const result = await runner.runSubagent({
 				subagent,
 				message: params.message,
 				threadKey: params.threadKey,
+				toolCallId,
 			});
 
 			return {

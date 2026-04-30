@@ -66,7 +66,7 @@ function adaptSpanType(type: PiboTraceNode["type"]): SpanType {
 		case "execution.command":
 			return "tool.result";
 		case "yielded.run":
-			return "tool.call";
+			return "yielded.run";
 		case "agent.turn":
 			return "agent.run";
 		case "error":
@@ -113,6 +113,10 @@ function spanAttributes(node: PiboTraceNode): Record<string, unknown> {
 		attributes["delegation.query"] = node.summary ?? node.input;
 		attributes["result.status"] = node.status === "done" ? "completed" : node.status;
 		attributes.linked_pibo_session_id = node.linkedPiboSessionId;
+	}
+	if (node.type === "yielded.run") {
+		attributes["run.notification"] = true;
+		attributes["run.status"] = node.status;
 	}
 	return attributes;
 }

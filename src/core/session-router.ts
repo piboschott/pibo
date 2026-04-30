@@ -48,6 +48,8 @@ export type PiboSessionRouterOptions = Omit<
 	forwardPiEvents?: boolean;
 };
 
+const DEFAULT_SUBAGENT_REPLY_TIMEOUT_MS = 10 * 60 * 1000;
+
 function profileForSession(
 	baseProfile: InitialSessionContext,
 	piSessionId: string,
@@ -309,9 +311,10 @@ export class PiboSessionRouter {
 
 	private createSubagentRunner(parentPiboSessionId: string): PiboSubagentRunner {
 		return {
-			runSubagent: async ({ subagent, message, threadKey }) => {
+			runSubagent: async ({ subagent, message, threadKey, toolCallId }) => {
 				this.assertSubagentDepth(parentPiboSessionId, subagent);
 				const child = this.resolveSubagentSession(parentPiboSessionId, subagent, threadKey);
+				const toolName = createSubagentToolName(subagent.name);
 
 				const event: PiboMessageEvent = {
 					type: "message",
@@ -321,7 +324,20 @@ export class PiboSessionRouter {
 					id: randomUUID(),
 				};
 
-				const reply = await this.emitMessageAndWaitForReply(event, subagent.timeoutMs);
+				this.emitOutput({
+					type: "subagent_session",
+					piboSessionId: parentPiboSessionId,
+					toolCallId,
+					toolName,
+					subagentName: subagent.name,
+					childPiboSessionId: child.id,
+					threadKey: typeof child.metadata?.threadKey === "string" ? child.metadata.threadKey : undefined,
+				});
+
+				const reply = await this.emitMessageAndWaitForReply(
+					event,
+					subagent.timeoutMs ?? DEFAULT_SUBAGENT_REPLY_TIMEOUT_MS,
+				);
 				return { piboSessionId: child.id, eventId: event.id!, reply };
 			},
 		};

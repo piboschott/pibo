@@ -113,6 +113,26 @@ test("chat read model keeps sessions running after live thinking finishes", () =
 	readModel.close();
 });
 
+test("chat read model keeps parent sessions running after subagent link events", () => {
+	const readModel = new ChatWebReadModel(":memory:");
+	const session = createTestSession();
+	readModel.recordEvent(
+		{
+			type: "subagent_session",
+			piboSessionId: session.id,
+			toolCallId: "tool-1",
+			toolName: "pibo_subagent_qa_researcher",
+			subagentName: "qa-researcher",
+			childPiboSessionId: "ps_child",
+			threadKey: "qa",
+		},
+		session,
+	);
+
+	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === session.id)?.status, "running");
+	readModel.close();
+});
+
 test("chat trace preserves assistant content part order", () => {
 	const nodes = traceNodesFromEntries("chat:test", [
 		{
@@ -603,6 +623,68 @@ test("chat trace hides internal fork and switch execution results", async () => 
 		view.nodes.map((node) => [node.type, node.title]),
 		[["execution.command", "status"]],
 	);
+});
+
+test("chat trace renders run notifications as yielded run nodes", async () => {
+	const session = createTestSession();
+	const view = await buildTraceView({
+		session,
+		sessions: [session],
+		status: "running",
+		events: [
+			{
+				id: "event-1",
+				piboSessionId: session.id,
+				type: "message_queued",
+				createdAt: "2026-04-29T08:00:00.000Z",
+				payload: {
+					type: "message_queued",
+					piboSessionId: session.id,
+					eventId: "service-1",
+					queuedMessages: 1,
+					source: "service",
+					text: [
+						"<pibo_run_notification>",
+						JSON.stringify({
+							completed: [],
+							failed: [
+								{
+									runId: "run_1",
+									kind: "tool",
+									status: "failed",
+									toolName: "pibo_subagent_qa_researcher",
+									summary: "pibo_subagent_qa_researcher run failed.",
+								},
+							],
+							cancelled: [],
+							running: [],
+							instruction: "Use pibo_run_read for completed or failed runs.",
+						}),
+						"</pibo_run_notification>",
+					].join("\n"),
+				},
+			},
+			{
+				id: "event-2",
+				piboSessionId: session.id,
+				type: "message_started",
+				createdAt: "2026-04-29T08:00:00.010Z",
+				payload: {
+					type: "message_started",
+					piboSessionId: session.id,
+					eventId: "service-1",
+					source: "service",
+					text: "<pibo_run_notification>{}</pibo_run_notification>",
+				},
+			},
+		],
+	});
+
+	assert.equal(view.nodes.length, 1);
+	assert.equal(view.nodes[0].type, "yielded.run");
+	assert.equal(view.nodes[0].status, "error");
+	assert.equal(view.nodes[0].runId, "run_1");
+	assert.match(view.nodes[0].summary, /1 failed/);
 });
 
 test("chat trace groups tool calls with the final assistant response", () => {

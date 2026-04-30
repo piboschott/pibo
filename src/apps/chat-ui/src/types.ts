@@ -92,6 +92,7 @@ export type SpanType =
 	| "model.response"
 	| "model.reasoning"
 	| "agent.delegation"
+	| "yielded.run"
 	| "user.prompt"
 	| "user_input";
 

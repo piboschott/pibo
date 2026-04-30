@@ -94,6 +94,22 @@ type MessagePart = {
 	isError?: unknown;
 };
 
+type RunNotificationRun = {
+	runId?: unknown;
+	kind?: unknown;
+	status?: unknown;
+	toolName?: unknown;
+	summary?: unknown;
+};
+
+type RunNotificationPayload = {
+	completed?: unknown;
+	failed?: unknown;
+	cancelled?: unknown;
+	running?: unknown;
+	instruction?: unknown;
+};
+
 export async function loadPiSessionMetadata(
 	session: PiboSession,
 	cwd = process.cwd(),
@@ -336,6 +352,16 @@ function collectAssistantTurn(
 
 function createUserMessageNode(piboSessionId: string, entry: MessageSessionEntry, content: unknown): PiboTraceNode {
 	const text = extractText(content);
+	const notification = parseRunNotificationText(text);
+	if (notification) {
+		return createRunNotificationNode({
+			id: `entry:${entry.id}`,
+			entryId: entry.id,
+			piboSessionId,
+			startedAt: entry.timestamp,
+			notification,
+		});
+	}
 	return {
 		id: `entry:${entry.id}`,
 		entryId: entry.id,
@@ -529,7 +555,17 @@ function traceNodeFromEvent(
 	const base = { id, piboSessionId, eventId, startedAt: createdAt, children: [] as PiboTraceNode[] };
 
 	switch (event.type) {
-		case "message_queued":
+		case "message_queued": {
+			const notification = parseRunNotificationText(event.text);
+			if (event.source === "service" && notification) {
+				return createRunNotificationNode({
+					id,
+					piboSessionId,
+					eventId,
+					startedAt: createdAt,
+					notification,
+				});
+			}
 			return {
 				...base,
 				type: "user.message",
@@ -538,8 +574,10 @@ function traceNodeFromEvent(
 				summary: event.text,
 				output: event.text,
 			};
+		}
 		case "message_started":
 		case "message_finished":
+			if (event.source === "service") return undefined;
 			return {
 				...base,
 				id: eventId ? messageTurnNodeId(eventId) : id,
@@ -608,6 +646,19 @@ function traceNodeFromEvent(
 				children: [],
 			};
 		}
+		case "subagent_session":
+			return {
+				...base,
+				id: event.toolCallId ? `tool:${event.toolCallId}` : id,
+				toolCallId: event.toolCallId,
+				type: "agent.delegation",
+				title: event.toolName,
+				status: sessionStatus === "running" ? "running" : "done",
+				summary: event.subagentName,
+				input: { subagentName: event.subagentName, threadKey: event.threadKey },
+				linkedPiboSessionId: event.childPiboSessionId,
+				children: [],
+			};
 		case "execution_result":
 			if (isInternalSessionOperation(event.action)) return undefined;
 			return {
@@ -820,6 +871,7 @@ function nestTraceNodes(nodes: PiboTraceNode[]): PiboTraceNode[] {
 
 function mergeToolEvent(target: PiboTraceNode, update: PiboTraceNode): void {
 	target.status = update.status;
+	target.summary = update.summary ?? target.summary;
 	target.input = update.input ?? target.input;
 	target.output = update.output ?? target.output;
 	target.error = update.error ?? target.error;
@@ -891,6 +943,83 @@ function stringifyPreview(value: unknown): string {
 	} catch {
 		return String(value);
 	}
+}
+
+function parseRunNotificationText(text: string): RunNotificationPayload | undefined {
+	const trimmed = text.trim();
+	const start = "<pibo_run_notification>";
+	const end = "</pibo_run_notification>";
+	if (!trimmed.startsWith(start) || !trimmed.endsWith(end)) return undefined;
+
+	const jsonText = trimmed.slice(start.length, trimmed.length - end.length).trim();
+	try {
+		const parsed = JSON.parse(jsonText) as unknown;
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+		return parsed as RunNotificationPayload;
+	} catch {
+		return undefined;
+	}
+}
+
+function createRunNotificationNode(input: {
+	id: string;
+	piboSessionId: string;
+	eventId?: string;
+	entryId?: string;
+	startedAt?: string;
+	notification: RunNotificationPayload;
+}): PiboTraceNode {
+	const runs = runNotificationRuns(input.notification);
+	const singleRun = runs.length === 1 ? runs[0] : undefined;
+	const failedCount = countRunGroup(input.notification.failed);
+	const runningCount = countRunGroup(input.notification.running);
+	return {
+		id: input.id,
+		entryId: input.entryId,
+		piboSessionId: input.piboSessionId,
+		eventId: input.eventId,
+		runId: typeof singleRun?.runId === "string" ? singleRun.runId : undefined,
+		type: "yielded.run",
+		title: "Run Notification",
+		status: failedCount > 0 ? "error" : runningCount > 0 ? "running" : "done",
+		startedAt: input.startedAt,
+		summary: runNotificationSummary(input.notification),
+		output: input.notification,
+		children: [],
+	};
+}
+
+function runNotificationRuns(notification: RunNotificationPayload): RunNotificationRun[] {
+	return [
+		...runGroup(notification.completed),
+		...runGroup(notification.failed),
+		...runGroup(notification.cancelled),
+		...runGroup(notification.running),
+	];
+}
+
+function runGroup(value: unknown): RunNotificationRun[] {
+	return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function countRunGroup(value: unknown): number {
+	return Array.isArray(value) ? value.length : 0;
+}
+
+function runNotificationSummary(notification: RunNotificationPayload): string {
+	const parts = [
+		[countRunGroup(notification.completed), "completed"],
+		[countRunGroup(notification.failed), "failed"],
+		[countRunGroup(notification.cancelled), "cancelled"],
+		[countRunGroup(notification.running), "running"],
+	]
+		.filter(([count]) => Number(count) > 0)
+		.map(([count, label]) => `${count} ${label}`);
+	return parts.length ? parts.join(", ") : "No yielded run updates";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function cryptoSafeId(value: unknown): string {
