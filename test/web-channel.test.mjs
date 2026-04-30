@@ -67,6 +67,9 @@ async function startWebHostChannel(options = {}) {
 		getGatewayActions() {
 			return [];
 		},
+		getProfiles() {
+			return options.profiles ?? [];
+		},
 		getWebApps() {
 			return [createChatWebApp()];
 		},
@@ -174,6 +177,45 @@ test("chat web app creates user-owned sessions", async () => {
 		assert.equal(emitted.length, 1);
 		assert.equal(emitted[0].piboSessionId, payload.session.id);
 		assert.equal(emitted[0].text, "hello new session");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app creates sessions with selected agent profiles", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [
+			{ name: "pibo-minimal", aliases: ["minimal"] },
+			{ name: "pibo-run-yield-qa", aliases: ["yield-qa"] },
+		],
+	});
+
+	try {
+		const created = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ profile: "yield-qa" }),
+		});
+		assert.equal(created.status, 201);
+		const payload = await created.json();
+		assert.equal(payload.session.profile, "pibo-run-yield-qa");
+
+		const rejected = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ profile: "missing-profile" }),
+		});
+		assert.equal(rejected.status, 400);
+		assert.deepEqual(await rejected.json(), { error: 'Unknown profile "missing-profile"' });
 	} finally {
 		await channel.stop?.();
 	}

@@ -25,6 +25,10 @@ type ChatWebAppState = {
 	unsubscribe?: () => void;
 };
 
+type ChatSessionCreateBody = {
+	profile?: unknown;
+};
+
 const CHAT_UI_DIST_DIR = resolve(process.cwd(), "dist/apps/chat-ui");
 
 function writeSse(controller: ReadableStreamDefaultController<Uint8Array>, event: string, payload: unknown): void {
@@ -194,14 +198,40 @@ function resolveRequestedSession(
 function createPersonalChatSession(
 	context: PiboWebAppContext,
 	webSession: PiboWebSession,
-	defaultProfile: string,
+	profile: string,
 ): PiboSession {
 	return context.channelContext.createSession({
 		channel: CHAT_WEB_CHANNEL,
 		kind: "chat",
-		profile: defaultProfile,
+		profile,
 		ownerScope: webSession.ownerScope,
 	});
+}
+
+function resolveCreateSessionProfile(
+	context: PiboWebAppContext,
+	defaultProfile: string,
+	requestedProfile: unknown,
+): string {
+	if (requestedProfile === undefined) return defaultProfile;
+	if (typeof requestedProfile !== "string" || requestedProfile.trim().length === 0) {
+		throw new PiboWebHttpError("Profile must be a non-empty string", 400);
+	}
+
+	const profileName = requestedProfile.trim();
+	const profiles = context.channelContext.getProfiles?.() ?? [];
+	if (!profiles.length) {
+		if (profileName === defaultProfile) return defaultProfile;
+		throw new PiboWebHttpError(`Unknown profile "${profileName}"`, 400);
+	}
+
+	const matched = profiles.find(
+		(profile) => profile.name === profileName || profile.aliases.includes(profileName),
+	);
+	if (!matched) {
+		throw new PiboWebHttpError(`Unknown profile "${profileName}"`, 400);
+	}
+	return matched.name;
 }
 
 function indexOwnedSessions(readModel: ChatWebReadModel, sessions: PiboSession[]): void {
@@ -487,6 +517,7 @@ function createChatHtml(): string {
 		let pendingForkResult;
 		let pendingForkComposerText;
 		let showThinking = localStorage.getItem("pibo.chat.showThinking") === "true";
+		let selectedAgentProfile = localStorage.getItem("pibo.chat.newSessionProfile") || "";
 		let openNodes = new Set(JSON.parse(localStorage.getItem("pibo.chat.openNodes") || "[]"));
 		let commandIndex = 0;
 
@@ -700,9 +731,23 @@ function createChatHtml(): string {
 				}
 				bootstrap = data;
 				selectedPiboSessionId = selectedPiboSessionId || data.selectedPiboSessionId;
+				ensureSelectedAgentProfile();
 				renderSignedIn(data);
 				renderArea();
 				connectEvents();
+		}
+
+		function ensureSelectedAgentProfile() {
+			const agents = (bootstrap && bootstrap.agents) || [];
+			if (!agents.length) return "";
+			const exists = agents.some(function(agent) {
+				return agent.name === selectedAgentProfile || (agent.aliases || []).includes(selectedAgentProfile);
+			});
+			if (!selectedAgentProfile || !exists) {
+				selectedAgentProfile = bootstrap.session && bootstrap.session.profile || agents[0].name;
+			}
+			localStorage.setItem("pibo.chat.newSessionProfile", selectedAgentProfile);
+			return selectedAgentProfile;
 		}
 
 		function renderArea() {
@@ -747,8 +792,9 @@ function createChatHtml(): string {
 			await refreshBootstrap(false);
 			renderArea();
 		}
-		async function createSession() {
-			const created = await postJson("/api/chat/sessions", {});
+		async function createSession(profile) {
+			const selectedProfile = profile || ensureSelectedAgentProfile();
+			const created = await postJson("/api/chat/sessions", selectedProfile ? { profile: selectedProfile } : {});
 			selectedPiboSessionId = created.session && created.session.id;
 			connectEvents();
 			await refreshBootstrap(false);
@@ -842,11 +888,38 @@ function createChatHtml(): string {
 		}
 		function renderAgents() {
 			sessionTitleEl.textContent = "Agents";
-			sessionMetaEl.textContent = "V1 inventory, no profile persistence";
-			sessionTreeEl.innerHTML = '<div class="placeholder">Profiles are shown as inventory in V1.</div>';
-			contentEl.innerHTML = '<div class="trace-list">' + (bootstrap.agents || []).map(function(agent) {
-				return '<article class="trace-node open" data-type="agent.turn"><button class="trace-header"><span class="trace-icon">A</span><span><span class="trace-label">' + escapeText(agent.name) + '</span><span class="trace-summary">' + escapeText(agent.description || "No description") + '</span></span><span class="badge">mock</span></button><div class="trace-body"><pre class="payload">' + escapeText(pretty(agent)) + '</pre></div></article>';
+			sessionMetaEl.textContent = "Profile selection";
+			const agents = (bootstrap && bootstrap.agents) || [];
+			ensureSelectedAgentProfile();
+			sessionTreeEl.innerHTML = agents.map(function(agent) {
+				const active = agent.name === selectedAgentProfile ? " active" : "";
+				return '<button class="session-row' + active + '" data-profile="' + escapeText(agent.name) + '"><span></span><span><span class="session-title">' + escapeText(agent.name) + '</span><span class="session-id">' + escapeText((agent.aliases || []).join(", ") || "profile") + '</span></span><span class="status-dot"></span></button>';
+			}).join("");
+			sessionTreeEl.querySelectorAll("[data-profile]").forEach(function(button) {
+				button.addEventListener("click", function() {
+					selectedAgentProfile = button.dataset.profile;
+					localStorage.setItem("pibo.chat.newSessionProfile", selectedAgentProfile);
+					renderAgents();
+				});
+			});
+			contentEl.innerHTML = '<div class="trace-list">' + agents.map(function(agent) {
+				const selected = agent.name === selectedAgentProfile ? "selected" : "available";
+				return '<article class="trace-node open" data-type="agent.turn"><div class="trace-header"><span class="trace-icon">A</span><span><span class="trace-label">' + escapeText(agent.name) + '</span><span class="trace-summary">' + escapeText(agent.description || "No description") + '</span></span><span class="trace-actions"><button class="ghost profile-select" data-profile="' + escapeText(agent.name) + '">' + selected + '</button><button class="ghost profile-create" data-profile="' + escapeText(agent.name) + '">New Session</button></span></div><div class="trace-body"><pre class="payload">' + escapeText(pretty(agent)) + '</pre></div></article>';
 			}).join("") + '</div>';
+			contentEl.querySelectorAll(".profile-select").forEach(function(button) {
+				button.addEventListener("click", function() {
+					selectedAgentProfile = button.dataset.profile;
+					localStorage.setItem("pibo.chat.newSessionProfile", selectedAgentProfile);
+					renderAgents();
+				});
+			});
+			contentEl.querySelectorAll(".profile-create").forEach(function(button) {
+				button.addEventListener("click", function() {
+					selectedAgentProfile = button.dataset.profile;
+					localStorage.setItem("pibo.chat.newSessionProfile", selectedAgentProfile);
+					void createSession(selectedAgentProfile);
+				});
+			});
 		}
 		function renderSettings() {
 			sessionTitleEl.textContent = "Settings";
@@ -1099,8 +1172,9 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/sessions` && request.method === "POST") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				await readJsonBody<Record<string, never>>(request);
-				const created = createPersonalChatSession(context, webSession, defaultProfile);
+				const body = await readJsonBody<ChatSessionCreateBody>(request);
+				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
+				const created = createPersonalChatSession(context, webSession, profile);
 				state.readModel.upsertSession(created);
 				return responseJson({ session: created }, { status: 201 });
 			}

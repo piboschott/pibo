@@ -7,6 +7,8 @@ import { processSpanTree } from "./traceTree";
 type TraceTimelineProps = {
 	trace: Trace | null;
 	showThinking: boolean;
+	sessionAgentProfile?: string;
+	activeAgentProfile?: string;
 	onFork: (entryId: string) => void;
 	onOpenSession: (piboSessionId: string) => void;
 };
@@ -17,7 +19,14 @@ const timelineContentStyle = {
 
 const DEFAULT_EXPANSION_DEPTH = 1;
 
-export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: TraceTimelineProps) {
+export function TraceTimeline({
+	trace,
+	showThinking,
+	sessionAgentProfile,
+	activeAgentProfile,
+	onFork,
+	onOpenSession,
+}: TraceTimelineProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [expansionDepth, setExpansionDepth] = useState<SpanExpansionDepth>(DEFAULT_EXPANSION_DEPTH);
 	const [expansionSignal, setExpansionSignal] = useState(0);
@@ -42,6 +51,9 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 		[allSpans],
 	);
 	const isStreaming = trace?.status === "UNSET";
+	const showActiveAgentProfile = Boolean(
+		sessionAgentProfile && activeAgentProfile && activeAgentProfile !== sessionAgentProfile,
+	);
 
 	useEffect(() => {
 		if (isStreaming && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -76,13 +88,12 @@ export function TraceTimeline({ trace, showThinking, onFork, onOpenSession }: Tr
 		<section className="flex-1 flex flex-col bg-[#0c1214] relative overflow-hidden">
 			<div className="h-14 px-6 border-b border-slate-800 bg-[#1a262b]/80 flex items-center justify-between sticky top-0 z-20">
 				<div className="flex items-center gap-4">
-					<h2 className="text-sm font-bold uppercase tracking-wide flex items-center gap-2">
-						<GitBranch size={18} className="text-[#11a4d4]" />
-						Active Execution Flow
-					</h2>
-					<div className="flex items-center gap-2">
+					<GitBranch size={18} className="text-[#11a4d4]" aria-label="Execution flow" />
+					<div className="flex min-w-0 items-center gap-2">
 						{stats.active > 0 ? <Badge color="cyan">{stats.active} Active</Badge> : null}
 						{stats.completed > 0 ? <Badge color="green">{stats.completed} Done</Badge> : null}
+						{sessionAgentProfile ? <Badge color="transparent">{sessionAgentProfile}</Badge> : null}
+						{showActiveAgentProfile ? <Badge color="baby-blue">Active {activeAgentProfile}</Badge> : null}
 						{stats.error > 0 ? <Badge color="orange">{stats.error} Errors</Badge> : null}
 					</div>
 				</div>
@@ -184,14 +195,29 @@ function TimelineIconButton({
 	);
 }
 
-function Badge({ color, children }: { color: "cyan" | "green" | "orange"; children: ReactNode }) {
+function Badge({
+	color,
+	children,
+}: {
+	color: "cyan" | "green" | "orange" | "transparent" | "baby-blue";
+	children: ReactNode;
+}) {
 	const className =
 		color === "cyan"
 			? "bg-[#11a4d4]/20 text-[#11a4d4]"
 			: color === "green"
 				? "bg-[#0bda57]/20 text-[#0bda57]"
-				: "bg-[#ff6b00]/20 text-[#ff6b00]";
-	return <span className={`px-2 py-0.5 text-xs font-bold rounded-sm uppercase ${className}`}>{children}</span>;
+				: color === "orange"
+					? "bg-[#ff6b00]/20 text-[#ff6b00]"
+					: color === "baby-blue"
+						? "bg-[#bae6fd] text-[#0f172a]"
+						: "border border-slate-700 text-slate-300";
+	const casing = color === "transparent" || color === "baby-blue" ? "" : "uppercase";
+	return (
+		<span className={`max-w-52 truncate rounded-sm px-2 py-0.5 text-xs font-bold ${casing} ${className}`}>
+			{children}
+		</span>
+	);
 }
 
 function StreamingIndicator() {

@@ -12,11 +12,11 @@ export async function getTrace(piboSessionId: string): Promise<PiboSessionTraceV
 	return requestJson<PiboSessionTraceView>(`/api/chat/trace?piboSessionId=${encodeURIComponent(piboSessionId)}`);
 }
 
-export async function postSession(): Promise<CreateSessionData> {
+export async function postSession(profile?: string): Promise<CreateSessionData> {
 	return requestJson<CreateSessionData>("/api/chat/sessions", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: "{}",
+		body: JSON.stringify(profile ? { profile } : {}),
 	});
 }
 

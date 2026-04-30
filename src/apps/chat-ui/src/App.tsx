@@ -38,6 +38,7 @@ export function App() {
 	const [showThinking, setShowThinking] = useState(() => localStorage.getItem("pibo.chat.showThinking") === "true");
 	const [showRawEvents, setShowRawEvents] = useState(() => localStorage.getItem("pibo.chat.showRawEvents") === "true");
 	const [showArchived, setShowArchived] = useState(() => localStorage.getItem("pibo.chat.showArchived") === "true");
+	const [newSessionProfile, setNewSessionProfile] = useState(() => localStorage.getItem("pibo.chat.newSessionProfile") ?? "");
 	const [composerText, setComposerText] = useState("");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
@@ -140,6 +141,23 @@ export function App() {
 
 	const rawEvents = useMemo(() => compactRawEvents(traceView?.rawEvents ?? []), [traceView?.rawEvents]);
 
+	useEffect(() => {
+		if (!bootstrap?.agents.length) return;
+		const preferredProfile = newSessionProfile || bootstrap.session.profile;
+		if (profileExists(bootstrap.agents, preferredProfile)) {
+			if (newSessionProfile !== preferredProfile) {
+				setNewSessionProfile(preferredProfile);
+				localStorage.setItem("pibo.chat.newSessionProfile", preferredProfile);
+			}
+			return;
+		}
+		const fallbackProfile = profileExists(bootstrap.agents, bootstrap.session.profile)
+			? bootstrap.session.profile
+			: bootstrap.agents[0].name;
+		setNewSessionProfile(fallbackProfile);
+		localStorage.setItem("pibo.chat.newSessionProfile", fallbackProfile);
+	}, [bootstrap, newSessionProfile]);
+
 	const slashCommands = useMemo(() => {
 		const actions = bootstrap?.capabilities.actions ?? [];
 		const commands = actions.flatMap((action) =>
@@ -161,11 +179,11 @@ export function App() {
 		if (area === "sessions") await loadTrace(data.selectedPiboSessionId);
 	};
 
-	const createSession = async () => {
+	const createSession = async (profile = newSessionProfile) => {
 		if (creatingSession) return;
 		setCreatingSession(true);
 		try {
-			const created = await postSession();
+			const created = await postSession(profile || undefined);
 			setArea("sessions");
 			const data = await loadBootstrap(created.session.id);
 			await loadTrace(data.selectedPiboSessionId);
@@ -346,7 +364,26 @@ export function App() {
 							))}
 						</div>
 					) : area === "agents" ? (
-						<div className="p-3 text-sm text-slate-400">Profile inventory. V1 speichert keine Agent Templates.</div>
+						<div className="p-2">
+							{bootstrap.agents.map((agent) => (
+								<button
+									key={agent.name}
+									type="button"
+									onClick={() => {
+										setNewSessionProfile(agent.name);
+										localStorage.setItem("pibo.chat.newSessionProfile", agent.name);
+									}}
+									className={`w-full mb-1 px-2 py-2 border rounded-sm text-left ${
+										agent.name === newSessionProfile ? "border-[#11a4d4] bg-[#11a4d4]/10" : "border-transparent"
+									}`}
+								>
+									<span className="block text-sm truncate text-slate-200">{agent.name}</span>
+									<span className="block text-[10px] font-mono truncate text-slate-500">
+										{agent.aliases.length ? agent.aliases.join(", ") : "profile"}
+									</span>
+								</button>
+							))}
+						</div>
 					) : (
 						<div className="p-3 text-sm text-slate-400">Browser-local settings.</div>
 					)}
@@ -394,6 +431,8 @@ export function App() {
 							<TraceTimeline
 								trace={selectedTrace}
 								showThinking={showThinking}
+								sessionAgentProfile={bootstrap.session.profile}
+								activeAgentProfile={newSessionProfile}
 								onFork={forkFrom}
 								onOpenSession={(piboSessionId) => void selectSession(piboSessionId)}
 							/>
@@ -412,7 +451,16 @@ export function App() {
 							/>
 						</>
 					) : area === "agents" ? (
-						<AgentsView agents={bootstrap.agents} />
+						<AgentsView
+							agents={bootstrap.agents}
+							selectedProfile={newSessionProfile}
+							onSelect={(profile) => {
+								setNewSessionProfile(profile);
+								localStorage.setItem("pibo.chat.newSessionProfile", profile);
+							}}
+							onCreateSession={(profile) => void createSession(profile)}
+							creatingSession={creatingSession}
+						/>
 					) : (
 						<SettingsView showThinking={showThinking} setShowThinking={setShowThinking} />
 					)}
@@ -719,14 +767,64 @@ function cssPx(value: string, fallback = 0): number {
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function AgentsView({ agents }: { agents: BootstrapData["agents"] }) {
+function AgentsView({
+	agents,
+	selectedProfile,
+	onSelect,
+	onCreateSession,
+	creatingSession,
+}: {
+	agents: BootstrapData["agents"];
+	selectedProfile: string;
+	onSelect: (profile: string) => void;
+	onCreateSession: (profile: string) => void;
+	creatingSession: boolean;
+}) {
 	return (
 		<div className="p-6 overflow-auto">
 			<h1 className="text-sm font-bold uppercase tracking-wider mb-4">Agents</h1>
 			<div className="grid gap-3">
 				{agents.map((agent) => (
-					<div key={agent.name} className="border border-slate-700 bg-[#1a262b] rounded-sm p-4">
-						<div className="font-semibold">{agent.name}</div>
+					<div
+						key={agent.name}
+						className={`border bg-[#1a262b] rounded-sm p-4 ${
+							agent.name === selectedProfile ? "border-[#11a4d4]" : "border-slate-700"
+						}`}
+					>
+						<div className="flex items-center justify-between gap-3">
+							<div className="min-w-0">
+								<div className="font-semibold truncate">{agent.name}</div>
+								{agent.aliases.length ? (
+									<div className="font-mono text-[11px] text-slate-500 truncate">{agent.aliases.join(", ")}</div>
+								) : null}
+							</div>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => onSelect(agent.name)}
+									title="Select Agent Profile"
+									aria-label="Select Agent Profile"
+									className={`h-8 w-8 inline-flex items-center justify-center border rounded-sm ${
+										agent.name === selectedProfile ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"
+									}`}
+								>
+									<Check size={14} />
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										onSelect(agent.name);
+										onCreateSession(agent.name);
+									}}
+									disabled={creatingSession}
+									title="New Session With Profile"
+									aria-label="New Session With Profile"
+									className="h-8 w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+								>
+									<MessageSquarePlus size={14} />
+								</button>
+							</div>
+						</div>
 						<div className="text-sm text-slate-400 mt-1">{agent.description || "No description"}</div>
 					</div>
 				))}
@@ -785,6 +883,10 @@ function compactRawEvents(events: RawEvent[]): CompactRawEvent[] {
 		compacted.push({ ...event, count: 1 });
 	}
 	return compacted;
+}
+
+function profileExists(profiles: BootstrapData["agents"], name: string): boolean {
+	return profiles.some((profile) => profile.name === name || profile.aliases.includes(name));
 }
 
 function canMergeRawDelta(left: RawEvent, right: RawEvent): boolean {
