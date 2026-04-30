@@ -6,7 +6,7 @@ export async function getBootstrap(piboSessionId?: string, includeArchived = fal
 	if (includeArchived) params.set("includeArchived", "true");
 	if (roomId) params.set("roomId", roomId);
 	const suffix = params.size ? `?${params.toString()}` : "";
-	return requestJson<BootstrapData>(`/api/chat/bootstrap${suffix}`);
+	return normalizeBootstrap(await requestJson<Partial<BootstrapData>>(`/api/chat/bootstrap${suffix}`));
 }
 
 export async function getTrace(piboSessionId: string): Promise<PiboSessionTraceView> {
@@ -93,4 +93,23 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 		throw new Error(message);
 	}
 	return payload as T;
+}
+
+function normalizeBootstrap(payload: Partial<BootstrapData>): BootstrapData {
+	if (!payload.session) throw new Error("Invalid bootstrap response.");
+	const sessions = payload.sessions ?? [];
+	const selectedPiboSessionId = payload.selectedPiboSessionId ?? payload.session.id ?? sessions[0]?.piboSessionId ?? "";
+	return {
+		identity: payload.identity ?? { userId: "" },
+		session: payload.session,
+		room: payload.room,
+		selectedRoomId: payload.selectedRoomId ?? "",
+		selectedPiboSessionId,
+		rooms: payload.rooms ?? [],
+		sessions,
+		agents: payload.agents ?? [],
+		capabilities: {
+			actions: payload.capabilities?.actions ?? [],
+		},
+	};
 }
