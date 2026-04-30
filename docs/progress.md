@@ -34,7 +34,7 @@ Pibo is a minimal TypeScript wrapper around Pi Coding Agent. This file is a shor
 - Gateway channel sessions are backed by the SQLite Pibo Session store in `.pibo/pibo-sessions.sqlite`.
 - The local routed TUI adapter lives in `src/local/` and uses an in-process router instead of a gateway daemon.
 - An authenticated web gateway path exists through `npm run gateway:web`, split into Better Auth, a same-origin web host, and the chat web app.
-- The Chat Web App can create, rename, archive, and restore personal sessions; reconstructs trace nodes from Pi JSONL plus raw Pibo events; groups persisted tool calls under the final assistant response; filters empty reasoning artifacts from trace output; and streams live assistant/thinking deltas into running trace nodes.
+- The Chat Web App can create, rename, archive, and restore personal sessions; reconstructs trace nodes from Pi JSONL plus raw Pibo events; groups persisted tool calls under the final assistant response; filters empty reasoning artifacts from trace output; and streams compact AG-UI-inspired SSE frames into running trace nodes.
 - The Chat Web trace UI defaults to expansion depth `1`, provides compact icon controls for default, collapse all, expand all, and expand to nesting level, and keeps top-level messages readable without opening nested tool details.
 - The Chat Web composer starts as a one-line input, grows through five visible lines, scrolls internally afterward, preserves cursor position during normal edits, keeps the slash command selection scrolled into view, and uses a bottom-aligned send icon button.
 - The Chat Web raw event inspector is hidden behind an explicit debug toggle and compacts adjacent assistant/thinking deltas with the same `eventId` for readability.
@@ -149,6 +149,8 @@ Chat Web App
 ```
 
 The chat web path is the primary concrete channel example. It shows how a channel resolves identity to an owner scope, creates or selects Pibo Sessions, emits routed input events, observes normalized output events, and keeps auth outside the agent runtime.
+
+Live chat updates use same-origin SSE at `/api/chat/events`. The server keeps subscribing to normalized router output events, but `src/apps/chat/stream.ts` converts them into compact frames before writing `event: pibo`. Assistant and reasoning content are sent as delta frames, while lifecycle, tool, subagent, execution, and fallback raw frames keep the trace UI structurally current without polling the full trace after every token.
 
 ```mermaid
 flowchart LR

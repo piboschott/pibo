@@ -176,6 +176,22 @@ This avoids iframe and cross-origin complexity for V1. Apps can use normal same-
 
 When the web host sits behind a local reverse proxy, it reconstructs the public request origin from `X-Forwarded-Host` and `X-Forwarded-Proto` only for loopback proxy connections. This lets nginx map `http://4788.<lan-ip>.sslip.io` to `127.0.0.1:4788` without breaking chat mutation CSRF checks. Direct non-loopback clients cannot spoof those forwarded headers.
 
+### Chat Web Live Stream
+
+The Chat Web App exposes live updates through `GET /api/chat/events?piboSessionId=...` as server-sent events. This stream is intentionally a transport adapter over normalized `PiboOutputEvent` values, not a new source of truth.
+
+The adapter lives in `src/apps/chat/stream.ts`. It turns full router events into compact, AG-UI-inspired frames:
+
+- `RUN_STARTED`, `RUN_FINISHED`, and `RUN_ERROR` mark the lifecycle of a routed turn.
+- `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END` stream assistant text by delta.
+- `REASONING_MESSAGE_START`, `REASONING_MESSAGE_CONTENT`, and `REASONING_MESSAGE_END` stream reasoning text separately from visible assistant text.
+- `TOOL_CALL_START`, `TOOL_CALL_ARGS`, and `TOOL_CALL_RESULT` stream tool state without resending the whole event history.
+- `AGENT_DELEGATION` links subagent child sessions into the parent trace.
+- `EXECUTION_RESULT` carries wrapper action results.
+- `RAW_EVENT` is the compatibility fallback for output events without a compact frame yet.
+
+The HTTP response still uses plain SSE with `event: pibo`; the optimization is the payload shape. Content deltas send only the new token or character chunk plus a stable message id. The React chat UI applies these frames directly to the current trace view and only refreshes `/api/chat/trace` for lifecycle or structural updates. The raw Pibo event log remains persisted in the Chat Web Read Model for reconstruction and debugging.
+
 ## Local Routed TUI
 
 `src/local/` contains the explicit local routed TUI adapter. It starts a Pi TUI controller shell with builtin tools disabled, then routes normal input through an in-process `PiboSessionRouter`.
