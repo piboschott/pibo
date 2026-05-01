@@ -91,6 +91,7 @@ async function startWebHostChannel(options = {}) {
 				subagents: [],
 				contextFiles: [],
 				packages: [{ name: "pibo-run-control", description: "Run control", toolNames: ["pibo_run_start"] }],
+				piboTools: [],
 			};
 		},
 		upsertProfile(profile) {

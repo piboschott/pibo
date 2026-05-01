@@ -79,6 +79,7 @@ export type PiboContextFileInfo = {
 	path: string;
 	scope?: "global" | "agent";
 	source?: "plugin" | "managed";
+	pluginId?: string;
 	agentProfileName?: string;
 };
 
@@ -88,12 +89,19 @@ export type PiboCapabilityPackageInfo = {
 	toolNames: string[];
 };
 
+export type PiboCliToolContextInfo = {
+	name: string;
+	description: string;
+	snippet: string;
+};
+
 export type PiboCapabilityCatalog = {
 	nativeTools: PiboNativeToolInfo[];
 	skills: PiboSkillInfo[];
 	subagents: PiboSubagentInfo[];
 	contextFiles: PiboContextFileInfo[];
 	packages: PiboCapabilityPackageInfo[];
+	piboTools: PiboCliToolContextInfo[];
 };
 
 export type PiboProductEventSource = "core" | "plugin" | "web" | "filesystem" | "agent";

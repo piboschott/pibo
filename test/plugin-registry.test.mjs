@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { createDefaultPiboPluginRegistry } from "../dist/plugins/builtin.js";
 import { definePiboPlugin, PiboPluginRegistry } from "../dist/plugins/registry.js";
+import { findCliToolEntry } from "../dist/tools/registry.js";
+import { getToolPythonRuntimePaths } from "../dist/tools/python-runtime.js";
+
+async function withPiboHome(piboHome, run) {
+	const previous = process.env.PIBO_HOME;
+	process.env.PIBO_HOME = piboHome;
+	try {
+		return await run();
+	} finally {
+		if (previous === undefined) delete process.env.PIBO_HOME;
+		else process.env.PIBO_HOME = previous;
+	}
+}
 
 test("default plugin registry builds profiles from registered resources", () => {
 	const registry = createDefaultPiboPluginRegistry();
@@ -107,6 +123,28 @@ test("default plugin registry builds profiles from registered resources", () => 
 			slashCommands: [],
 		},
 	]);
+});
+
+test("capability catalog exposes installed pibo tool context hints", async () => {
+	const browserUse = findCliToolEntry("browser-use");
+	assert.ok(browserUse);
+	const piboHome = join(tmpdir(), `pibo-plugin-registry-tools-${Math.random().toString(36).slice(2)}`);
+
+	await withPiboHome(piboHome, async () => {
+		const paths = getToolPythonRuntimePaths(browserUse.name, browserUse.runtime);
+		mkdirSync(paths.binDir, { recursive: true });
+		writeFileSync(paths.executablePath, "#!/bin/sh\n");
+
+		const registry = createDefaultPiboPluginRegistry();
+		const catalog = registry.getCapabilityCatalog();
+		const browserUseCatalogEntry = catalog.piboTools.find((tool) => tool.name === "browser-use");
+
+		assert.ok(browserUseCatalogEntry);
+		assert.match(browserUseCatalogEntry.snippet, /tools env browser-use/);
+		assert.match(browserUseCatalogEntry.snippet, /tools browser-use lease acquire/);
+
+		rmSync(paths.rootDir, { recursive: true, force: true });
+	});
 });
 
 test("plugins can register profiles, gateway actions, and event listeners", async () => {

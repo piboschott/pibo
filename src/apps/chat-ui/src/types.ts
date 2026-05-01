@@ -158,9 +158,11 @@ export type AgentCatalog = {
 		path: string;
 		scope?: "global" | "agent";
 		source?: "plugin" | "managed";
+		pluginId?: string;
 		agentProfileName?: string;
 	}>;
 	packages: Array<{ name: string; description: string; toolNames: string[] }>;
+	piboTools: Array<{ name: string; description: string; snippet: string }>;
 };
 
 export type CustomAgentSubagent = {

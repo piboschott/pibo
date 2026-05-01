@@ -24,6 +24,7 @@ import type {
 	PiboProfileBuildContext,
 	PiboProfileDefinition,
 } from "./types.js";
+import { listInstalledCliToolAgentContexts } from "../tools/registry.js";
 
 export type PiboPluginRegistryOptions = {
 	plugins?: readonly PiboPlugin[];
@@ -85,7 +86,7 @@ export class PiboPluginRegistry {
 		}
 
 		this.pluginIds.add(plugin.id);
-		plugin.register(this.createApi());
+		plugin.register(this.createApi(plugin.id));
 	}
 
 	registerTool(tool: ToolProfile): void {
@@ -239,6 +240,7 @@ export class PiboPluginRegistry {
 				path: contextFile.path,
 				scope: contextFile.scope ?? "global",
 				source: contextFile.source ?? "plugin",
+				pluginId: contextFile.pluginId,
 				agentProfileName: contextFile.agentProfileName,
 			})),
 			packages: [
@@ -256,6 +258,7 @@ export class PiboPluginRegistry {
 					],
 				},
 			],
+			piboTools: listInstalledCliToolAgentContexts(),
 		};
 	}
 
@@ -323,15 +326,18 @@ export class PiboPluginRegistry {
 		return event;
 	}
 
-	private createApi(): PiboPluginApi {
+	private createApi(pluginId: string): PiboPluginApi {
+		const withPluginContext = (contextFile: ContextFileProfile): ContextFileProfile => (
+			contextFile.source === "managed" ? contextFile : { ...contextFile, pluginId: contextFile.pluginId ?? pluginId }
+		);
 		return {
 			registerTool: (tool) => this.registerTool(tool),
 			registerTools: (tools) => this.registerTools(tools),
 			registerSubagent: (subagent) => this.registerSubagent(subagent),
 			registerSubagents: (subagents) => this.registerSubagents(subagents),
 			registerSkill: (skill) => this.registerSkill(skill),
-			registerContextFile: (contextFile) => this.registerContextFile(contextFile),
-			upsertContextFile: (contextFile) => this.upsertContextFile(contextFile),
+			registerContextFile: (contextFile) => this.registerContextFile(withPluginContext(contextFile)),
+			upsertContextFile: (contextFile) => this.upsertContextFile(withPluginContext(contextFile)),
 			removeContextFile: (key) => this.removeContextFile(key),
 			registerProfile: (profile) => this.registerProfile(profile),
 			registerGatewayAction: (action) => this.registerGatewayAction(action),

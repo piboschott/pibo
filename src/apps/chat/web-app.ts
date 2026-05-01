@@ -2174,6 +2174,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						subagents: [],
 						contextFiles: [],
 						packages: [],
+						piboTools: [],
 					},
 					profiles: context.channelContext.getProfiles?.() ?? [],
 				});

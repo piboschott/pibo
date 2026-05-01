@@ -23,9 +23,10 @@ import {
 	SendHorizontal,
 	Trash2,
 	UserRound,
+	Wrench,
 	X,
 } from "lucide-react";
-import { deleteCustomAgent, deleteRoom, deleteSession, getBootstrap, getTrace, patchCustomAgent, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
+import { deleteCustomAgent, deleteRoom, deleteSession, getBootstrap, getTrace, linkContextFileFromPlugin, patchCustomAgent, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode } from "./types";
 import { adaptTrace } from "./tracing/adapt";
 import { TraceTimeline, type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
@@ -33,8 +34,10 @@ import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
 import { childTraceOrder, compareTraceOrder, liveTraceOrder } from "../../../shared/trace-order.js";
 import { ContextFilesView } from "./context/ContextFilesView";
+import { PiboToolsView } from "./context/PiboToolsView";
 
 type Area = "sessions" | "agents" | "context" | "settings";
+type ContextPanel = "context-files" | "pibo-tools";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string }
@@ -84,6 +87,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [composerText, setComposerText] = useState("");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
+	const [contextPanel, setContextPanel] = useState<ContextPanel>("context-files");
 	const [creatingRoom, setCreatingRoom] = useState(false);
 	const [deleteRoomTarget, setDeleteRoomTarget] = useState<PiboRoom | null>(null);
 	const [deleteRoomConfirmName, setDeleteRoomConfirmName] = useState("");
@@ -880,7 +884,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 							) : null}
 						</div>
 					) : area === "context" ? (
-						<ContextSidebar />
+						<ContextSidebar
+							activePanel={contextPanel}
+							onSelect={setContextPanel}
+							toolCount={bootstrap.agentCatalog?.piboTools.length ?? 0}
+						/>
 					) : (
 						<SettingsSidebar />
 					)}
@@ -982,7 +990,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 							/>
 						</>
 					) : area === "context" ? (
-						<ContextFilesView agentProfiles={contextAgentProfiles} />
+						contextPanel === "pibo-tools" ? (
+							<PiboToolsView tools={bootstrap.agentCatalog?.piboTools ?? []} />
+						) : (
+							<ContextFilesView agentProfiles={contextAgentProfiles} />
+						)
 					) : (
 						<SettingsView
 							showThinking={showThinking}
@@ -2019,6 +2031,31 @@ function AgentsView({
 		}
 	};
 
+	const createLinkedContextFileForDraft = async (contextFile: AgentCatalog["contextFiles"][number]) => {
+		if (readOnly || !designerAvailable || contextFile.source === "managed") return;
+		if (agentNameError) {
+			setLocalError(agentNameError);
+			return;
+		}
+		setSaving(true);
+		try {
+			const created = await linkContextFileFromPlugin(contextFile.key, {
+				scope: "agent",
+				agentProfileName: draftProfileName,
+			});
+			setCatalog((current) => current ? { ...current, contextFiles: [...current.contextFiles, created] } : current);
+			setDraft((current) => ({
+				...current,
+				contextFiles: current.contextFiles.includes(created.key) ? current.contextFiles : [...current.contextFiles, created.key],
+			}));
+			setLocalError(null);
+		} catch (caught) {
+			setLocalError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setSaving(false);
+		}
+	};
+
 	const deleteDraft = async () => {
 		if (!draft.id || !draft.profileName || !archivedDraft) return;
 		setSaving(true);
@@ -2174,7 +2211,7 @@ function AgentsView({
 							<button type="button" disabled={readOnly} onClick={() => setNewContextFileScope("global")} className={`px-2 py-1 text-xs rounded-sm ${newContextFileScope === "global" ? "bg-[#11a4d4]/20 text-sky-100" : "text-slate-500 hover:text-slate-300"}`}>Global</button>
 						</div>
 						<div className="grid grid-cols-2 max-[1100px]:grid-cols-1 gap-2">
-							{catalog ? visibleContextFiles.map((contextFile) => <CatalogToggle key={contextFile.key} disabled={readOnly} checked={draft.contextFiles.includes(contextFile.key)} title={contextFile.label ?? contextFile.key} description={contextFile.path} meta={contextFileMeta(contextFile)} onToggle={() => setDraft((current) => ({ ...current, contextFiles: toggleName(current.contextFiles, contextFile.key) }))} />) : <EmptyCatalog />}
+							{catalog ? visibleContextFiles.map((contextFile) => <CatalogToggle key={contextFile.key} disabled={readOnly} checked={draft.contextFiles.includes(contextFile.key)} title={contextFile.label ?? contextFile.key} description={contextFile.path} meta={contextFileMeta(contextFile)} actionLabel={contextFile.source === "plugin" ? "Link Copy" : undefined} actionDisabled={readOnly || saving || Boolean(agentNameError)} onAction={contextFile.source === "plugin" ? () => void createLinkedContextFileForDraft(contextFile) : undefined} onToggle={() => setDraft((current) => ({ ...current, contextFiles: toggleName(current.contextFiles, contextFile.key) }))} />) : <EmptyCatalog />}
 						</div>
 					</DesignerPanel>
 					<SubagentDesigner draft={draft} setDraft={setDraft} profileOptions={profileOptions} readOnly={readOnly} />
@@ -2363,20 +2400,51 @@ function SettingsSidebar() {
 	);
 }
 
-function ContextSidebar() {
+function ContextSidebar({
+	activePanel,
+	onSelect,
+	toolCount,
+}: {
+	activePanel: ContextPanel;
+	onSelect: Dispatch<SetStateAction<ContextPanel>>;
+	toolCount: number;
+}) {
 	return (
 		<div className="p-2">
 			<div className="mb-4">
 				<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Context</div>
 				<button
 					type="button"
-					className="mb-1 flex w-full items-center gap-2 border border-[#11a4d4] bg-[#11a4d4]/10 p-2 text-left"
+					onClick={() => onSelect("context-files")}
+					className={`mb-1 flex w-full items-center gap-2 border p-2 text-left ${
+						activePanel === "context-files"
+							? "border-[#11a4d4] bg-[#11a4d4]/10"
+							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+					}`}
 				>
 					<Layers size={13} className="text-[#11a4d4]" />
 					<div className="min-w-0">
 						<span className="block truncate text-sm text-slate-200">Context Files</span>
 						<span className="block truncate font-mono text-[10px] text-slate-500">managed-editor</span>
 					</div>
+				</button>
+				<button
+					type="button"
+					onClick={() => onSelect("pibo-tools")}
+					className={`flex w-full items-center gap-2 border p-2 text-left ${
+						activePanel === "pibo-tools"
+							? "border-[#11a4d4] bg-[#11a4d4]/10"
+							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+					}`}
+				>
+					<Wrench size={13} className="text-[#11a4d4]" />
+					<div className="min-w-0 flex-1">
+						<span className="block truncate text-sm text-slate-200">Pibo Tools</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">installed-tool-context</span>
+					</div>
+					<span className="inline-flex min-w-6 items-center justify-center border border-slate-700 bg-[#101d22] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
+						{toolCount}
+					</span>
 				</button>
 			</div>
 		</div>
@@ -2406,6 +2474,9 @@ function CatalogToggle({
 	title,
 	description,
 	meta,
+	actionLabel,
+	actionDisabled,
+	onAction,
 	onToggle,
 }: {
 	checked: boolean;
@@ -2413,6 +2484,9 @@ function CatalogToggle({
 	title: string;
 	description?: string;
 	meta?: string;
+	actionLabel?: string;
+	actionDisabled?: boolean;
+	onAction?: () => void;
 	onToggle: () => void;
 }) {
 	return (
@@ -2431,6 +2505,33 @@ function CatalogToggle({
 				<span className="block text-sm truncate text-slate-200">{title}</span>
 				{description ? <span className="block text-xs text-slate-500 truncate">{description}</span> : null}
 				{meta ? <span className="block font-mono text-[10px] text-slate-600 mt-1">{meta}</span> : null}
+				{actionLabel && onAction ? (
+					<span className="mt-2 block">
+						<span
+							role="button"
+							tabIndex={0}
+							onClick={(event) => {
+								event.preventDefault();
+								event.stopPropagation();
+								if (!actionDisabled) onAction();
+							}}
+							onKeyDown={(event) => {
+								if ((event.key === "Enter" || event.key === " ") && !actionDisabled) {
+									event.preventDefault();
+									event.stopPropagation();
+									onAction();
+								}
+							}}
+							className={`inline-flex h-7 items-center justify-center border px-2 text-[10px] uppercase tracking-wider ${
+								actionDisabled
+									? "border-slate-800 text-slate-600"
+									: "border-[#11a4d4]/70 text-[#7dd3fc] hover:border-[#11a4d4] hover:text-sky-100"
+							}`}
+						>
+							{actionLabel}
+						</span>
+					</span>
+				) : null}
 			</span>
 		</button>
 	);

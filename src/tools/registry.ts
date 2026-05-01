@@ -26,6 +26,12 @@ export interface CliToolStatus {
   homeDir: string;
 }
 
+export interface InstalledCliToolAgentContext {
+  name: string;
+  description: string;
+  snippet: string;
+}
+
 const MAX_AGENT_CONTEXT_SNIPPET_LENGTH = 480;
 const INSTALLED_TOOLS_CONTEXT_PATH = '.pibo/context/installed-pibo-tools.md';
 
@@ -92,13 +98,23 @@ export function findToolGuide(entry: CliToolEntry, guideName: string): ToolGuide
   return entry.guides.find((guide) => guide.name === guideName);
 }
 
+export function listInstalledCliToolAgentContexts(): InstalledCliToolAgentContext[] {
+  return REGISTRY
+    .filter((entry) => getCliToolStatus(entry).installed)
+    .map((entry) => ({
+      name: entry.name,
+      description: entry.description,
+      snippet: entry.agentContextSnippet,
+    }));
+}
+
 export function getInstalledCliToolContextFile(): { path: string; content: string } | undefined {
-  const installedEntries = REGISTRY.filter((entry) => getCliToolStatus(entry).installed);
+  const installedEntries = listInstalledCliToolAgentContexts();
   if (installedEntries.length === 0) return undefined;
 
   const sections = installedEntries.flatMap((entry) => [
     `## ${entry.name}`,
-    entry.agentContextSnippet,
+    entry.snippet,
     '',
   ]);
 

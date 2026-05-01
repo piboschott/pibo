@@ -18,10 +18,33 @@ export type ContextFileInfo = {
 	bytes?: number;
 	updatedAt?: string;
 	version?: string;
+	sourceRef?: string;
+	sourceHash?: string;
+	linkState: "plugin-only" | "linked-clean" | "linked-dirty" | "linked-stale" | "orphaned" | "managed-unlinked";
+	activeRevisionId?: string;
 };
 
 export type ContextFileDocument = ContextFileInfo & {
 	markdown: string;
+};
+
+export type ContextFileRevision = {
+	id: string;
+	kind: "source-snapshot" | "working";
+	contentHash: string;
+	createdAt: string;
+	actorId?: string;
+	basedOnRevisionId?: string;
+	sourceHashAtCreation?: string;
+	note?: string;
+	content: string;
+	active: boolean;
+};
+
+export type ContextFileDiff = {
+	base: { kind: "source" | "working"; contentHash?: string };
+	target: { kind: "source" | "working"; contentHash?: string };
+	chunks: Array<{ type: "equal" | "add" | "remove"; lines: string[] }>;
 };
 
 export type ProductEvent = {
@@ -98,14 +121,7 @@ export async function postContextFile(input: {
 	agentProfileName?: string;
 	markdown: string;
 }): Promise<{
-	file: AgentCatalog["contextFiles"][number] & {
-		managed: boolean;
-		dynamic: boolean;
-		editable: boolean;
-		removable: boolean;
-		exists: boolean;
-		absolutePath: string;
-	};
+	file: ContextFileDocument;
 }> {
 	return requestJson("/api/context-files", {
 		method: "POST",
@@ -129,6 +145,17 @@ export async function createContextFile(input: {
 	markdown: string;
 }): Promise<ContextFileDocument> {
 	return (await requestJson<{ file: ContextFileDocument }>("/api/context-files", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	})).file;
+}
+
+export async function linkContextFileFromPlugin(
+	key: string,
+	input: { label?: string; scope?: "global" | "agent"; agentProfileName?: string } = {},
+): Promise<ContextFileDocument> {
+	return (await requestJson<{ file: ContextFileDocument }>(`/api/context-files/${encodeURIComponent(key)}/link-from-plugin`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(input),
@@ -163,6 +190,43 @@ export async function removeContextFile(key: string, deleteFile: boolean): Promi
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ deleteFile }),
 	});
+}
+
+export async function listContextFileRevisions(key: string): Promise<{ revisions: ContextFileRevision[]; activeRevisionId?: string }> {
+	return requestJson(`/api/context-files/${encodeURIComponent(key)}/revisions`);
+}
+
+export async function diffContextFile(
+	key: string,
+	base: "source" | "working" = "source",
+	target: "source" | "working" = "working",
+): Promise<ContextFileDiff> {
+	const params = new URLSearchParams({ base, target });
+	return requestJson(`/api/context-files/${encodeURIComponent(key)}/diff?${params.toString()}`);
+}
+
+export async function resetContextFileToSource(key: string): Promise<ContextFileDocument> {
+	return (await requestJson<{ file: ContextFileDocument }>(`/api/context-files/${encodeURIComponent(key)}/reset-to-source`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	})).file;
+}
+
+export async function adoptContextFileSource(key: string): Promise<ContextFileDocument> {
+	return (await requestJson<{ file: ContextFileDocument }>(`/api/context-files/${encodeURIComponent(key)}/adopt-source`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	})).file;
+}
+
+export async function restoreContextFileRevision(key: string, revisionId: string): Promise<ContextFileDocument> {
+	return (await requestJson<{ file: ContextFileDocument }>(`/api/context-files/${encodeURIComponent(key)}/restore-revision`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ revisionId }),
+	})).file;
 }
 
 export type SaveCustomAgentInput = {
@@ -295,7 +359,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 	if (!response.ok) {
 		const message =
 			payload && typeof payload === "object" && "error" in payload ? String(payload.error) : "Request failed";
-		throw new Error(message);
+		const error = new Error(message) as Error & { status?: number; data?: unknown };
+		error.status = response.status;
+		error.data = payload;
+		throw error;
 	}
 	return payload as T;
 }
@@ -314,7 +381,12 @@ function normalizeBootstrap(payload: Partial<BootstrapData>): BootstrapData {
 		sessions,
 		agents: payload.agents ?? [],
 		customAgents: payload.customAgents ?? [],
-		agentCatalog: payload.agentCatalog,
+		agentCatalog: payload.agentCatalog
+			? {
+				...payload.agentCatalog,
+				piboTools: payload.agentCatalog.piboTools ?? [],
+			}
+			: payload.agentCatalog,
 		capabilities: {
 			actions: payload.capabilities?.actions ?? [],
 		},
