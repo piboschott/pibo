@@ -12,6 +12,7 @@ Pi remains the inner engine for model turns, tools, streaming, sessions, and com
 - `docs/agent-run-yield-spec.md` documents yielded agent runs and run-control tools.
 - `docs/chat-rooms-event-log.md` documents Chat Web rooms, default-room startup, durable chat events, unread cursors, SSE cursors, and idempotent sends.
 - `docs/progress.md` is the short implementation status snapshot.
+- `docs/codex-compact-terminal-design.md` documents the compact Codex-style Chat session view.
 
 ## Scripts
 
@@ -77,6 +78,8 @@ Pibo Sessions are stored in SQLite by default at `.pibo/pibo-sessions.sqlite`. A
 In the Chat Web App, personal sessions can be archived before deletion. Permanent deletion is available only for archived sessions and requires typing `Delete this session`; it removes the selected Pibo Session, child sessions, and their Chat Web read-model/event-log rows.
 
 The Chat Web App also has Pibo Rooms. Each user gets a locked `Personal Chat` room automatically. The personal room is shown separately from user-created rooms and cannot be renamed, archived, or deleted. User-created rooms can be archived first, then permanently deleted after typing the room name. Archived rooms remain inspectable and show their contained sessions, but they are read-only: no new sessions, messages, or execution actions can be started in that room. Permanent room deletion removes the room subtree, contained sessions, subagent session descendants, and Chat Web read-model/event-log rows.
+
+Within the Sessions area, the Chat Web App now has an internal session-view registry. The existing nested trace renderer remains the default `Trace` view, and the same `PiboSessionTraceView` data can also be rendered through a compact Codex-style `Terminal` view selected by `?view=trace|terminal` or by browser-local preference.
 
 Managed context files are now a first-class product capability. The `pibo.context-files` plugin exposes editable global and agent-scoped markdown context files through `/api/context-files`, persists managed file metadata under the Pibo home directory, and emits product events when managed files are created, changed, removed, or updated on disk.
 
