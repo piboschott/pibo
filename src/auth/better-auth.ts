@@ -18,6 +18,9 @@ export type BetterAuthServiceOptions = {
 	allowedEmails?: string[];
 };
 
+const SESSION_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 90;
+const SESSION_UPDATE_AGE_SECONDS = 60 * 60;
+
 export function createTrustedOrigins(baseURL: string, configuredOrigins?: string[]): string[] {
 	const origins = new Set<string>(configuredOrigins ?? []);
 	const parsed = new URL(baseURL);
@@ -94,6 +97,10 @@ export function createBetterAuthService(options: BetterAuthServiceOptions = {}):
 		secret,
 		database,
 		trustedOrigins: createTrustedOrigins(baseURL, trustedOrigins),
+		session: {
+			expiresIn: SESSION_EXPIRES_IN_SECONDS,
+			updateAge: SESSION_UPDATE_AGE_SECONDS,
+		},
 		socialProviders: {
 			google: {
 				clientId: googleClientId,

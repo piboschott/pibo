@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { ErrorCode, formatCliError } from '../cli-errors.js';
+import { ensureBrowserUseWrapper } from './browser-use-wrapper.js';
 import { detectDesktopEnv } from './desktop-env.js';
 import {
   doctorCliTool,
@@ -122,7 +123,9 @@ function printEnv(name: string): void {
   }
 
   const binDir = status.executablePath.replace(/\/[^/]+$/, '');
-  console.log(`export PATH="${binDir}:${status.homeDir}/bin:$PATH"`);
+  const wrapperPath = ensureBrowserUseWrapper(status);
+  const wrapperBinDir = wrapperPath ? wrapperPath.replace(/\/[^/]+$/, '') : `${status.homeDir}/bin`;
+  console.log(`export PATH="${wrapperBinDir}:${binDir}:$PATH"`);
   if (entry.runtime.homeEnvVar) console.log(`export ${entry.runtime.homeEnvVar}="${status.homeDir}"`);
   if (desktop.display) console.log(`export DISPLAY="${desktop.display}"`);
   if (desktop.waylandDisplay) console.log(`export WAYLAND_DISPLAY="${desktop.waylandDisplay}"`);

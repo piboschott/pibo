@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
@@ -59,6 +59,53 @@ test("pibo tools install supports a no-setup dry target", async () => {
 		assert.match(result.stdout, /pibo-home\/tools\/browser-use/);
 		assert.match(result.stdout, /desktop: /);
 		assert.match(result.stdout, /env: pibo tools env browser-use/);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pibo tools env wraps browser-use with the PIBo default profile", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-env-"));
+	try {
+		const env = { ...process.env, PIBO_HOME: join(cwd, "pibo-home") };
+		const result = await execFileAsync("node", [cliPath, "tools", "env", "browser-use"], { cwd, env });
+		const wrapperPath = join(env.PIBO_HOME, "tools", "browser-use", "home", "bin", "browser-use");
+		const realBinDir = join(env.PIBO_HOME, "tools", "browser-use", ".venv", "bin");
+
+		assert.ok(result.stdout.includes(`export PATH="${wrapperPath.replace(/\/browser-use$/, "")}:${realBinDir}:$PATH"`));
+		const wrapper = await readFile(wrapperPath, "utf8");
+		const mode = (await stat(wrapperPath)).mode & 0o777;
+		assert.match(wrapper, /--fresh-profile/);
+		assert.match(wrapper, /PIBO_BROWSER_USE_DEFAULT_PROFILE/);
+		assert.match(wrapper, /--profile "\$default_profile"/);
+		assert.equal(mode & 0o111, 0o111);
+
+		await mkdir(realBinDir, { recursive: true });
+		const realExecutablePath = join(realBinDir, "browser-use");
+		await writeFile(realExecutablePath, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+		await chmod(realExecutablePath, 0o755);
+
+		const browserUseHome = join(cwd, "browser-use-home");
+		const defaultProfile = await execFileAsync(wrapperPath, ["open", "https://example.test"], {
+			cwd,
+			env: { ...env, BROWSER_USE_HOME: browserUseHome },
+		});
+		assert.match(defaultProfile.stderr, /starting new session with Chrome profile "PIBo"/);
+		assert.match(defaultProfile.stdout, /--profile\nPIBo\nopen\nhttps:\/\/example\.test/);
+
+		const freshProfile = await execFileAsync(wrapperPath, ["--fresh-profile", "open", "https://example.test"], {
+			cwd,
+			env: { ...env, BROWSER_USE_HOME: browserUseHome },
+		});
+		assert.doesNotMatch(freshProfile.stdout, /--profile/);
+		assert.match(freshProfile.stdout, /open\nhttps:\/\/example\.test/);
+
+		const explicitProfile = await execFileAsync(wrapperPath, ["--profile", "Default", "open", "https://example.test"], {
+			cwd,
+			env: { ...env, BROWSER_USE_HOME: browserUseHome },
+		});
+		assert.doesNotMatch(explicitProfile.stderr, /starting new session/);
+		assert.match(explicitProfile.stdout, /--profile\nDefault\nopen\nhttps:\/\/example\.test/);
 	} finally {
 		await rm(cwd, { recursive: true, force: true });
 	}

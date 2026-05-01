@@ -48,7 +48,7 @@ export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {
 		plugins: [
 			...createDefaultPiboPlugins(),
 			createPiboBetterAuthPlugin(resolvedOptions.auth),
-			createPiboWebHostPlugin({ announce: false, ...resolvedOptions.web }),
+			createPiboWebHostPlugin({ announce: false, canonicalBaseURL: authBaseURL(resolvedOptions), ...resolvedOptions.web }),
 			createPiboChatWebPlugin(resolvedOptions.chat),
 		],
 	});

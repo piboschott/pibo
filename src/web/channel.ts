@@ -13,6 +13,7 @@ export type WebHostChannelOptions = {
 	host?: string;
 	port?: number;
 	announce?: boolean;
+	canonicalBaseURL?: string;
 };
 
 export type WebHostChannel = PiboChannel & {
@@ -63,6 +64,17 @@ function createRequestBaseURL(nodeRequest: IncomingMessage, host: string, port: 
 	return `http://${nodeRequest.headers.host ?? `${host}:${port}`}`;
 }
 
+function createCanonicalRedirect(request: Request, canonicalBaseURL: string | undefined): Response | undefined {
+	if (!canonicalBaseURL || (request.method !== "GET" && request.method !== "HEAD")) return undefined;
+	const url = new URL(request.url);
+	const canonical = new URL(canonicalBaseURL);
+	if (url.origin === canonical.origin) return undefined;
+	if (url.pathname !== "/" && !matchPrefix(url.pathname, "/apps") && !matchPrefix(url.pathname, "/api/auth")) {
+		return undefined;
+	}
+	return redirect(new URL(`${url.pathname}${url.search}`, canonical.origin).toString());
+}
+
 export function createWebHostChannel(options: WebHostChannelOptions = {}): WebHostChannel {
 	const host = options.host ?? DEFAULT_WEB_CHANNEL_HOST;
 	const port = options.port ?? DEFAULT_WEB_CHANNEL_PORT;
@@ -87,6 +99,11 @@ export function createWebHostChannel(options: WebHostChannelOptions = {}): WebHo
 			const baseURL = createRequestBaseURL(nodeRequest, host, port);
 			const request = await nodeRequestToWebRequest(nodeRequest, baseURL);
 			const url = new URL(request.url);
+			const canonicalRedirect = createCanonicalRedirect(request, options.canonicalBaseURL);
+			if (canonicalRedirect) {
+				await sendWebResponse(nodeResponse, canonicalRedirect);
+				return;
+			}
 
 			if (url.pathname.startsWith("/api/auth/")) {
 				await sendWebResponse(nodeResponse, await handleAuthRequest(request));

@@ -28,6 +28,8 @@ browser-use doctor
 
 Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. Keep running later \`browser-use\` commands in that same shell; a new shell needs the one-time initialization again. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, it includes detected desktop variables such as \`DISPLAY\`, \`WAYLAND_DISPLAY\`, and \`XAUTHORITY\` when a local desktop is available.
 
+The Pibo tool environment wraps \`browser-use\`: when a new browser daemon session is started, it defaults to the Chrome profile \`PIBo\`. Pass \`--fresh-profile\` to start a fresh temporary browser profile instead.
+
 ## Core Workflow
 
 1. Navigate: \`browser-use --headed --session NAME open <url>\` when a desktop is available; otherwise use \`browser-use --session NAME open <url>\`
@@ -45,10 +47,10 @@ After navigation, submit, keypress navigation, major DOM changes, or scroll on c
 ## Browser Modes
 
 \`\`\`bash
-browser-use --headed open <url>                # Preferred local mode when pibo tools env detected a desktop
-browser-use open <url>                         # Headless mode for servers without display
+browser-use --headed open <url>                # Starts with the PIBo Chrome profile by default
+browser-use --fresh-profile open <url>         # Starts a fresh temporary browser profile
 browser-use connect                            # Connect to local Chrome via CDP
-browser-use --profile "Default" open <url>     # Use a real Chrome profile
+browser-use --profile "Default" open <url>     # Use a specific real Chrome profile
 \`\`\`
 
 ## Commands
@@ -110,6 +112,18 @@ browser-use close --all
 \`\`\`
 
 ## Authenticated Browsing
+
+For the Pibo Chat Web App, prefer the existing authenticated session and inspect it before navigating:
+
+\`\`\`bash
+browser-use --session pibo-auth state
+\`\`\`
+
+If \`pibo-auth\` is unavailable and must be recreated, the default wrapper behavior is enough:
+
+\`\`\`bash
+browser-use --headed --session pibo-auth open http://4788.192.168.0.204.sslip.io/apps/chat
+\`\`\`
 
 For authenticated sites, prefer a real Chrome profile:
 

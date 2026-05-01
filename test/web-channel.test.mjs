@@ -38,7 +38,7 @@ async function startWebHostChannel(options = {}) {
 	const storageDir = mkdtempSync(join(tmpdir(), "pibo-web-channel-"));
 	const storagePath = join(storageDir, "chat.sqlite");
 	const agentStorePath = join(storageDir, "agents.sqlite");
-	const channel = createWebHostChannel({ port: 0, announce: false });
+	const channel = createWebHostChannel({ port: 0, announce: false, ...options.web });
 
 	await channel.start({
 		auth: options.auth,
@@ -142,6 +142,20 @@ test("chat web app serves the React shell for deep app links", async () => {
 		assert.equal(response.status, 200);
 		assert.match(response.headers.get("content-type") ?? "", /^text\/html/);
 		assert.match(await response.text(), /<div id="root"><\/div>/);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("web host redirects app links to the canonical auth origin", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		web: { canonicalBaseURL: "http://pibo.example.test:4788" },
+	});
+
+	try {
+		const response = await fetch(`${baseURL}/apps/chat/settings`, { redirect: "manual" });
+		assert.equal(response.status, 302);
+		assert.equal(response.headers.get("location"), "http://pibo.example.test:4788/apps/chat/settings");
 	} finally {
 		await channel.stop?.();
 	}
