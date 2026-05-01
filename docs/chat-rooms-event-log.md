@@ -54,6 +54,25 @@ Chat room data is stored in `.pibo/web-chat.sqlite`.
 
 `chat_events` stores durable room/session events with a monotone `stream_id`. It records user accepts/failures, router output events, event type, actor, optional `client_txn_id`, retention class, and JSON payload.
 
+## Unread State
+
+Unread badges are derived from durable stream cursors, not browser-local state.
+
+The Chat Web App keeps two cursor scopes:
+
+- Room unread badges use `pibo_room_members.last_read_stream_id`.
+- Session unread badges use `chat_session_reads.last_read_stream_id`.
+
+Room and session cursors are intentionally separate. A room can contain hidden, archived, or nested sessions, and the room badge must not drift from what the user has already opened. When the client calls:
+
+```text
+GET /api/chat/bootstrap?roomId=...&markRead=true
+```
+
+the server marks the selected room read up to the room's latest `chat_events.stream_id`. It also marks the currently visible room sessions read so the session tree and room list converge after the same read acknowledgement.
+
+Unread counts include durable user-visible chat messages only: accepted user messages from other actors and assistant messages. Live deltas and trace-only events do not increment badges.
+
 ## Message Sends
 
 The main send path is still compatible with the existing session API:

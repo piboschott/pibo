@@ -226,6 +226,8 @@ On first Chat Web bootstrap for an owner scope, Pibo ensures a personal default 
 
 The same SQLite file also contains `chat_events`, a durable event log with monotone `stream_id` values. The event log stores accepted user messages, failure records, router output events, actor information, optional `client_txn_id`, retention class, and JSON payload. It is written in parallel with the older `web_chat_events` read model so trace reconstruction stays compatible while room sync gains a durable source.
 
+Unread badges are cursor-based. Room badges use `pibo_room_members.last_read_stream_id`, while session badges use `chat_session_reads.last_read_stream_id`. Opening a room through bootstrap with `markRead=true` advances the room cursor and the visible session cursors to the latest durable stream positions, preventing room badges from staying unread after the visible session tree has been read.
+
 Message sends are idempotent when the client provides `clientTxnId`. The idempotency key is `(roomId, actorId, clientTxnId)`, so retries from the same user in the same room return the already accepted event instead of starting a second agent run.
 
 SSE live updates remain the transport, but persistent frames now carry frame-specific cursors:
