@@ -1,10 +1,10 @@
 ---
 title: Pibo Operator CLI Specification
-version: 1.0
+version: 1.1
 date_created: 2026-04-28
-last_updated: 2026-04-28
+last_updated: 2026-05-01
 owner: Pibo maintainers
-tags: [tool, cli, mcp, external-tools, config]
+tags: [tool, cli, mcp, external-tools, config, debug]
 ---
 
 # Introduction
@@ -19,6 +19,7 @@ This specification covers:
 - `pibo config`.
 - `pibo mcp`.
 - `pibo tools`.
+- `pibo debug`.
 - Runtime expectations for profile, TUI, gateway, and client commands.
 
 This specification does not define internal runtime event contracts.
@@ -30,6 +31,8 @@ This specification does not define internal runtime event contracts.
 - **MCP CLI**: The `pibo mcp` helper for configured Model Context Protocol servers.
 - **Curated CLI tool**: An external command-line tool managed by `pibo tools`.
 - **Pibo config**: Local JSON config stored at `.pibo/config.json`.
+- **Debug CLI**: The `pibo debug` helper for read-only diagnostics against Pibo-owned SQLite stores and Chat Web projections.
+- **Chat Web trace view**: The read-time projection produced by Chat Web trace reconstruction and returned by `/api/chat/trace`.
 
 ## 3. Requirements, Constraints & Guidelines
 
@@ -57,8 +60,18 @@ This specification does not define internal runtime event contracts.
 - **REQ-022**: `browser-use` MUST be pinned to `browser-use[cli]==0.12.6` in the curated tool registry.
 - **REQ-023**: Curated tools MUST install into isolated runtimes under `~/.pibo/tools/<name>`.
 - **REQ-024**: Runtime commands MUST remain available: `profile`, `tui`, `tui:routed`, `gateway`, `gateway:web`, and `client`.
+- **REQ-025**: `pibo debug` with no action or help flags MUST print compact debug discovery output.
+- **REQ-026**: `pibo debug db` MUST list known local SQLite stores and expose schema, table, and read-only query subcommands.
+- **REQ-027**: `pibo debug db query <store> <sql>` MUST open the target store read-only, reject mutating statements, accept one SQL statement, and apply a bounded default row limit when no explicit SQL `limit` is present.
+- **REQ-028**: `pibo debug session <url-or-pibo-session-id>` MUST summarize Pibo Session metadata, child sessions, Chat Web read-model state, and optional event headers without dumping full event payloads or Pi JSONL transcripts.
+- **REQ-029**: `pibo debug session` MUST warn when a canonical Chat URL room id does not match the selected Pibo Session's `metadata.chatRoomId`.
+- **REQ-030**: `pibo debug trace <pibo-session-id>` MUST rebuild the Chat Web trace view using the same reconstruction logic as `/api/chat/trace`.
+- **REQ-031**: `pibo debug trace --running-only` MUST filter output to trace nodes whose status is `running`.
+- **REQ-032**: `pibo debug events <pibo-session-id>` MUST inspect compact Chat Web event rows and MUST support selecting event types and payload field paths.
+- **REQ-033**: `pibo debug events --fields` MUST extract only the requested payload fields and MUST NOT dump the complete stored payload by default.
 - **CON-001**: The CLI is agent-facing; avoid large all-in-one help text.
 - **CON-002**: Optional external tools and MCP servers are configured on demand and are not bundled into the core runtime.
+- **CON-003**: The Debug CLI is local operator tooling. It MUST NOT become a profile tool or expose runtime capabilities to agents.
 
 ## 4. Interfaces & Data Contracts
 
@@ -69,6 +82,7 @@ This specification does not define internal runtime event contracts.
 | `config` | Manage local Pibo config |
 | `mcp` | Discover and call configured MCP servers |
 | `tools` | Install and inspect curated external CLI tools |
+| `debug` | Inspect local Pibo SQLite stores and Chat Web projections |
 | `profile` | Inspect a Pibo profile |
 | `tui` | Start direct Pi TUI |
 | `tui:routed` | Start local routed Pibo TUI |
@@ -125,6 +139,28 @@ type CliToolEntry = {
 };
 ```
 
+### Debug Stores
+
+| Store | Default path | Purpose |
+| --- | --- | --- |
+| `sessions` | `.pibo/pibo-sessions.sqlite` | Canonical Pibo Session metadata |
+| `chat` | `.pibo/web-chat.sqlite` | Chat Web read model, raw Pibo events, rooms, durable chat events |
+| `agents` | `.pibo/chat-agents.sqlite` | Agent Designer profiles |
+| `auth` | `.pibo/auth.sqlite` | Better Auth local auth data |
+| `bindings` | `.pibo/session-bindings.sqlite` | Local session binding data when present |
+
+### Debug Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pibo debug db stores` | List known stores and resolved paths |
+| `pibo debug db schema <store>` | List tables and columns for one store |
+| `pibo debug db tables <store>` | List table names for one store |
+| `pibo debug db query <store> <sql>` | Run one bounded read-only SQL query |
+| `pibo debug session <url-or-pibo-session-id>` | Summarize one Pibo Session and Chat Web read-model state |
+| `pibo debug trace <pibo-session-id>` | Rebuild one Chat Web trace view |
+| `pibo debug events <pibo-session-id>` | Inspect compact event headers and selected payload fields |
+
 ## 5. Acceptance Criteria
 
 - **AC-001**: Given `pibo`, When executed without args, Then output includes immediate commands and `Next: pibo <command> --help`.
@@ -134,14 +170,19 @@ type CliToolEntry = {
 - **AC-005**: Given `pibo mcp --help`, When executed, Then help remains progressive.
 - **AC-006**: Given `pibo tools guide browser-use browser-use`, When executed, Then one browser-use guide is printed.
 - **AC-007**: Given `pibo tools install browser-use --no-setup`, When executed, Then it prints the install target without installing runtime setup.
+- **AC-008**: Given `pibo debug --help`, When executed, Then output lists only the immediate debug command groups and next-step hints.
+- **AC-009**: Given `pibo debug db query sessions "select id from pibo_sessions"`, When executed, Then it returns bounded rows from the read-only sessions store.
+- **AC-010**: Given a Chat URL whose room id differs from session metadata, When `pibo debug session <url> --json` runs, Then the JSON output contains a mismatch warning.
+- **AC-011**: Given a Chat Web session with running trace nodes, When `pibo debug trace <id> --running-only` runs, Then output includes only running trace nodes.
+- **AC-012**: Given stored Chat Web events, When `pibo debug events <id> --type tool_execution_finished --fields toolName,toolCallId,result.details.status` runs, Then output includes those fields and omits full payload dumps.
 
 ## 6. Test Automation Strategy
 
 - **Test Levels**: CLI integration tests with built assets.
 - **Frameworks**: Node.js built-in test runner.
 - **Primary Command**: `npm test`.
-- **Focused Commands**: `node --test test/mcp-cli.test.mjs`, `node --test test/tools-cli.test.mjs`, `node --test test/config.test.mjs`.
-- **Manual Smoke Checks**: `npm run dev -- config keys`, `npm run dev -- tools list`, `npm run dev -- mcp`.
+- **Focused Commands**: `node --test test/mcp-cli.test.mjs`, `node --test test/tools-cli.test.mjs`, `node --test test/config.test.mjs`, `node --test test/debug-cli.test.mjs`.
+- **Manual Smoke Checks**: `npm run dev -- config keys`, `npm run dev -- tools list`, `npm run dev -- mcp`, `npm run dev -- debug trace ps_... --running-only`.
 
 ## 7. Rationale & Context
 
@@ -159,6 +200,7 @@ Pibo command output is optimized for agents discovering an unfamiliar CLI. Compa
 - **INF-001**: Project-local `.pibo/config.json`.
 - **INF-002**: Project-local or user-level MCP config files.
 - **INF-003**: Tool runtime directories under `~/.pibo/tools`.
+- **INF-004**: Local Pibo SQLite stores under `.pibo/` for debug inspection.
 
 ### Technology Platform Dependencies
 
@@ -177,6 +219,17 @@ pibo tools guides browser-use
 pibo tools guide browser-use browser-use
 ```
 
+### Debug Discovery Flow
+
+```bash
+pibo debug
+pibo debug db
+pibo debug db schema sessions
+pibo debug session /apps/chat/rooms/<room-id>/sessions/<pibo-session-id>
+pibo debug trace <pibo-session-id> --running-only
+pibo debug events <pibo-session-id> --type tool_execution_finished --fields toolName,toolCallId,result.details.status
+```
+
 ### Config List Values
 
 Both values are valid inputs for `auth.allowedEmails`:
@@ -191,9 +244,11 @@ pibo config set auth.allowedEmails '["alice@example.com","bob@example.com"]'
 - CLI tests pass.
 - `RULES.md` progressive discovery rule is preserved.
 - New CLI help text does not duplicate long guides across levels.
+- Debug output remains bounded by default and does not dump full Pi transcripts or full Chat Web event payloads.
 
 ## 11. Related Specifications / Further Reading
 
 - [RULES.md](../RULES.md)
 - [docs/mcp.md](../docs/mcp.md)
 - [docs/tools.md](../docs/tools.md)
+- [docs/architecture.md](../docs/architecture.md)

@@ -4,7 +4,10 @@ type ParsedOptions = {
 	positionals: string[];
 	json: boolean;
 	events: boolean;
+	runningOnly: boolean;
 	limit?: string;
+	type?: string;
+	fields?: string[];
 };
 
 export async function runDebugCli(argv = process.argv): Promise<void> {
@@ -20,6 +23,14 @@ export async function runDebugCli(argv = process.argv): Promise<void> {
 		}
 		if (args[0] === "session") {
 			await runDebugSession(args.slice(1));
+			return;
+		}
+		if (args[0] === "trace") {
+			await runDebugTrace(args.slice(1));
+			return;
+		}
+		if (args[0] === "events") {
+			await runDebugEvents(args.slice(1));
 			return;
 		}
 		throw new Error(`Unknown pibo debug command "${args[0]}". Run pibo debug --help.`);
@@ -97,8 +108,47 @@ async function runDebugSession(args: string[]): Promise<void> {
 	else console.log(formatDebugSessionSummary(summary));
 }
 
+async function runDebugTrace(args: string[]): Promise<void> {
+	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+		printDebugTraceDiscovery();
+		return;
+	}
+	const options = parseOptions(args);
+	const piboSessionId = options.positionals[0];
+	if (!piboSessionId) throw new Error("pibo debug trace requires <pibo-session-id>");
+	const { formatJson } = await import("./sql.js");
+	const { formatDebugTrace, inspectDebugTrace } = await import("./trace.js");
+	const result = await inspectDebugTrace(piboSessionId, {
+		sessions: resolveDebugStore("sessions"),
+		chat: resolveDebugStore("chat"),
+	}, {
+		runningOnly: options.runningOnly,
+	});
+	if (options.json) console.log(formatJson(result));
+	else console.log(formatDebugTrace(result));
+}
+
+async function runDebugEvents(args: string[]): Promise<void> {
+	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+		printDebugEventsDiscovery();
+		return;
+	}
+	const options = parseOptions(args);
+	const piboSessionId = options.positionals[0];
+	if (!piboSessionId) throw new Error("pibo debug events requires <pibo-session-id>");
+	const { formatJson } = await import("./sql.js");
+	const { formatDebugEvents, inspectDebugEvents } = await import("./events.js");
+	const result = inspectDebugEvents(piboSessionId, resolveDebugStore("chat"), {
+		type: options.type,
+		fields: options.fields,
+		limit: options.limit,
+	});
+	if (options.json) console.log(formatJson(result));
+	else console.log(formatDebugEvents(result));
+}
+
 function parseOptions(args: string[]): ParsedOptions {
-	const parsed: ParsedOptions = { positionals: [], json: false, events: false };
+	const parsed: ParsedOptions = { positionals: [], json: false, events: false, runningOnly: false };
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index];
 		if (arg === "--json") {
@@ -109,6 +159,10 @@ function parseOptions(args: string[]): ParsedOptions {
 			parsed.events = true;
 			continue;
 		}
+		if (arg === "--running-only") {
+			parsed.runningOnly = true;
+			continue;
+		}
 		if (arg === "--children") {
 			continue;
 		}
@@ -116,6 +170,20 @@ function parseOptions(args: string[]): ParsedOptions {
 			const value = args[index + 1];
 			if (!value) throw new Error("--limit requires a value");
 			parsed.limit = value;
+			index += 1;
+			continue;
+		}
+		if (arg === "--type") {
+			const value = args[index + 1];
+			if (!value) throw new Error("--type requires a value");
+			parsed.type = value;
+			index += 1;
+			continue;
+		}
+		if (arg === "--fields") {
+			const value = args[index + 1];
+			if (!value) throw new Error("--fields requires a value");
+			parsed.fields = value.split(",").map((field) => field.trim()).filter(Boolean);
 			index += 1;
 			continue;
 		}
@@ -130,10 +198,13 @@ function printDebugDiscovery(): void {
 Commands:
   db       Inspect and query local SQLite stores
   session  Inspect one Pibo Session by id or Chat URL
+  trace    Rebuild the Chat Web trace view for one Pibo Session
+  events   Inspect compact event payload fields for one Pibo Session
 
 Next:
   pibo debug db
   pibo debug session <url-or-pibo-session-id>
+  pibo debug trace <pibo-session-id> --running-only
 `);
 }
 
@@ -172,6 +243,34 @@ Inputs:
 
 Next:
   pibo debug session ps_...
+`);
+}
+
+function printDebugTraceDiscovery(): void {
+	console.log(`pibo debug trace - rebuild one Chat Web trace view
+
+Usage:
+  pibo debug trace <pibo-session-id> [--running-only] [--json]
+
+Output:
+  Compact trace nodes from the same buildTraceView logic used by /api/chat/trace.
+
+Next:
+  pibo debug trace ps_... --running-only
+`);
+}
+
+function printDebugEventsDiscovery(): void {
+	console.log(`pibo debug events - inspect compact event payload fields
+
+Usage:
+  pibo debug events <pibo-session-id> [--type name] [--fields a,b.c] [--limit n] [--json]
+
+Examples:
+  pibo debug events ps_... --type tool_execution_finished --fields toolName,toolCallId,result.details.status
+
+Next:
+  pibo debug events ps_... --limit 20
 `);
 }
 

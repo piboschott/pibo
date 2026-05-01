@@ -10,6 +10,7 @@ export type ParsedDebugSessionInput = {
 
 export type DebugSessionSummary = {
 	input: ParsedDebugSessionInput;
+	warnings: string[];
 	session: Record<string, unknown>;
 	metadata: Record<string, unknown>;
 	room: {
@@ -71,8 +72,12 @@ export function inspectDebugSession(
 		if (!session) throw new Error(`Pibo session "${parsed.piboSessionId}" not found`);
 		const metadata = parseObject(session.metadata_json);
 		const sessionRoomId = stringValue(metadata.chatRoomId);
+		const warnings = parsed.roomId && sessionRoomId && parsed.roomId !== sessionRoomId
+			? [`URL roomId "${parsed.roomId}" does not match session metadata chatRoomId "${sessionRoomId}".`]
+			: [];
 		const summary: DebugSessionSummary = {
 			input: parsed,
+			warnings,
 			session: compactSessionRow(session),
 			metadata,
 			room: {
@@ -103,6 +108,7 @@ export function formatDebugSessionSummary(summary: DebugSessionSummary): string 
 	if (summary.input.roomId) lines.push(`urlRoomId: ${summary.input.roomId}`);
 	if (summary.room.sessionRoomId) lines.push(`sessionRoomId: ${summary.room.sessionRoomId}`);
 	if (summary.room.matches !== undefined) lines.push(`roomMatch: ${String(summary.room.matches)}`);
+	for (const warning of summary.warnings) lines.push(`warning: ${warning}`);
 	lines.push("");
 	lines.push("Session:");
 	for (const [key, value] of Object.entries(summary.session)) {

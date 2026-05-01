@@ -799,6 +799,244 @@ test("chat trace shows async subagent runs under pibo_run_start tool calls", () 
 	assert.equal(nodes[0].children[0].input.startedBy, "pibo_run_start");
 });
 
+test("chat trace updates async subagent runs from later run-control snapshots", () => {
+	const nodes = traceNodesFromEntries("chat:test", [
+		{
+			type: "message",
+			id: "assistant-start",
+			parentId: "user-1",
+			timestamp: "2026-04-29T08:00:01.000Z",
+			message: {
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "tool-start",
+						name: "pibo_run_start",
+						arguments: {
+							toolName: "pibo_subagent_qa_researcher",
+							arguments: { message: "inspect auth" },
+							completionPolicy: "tracked",
+						},
+					},
+				],
+				stopReason: "toolUse",
+			},
+		},
+		{
+			type: "message",
+			id: "result-start",
+			parentId: "assistant-start",
+			timestamp: "2026-04-29T08:00:02.000Z",
+			message: {
+				role: "toolResult",
+				toolCallId: "tool-start",
+				toolName: "pibo_run_start",
+				content: [{ type: "text", text: "Started yielded run run_1." }],
+				details: {
+					runId: "run_1",
+					kind: "tool",
+					status: "running",
+					toolName: "pibo_subagent_qa_researcher",
+					updatedAt: "2026-04-29T08:00:02.000Z",
+				},
+				isError: false,
+			},
+		},
+		{
+			type: "message",
+			id: "assistant-wait",
+			parentId: "result-start",
+			timestamp: "2026-04-29T08:00:03.000Z",
+			message: {
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "tool-wait",
+						name: "pibo_run_wait",
+						arguments: { runId: "run_1" },
+					},
+				],
+				stopReason: "toolUse",
+			},
+		},
+		{
+			type: "message",
+			id: "result-wait",
+			parentId: "assistant-wait",
+			timestamp: "2026-04-29T08:00:04.000Z",
+			message: {
+				role: "toolResult",
+				toolCallId: "tool-wait",
+				toolName: "pibo_run_wait",
+				content: [{ type: "text", text: "Run run_1 reached completed." }],
+				details: {
+					runId: "run_1",
+					kind: "tool",
+					status: "completed",
+					toolName: "pibo_subagent_qa_researcher",
+					updatedAt: "2026-04-29T08:00:04.000Z",
+					completedAt: "2026-04-29T08:00:04.000Z",
+				},
+				isError: false,
+			},
+		},
+	]);
+
+	assert.equal(nodes[0].children[0].type, "agent.async");
+	assert.equal(nodes[0].children[0].status, "done");
+	assert.equal(nodes[0].children[0].completedAt, "2026-04-29T08:00:04.000Z");
+	assert.equal(nodes[0].children[0].output.status, "completed");
+});
+
+test("chat trace links repeated subagent calls to their exact child sessions", async () => {
+	const parent = createTestSession();
+	const childDirect = createTestSession({
+		id: "ps_child_direct",
+		piSessionId: "pi_child_direct",
+		channel: "pibo.subagents",
+		kind: "subagent",
+		profile: "sub-agent",
+		parentId: parent.id,
+		metadata: {
+			subagentName: "sub-agent",
+			subagentToolName: "pibo_subagent_sub_agent",
+			threadKey: "direct-thread",
+		},
+	});
+	const childAsync = createTestSession({
+		id: "ps_child_async",
+		piSessionId: "pi_child_async",
+		channel: "pibo.subagents",
+		kind: "subagent",
+		profile: "sub-agent",
+		parentId: parent.id,
+		metadata: {
+			subagentName: "sub-agent",
+			subagentToolName: "pibo_subagent_sub_agent",
+			threadKey: "async-thread",
+		},
+	});
+
+	const view = await buildTraceView({
+		session: parent,
+		sessions: [parent, childAsync, childDirect],
+		events: [
+			{
+				id: "event-1",
+				piboSessionId: parent.id,
+				eventId: "turn-1",
+				type: "tool_execution_started",
+				createdAt: "2026-04-29T08:00:00.000Z",
+				payload: {
+					type: "tool_execution_started",
+					piboSessionId: parent.id,
+					eventId: "turn-1",
+					toolCallId: "tool-direct",
+					toolName: "pibo_subagent_sub_agent",
+					args: { message: "inspect directly" },
+				},
+			},
+			{
+				id: "event-2",
+				piboSessionId: parent.id,
+				type: "subagent_session",
+				createdAt: "2026-04-29T08:00:01.000Z",
+				payload: {
+					type: "subagent_session",
+					piboSessionId: parent.id,
+					toolCallId: "tool-direct",
+					toolName: "pibo_subagent_sub_agent",
+					subagentName: "sub-agent",
+					childPiboSessionId: childDirect.id,
+					threadKey: "direct-thread",
+				},
+			},
+			{
+				id: "event-3",
+				piboSessionId: parent.id,
+				eventId: "turn-1",
+				type: "tool_execution_finished",
+				createdAt: "2026-04-29T08:00:02.000Z",
+				payload: {
+					type: "tool_execution_finished",
+					piboSessionId: parent.id,
+					eventId: "turn-1",
+					toolCallId: "tool-direct",
+					toolName: "pibo_subagent_sub_agent",
+					result: { content: [{ type: "text", text: "direct done" }] },
+					isError: false,
+				},
+			},
+			{
+				id: "event-4",
+				piboSessionId: parent.id,
+				eventId: "turn-1",
+				type: "tool_execution_started",
+				createdAt: "2026-04-29T08:00:03.000Z",
+				payload: {
+					type: "tool_execution_started",
+					piboSessionId: parent.id,
+					eventId: "turn-1",
+					toolCallId: "tool-run-start",
+					toolName: "pibo_run_start",
+					args: {
+						toolName: "pibo_subagent_sub_agent",
+						arguments: { message: "inspect async" },
+						completionPolicy: "tracked",
+					},
+				},
+			},
+			{
+				id: "event-5",
+				piboSessionId: parent.id,
+				type: "subagent_session",
+				createdAt: "2026-04-29T08:00:04.000Z",
+				payload: {
+					type: "subagent_session",
+					piboSessionId: parent.id,
+					toolCallId: "tool-run-start",
+					toolName: "pibo_subagent_sub_agent",
+					subagentName: "sub-agent",
+					childPiboSessionId: childAsync.id,
+					threadKey: "async-thread",
+				},
+			},
+			{
+				id: "event-6",
+				piboSessionId: parent.id,
+				eventId: "turn-1",
+				type: "tool_execution_finished",
+				createdAt: "2026-04-29T08:00:05.000Z",
+				payload: {
+					type: "tool_execution_finished",
+					piboSessionId: parent.id,
+					eventId: "turn-1",
+					toolCallId: "tool-run-start",
+					toolName: "pibo_run_start",
+					result: {
+						details: {
+							runId: "run_async",
+							kind: "tool",
+							status: "running",
+							toolName: "pibo_subagent_sub_agent",
+						},
+					},
+					isError: false,
+				},
+			},
+		],
+	});
+
+	const allNodes = flattenTraceNodes(view.nodes);
+	const direct = allNodes.find((node) => node.toolCallId === "tool-direct");
+	const async = allNodes.find((node) => node.type === "agent.async" && node.runId === "run_async");
+
+	assert.equal(direct?.linkedPiboSessionId, childDirect.id);
+	assert.equal(async?.linkedPiboSessionId, childAsync.id);
+});
+
 test("chat trace groups tool calls with the final assistant response", () => {
 	const nodes = traceNodesFromEntries("chat:test", [
 		{
@@ -879,6 +1117,60 @@ test("chat trace groups tool calls with the final assistant response", () => {
 	const response = nodes[4];
 	assert.equal(response.output, "final answer");
 	assert.equal(response.children.length, 0);
+});
+
+test("chat trace keeps final assistant response after intermediate assistant text and tools", () => {
+	const nodes = traceNodesFromEntries("chat:test", [
+		{
+			type: "message",
+			id: "assistant-progress",
+			parentId: "user-1",
+			timestamp: "2026-04-29T08:00:01.000Z",
+			message: {
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "plan" },
+					{ type: "text", text: "I will inspect first." },
+					{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "README.md" } },
+				],
+				stopReason: "toolUse",
+			},
+		},
+		{
+			type: "message",
+			id: "result-1",
+			parentId: "assistant-progress",
+			timestamp: "2026-04-29T08:00:02.000Z",
+			message: {
+				role: "toolResult",
+				toolCallId: "tool-1",
+				toolName: "read",
+				content: [{ type: "text", text: "readme" }],
+				isError: false,
+			},
+		},
+		{
+			type: "message",
+			id: "assistant-final",
+			parentId: "result-1",
+			timestamp: "2026-04-29T08:00:03.000Z",
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: "final answer" }],
+				stopReason: "stop",
+			},
+		},
+	]);
+
+	assert.deepEqual(
+		nodes.map((node) => [node.type, node.output]),
+		[
+			["model.reasoning", "plan"],
+			["assistant.message", "I will inspect first."],
+			["tool.call", { content: [{ type: "text", text: "readme" }] }],
+			["assistant.message", "final answer"],
+		],
+	);
 });
 
 test("chat trace preserves interleaved persisted reasoning and tool order", () => {

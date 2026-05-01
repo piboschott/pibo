@@ -317,7 +317,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			if (!event) return;
 			const flushImmediately = event.type !== "TEXT_MESSAGE_CONTENT" && event.type !== "REASONING_MESSAGE_CONTENT";
 			enqueueStreamEvent(selectedPiboSessionId, event, flushImmediately);
-			if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
+			if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR" || event.type === "TEXT_MESSAGE_END") {
 				scheduleTraceRefresh(0);
 				scheduleBootstrapRefresh(0);
 			} else if (event.type !== "TEXT_MESSAGE_CONTENT" && event.type !== "REASONING_MESSAGE_CONTENT") {

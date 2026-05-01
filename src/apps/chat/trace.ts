@@ -188,6 +188,7 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 	const nodes = traceNodesFromEntries(input.session.id, entries);
 	const byId = mapTraceNodesById(nodes);
 	const childByParent = mapChildren(input.sessions);
+	const linkedChildByToolCallId = mapSubagentSessionLinks(input.events);
 	const hasPersistedTranscript = entries.some((entry) => entry.type === "message");
 	const sessionStatus = input.status ?? "idle";
 	const openTranscriptEventIds = findOpenTranscriptEventIds(input.events, sessionStatus);
@@ -212,6 +213,7 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 			input.session.id,
 			storedEvent.payload,
 			childByParent,
+			linkedChildByToolCallId,
 			sessionStatus,
 			storedEvent.createdAt,
 		);
@@ -264,11 +266,14 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 		for (const indexed of flattenTraceNodes([node])) byId.set(indexed.id, indexed);
 	}
 
+	const nestedNodes = nestTraceNodes(nodes);
+	reconcileAsyncAgentRunStatuses(nestedNodes);
+
 	return {
 		piboSessionId: input.session.id,
 		piSessionId: input.session.piSessionId,
 		title: createSessionTitle(input.session, metadata),
-		nodes: nestTraceNodes(nodes),
+		nodes: nestedNodes,
 		rawEvents: input.events,
 	};
 }
@@ -351,6 +356,7 @@ export function traceNodesFromEntries(piboSessionId: string, entries: SessionEnt
 			});
 		}
 	}
+	reconcileAsyncAgentRunStatuses(nodes);
 	return nodes;
 }
 
@@ -403,9 +409,6 @@ function createAssistantTurnNodes(piboSessionId: string, entries: MessageSession
 
 	const orderedNodes: PiboTraceNode[] = [];
 	const toolsByCallId = new Map<string, PiboTraceNode>();
-	let responseNode: PiboTraceNode | undefined;
-	let responseError: string | undefined;
-	let responseStatus: PiboTraceNodeStatus = "done";
 
 	for (const entry of entries) {
 		if (messageRole(entry) === "toolResult") {
@@ -413,9 +416,9 @@ function createAssistantTurnNodes(piboSessionId: string, entries: MessageSession
 			continue;
 		}
 
-		const status = messageStatus(entry.message);
-		if (status === "error") responseStatus = "error";
-		responseError = responseError ?? messageError(entry.message);
+		const responseStatus = messageStatus(entry.message);
+		const responseError = messageError(entry.message);
+		let responseNode: PiboTraceNode | undefined;
 
 		for (const [index, part] of messageParts(entry).entries()) {
 			const typed = part as MessagePart;
@@ -424,7 +427,7 @@ function createAssistantTurnNodes(piboSessionId: string, entries: MessageSession
 			} else if (typed.type === "text" && typeof typed.text === "string" && typed.text !== "") {
 				if (!responseNode) {
 					responseNode = createAssistantMessageNode({
-						id: `entry:${firstAssistant.id}:response`,
+						id: `entry:${entry.id}:response`,
 						piboSessionId,
 						entry,
 						status: responseStatus,
@@ -439,7 +442,6 @@ function createAssistantTurnNodes(piboSessionId: string, entries: MessageSession
 					responseNode.summary = `${typeof responseNode.summary === "string" ? responseNode.summary : ""}${typed.text}`;
 					responseNode.output = `${typeof responseNode.output === "string" ? responseNode.output : ""}${typed.text}`;
 					responseNode.completedAt = entry.timestamp;
-					responseNode.entryId = entry.id;
 				}
 			} else if (typed.type === "toolCall" && typeof typed.id === "string" && typeof typed.name === "string") {
 				const toolNode = createToolCallNode(piboSessionId, entry, typed);
@@ -447,11 +449,11 @@ function createAssistantTurnNodes(piboSessionId: string, entries: MessageSession
 				toolsByCallId.set(typed.id, toolNode);
 			}
 		}
-	}
 
-	if (responseNode) {
-		responseNode.status = responseStatus;
-		responseNode.error = responseError;
+		if (responseNode) {
+			responseNode.status = responseStatus;
+			responseNode.error = responseError;
+		}
 	}
 	return orderedNodes;
 }
@@ -576,6 +578,7 @@ function traceNodeFromEvent(
 	piboSessionId: string,
 	event: PiboOutputEvent,
 	childByParent: Map<string, PiboSession[]>,
+	linkedChildByToolCallId: Map<string, string>,
 	sessionStatus: PiboWebSessionStatus,
 	createdAt?: string,
 ): PiboTraceNode | undefined {
@@ -641,17 +644,20 @@ function traceNodeFromEvent(
 				summary: event.text,
 				output: event.text,
 			};
-		case "tool_call":
-		case "tool_execution_started":
-		case "tool_execution_updated":
-		case "tool_execution_finished": {
-			const linkedPiboSessionId = findLikelyChildSession(piboSessionId, event.toolName, childByParent);
-			return {
+			case "tool_call":
+			case "tool_execution_started":
+			case "tool_execution_updated":
+			case "tool_execution_finished": {
+				const subagentTool = isSubagentToolName(event.toolName);
+				const linkedPiboSessionId =
+					linkedChildByToolCallId.get(event.toolCallId) ??
+					(subagentTool ? findLikelyChildSession(piboSessionId, event.toolName, event, childByParent) : undefined);
+				return {
 				...base,
 				id: `tool:${event.toolCallId}`,
 				parentId: turnParentId,
 				toolCallId: event.toolCallId,
-				type: linkedPiboSessionId || isSubagentToolName(event.toolName) ? "agent.delegation" : "tool.call",
+				type: subagentTool ? "agent.delegation" : "tool.call",
 				title: event.toolName,
 				status:
 					event.type === "tool_execution_finished"
@@ -926,6 +932,32 @@ function attachAsyncAgentRunNode(
 	parent.children.push(node);
 }
 
+function reconcileAsyncAgentRunStatuses(nodes: PiboTraceNode[]): void {
+	const runSnapshots = new Map<string, { snapshot: Record<string, unknown>; completedAt?: string }>();
+	for (const node of flattenTraceNodes(nodes)) {
+		const snapshot = extractRunSnapshot(node.output);
+		if (!snapshot) continue;
+		const runId = stringValue(snapshot.runId);
+		if (!runId) continue;
+		runSnapshots.set(runId, {
+			snapshot,
+			completedAt: stringValue(snapshot.completedAt) ?? stringValue(snapshot.updatedAt) ?? node.completedAt,
+		});
+	}
+
+	for (const node of flattenTraceNodes(nodes)) {
+		if (node.type !== "agent.async" || !node.runId) continue;
+		const latest = runSnapshots.get(node.runId);
+		if (!latest) continue;
+		const status = stringValue(latest.snapshot.status);
+		if (status !== "completed" && status !== "cancelled" && status !== "failed") continue;
+		node.status = status === "failed" ? "error" : "done";
+		node.completedAt = latest.completedAt ?? node.completedAt;
+		node.output = latest.snapshot;
+		if (status === "failed") node.error = stringValue(latest.snapshot.summary) ?? node.error;
+	}
+}
+
 function createAsyncAgentRunNode(
 	parent: PiboTraceNode,
 	piboSessionId: string,
@@ -1015,19 +1047,42 @@ function mapChildren(sessions: PiboSession[]): Map<string, PiboSession[]> {
 	return result;
 }
 
+function mapSubagentSessionLinks(events: ChatWebStoredEvent[]): Map<string, string> {
+	const result = new Map<string, string>();
+	for (const storedEvent of events) {
+		const event = storedEvent.payload;
+		if (event.type !== "subagent_session" || !event.toolCallId) continue;
+		result.set(event.toolCallId, event.childPiboSessionId);
+	}
+	return result;
+}
+
 function findLikelyChildSession(
 	piboSessionId: string,
 	toolName: string,
+	event: Extract<PiboOutputEvent, { type: "tool_call" | "tool_execution_started" | "tool_execution_updated" | "tool_execution_finished" }>,
 	childByParent: Map<string, PiboSession[]>,
 ): string | undefined {
 	if (!isSubagentToolName(toolName)) return undefined;
-	return childByParent
-		.get(piboSessionId)
-		?.find((session) => session.metadata?.subagentToolName === toolName)?.id;
+	const candidates =
+		childByParent.get(piboSessionId)?.filter((session) => session.metadata?.subagentToolName === toolName) ?? [];
+	const threadKey = toolEventThreadKey(event);
+	if (threadKey) {
+		return candidates.find((session) => session.metadata?.threadKey === threadKey)?.id;
+	}
+	return candidates.length === 1 ? candidates[0].id : undefined;
 }
 
 function isSubagentToolName(name: string): boolean {
 	return name.startsWith("pibo_subagent_");
+}
+
+function toolEventThreadKey(
+	event: Extract<PiboOutputEvent, { type: "tool_call" | "tool_execution_started" | "tool_execution_updated" | "tool_execution_finished" }>,
+): string | undefined {
+	const args = "args" in event && event.args && typeof event.args === "object" && !Array.isArray(event.args) ? event.args : undefined;
+	const threadKey = args && "threadKey" in args ? args.threadKey : undefined;
+	return typeof threadKey === "string" && threadKey.trim() ? threadKey.trim() : undefined;
 }
 
 function messageStatus(message: unknown): PiboTraceNodeStatus {

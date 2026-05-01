@@ -156,6 +156,9 @@ Out of scope for V1:
 - **REQ-080**: If the user scrolls upward, live streaming must not force the transcript back to the bottom.
 - **REQ-081**: When the user is away from the bottom, the UI must show a compact scroll-to-bottom affordance.
 - **REQ-082**: The scroll-to-bottom affordance must hide after the user returns to the bottom or activates the affordance.
+- **REQ-083**: Async subagent trace nodes created from `pibo_run_start` MUST reconcile their displayed terminal status from later run-control snapshots such as `pibo_run_wait` or `pibo_run_read`.
+- **REQ-084**: A final visible assistant text entry after intermediate assistant text and tool calls MUST remain a separate `assistant.message` node in canonical transcript order.
+- **REQ-085**: Chat Web live updates MUST refresh trace/bootstrap state after `TEXT_MESSAGE_END` in addition to run finish and run error lifecycle frames, so final persisted transcript state can replace stale live execution state.
 - **CON-001**: Pibo must not move channel, auth, profile, or UI policy into Pi Coding Agent.
 - **CON-002**: Pibo must preserve the existing product boundary: Pi owns agent execution and session JSONL; Pibo owns channels, routing, auth, policy, web UI, and read models.
 - **CON-003**: The Web App must consume Pibo view models derived from Pi JSONL and Pibo events, not raw Pi events directly.
@@ -261,6 +264,8 @@ Trace reconstruction must treat empty or whitespace-only reasoning text as trans
 
 Trace reconstruction must distinguish persisted transcript content from live transcript echo events. When Pi JSONL already contains persisted messages, live transcript echo events are normally filtered to avoid duplicate user and assistant nodes. The exception is a currently running turn: any retained live delta or thinking event for the turn's `eventId` is sufficient evidence that the event is still open, even if `message_started` has fallen outside the retained raw event window.
 
+Trace reconstruction must reconcile yielded-run snapshots by `runId`. If an `agent.async` node was created from an initial `pibo_run_start` result with status `running`, and a later run-control result reports `completed`, `cancelled`, or `failed` for the same `runId`, the `agent.async` node must reflect the terminal status and terminal timestamp.
+
 ### 4.4 Web Read Model Storage
 
 The implementation must add a dedicated SQLite database at `.pibo/web-chat.sqlite`.
@@ -341,6 +346,9 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
 - **AC-033**: Given the user opens a different session trace, When the trace finishes rendering, Then the transcript is positioned at the bottom.
 - **AC-034**: Given the user has manually scrolled upward during streaming, When new assistant or tool content arrives, Then the scroll position is not forced to the bottom and a scroll-to-bottom control is visible.
 - **AC-035**: Given the scroll-to-bottom control is visible, When the user activates it, Then the transcript scrolls to the latest content and the control hides.
+- **AC-036**: Given `pibo_run_start` initially reports an async subagent run as `running`, When a later `pibo_run_wait` or `pibo_run_read` result reports the same `runId` as `completed`, Then the reconstructed `agent.async` node is `done`.
+- **AC-037**: Given an assistant emits progress text, then a tool call, then final assistant text, When the trace is reconstructed from persisted Pi entries, Then both assistant text entries remain visible in transcript order around the tool call.
+- **AC-038**: Given the client receives `TEXT_MESSAGE_END`, When the selected session is still mounted, Then Chat Web schedules an immediate trace/bootstrap refresh.
 
 ## 6. Test Automation Strategy
 
@@ -350,6 +358,8 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
   - Subagent tool-name detection and delegation linking.
   - Slash command normalization and dispatch mapping.
   - Read-model repository insert/query behavior.
+  - Async yielded-run snapshot reconciliation by `runId`.
+  - Persisted assistant progress/final text ordering around tool calls.
 
 - **Integration Tests**:
   - Chat API session list and selected session endpoints.
@@ -358,6 +368,7 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
   - Latest-event-window reconstruction when the retained window does not include `message_started`.
   - Clone and fork execution flows.
   - Reconstruction from Pi session JSONL plus raw Pibo event log.
+  - Trace refresh triggers for `TEXT_MESSAGE_END` lifecycle frames.
 
 - **End-to-End Tests**:
   - Authenticated chat load.
@@ -524,6 +535,8 @@ If the subagent session link is known, the child node can open that Pibo Session
 - Fork asks before switching to the forked session.
 - The read model does not replace or mutate Pi transcript history.
 - Materialized trace nodes are not persisted as durable V1 state.
+- Async subagent nodes do not remain `running` after later run-control snapshots prove terminal completion.
+- Final assistant responses do not disappear after intermediate assistant progress text and tool calls.
 
 ## 11. Related Specifications / Further Reading
 
