@@ -987,6 +987,7 @@ function SessionTracePane({
 	onSessionAgentProfileChange,
 	onFork,
 	onOpenSession,
+	onSelectSessionView,
 	onCommand,
 	onRefreshTrace,
 	onRefreshBootstrap,
@@ -999,7 +1000,7 @@ function SessionTracePane({
 	selectedRoomArchived: boolean;
 	selectedSessionProfile: string;
 	sessionViewId: ChatSessionViewId;
-	sessionViews: readonly ReturnType<typeof listChatSessionViews>;
+	sessionViews: ReturnType<typeof listChatSessionViews>;
 	currentSessionView: ReturnType<typeof getChatSessionView>;
 	creatingSession: boolean;
 	showRawEvents: boolean;
@@ -1048,7 +1049,7 @@ function SessionTracePane({
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId);
 		if (!pending?.length) return;
 		let applied = false;
-		queryClient.setQueryData<PiboSessionTraceView>(traceQueryKey, (current) => {
+		queryClient.setQueryData<PiboSessionTraceView>(traceQueryKey, (current: PiboSessionTraceView | undefined) => {
 			if (!current || current.piboSessionId !== piboSessionId) return current;
 			applied = true;
 			return applyChatStreamEvents(current, pending);
