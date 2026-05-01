@@ -1820,6 +1820,7 @@ function AgentsView({
 				contextFiles: draft.contextFiles,
 				subagents: draft.subagents.filter((item) => item.name.trim() && item.targetProfile.trim()),
 				builtinTools: draft.builtinTools,
+				autoContextFiles: draft.autoContextFiles,
 				runControl: draft.runControl,
 			};
 			const response = draft.id ? await patchCustomAgent(draft.id, input) : await postCustomAgent(input);
@@ -1995,6 +1996,7 @@ function AgentsView({
 						<input value={draft.displayName} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} className={`min-w-0 bg-[#0e1116] border rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60 ${agentNameError ? "border-[#f59e0b]" : "border-slate-700"}`} placeholder="agent-name" />
 						{agentNameError ? <div className="text-xs text-amber-100">{agentNameError}</div> : null}
 						<textarea value={draft.description} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} className="min-h-[72px] bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" placeholder="Description" />
+						<label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" disabled={readOnly} checked={draft.autoContextFiles} onChange={(event) => setDraft((current) => ({ ...current, autoContextFiles: event.target.checked }))} />Load AGENTS.md / CLAUDE.md</label>
 						<label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" disabled={readOnly} checked={draft.builtinTools === "disabled"} onChange={(event) => setDraft((current) => ({ ...current, builtinTools: event.target.checked ? "disabled" : "default" }))} />Disable Pi built-in tools</label>
 					</DesignerPanel>
 					<CatalogSection title="Native Tools">{catalog?.nativeTools.map((tool) => <CatalogToggle key={tool.name} disabled={readOnly} checked={draft.nativeTools.includes(tool.name)} title={tool.name} description={tool.description} meta={tool.yieldable ? "yieldable" : "direct only"} onToggle={() => setDraft((current) => ({ ...current, nativeTools: toggleName(current.nativeTools, tool.name) }))} />) ?? <EmptyCatalog />}</CatalogSection>
@@ -2036,6 +2038,7 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		contextFiles: [],
 		subagents: [],
 		builtinTools: "default",
+		autoContextFiles: true,
 		runControl: false,
 		source: "custom",
 	};
@@ -2052,6 +2055,7 @@ function agentToDraft(agent: CustomAgent): AgentDraft {
 		contextFiles: agent.contextFiles,
 		subagents: agent.subagents,
 		builtinTools: agent.builtinTools,
+		autoContextFiles: agent.autoContextFiles ?? true,
 		runControl: agent.runControl,
 		archivedAt: agent.archivedAt,
 		source: "custom",
@@ -2067,6 +2071,7 @@ function profileToDraft(profile: BootstrapData["agents"][number], catalog?: Agen
 		contextFiles: profile.contextFiles ?? [],
 		subagents: profile.subagents ?? [],
 		builtinTools: profile.builtinTools ?? "default",
+		autoContextFiles: profile.autoContextFiles ?? true,
 		runControl: profile.runControl ?? false,
 		profileName: profile.name,
 		source: "profile",
@@ -2246,7 +2251,7 @@ function SubagentDesigner({
 					disabled={readOnly}
 					onClick={() => setDraft((current) => ({
 						...current,
-						subagents: [...current.subagents, { name: "helper", targetProfile: profileOptions[0]?.value ?? "pibo-minimal", executionMode: "parallel", maxDepth: 3 }],
+						subagents: [...current.subagents, { name: "helper", targetProfile: profileOptions[0]?.value ?? "pibo-minimal", maxDepth: 3 }],
 					}))}
 					className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
 					title="Add Subagent"
@@ -2257,14 +2262,10 @@ function SubagentDesigner({
 			</div>
 			<div className="grid gap-2">
 				{draft.subagents.map((subagent, index) => (
-					<div key={index} className="grid grid-cols-[1fr_1fr_120px_80px_auto] max-[1100px]:grid-cols-1 gap-2 border border-slate-800 bg-[#151f24] p-2 rounded-sm">
+					<div key={index} className="grid grid-cols-[1fr_1fr_80px_auto] max-[1100px]:grid-cols-1 gap-2 border border-slate-800 bg-[#151f24] p-2 rounded-sm">
 						<input value={subagent.name} disabled={readOnly} onChange={(event) => updateSubagent(index, { name: event.target.value })} className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" placeholder="name" />
 						<select value={subagent.targetProfile} disabled={readOnly} onChange={(event) => updateSubagent(index, { targetProfile: event.target.value })} className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60">
 							{profileOptions.map((profile) => <option key={profile.value} value={profile.value}>{profile.label}</option>)}
-						</select>
-						<select value={subagent.executionMode ?? "parallel"} disabled={readOnly} onChange={(event) => updateSubagent(index, { executionMode: event.target.value as "parallel" | "sequential" })} className="bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60">
-							<option value="parallel">parallel</option>
-							<option value="sequential">sequential</option>
 						</select>
 						<input type="number" min={1} disabled={readOnly} value={subagent.maxDepth ?? 3} onChange={(event) => updateSubagent(index, { maxDepth: Number(event.target.value) || 1 })} className="bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" />
 						<button type="button" disabled={readOnly} onClick={() => setDraft((current) => ({ ...current, subagents: current.subagents.filter((_, itemIndex) => itemIndex !== index) }))} className="h-8 w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-300 disabled:opacity-50" title="Remove Subagent" aria-label="Remove Subagent">

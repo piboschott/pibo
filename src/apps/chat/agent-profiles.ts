@@ -10,6 +10,7 @@ export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition)
 		create(context) {
 			const builder = new InitialSessionContextBuilder(agent.profileName)
 				.withBuiltinTools(agent.builtinTools)
+				.withAutoContextFiles(agent.autoContextFiles)
 				.withToolPackages({ runControl: agent.runControl });
 
 			for (const skillName of agent.skills) builder.addSkill(context.getSkill(skillName));

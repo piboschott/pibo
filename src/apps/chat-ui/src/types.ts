@@ -111,6 +111,7 @@ export type AgentProfile = {
 	contextFiles?: string[];
 	subagents?: CustomAgentSubagent[];
 	builtinTools?: "default" | "disabled";
+	autoContextFiles?: boolean;
 	runControl?: boolean;
 };
 
@@ -121,7 +122,6 @@ export type AgentCatalog = {
 		name: string;
 		description?: string;
 		targetProfile: string;
-		executionMode?: "sequential" | "parallel";
 		timeoutMs?: number;
 		maxDepth?: number;
 	}>;
@@ -133,7 +133,6 @@ export type CustomAgentSubagent = {
 	name: string;
 	description?: string;
 	targetProfile: string;
-	executionMode?: "sequential" | "parallel";
 	timeoutMs?: number;
 	maxDepth?: number;
 };
@@ -149,6 +148,7 @@ export type CustomAgent = {
 	contextFiles: string[];
 	subagents: CustomAgentSubagent[];
 	builtinTools: "default" | "disabled";
+	autoContextFiles: boolean;
 	runControl: boolean;
 	createdAt: string;
 	updatedAt: string;

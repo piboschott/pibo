@@ -100,7 +100,7 @@ type PiboRunStartParams = {
 };
 ```
 
-Generated per-subagent tools are normal synchronous tools and are yieldable. `pibo_exec` is also a normal synchronous tool and can be yielded with `pibo_run_start`.
+Generated per-subagent tools are normal synchronous tools, always parallel-capable, and yieldable. Pibo does not expose a per-subagent sequential execution mode; an agent sequences dependent work by waiting for one direct tool result before issuing the next call. `pibo_exec` is also a normal synchronous tool and can be yielded with `pibo_run_start`.
 
 `pibo_run_list` returns a compact snapshot of runs owned by the current agent session.
 

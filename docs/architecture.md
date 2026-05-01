@@ -104,7 +104,7 @@ If `threadKey` is omitted, pibo creates a new subagent session. If the caller pa
 
 When the parent session belongs to a Chat Web room, subagent child sessions inherit the parent's `metadata.chatRoomId`. This keeps subagent work visible in the same room-scoped session tree and lets room deletion remove the full contained session subtree.
 
-Subagent tools are synchronous normal tools: they wait for the correlated child reply and return it to the calling agent. A depth guard prevents accidental recursive subagent loops. Long-running subagent work should be started through yielded runs by wrapping the subagent tool with `pibo_run_start`.
+Subagent tools are synchronous normal tools: they wait for the correlated child reply and return it to the calling agent. Generated subagent tools are always parallel-capable at the Pi tool scheduler boundary; Pibo does not expose a per-subagent sequential execution mode. Agents that need ordered work issue the next direct call only after the prior result is available, or start independent work through `pibo_run_start`. A depth guard prevents accidental recursive subagent loops. Long-running subagent work should be started through yielded runs by wrapping the subagent tool with `pibo_run_start`.
 
 ## Yielded Runs
 
@@ -142,6 +142,7 @@ The designer configures native Pibo agent capabilities only:
 - skills
 - context files
 - subagents
+- automatic local context-file loading for files such as `AGENTS.md` and `CLAUDE.md`
 - built-in Pi tool visibility
 - capability packages such as `pibo-run-control`
 

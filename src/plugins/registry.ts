@@ -188,6 +188,7 @@ export class PiboPluginRegistry {
 				contextFiles: sessionContext.contextFiles.filter((contextFile) => contextFile.enabled !== false).map(contextFileKey),
 				subagents: sessionContext.subagents.filter((subagent) => subagent.enabled !== false),
 				builtinTools: sessionContext.builtinTools,
+				autoContextFiles: sessionContext.autoContextFiles,
 				runControl: sessionContext.toolPackages.runControl === true,
 			};
 		});
@@ -209,7 +210,6 @@ export class PiboPluginRegistry {
 				name: subagent.name,
 				description: subagent.description,
 				targetProfile: subagent.targetProfile,
-				executionMode: subagent.executionMode,
 				timeoutMs: subagent.timeoutMs,
 				maxDepth: subagent.maxDepth,
 			})),

@@ -2,13 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { BuiltinToolsMode, PiboSubagentExecutionMode } from "../../core/profiles.js";
+import type { BuiltinToolsMode } from "../../core/profiles.js";
 
 export type CustomAgentSubagent = {
 	name: string;
 	description?: string;
 	targetProfile: string;
-	executionMode?: PiboSubagentExecutionMode;
 	timeoutMs?: number;
 	maxDepth?: number;
 };
@@ -24,6 +23,7 @@ export type CustomAgentDefinition = {
 	contextFiles: string[];
 	subagents: CustomAgentSubagent[];
 	builtinTools: BuiltinToolsMode;
+	autoContextFiles: boolean;
 	runControl: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -41,6 +41,7 @@ export type CreateCustomAgentInput = {
 	contextFiles?: string[];
 	subagents?: CustomAgentSubagent[];
 	builtinTools?: BuiltinToolsMode;
+	autoContextFiles?: boolean;
 	runControl?: boolean;
 };
 
@@ -57,6 +58,7 @@ type AgentRow = {
 	context_files_json: string;
 	subagents_json: string;
 	builtin_tools: BuiltinToolsMode;
+	auto_context_files: 0 | 1;
 	run_control: 0 | 1;
 	created_at: string;
 	updated_at: string;
@@ -82,6 +84,7 @@ export class CustomAgentStore {
 				context_files_json TEXT NOT NULL,
 				subagents_json TEXT NOT NULL,
 				builtin_tools TEXT NOT NULL,
+				auto_context_files INTEGER NOT NULL DEFAULT 1,
 				run_control INTEGER NOT NULL,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL,
@@ -92,6 +95,7 @@ export class CustomAgentStore {
 				ON chat_agents(owner_scope, updated_at);
 		`);
 		this.migrateArchivedAtColumn();
+		this.migrateAutoContextFilesColumn();
 		this.migrateLegacyProfileNames();
 	}
 
@@ -125,8 +129,9 @@ export class CustomAgentStore {
 			nativeTools: [...(input.nativeTools ?? [])],
 			skills: [...(input.skills ?? [])],
 			contextFiles: [...(input.contextFiles ?? [])],
-			subagents: [...(input.subagents ?? [])],
+			subagents: sanitizeSubagents(input.subagents ?? []),
 			builtinTools: input.builtinTools ?? "default",
+			autoContextFiles: input.autoContextFiles ?? true,
 			runControl: input.runControl ?? false,
 			createdAt: now,
 			updatedAt: now,
@@ -151,8 +156,9 @@ export class CustomAgentStore {
 			nativeTools: input.nativeTools ? [...input.nativeTools] : existing.nativeTools,
 			skills: input.skills ? [...input.skills] : existing.skills,
 			contextFiles: input.contextFiles ? [...input.contextFiles] : existing.contextFiles,
-			subagents: input.subagents ? [...input.subagents] : existing.subagents,
+			subagents: input.subagents ? sanitizeSubagents(input.subagents) : existing.subagents,
 			builtinTools: input.builtinTools ?? existing.builtinTools,
+			autoContextFiles: input.autoContextFiles ?? existing.autoContextFiles,
 			runControl: input.runControl ?? existing.runControl,
 			updatedAt: new Date().toISOString(),
 		};
@@ -167,6 +173,7 @@ export class CustomAgentStore {
 					context_files_json = ?,
 					subagents_json = ?,
 					builtin_tools = ?,
+					auto_context_files = ?,
 					run_control = ?,
 					updated_at = ?
 				WHERE id = ?
@@ -178,8 +185,9 @@ export class CustomAgentStore {
 				JSON.stringify(updated.nativeTools),
 				JSON.stringify(updated.skills),
 				JSON.stringify(updated.contextFiles),
-				JSON.stringify(updated.subagents),
+				JSON.stringify(sanitizeSubagents(updated.subagents)),
 				updated.builtinTools,
+				updated.autoContextFiles ? 1 : 0,
 				updated.runControl ? 1 : 0,
 				updated.updatedAt,
 				id,
@@ -219,13 +227,14 @@ export class CustomAgentStore {
 					native_tools_json,
 					skills_json,
 					context_files_json,
-				subagents_json,
-				builtin_tools,
-				run_control,
-				created_at,
-				updated_at,
-				archived_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					subagents_json,
+					builtin_tools,
+					auto_context_files,
+					run_control,
+					created_at,
+					updated_at,
+					archived_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				agent.id,
@@ -236,8 +245,9 @@ export class CustomAgentStore {
 				JSON.stringify(agent.nativeTools),
 				JSON.stringify(agent.skills),
 				JSON.stringify(agent.contextFiles),
-				JSON.stringify(agent.subagents),
+				JSON.stringify(sanitizeSubagents(agent.subagents)),
 				agent.builtinTools,
+				agent.autoContextFiles ? 1 : 0,
 				agent.runControl ? 1 : 0,
 				agent.createdAt,
 				agent.updatedAt,
@@ -276,6 +286,15 @@ export class CustomAgentStore {
 			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN archived_at TEXT").run();
 		}
 	}
+
+	private migrateAutoContextFilesColumn(): void {
+		const columns = new Set(
+			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
+		);
+		if (!columns.has("auto_context_files")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN auto_context_files INTEGER NOT NULL DEFAULT 1").run();
+		}
+	}
 }
 
 export function createDefaultCustomAgentStore(cwd = process.cwd()): CustomAgentStore {
@@ -294,6 +313,7 @@ function agentFromRow(row: AgentRow): CustomAgentDefinition {
 		contextFiles: parseStringArray(row.context_files_json),
 		subagents: parseSubagents(row.subagents_json),
 		builtinTools: row.builtin_tools,
+		autoContextFiles: row.auto_context_files !== 0,
 		runControl: row.run_control === 1,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -314,15 +334,27 @@ function parseSubagents(value: string): CustomAgentSubagent[] {
 	try {
 		const parsed = JSON.parse(value) as unknown;
 		return Array.isArray(parsed)
-			? parsed.filter((item): item is CustomAgentSubagent => {
-					if (!item || typeof item !== "object") return false;
-					const candidate = item as CustomAgentSubagent;
-					return typeof candidate.name === "string" && typeof candidate.targetProfile === "string";
-				})
+			? sanitizeSubagents(parsed)
 			: [];
 	} catch {
 		return [];
 	}
+}
+
+function sanitizeSubagents(value: unknown[]): CustomAgentSubagent[] {
+	return value.flatMap((item) => {
+		if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+		const candidate = item as CustomAgentSubagent;
+		if (typeof candidate.name !== "string" || typeof candidate.targetProfile !== "string") return [];
+		const subagent: CustomAgentSubagent = {
+			name: candidate.name,
+			targetProfile: candidate.targetProfile,
+		};
+		if (typeof candidate.description === "string") subagent.description = candidate.description;
+		if (typeof candidate.timeoutMs === "number") subagent.timeoutMs = candidate.timeoutMs;
+		if (typeof candidate.maxDepth === "number") subagent.maxDepth = candidate.maxDepth;
+		return [subagent];
+	});
 }
 
 export function isValidCustomAgentName(name: string): boolean {

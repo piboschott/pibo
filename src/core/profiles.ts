@@ -1,7 +1,5 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
-export type PiboSubagentExecutionMode = "sequential" | "parallel";
-
 export type ToolProfile = {
 	name: string;
 	description?: string;
@@ -15,7 +13,6 @@ export type SubagentProfile = {
 	description?: string;
 	targetProfile: string;
 	enabled?: boolean;
-	executionMode?: PiboSubagentExecutionMode;
 	timeoutMs?: number;
 	maxDepth?: number;
 };
@@ -47,6 +44,7 @@ export type InitialSessionContextOptions = {
 	subagents?: readonly SubagentProfile[];
 	contextFiles?: readonly ContextFileProfile[];
 	builtinTools?: BuiltinToolsMode;
+	autoContextFiles?: boolean;
 	toolPackages?: ToolPackageProfile;
 };
 
@@ -59,6 +57,7 @@ export class InitialSessionContext {
 	readonly subagents: readonly SubagentProfile[];
 	readonly contextFiles: readonly ContextFileProfile[];
 	readonly builtinTools: BuiltinToolsMode;
+	readonly autoContextFiles: boolean;
 	readonly toolPackages: ToolPackageProfile;
 
 	constructor(options: InitialSessionContextOptions) {
@@ -70,6 +69,7 @@ export class InitialSessionContext {
 		this.subagents = [...(options.subagents ?? [])];
 		this.contextFiles = [...(options.contextFiles ?? [])];
 		this.builtinTools = options.builtinTools ?? "default";
+		this.autoContextFiles = options.autoContextFiles ?? true;
 		this.toolPackages = { ...(options.toolPackages ?? {}) };
 	}
 }
@@ -83,6 +83,7 @@ export class InitialSessionContextBuilder {
 	private subagents: SubagentProfile[] = [];
 	private contextFiles: ContextFileProfile[] = [];
 	private builtinTools: BuiltinToolsMode = "default";
+	private autoContextFiles = true;
 	private toolPackages: ToolPackageProfile = {};
 
 	constructor(profileName: string) {
@@ -101,6 +102,11 @@ export class InitialSessionContextBuilder {
 
 	withBuiltinTools(mode: BuiltinToolsMode): this {
 		this.builtinTools = mode;
+		return this;
+	}
+
+	withAutoContextFiles(enabled: boolean): this {
+		this.autoContextFiles = enabled;
 		return this;
 	}
 
@@ -159,6 +165,7 @@ export class InitialSessionContextBuilder {
 			subagents: this.subagents,
 			contextFiles: this.contextFiles,
 			builtinTools: this.builtinTools,
+			autoContextFiles: this.autoContextFiles,
 			toolPackages: this.toolPackages,
 		});
 	}

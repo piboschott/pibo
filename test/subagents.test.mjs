@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { inspectPiboProfile } from "../dist/core/runtime.js";
@@ -50,6 +53,21 @@ test("session context builder preserves Pi parent session ids", () => {
 	assert.equal(context.parentSessionId, "parent-session");
 });
 
+test("profiles can disable automatic AGENTS.md context discovery", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-context-files-"));
+	writeFileSync(join(cwd, "AGENTS.md"), "automatic workspace instructions", "utf-8");
+	writeFileSync(join(cwd, "profile-context.md"), "explicit profile context", "utf-8");
+	const profile = new InitialSessionContextBuilder("context-profile")
+		.withAutoContextFiles(false)
+		.addContextFile({ path: "profile-context.md" })
+		.createSession();
+
+	const inspection = await inspectPiboProfile({ cwd, profile, persistSession: false });
+	const contextFileNames = inspection.contextFiles.map((contextFile) => basename(contextFile.path));
+
+	assert.deepEqual(contextFileNames, ["profile-context.md"]);
+});
+
 test("subagent tool definitions delegate execution to the provided runner", async () => {
 	let observed;
 	const [tool] = createSubagentToolDefinitions(
@@ -58,7 +76,6 @@ test("subagent tool definitions delegate execution to the provided runner", asyn
 				name: "helper",
 				description: "Ask the helper agent.",
 				targetProfile: "helper-profile",
-				executionMode: "parallel",
 			},
 		],
 		{

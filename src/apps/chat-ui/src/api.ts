@@ -46,6 +46,7 @@ export type SaveCustomAgentInput = {
 	contextFiles: string[];
 	subagents: CustomAgent["subagents"];
 	builtinTools: "default" | "disabled";
+	autoContextFiles: boolean;
 	runControl: boolean;
 };
 

@@ -717,8 +717,9 @@ test("chat web app creates custom agents from the native capability catalog", as
 				description: "Uses native catalog entries only.",
 				nativeTools: ["pibo_echo"],
 				skills: ["pi-agent-harness"],
+				autoContextFiles: false,
 				runControl: true,
-				subagents: [{ name: "helper", targetProfile: "pibo-minimal", executionMode: "parallel" }],
+				subagents: [{ name: "helper", targetProfile: "pibo-minimal" }],
 			}),
 		});
 		assert.equal(createdAgent.status, 201);
@@ -726,6 +727,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 		assert.equal(agentPayload.agent.profileName, "research-agent");
 		assert.equal(agentPayload.agent.displayName, "research-agent");
 		assert.deepEqual(agentPayload.agent.nativeTools, ["pibo_echo"]);
+		assert.equal(agentPayload.agent.autoContextFiles, false);
 		assert.equal(agentPayload.agent.runControl, true);
 
 		const session = await fetch(`${baseURL}/api/chat/sessions`, {
@@ -747,6 +749,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 		assert.equal(listed.status, 200);
 		const listedPayload = await listed.json();
 		assert.deepEqual(listedPayload.agents.map((agent) => agent.displayName), ["research-agent"]);
+		assert.equal(listedPayload.agents[0].autoContextFiles, false);
 	} finally {
 		await channel.stop?.();
 	}

@@ -70,7 +70,7 @@ function createSubagentToolDefinition(
 		promptSnippet:
 			subagent.description ??
 			`Send a message to the ${subagent.name} subagent. Pass the same threadKey when you want to continue the same subagent session.`,
-		executionMode: subagent.executionMode ?? "sequential",
+		executionMode: "parallel",
 		parameters: Type.Object({
 			message: Type.String({ description: "Message to send to the subagent" }),
 			threadKey: Type.Optional(

@@ -89,6 +89,7 @@ type ChatAgentBody = {
 	contextFiles?: unknown;
 	subagents?: unknown;
 	builtinTools?: unknown;
+	autoContextFiles?: unknown;
 	runControl?: unknown;
 	archived?: unknown;
 	confirmName?: unknown;
@@ -295,6 +296,12 @@ function normalizeBuiltinTools(value: unknown): "default" | "disabled" {
 	throw new PiboWebHttpError("builtinTools must be default or disabled", 400);
 }
 
+function normalizeAutoContextFiles(value: unknown): boolean {
+	if (value === undefined) return true;
+	if (typeof value !== "boolean") throw new PiboWebHttpError("autoContextFiles must be a boolean", 400);
+	return value;
+}
+
 function normalizeRunControl(value: unknown): boolean {
 	if (value === undefined) return false;
 	if (typeof value !== "boolean") throw new PiboWebHttpError("runControl must be a boolean", 400);
@@ -325,12 +332,6 @@ function normalizeAgentSubagents(value: unknown): CustomAgentSubagent[] {
 		};
 		const description = normalizeAgentDescription(raw.description);
 		if (description) subagent.description = description;
-		if (raw.executionMode !== undefined) {
-			if (raw.executionMode !== "sequential" && raw.executionMode !== "parallel") {
-				throw new PiboWebHttpError("subagent executionMode must be sequential or parallel", 400);
-			}
-			subagent.executionMode = raw.executionMode;
-		}
 		if (raw.timeoutMs !== undefined) {
 			if (typeof raw.timeoutMs !== "number" || !Number.isFinite(raw.timeoutMs) || raw.timeoutMs <= 0) {
 				throw new PiboWebHttpError("subagent timeoutMs must be a positive number", 400);
@@ -667,6 +668,7 @@ function createAgentInput(ownerScope: string, body: ChatAgentBody) {
 		contextFiles: normalizeNameArray(body.contextFiles, "contextFiles"),
 		subagents: normalizeAgentSubagents(body.subagents),
 		builtinTools: normalizeBuiltinTools(body.builtinTools),
+		autoContextFiles: normalizeAutoContextFiles(body.autoContextFiles),
 		runControl: normalizeRunControl(body.runControl),
 	};
 }
@@ -680,6 +682,7 @@ function createAgentUpdate(body: ChatAgentBody): UpdateCustomAgentInput {
 	if (body.contextFiles !== undefined) update.contextFiles = normalizeNameArray(body.contextFiles, "contextFiles");
 	if (body.subagents !== undefined) update.subagents = normalizeAgentSubagents(body.subagents);
 	if (body.builtinTools !== undefined) update.builtinTools = normalizeBuiltinTools(body.builtinTools);
+	if (body.autoContextFiles !== undefined) update.autoContextFiles = normalizeAutoContextFiles(body.autoContextFiles);
 	if (body.runControl !== undefined) update.runControl = normalizeRunControl(body.runControl);
 	if (Object.keys(update).length === 0 && body.archived === undefined) {
 		throw new PiboWebHttpError("No agent update fields provided", 400);

@@ -26,7 +26,7 @@ This specification does not define future marketplace behavior, remote deploymen
 
 - **Pibo**: The TypeScript wrapper that owns product boundaries around Pi Coding Agent.
 - **Pi Coding Agent**: The embedded agent engine that owns model turns, tools, streaming, sessions, compaction, and Pi session files.
-- **Profile**: A named initial session context containing selected tools, subagents, skills, context files, and builtin tool mode.
+- **Profile**: A named initial session context containing selected tools, subagents, skills, explicit context files, automatic context-file loading mode, builtin tool mode, and tool packages.
 - **Plugin**: A static internal registration unit that contributes capabilities to `PiboPluginRegistry`.
 - **Channel**: A transport adapter that converts external input to `PiboInputEvent` values and consumes `PiboOutputEvent` values.
 - **Pibo Session ID**: Stable product route identity used by Pibo channels, tools, APIs, UI, and event correlation.
@@ -43,7 +43,8 @@ This specification does not define future marketplace behavior, remote deploymen
 - **REQ-003**: Plugins MUST be static internal registrations through `PiboPluginRegistry`.
 - **REQ-004**: `PiboPluginRegistry` MUST reject duplicate plugin ids, tools, subagents, skills, context files, profiles, gateway actions, channels, web app names, profile aliases, and gateway slash commands.
 - **REQ-005**: A profile MUST be built through registered resources. Unknown profile resources MUST throw errors during profile creation.
-- **REQ-006**: Runtime creation MUST load enabled skills and enabled context files relative to the runtime cwd unless their paths are absolute.
+- **REQ-006**: Runtime creation MUST load enabled skills and enabled explicit context files relative to the runtime cwd unless their paths are absolute.
+- **REQ-006A**: Runtime creation MUST load automatic local context files by default and MUST suppress automatic local context files when profile `autoContextFiles` is `false`. Explicit profile context files MUST still be eligible for loading when automatic context files are disabled.
 - **REQ-007**: Runtime creation MUST include enabled custom tool definitions, generated subagent tools, and generated run-control tools when a run controller is available and at least one tool is yieldable.
 - **REQ-008**: Builtin Pi tools MUST be disabled only when the profile `builtinTools` mode is `"disabled"`.
 - **REQ-009**: A `PiboSessionRouter` MUST create routed sessions lazily by `piboSessionId`.
@@ -64,6 +65,7 @@ This specification does not define future marketplace behavior, remote deploymen
 - **REQ-024**: Reused subagent sessions MUST remain bound to the same parent, target profile, subagent name/tool name, and thread key.
 - **REQ-025**: Subagent calls MUST enforce the configured `maxDepth` or default depth `3`.
 - **REQ-026**: Generated subagent tool names MUST have prefix `pibo_subagent_`.
+- **REQ-026A**: Generated subagent tools MUST use Pi tool execution mode `"parallel"` and Pibo MUST NOT expose a per-subagent sequential execution mode in `SubagentProfile`, plugin capability catalog entries, or Chat Web custom-agent subagent configuration.
 - **REQ-027**: Profiles with yieldable tools MUST expose generated run-control tools with prefix `pibo_run_`.
 - **REQ-028**: Tracked yielded runs MUST create compact service notifications until terminal results are consumed or acknowledged.
 - **REQ-029**: Detached yielded runs MUST remain inspectable when requested but MUST NOT create automatic reminders.
@@ -95,9 +97,21 @@ type SubagentProfile = {
   description?: string;
   targetProfile: string;
   enabled?: boolean;
-  executionMode?: "sequential" | "parallel";
   timeoutMs?: number;
   maxDepth?: number;
+};
+
+type InitialSessionContextOptions = {
+  profileName: string;
+  sessionId?: string;
+  parentSessionId?: string;
+  skills?: readonly SkillProfile[];
+  tools?: readonly ToolProfile[];
+  subagents?: readonly SubagentProfile[];
+  contextFiles?: readonly ContextFileProfile[];
+  builtinTools?: "default" | "disabled";
+  autoContextFiles?: boolean;
+  toolPackages?: { runControl?: boolean };
 };
 ```
 
@@ -165,6 +179,8 @@ type PiboChannelContext = {
 - **AC-009**: Given a detached yielded run completes, When notifications are scheduled, Then no automatic detached reminder is delivered.
 - **AC-010**: Given a generated subagent tool call, When the child Pibo Session is resolved, Then subscribers receive a `subagent_session` output event containing the parent tool call id and child Pibo Session ID before the child reply is awaited.
 - **AC-011**: Given `pibo_run_start` starts a generated subagent tool, When Chat Web reconstructs the trace, Then the result remains inspectable as a yielded run and as an async subagent/delegation node.
+- **AC-012**: Given a profile disables `autoContextFiles`, When runtime creation loads resources, Then automatic local context files are omitted while explicit profile context files remain available.
+- **AC-013**: Given a generated subagent tool is inspected, When tool definitions are created, Then its execution mode is `"parallel"` and no subagent profile field can override it.
 
 ## 6. Test Automation Strategy
 

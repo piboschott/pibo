@@ -94,6 +94,8 @@ This specification does not define non-web local gateway behavior except where w
 - **REQ-051**: Archived non-personal rooms MUST remain readable through bootstrap, room lookup, and session listing APIs. They MUST be read-only for new sessions, message sends, room-scoped messages, and execution actions.
 - **REQ-052**: `DELETE /api/chat/rooms/:roomId` MUST require same-origin JSON, admin access, an archived non-personal room, and exact room-name confirmation before permanent deletion.
 - **REQ-053**: Permanent room deletion MUST remove the room subtree, sessions whose `metadata.chatRoomId` belongs to that subtree, descendant sessions of those sessions, Chat Web read-model rows, and durable chat events for the deleted rooms and sessions.
+- **REQ-054**: Chat custom-agent create and update APIs MUST accept optional boolean `autoContextFiles`, default it to `true`, persist it with the custom agent, and expose it in agent inventory responses.
+- **REQ-055**: Chat custom-agent subagent configuration MUST accept `name`, optional `description`, `targetProfile`, optional `timeoutMs`, and optional `maxDepth`. It MUST NOT expose or persist per-subagent execution mode.
 - **SEC-001**: Chat mutation routes MUST reject non-JSON content types with `415`.
 - **SEC-002**: Chat mutation routes MUST reject missing `Origin` headers with `403`.
 - **SEC-003**: Chat mutation routes MUST reject cross-origin `Origin` headers with `403`.
@@ -157,6 +159,34 @@ type PiboWebApp = {
 | `/api/chat/rooms/:roomId/events` | GET | required | Returns durable room events after optional cursor |
 | `/api/chat/rooms/:roomId/messages` | POST | required | Sends a room-scoped message |
 | `/api/auth/*` | any | auth-service-owned | Delegates to Better Auth |
+
+### Custom Agent Contract
+
+```ts
+type CustomAgent = {
+  id: string;
+  profileName: string;
+  ownerScope: string;
+  displayName: string;
+  description?: string;
+  nativeTools: string[];
+  skills: string[];
+  contextFiles: string[];
+  subagents: Array<{
+    name: string;
+    description?: string;
+    targetProfile: string;
+    timeoutMs?: number;
+    maxDepth?: number;
+  }>;
+  builtinTools: "default" | "disabled";
+  autoContextFiles: boolean;
+  runControl: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string;
+};
+```
 
 ### Bootstrap Response
 
@@ -223,6 +253,8 @@ type PiboWebApp = {
 - **AC-022**: Given an archived room is selected, When the user requests `POST /api/chat/sessions`, `POST /api/chat/message`, `POST /api/chat/rooms/:roomId/messages`, or `POST /api/chat/action`, Then the response is rejected as read-only.
 - **AC-023**: Given the personal default room, When rename, archive, or delete is requested, Then the response is rejected.
 - **AC-024**: Given an archived non-personal room and exact room-name confirmation, When `DELETE /api/chat/rooms/:roomId` is requested, Then the room subtree, contained session subtree, and related chat rows are deleted.
+- **AC-025**: Given a custom agent is created without `autoContextFiles`, When the agent is persisted and returned, Then `autoContextFiles` is `true`.
+- **AC-026**: Given a custom agent is created or updated with `autoContextFiles: false`, When a routed session is created with that profile, Then automatic local context files are disabled for that runtime.
 
 ## 6. Test Automation Strategy
 

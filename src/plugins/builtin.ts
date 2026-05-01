@@ -97,14 +97,12 @@ export const piboCorePlugin = definePiboPlugin({
 				description:
 					"QA helper subagent for run-yield testing. Use it for small research or inspection tasks.",
 				targetProfile: "pibo-minimal",
-				executionMode: "parallel",
 			},
 			{
 				name: "qa-reviewer",
 				description:
 					"QA reviewer subagent for run-yield testing. Use it for independent review or validation tasks.",
 				targetProfile: "pibo-minimal",
-				executionMode: "parallel",
 			},
 		]);
 		api.registerProfile({

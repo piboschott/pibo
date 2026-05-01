@@ -48,6 +48,7 @@ export type PiboProfileInfo = {
 	contextFiles: string[];
 	subagents: SubagentProfile[];
 	builtinTools: BuiltinToolsMode;
+	autoContextFiles: boolean;
 	runControl: boolean;
 };
 
@@ -67,7 +68,6 @@ export type PiboSubagentInfo = {
 	name: string;
 	description?: string;
 	targetProfile: string;
-	executionMode?: string;
 	timeoutMs?: number;
 	maxDepth?: number;
 };

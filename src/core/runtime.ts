@@ -196,6 +196,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			resourceLoaderOptions: {
 				additionalSkillPaths: skillPaths,
 				extensionFactories: options.extensionFactories,
+				noContextFiles: profile.autoContextFiles === false,
 				agentsFilesOverride: (base) => ({
 					agentsFiles: mergeContextFiles(base.agentsFiles, contextFiles),
 				}),

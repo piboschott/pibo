@@ -97,13 +97,13 @@ Custom agent names are profile names. They must be lowercase kebab-case, such as
 
 Custom agents can be archived before deletion. Archived custom agents are removed from the active profile catalog, cannot start new sessions, and become read-only until restored. Permanent deletion is available only for archived agents and requires typing the agent profile name; it deletes the custom agent and Chat sessions using that profile.
 
-The designer configures native Pibo agent capabilities only: plugin-registered tools, skills, context files, subagents, built-in Pi tool visibility, and capability packages such as `pibo-run-control`. Curated external CLI tools from `pibo tools` remain global operator tooling and are not selected per agent.
+The designer configures native Pibo agent capabilities only: plugin-registered tools, skills, context files, subagents, automatic local context-file loading, built-in Pi tool visibility, and capability packages such as `pibo-run-control`. Curated external CLI tools from `pibo tools` remain global operator tooling and are not selected per agent.
 
 ## Profiles
 
 The default profile is registered by the core plugin. It loads the local `pi-agent-harness` skill, registers the core tools `pibo_echo`, `pibo_workspace_info`, and `pibo_exec`, and appends the example context files from `examples/context/`.
 
-Profiles can opt into registered subagents. Pibo exposes enabled subagents to Pi as generated tools named `pibo_subagent_<name>`, routed through normal pibo sessions.
+Profiles can opt into registered subagents. Pibo exposes enabled subagents to Pi as generated tools named `pibo_subagent_<name>`, routed through normal pibo sessions. Generated subagent tools are always parallel-capable; agents sequence subagent work by waiting for a direct result before issuing a later call or by using `pibo_run_start` for yielded work.
 
 Subagent sessions use `parentId` for hierarchy and inherit the parent session's `metadata.chatRoomId` when the parent belongs to a Chat Web room, so room-scoped session views and room deletion include subagent work.
 

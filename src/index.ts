@@ -23,7 +23,6 @@ export type {
 	BuiltinToolsMode,
 	ContextFileProfile,
 	InitialSessionContextOptions,
-	PiboSubagentExecutionMode,
 	SkillProfile,
 	SubagentProfile,
 	ToolProfile,

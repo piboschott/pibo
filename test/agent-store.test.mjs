@@ -72,3 +72,22 @@ test("custom agent store archives and deletes agents", () => {
 
 	store.close();
 });
+
+test("custom agent store persists automatic context file setting", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	const defaultAgent = store.create({ ownerScope: "user:test", displayName: "default-context" });
+	const disabledAgent = store.create({
+		ownerScope: "user:test",
+		displayName: "disabled-context",
+		autoContextFiles: false,
+	});
+
+	assert.equal(defaultAgent.autoContextFiles, true);
+	assert.equal(disabledAgent.autoContextFiles, false);
+
+	const updated = store.update(defaultAgent.id, { autoContextFiles: false });
+	assert.equal(updated.autoContextFiles, false);
+
+	store.close();
+});
