@@ -62,13 +62,13 @@ Scope: Last 10 commits on the current branch, metadata only. No diff review yet.
 
 ### 6. `3f34d26` - Merge branch 'feature/browser-use-auth-pool'
 
-- Review status: `todo`
-- Documentation follow-up: `tbd`
+- Review status: `done`
+- Documentation follow-up: `none`
 - Date: `2026-05-01T21:05:03+02:00`
 - Author: `pibo`
 - Full hash: `3f34d26d9d09645f16c139aceb6d6f1669251339`
 - Description: `-`
-- Notes: `-`
+- Notes: `Merge commit only. The underlying browser-use lease pool changes were reviewed against `9b45161`.`
 
 ### 7. `9b45161` - Add browser-use authenticated lease pool
 
