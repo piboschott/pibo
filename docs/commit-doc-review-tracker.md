@@ -1,7 +1,8 @@
 # Commit Documentation Review Tracker
 
 Created: 2026-05-01
-Scope: Last 10 commits on the current branch, metadata only. No diff review yet.
+Scope: Last 10 commits on the current branch, reviewed chronologically from oldest to newest.
+Method: Started as a metadata-only list, then expanded with per-commit diff review outcomes and documentation follow-up notes.
 
 ## Status Legend
 
