@@ -1206,6 +1206,7 @@ function AgentsView({
 	const [customAgents, setCustomAgents] = useState(initialCustomAgents);
 	const [draft, setDraft] = useState<AgentDraft>(() => createBlankAgentDraft(initialCatalog));
 	const [saving, setSaving] = useState(false);
+	const [showArchivedAgents, setShowArchivedAgents] = useState(() => localStorage.getItem("pibo.chat.showArchivedAgents") === "true");
 	const [deleteConfirmName, setDeleteConfirmName] = useState("");
 	const [localError, setLocalError] = useState<string | null>(null);
 	const designerAvailable = Boolean(catalog);
@@ -1274,6 +1275,10 @@ function AgentsView({
 		setSaving(true);
 		try {
 			const response = await patchCustomAgent(draft.id, { archived });
+			if (archived) {
+				setShowArchivedAgents(true);
+				localStorage.setItem("pibo.chat.showArchivedAgents", "true");
+			}
 			setCustomAgents((current) => current.map((agent) => (agent.id === response.agent.id ? response.agent : agent)));
 			setDraft(agentToDraft(response.agent));
 			setDeleteConfirmName("");
@@ -1312,6 +1317,19 @@ function AgentsView({
 						<button type="button" onClick={() => setDraft(createBlankAgentDraft(catalog ?? undefined))} title="New Agent" aria-label="New Agent" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
 							<Plus size={13} />
 						</button>
+						<button
+							type="button"
+							onClick={() => {
+								const next = !showArchivedAgents;
+								setShowArchivedAgents(next);
+								localStorage.setItem("pibo.chat.showArchivedAgents", String(next));
+							}}
+							title={showArchivedAgents ? "Hide Archived Agents" : "Show Archived Agents"}
+							aria-label={showArchivedAgents ? "Hide Archived Agents" : "Show Archived Agents"}
+							className={`p-1 border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedAgents ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}
+						>
+							{showArchivedAgents ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+						</button>
 						<button type="button" onClick={onAgentsChanged} title="Refresh" aria-label="Refresh" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
 							<RefreshCw size={13} />
 						</button>
@@ -1338,22 +1356,24 @@ function AgentsView({
 						))}
 						{activeCustomAgents.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No custom agents</div> : null}
 					</AgentList>
-					<AgentList title="Archived Custom Agents">
-						{archivedCustomAgents.map((agent) => (
-							<AgentSidebarRow
-								key={agent.id}
-								title={agent.displayName}
-								subtitle={agent.profileName}
-								selected={draft.source === "custom" && draft.id === agent.id}
-								onSelect={() => {
-									setDraft(agentToDraft(agent));
-								}}
-								onCreateSession={() => {}}
-								createSessionDisabled
-							/>
-						))}
-						{archivedCustomAgents.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived agents</div> : null}
-					</AgentList>
+					{showArchivedAgents ? (
+						<AgentList title="Archived Custom Agents">
+							{archivedCustomAgents.map((agent) => (
+								<AgentSidebarRow
+									key={agent.id}
+									title={agent.displayName}
+									subtitle={agent.profileName}
+									selected={draft.source === "custom" && draft.id === agent.id}
+									onSelect={() => {
+										setDraft(agentToDraft(agent));
+									}}
+									onCreateSession={() => {}}
+									createSessionDisabled
+								/>
+							))}
+							{archivedCustomAgents.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived agents</div> : null}
+						</AgentList>
+					) : null}
 					<AgentList title="Read-only Profiles">
 						{pluginProfiles.map((agent) => (
 							<AgentSidebarRow
