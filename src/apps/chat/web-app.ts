@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 import type { PiboJsonObject, PiboJsonValue, PiboOutputEvent } from "../../core/events.js";
 import { PiboWebHttpError, readJsonBody, responseHtml, responseJson } from "../../web/http.js";
 import type { PiboWebApp, PiboWebAppContext, PiboWebSession } from "../../web/types.js";
@@ -116,6 +117,7 @@ type PiboRoomNodeWithUnread = PiboRoom & {
 };
 
 const CHAT_UI_DIST_DIR = resolve(process.cwd(), "dist/apps/chat-ui");
+const compressedAssetCache = new Map<string, Uint8Array>();
 
 function writeSse(
 	controller: ReadableStreamDefaultController<Uint8Array>,
@@ -599,6 +601,14 @@ function createPersonalChatSession(
 
 function parseBooleanSearchParam(url: URL, name: string): boolean {
 	return url.searchParams.get(name) === "true";
+}
+
+function parsePositiveIntSearchParam(url: URL, name: string, fallback: number, max: number): number {
+	const raw = url.searchParams.get(name);
+	if (!raw) return fallback;
+	const parsed = Number.parseInt(raw, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+	return Math.min(parsed, max);
 }
 
 function sessionResourceId(pathname: string): string | undefined {
@@ -1149,14 +1159,21 @@ function responseBuiltChatIndex(): Response | undefined {
 	return responseHtml(readFileSync(indexPath, "utf8"));
 }
 
-function responseBuiltChatAsset(pathname: string): Response | undefined {
+function responseBuiltChatAsset(request: Request, pathname: string): Response | undefined {
 	if (!pathname.startsWith(`${CHAT_WEB_MOUNT_PATH}/assets/`)) return undefined;
 	const relativePath = pathname.slice(`${CHAT_WEB_MOUNT_PATH}/`.length);
 	const filePath = resolve(CHAT_UI_DIST_DIR, relativePath);
 	if (!filePath.startsWith(CHAT_UI_DIST_DIR) || !existsSync(filePath)) return undefined;
-	return new Response(readFileSync(filePath), {
-		headers: { "content-type": contentTypeFor(filePath) },
-	});
+	const body = readFileSync(filePath);
+	const headers: Record<string, string> = {
+		"content-type": contentTypeFor(filePath),
+		"cache-control": "public, max-age=31536000, immutable",
+	};
+	const encoding = preferredAssetEncoding(request.headers.get("accept-encoding"), filePath);
+	if (!encoding) return new Response(body, { headers });
+	headers["content-encoding"] = encoding;
+	headers["vary"] = "accept-encoding";
+	return new Response(compressedAssetBody(filePath, body, encoding), { headers });
 }
 
 function isChatAppPath(pathname: string): boolean {
@@ -1177,6 +1194,27 @@ function contentTypeFor(path: string): string {
 		default:
 			return "application/octet-stream";
 	}
+}
+
+function preferredAssetEncoding(acceptEncoding: string | null, path: string): "br" | "gzip" | undefined {
+	if (!isCompressibleAsset(path) || !acceptEncoding) return undefined;
+	if (/\bbr\b/.test(acceptEncoding)) return "br";
+	if (/\bgzip\b/.test(acceptEncoding)) return "gzip";
+	return undefined;
+}
+
+function isCompressibleAsset(path: string): boolean {
+	const extension = extname(path);
+	return extension === ".js" || extension === ".css" || extension === ".html" || extension === ".json";
+}
+
+function compressedAssetBody(path: string, body: Uint8Array, encoding: "br" | "gzip"): Uint8Array {
+	const cacheKey = `${encoding}:${path}`;
+	const cached = compressedAssetCache.get(cacheKey);
+	if (cached) return cached;
+	const compressed = encoding === "br" ? brotliCompressSync(body) : gzipSync(body);
+	compressedAssetCache.set(cacheKey, compressed);
+	return compressed;
 }
 
 function createChatHtml(): string {
@@ -1746,7 +1784,7 @@ function createChatHtml(): string {
 		}
 		async function refreshTrace() {
 			if (!selectedPiboSessionId) return;
-			const response = await fetch("/api/chat/trace?piboSessionId=" + encodeURIComponent(selectedPiboSessionId));
+			const response = await fetch("/api/chat/trace?piboSessionId=" + encodeURIComponent(selectedPiboSessionId) + "&includeRawEvents=true&rawEventsLimit=80");
 			if (!response.ok) return;
 			const trace = await response.json();
 			sessionTitleEl.textContent = trace.title || selectedPiboSessionId;
@@ -2052,7 +2090,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			ensureEventIndexing(state, context);
 			ensureCustomAgentProfiles(state, context);
 
-			const builtAsset = responseBuiltChatAsset(url.pathname);
+			const builtAsset = responseBuiltChatAsset(request, url.pathname);
 			if (builtAsset) return builtAsset;
 
 			if (isChatAppPath(url.pathname) && request.method === "GET") {
@@ -2373,6 +2411,8 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace` && request.method === "GET") {
 				const webSession = await requireSession(request, context);
+				const includeRawEvents = parseBooleanSearchParam(url, "includeRawEvents");
+				const rawEventsLimit = parsePositiveIntSearchParam(url, "rawEventsLimit", 80, 1000);
 				const selectedSession = resolveRequestedSession(
 					state,
 					context,
@@ -2391,6 +2431,8 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						sessions: ownedSessions,
 						events: state.readModel.listEvents(selectedSession.id),
 						status: indexedSession?.status,
+						includeRawEvents,
+						rawEventsLimit,
 					}),
 				);
 			}

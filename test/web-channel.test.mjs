@@ -147,6 +147,30 @@ test("chat web app serves the React shell for deep app links", async () => {
 	}
 });
 
+test("chat web app serves built assets with immutable cache and compression headers", async () => {
+	const { channel, baseURL } = await startWebHostChannel();
+
+	try {
+		const shell = await fetch(`${baseURL}/apps/chat`);
+		assert.equal(shell.status, 200);
+		const html = await shell.text();
+		const assetPath = html.match(/\/apps\/chat\/assets\/[^"]+\.js/)?.[0];
+		assert.ok(assetPath);
+
+		const asset = await fetch(`${baseURL}${assetPath}`, {
+			method: "HEAD",
+			headers: { "accept-encoding": "br, gzip" },
+		});
+		assert.equal(asset.status, 200);
+		assert.match(asset.headers.get("content-type") ?? "", /^text\/javascript/);
+		assert.equal(asset.headers.get("cache-control"), "public, max-age=31536000, immutable");
+		assert.equal(asset.headers.get("content-encoding"), "br");
+		assert.equal(asset.headers.get("vary"), "accept-encoding");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("web host redirects app links to the canonical auth origin", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		web: { canonicalBaseURL: "http://pibo.example.test:4788" },
@@ -156,6 +180,47 @@ test("web host redirects app links to the canonical auth origin", async () => {
 		const response = await fetch(`${baseURL}/apps/chat/settings`, { redirect: "manual" });
 		assert.equal(response.status, 302);
 		assert.equal(response.headers.get("location"), "http://pibo.example.test:4788/apps/chat/settings");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web trace returns raw events only when requested", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const sessionPayload = await sessionResponse.json();
+		for (let index = 0; index < 3; index += 1) {
+			emitOutput({
+				type: "assistant_delta",
+				piboSessionId: sessionPayload.session.id,
+				eventId: `answer-${index}`,
+				text: `part ${index}`,
+			});
+		}
+
+		const compactResponse = await fetch(
+			`${baseURL}/api/chat/trace?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}`,
+			{ headers: { "x-test-user": "user-1" } },
+		);
+		assert.equal(compactResponse.status, 200);
+		const compactTrace = await compactResponse.json();
+		assert.equal(compactTrace.rawEvents.length, 0);
+
+		const rawResponse = await fetch(
+			`${baseURL}/api/chat/trace?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}&includeRawEvents=true&rawEventsLimit=2`,
+			{ headers: { "x-test-user": "user-1" } },
+		);
+		assert.equal(rawResponse.status, 200);
+		const rawTrace = await rawResponse.json();
+		assert.equal(rawTrace.rawEvents.length, 2);
+		assert.deepEqual(rawTrace.rawEvents.map((event) => event.payload.eventId), ["answer-1", "answer-2"]);
 	} finally {
 		await channel.stop?.();
 	}

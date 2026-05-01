@@ -90,6 +90,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
 	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
+	const showRawEventsRef = useRef(showRawEvents);
 	const bootstrapRequestId = useRef(0);
 	const traceRequestId = useRef(0);
 	const selectedPiboSessionIdRef = useRef<string | null>(null);
@@ -103,6 +104,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 	useEffect(() => {
 		showArchivedRef.current = showArchived;
 	}, [showArchived]);
+
+	useEffect(() => {
+		showRawEventsRef.current = showRawEvents;
+	}, [showRawEvents]);
 
 	useEffect(() => {
 		selectedPiboSessionIdRef.current = selectedPiboSessionId;
@@ -216,7 +221,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		traceRequestId.current = requestId;
 		if (options.showLoading) setTraceLoadingSessionId(piboSessionId);
 		try {
-			const trace = await getTrace(piboSessionId);
+			const trace = await getTrace(piboSessionId, { includeRawEvents: showRawEventsRef.current, rawEventsLimit: 80 });
 			if (requestId !== traceRequestId.current) return;
 			const pending = pendingStreamEventsBySession.current.get(piboSessionId) ?? [];
 			pendingStreamEventsBySession.current.delete(piboSessionId);
@@ -861,8 +866,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 									<HeaderIconButton
 										onClick={() => {
 											const next = !showRawEvents;
+											showRawEventsRef.current = next;
 											setShowRawEvents(next);
 											localStorage.setItem("pibo.chat.showRawEvents", String(next));
+											if (next && selectedPiboSessionId) {
+												void loadTrace(selectedPiboSessionId);
+											} else {
+												setTraceView((current) => (current ? { ...current, rawEvents: [] } : current));
+											}
 										}}
 										title={showRawEvents ? "Hide Raw Events" : "Show Raw Events"}
 										ariaLabel={showRawEvents ? "Hide Raw Events" : "Show Raw Events"}

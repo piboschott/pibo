@@ -1,5 +1,7 @@
 import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, PiboRoom, PiboSession, PiboSessionTraceView } from "./types";
 
+const bootstrapRequests = new Map<string, Promise<BootstrapData>>();
+
 export async function getBootstrap(
 	piboSessionId?: string,
 	includeArchived = false,
@@ -12,11 +14,24 @@ export async function getBootstrap(
 	if (roomId) params.set("roomId", roomId);
 	if (markRead) params.set("markRead", "true");
 	const suffix = params.size ? `?${params.toString()}` : "";
-	return normalizeBootstrap(await requestJson<Partial<BootstrapData>>(`/api/chat/bootstrap${suffix}`));
+	const path = `/api/chat/bootstrap${suffix}`;
+	const existing = bootstrapRequests.get(path);
+	if (existing) return existing;
+	const request = requestJson<Partial<BootstrapData>>(path)
+		.then(normalizeBootstrap)
+		.finally(() => bootstrapRequests.delete(path));
+	bootstrapRequests.set(path, request);
+	return request;
 }
 
-export async function getTrace(piboSessionId: string): Promise<PiboSessionTraceView> {
-	return requestJson<PiboSessionTraceView>(`/api/chat/trace?piboSessionId=${encodeURIComponent(piboSessionId)}`);
+export async function getTrace(
+	piboSessionId: string,
+	options: { includeRawEvents?: boolean; rawEventsLimit?: number } = {},
+): Promise<PiboSessionTraceView> {
+	const params = new URLSearchParams({ piboSessionId });
+	if (options.includeRawEvents) params.set("includeRawEvents", "true");
+	if (options.rawEventsLimit) params.set("rawEventsLimit", String(options.rawEventsLimit));
+	return requestJson<PiboSessionTraceView>(`/api/chat/trace?${params.toString()}`);
 }
 
 export async function postSession(profile?: string, roomId?: string): Promise<CreateSessionData> {
