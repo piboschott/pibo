@@ -52,13 +52,13 @@ Scope: Last 10 commits on the current branch, metadata only. No diff review yet.
 
 ### 5. `a39afca` - Show origin session link for forked chats
 
-- Review status: `todo`
-- Documentation follow-up: `tbd`
+- Review status: `done`
+- Documentation follow-up: `required`
 - Date: `2026-05-01T21:08:56+02:00`
 - Author: `pibo`
 - Full hash: `a39afcaa90eb723ff0ac33344f4c946a557ff079`
 - Description: `-`
-- Notes: `-`
+- Notes: `Documented the new trace-header origin-session affordance and clarified that `originId` stays separate from `parentId` breadcrumbs and sidebar nesting.`
 
 ### 6. `3f34d26` - Merge branch 'feature/browser-use-auth-pool'
 

@@ -328,6 +328,7 @@ Subagent:
 - **AC-013**: Given a session belongs to Room A, When a message request supplies Room B, Then the request is rejected.
 - **AC-014**: Given a parent session belongs to Room A, When a subagent child session is created, Then the child session metadata contains Room A's `chatRoomId`.
 - **AC-015**: Given a selected subagent session in Chat Web, When the trace header renders, Then it shows the session's `parentId` chain as breadcrumbs and allows reopening those ancestor sessions without treating fork origins as parents.
+- **AC-016**: Given a selected forked or cloned session with an `originId`, When the trace header renders, Then it exposes a separate origin-session control and does not treat the origin as a parent breadcrumb.
 
 ## 6. Test Automation Strategy
 
@@ -356,6 +357,7 @@ Subagent:
   - Start the Chat Web App.
   - Verify first session, new sessions, forks, and subagents in the UI.
   - Open a nested subagent session and verify the trace header breadcrumbs reopen the parent chain from the selected room-scoped session tree.
+  - Open a forked or cloned session and verify the trace header origin control reopens the source session without nesting the branch under that origin in the sidebar.
   - Inspect raw events and verify they use `piboSessionId`, not `sessionKey`.
 
 ## 7. Rationale & Context
