@@ -128,6 +128,8 @@ The Chat Web Agents area persists custom agents in `.pibo/chat-agents.sqlite`. E
 
 The Agents UI has a single profile sidebar. User-created custom agents are editable; plugin-registered profiles are read-only inspection targets that expose their selected native tools, skills, context files, subagents, built-in tool mode, and run-control package state. Copying a read-only profile creates an editable custom agent draft.
 
+Custom agent names are canonical profile names. They use lowercase kebab-case, such as `test-agent`, and are stored as `profile_name` so session creation and UI display use the same identifier. Legacy `custom-agent:agent_*` names are migrated to kebab-case names and kept as aliases for compatibility.
+
 The designer configures native Pibo agent capabilities only:
 
 - plugin-registered native tools

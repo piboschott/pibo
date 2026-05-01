@@ -21,6 +21,7 @@ import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadat
 import {
 	CustomAgentStore,
 	createDefaultCustomAgentStore,
+	isValidCustomAgentName,
 	type CustomAgentDefinition,
 	type CustomAgentSubagent,
 	type UpdateCustomAgentInput,
@@ -228,12 +229,15 @@ function normalizeOptionalParentRoomId(value: unknown): string | null | undefine
 	return value;
 }
 
-function normalizeAgentDisplayName(value: unknown, fallback = "New Agent"): string {
+function normalizeAgentDisplayName(value: unknown, fallback = "new-agent"): string {
 	if (value === undefined) return fallback;
 	if (typeof value !== "string") throw new PiboWebHttpError("Agent name must be a string", 400);
-	const name = value.replace(/\s+/g, " ").trim();
+	const name = value.trim();
 	if (!name) throw new PiboWebHttpError("Agent name is required", 400);
 	if (name.length > 120) throw new PiboWebHttpError("Agent name is too long", 400);
+	if (!isValidCustomAgentName(name)) {
+		throw new PiboWebHttpError("Agent name must be lowercase kebab-case, for example test-agent", 400);
+	}
 	return name;
 }
 
@@ -584,6 +588,25 @@ function createAgentUpdate(body: ChatAgentBody): UpdateCustomAgentInput {
 	if (body.runControl !== undefined) update.runControl = normalizeRunControl(body.runControl);
 	if (Object.keys(update).length === 0) throw new PiboWebHttpError("No agent update fields provided", 400);
 	return update;
+}
+
+function requireAgentProfileNameAvailable(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	profileName: string,
+	currentAgentId?: string,
+): void {
+	const currentAgent = currentAgentId ? state.agentStore.get(currentAgentId) : undefined;
+	if (currentAgent?.profileName === profileName) return;
+	for (const agent of state.agentStore.list()) {
+		if (agent.id !== currentAgentId && agent.profileName === profileName) {
+			throw new PiboWebHttpError(`Agent name "${profileName}" already exists`, 400);
+		}
+	}
+	const matchedProfile = context.channelContext.getProfiles?.().find(
+		(profile) => profile.name === profileName || profile.aliases.includes(profileName),
+	);
+	if (matchedProfile) throw new PiboWebHttpError(`Agent name "${profileName}" conflicts with an existing profile`, 400);
 }
 
 function requireOwnedAgent(agent: CustomAgentDefinition | undefined, webSession: PiboWebSession): CustomAgentDefinition {
@@ -1865,7 +1888,9 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<ChatAgentBody>(request);
-				const agent = state.agentStore.create(createAgentInput(webSession.ownerScope, body));
+				const input = createAgentInput(webSession.ownerScope, body);
+				requireAgentProfileNameAvailable(state, context, input.displayName);
+				const agent = state.agentStore.create(input);
 				context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(agent));
 				return responseJson({ agent }, { status: 201 });
 			}
@@ -1874,10 +1899,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (patchAgentId && request.method === "PATCH") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				requireOwnedAgent(state.agentStore.get(patchAgentId), webSession);
+				const existing = requireOwnedAgent(state.agentStore.get(patchAgentId), webSession);
 				const body = await readJsonBody<ChatAgentBody>(request);
-				const agent = state.agentStore.update(patchAgentId, createAgentUpdate(body));
+				const update = createAgentUpdate(body);
+				if (update.displayName) requireAgentProfileNameAvailable(state, context, update.displayName, existing.id);
+				const agent = state.agentStore.update(patchAgentId, update);
 				const owned = requireOwnedAgent(agent, webSession);
+				if (existing.profileName !== owned.profileName) context.channelContext.removeProfile?.(existing.profileName);
 				context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(owned));
 				return responseJson({ agent: owned });
 			}

@@ -89,6 +89,8 @@ The Chat Web App includes an Agent Designer in the Agents area. It creates custo
 
 The Agents area uses one sidebar for both editable custom agents and read-only plugin profiles. Plugin profiles can be inspected with their registered tools, skills, context files, subagents, built-in tool mode, and run-control package state, then copied into a custom agent when changes are needed.
 
+Custom agent names are profile names. They must be lowercase kebab-case, such as `test-agent`, and are used consistently in the UI, session records, and backend profile registry. Legacy `custom-agent:agent_*` names remain aliases for existing agents.
+
 The designer configures native Pibo agent capabilities only: plugin-registered tools, skills, context files, subagents, built-in Pi tool visibility, and capability packages such as `pibo-run-control`. Curated external CLI tools from `pibo tools` remain global operator tooling and are not selected per agent.
 
 ## Profiles

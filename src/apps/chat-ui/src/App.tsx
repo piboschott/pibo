@@ -1222,9 +1222,15 @@ function AgentsView({
 		[agents, customAgents],
 	);
 	const readOnly = draft.source === "profile";
+	const agentNameError = readOnly ? null : validateAgentName(draft.displayName);
+	const draftProfileName = draft.profileName ?? (agentNameError ? "new custom profile" : draft.displayName);
 
 	const saveDraft = async () => {
 		if (readOnly) return;
+		if (agentNameError) {
+			setLocalError(agentNameError);
+			return;
+		}
 		if (!designerAvailable) {
 			setLocalError(agentDesignerUnavailableMessage());
 			return;
@@ -1319,14 +1325,14 @@ function AgentsView({
 				<div className="flex items-center justify-between gap-3 mb-4">
 					<div className="min-w-0">
 						<h1 className="text-sm font-bold uppercase tracking-wider">Agent Designer</h1>
-						<div className="font-mono text-[11px] text-slate-500 truncate">{draft.profileName ?? "new custom profile"}</div>
+						<div className="font-mono text-[11px] text-slate-500 truncate">{draftProfileName}</div>
 						<div className="text-[11px] uppercase tracking-wider text-slate-500">{readOnly ? "read-only plugin profile" : "custom agent"}</div>
 					</div>
 					<div className="flex items-center gap-2">
-						<button type="button" onClick={() => draft.profileName && onCreateSession(draft.profileName)} disabled={!draft.profileName || creatingSession} title="New Session With Agent" aria-label="New Session With Agent" className="h-8 w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50">
+						<button type="button" onClick={() => { if (draft.profileName) { onSelect(draft.profileName); onCreateSession(draft.profileName); } }} disabled={!draft.profileName || creatingSession} title="New Session With Agent" aria-label="New Session With Agent" className="h-8 w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50">
 							<MessageSquarePlus size={14} />
 						</button>
-						<button type="button" onClick={() => void saveDraft()} disabled={readOnly || !designerAvailable || saving || !draft.displayName.trim()} title="Save Agent" aria-label="Save Agent" className="h-8 w-8 inline-flex items-center justify-center border border-[#11a4d4] rounded-sm text-[#11a4d4] bg-[#11a4d4]/10 disabled:opacity-50">
+						<button type="button" onClick={() => void saveDraft()} disabled={readOnly || !designerAvailable || saving || Boolean(agentNameError)} title="Save Agent" aria-label="Save Agent" className="h-8 w-8 inline-flex items-center justify-center border border-[#11a4d4] rounded-sm text-[#11a4d4] bg-[#11a4d4]/10 disabled:opacity-50">
 							<Save size={14} />
 						</button>
 					</div>
@@ -1336,7 +1342,8 @@ function AgentsView({
 				{localError ? <div className="mb-3 border border-red-500/60 bg-red-500/10 text-red-200 px-3 py-2 text-sm rounded-sm">{localError}</div> : null}
 				<div className="grid gap-4">
 					<DesignerPanel title="Basics">
-						<input value={draft.displayName} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" placeholder="Agent name" />
+						<input value={draft.displayName} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} className={`min-w-0 bg-[#0e1116] border rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60 ${agentNameError ? "border-[#f59e0b]" : "border-slate-700"}`} placeholder="agent-name" />
+						{agentNameError ? <div className="text-xs text-amber-100">{agentNameError}</div> : null}
 						<textarea value={draft.description} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} className="min-h-[72px] bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" placeholder="Description" />
 						<label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" disabled={readOnly} checked={draft.builtinTools === "disabled"} onChange={(event) => setDraft((current) => ({ ...current, builtinTools: event.target.checked ? "disabled" : "default" }))} />Disable Pi built-in tools</label>
 					</DesignerPanel>
@@ -1359,7 +1366,7 @@ type AgentDraft = SaveCustomAgentInput & {
 
 function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 	return {
-		displayName: "New Agent",
+		displayName: "new-agent",
 		description: "",
 		nativeTools: [],
 		skills: catalog?.skills.some((skill) => skill.name === "pi-agent-harness") ? ["pi-agent-harness"] : [],
@@ -1406,7 +1413,7 @@ function copyProfileToDraft(profile: BootstrapData["agents"][number], catalog?: 
 	const draft = profileToDraft(profile, catalog);
 	return {
 		...draft,
-		displayName: `${profile.name} Copy`,
+		displayName: `${profile.name}-copy`,
 		id: undefined,
 		profileName: undefined,
 		source: "custom",
@@ -1421,6 +1428,15 @@ function uniqueProfileOptions(
 	for (const agent of agents) options.set(agent.name, agent.name);
 	for (const agent of customAgents) options.set(agent.profileName, agent.displayName);
 	return [...options.entries()].map(([value, label]) => ({ value, label }));
+}
+
+function validateAgentName(name: string): string | null {
+	if (!name.trim()) return "Agent name is required.";
+	if (name.length > 120) return "Agent name is too long.";
+	if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name)) {
+		return "Use lowercase kebab-case only, for example test-agent.";
+	}
+	return null;
 }
 
 function toggleName(names: string[], name: string): string[] {

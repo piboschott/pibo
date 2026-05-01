@@ -5,7 +5,7 @@ import type { CustomAgentDefinition } from "./agent-store.js";
 export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition): PiboProfileDefinition {
 	return {
 		name: agent.profileName,
-		aliases: [agent.id],
+		aliases: [agent.id, `custom-agent:${agent.id}`],
 		description: agent.description || agent.displayName,
 		create(context) {
 			const builder = new InitialSessionContextBuilder(agent.profileName)

@@ -29,6 +29,7 @@ export type PiboChannelContext = {
 	getProfiles?(): PiboProfileInfo[];
 	getCapabilityCatalog?(): PiboCapabilityCatalog;
 	upsertProfile?(profile: PiboProfileDefinition): void;
+	removeProfile?(name: string): void;
 	auth?: PiboAuthService;
 	getWebApps(): PiboWebApp[];
 };

@@ -96,6 +96,9 @@ async function startWebHostChannel(options = {}) {
 				aliases: [...(profile.aliases ?? [])],
 			});
 		},
+		removeProfile(name) {
+			profiles = profiles.filter((item) => item.name !== name);
+		},
 		getWebApps() {
 			return [createChatWebApp({ readModelPath: storagePath })];
 		},
@@ -516,7 +519,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 				"x-test-user": "user-1",
 			},
 			body: JSON.stringify({
-				displayName: "Research Agent",
+				displayName: "research-agent",
 				description: "Uses native catalog entries only.",
 				nativeTools: ["pibo_echo"],
 				skills: ["pi-agent-harness"],
@@ -526,7 +529,8 @@ test("chat web app creates custom agents from the native capability catalog", as
 		});
 		assert.equal(createdAgent.status, 201);
 		const agentPayload = await createdAgent.json();
-		assert.match(agentPayload.agent.profileName, /^custom-agent:agent_/);
+		assert.equal(agentPayload.agent.profileName, "research-agent");
+		assert.equal(agentPayload.agent.displayName, "research-agent");
 		assert.deepEqual(agentPayload.agent.nativeTools, ["pibo_echo"]);
 		assert.equal(agentPayload.agent.runControl, true);
 
@@ -548,7 +552,42 @@ test("chat web app creates custom agents from the native capability catalog", as
 		});
 		assert.equal(listed.status, 200);
 		const listedPayload = await listed.json();
-		assert.deepEqual(listedPayload.agents.map((agent) => agent.displayName), ["Research Agent"]);
+		assert.deepEqual(listedPayload.agents.map((agent) => agent.displayName), ["research-agent"]);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app validates custom agent profile names", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+	});
+
+	try {
+		const invalid = await fetch(`${baseURL}/api/chat/agents`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ displayName: "Test Agent" }),
+		});
+		assert.equal(invalid.status, 400);
+		assert.deepEqual(await invalid.json(), { error: "Agent name must be lowercase kebab-case, for example test-agent" });
+
+		const conflicting = await fetch(`${baseURL}/api/chat/agents`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ displayName: "pibo-minimal" }),
+		});
+		assert.equal(conflicting.status, 400);
+		assert.deepEqual(await conflicting.json(), { error: 'Agent name "pibo-minimal" conflicts with an existing profile' });
 	} finally {
 		await channel.stop?.();
 	}

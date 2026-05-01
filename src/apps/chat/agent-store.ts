@@ -29,6 +29,8 @@ export type CustomAgentDefinition = {
 	updatedAt: string;
 };
 
+const CUSTOM_AGENT_NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
 export type CreateCustomAgentInput = {
 	ownerScope: string;
 	displayName: string;
@@ -86,6 +88,7 @@ export class CustomAgentStore {
 			CREATE INDEX IF NOT EXISTS idx_chat_agents_owner
 				ON chat_agents(owner_scope, updated_at);
 		`);
+		this.migrateLegacyProfileNames();
 	}
 
 	list(ownerScope?: string): CustomAgentDefinition[] {
@@ -103,9 +106,11 @@ export class CustomAgentStore {
 	create(input: CreateCustomAgentInput): CustomAgentDefinition {
 		const now = new Date().toISOString();
 		const id = `agent_${randomUUID()}`;
+		const profileName = input.displayName;
+		this.requireProfileNameAvailable(profileName);
 		const agent: CustomAgentDefinition = {
 			id,
-			profileName: `custom-agent:${id}`,
+			profileName,
 			ownerScope: input.ownerScope,
 			displayName: input.displayName,
 			description: input.description,
@@ -127,8 +132,11 @@ export class CustomAgentStore {
 	update(id: string, input: UpdateCustomAgentInput): CustomAgentDefinition | undefined {
 		const existing = this.get(id);
 		if (!existing) return undefined;
+		const profileName = input.displayName ?? existing.displayName;
+		this.requireProfileNameAvailable(profileName, id);
 		const updated: CustomAgentDefinition = {
 			...existing,
+			profileName,
 			displayName: input.displayName ?? existing.displayName,
 			description: input.description === undefined ? existing.description : input.description,
 			nativeTools: input.nativeTools ? [...input.nativeTools] : existing.nativeTools,
@@ -142,6 +150,7 @@ export class CustomAgentStore {
 		this.db
 			.prepare(`
 				UPDATE chat_agents SET
+					profile_name = ?,
 					display_name = ?,
 					description = ?,
 					native_tools_json = ?,
@@ -154,6 +163,7 @@ export class CustomAgentStore {
 				WHERE id = ?
 			`)
 			.run(
+				updated.profileName,
 				updated.displayName,
 				updated.description ?? null,
 				JSON.stringify(updated.nativeTools),
@@ -207,6 +217,29 @@ export class CustomAgentStore {
 				agent.updatedAt,
 			);
 	}
+
+	private requireProfileNameAvailable(profileName: string, currentId?: string): void {
+		const row = this.db.prepare("SELECT id FROM chat_agents WHERE profile_name = ?").get(profileName) as { id: string } | undefined;
+		if (row && row.id !== currentId) throw new Error(`Agent name "${profileName}" already exists`);
+	}
+
+	private migrateLegacyProfileNames(): void {
+		const rows = this.db.prepare("SELECT id, profile_name, display_name FROM chat_agents ORDER BY created_at ASC").all() as Array<{
+			id: string;
+			profile_name: string;
+			display_name: string;
+		}>;
+		const used = new Set(rows.map((row) => row.profile_name));
+		for (const row of rows) {
+			if (!row.profile_name.startsWith("custom-agent:agent_")) continue;
+			used.delete(row.profile_name);
+			const nextName = uniqueAgentName(agentNameCandidate(row.display_name, row.id), used);
+			used.add(nextName);
+			this.db
+				.prepare("UPDATE chat_agents SET profile_name = ?, display_name = ? WHERE id = ?")
+				.run(nextName, nextName, row.id);
+		}
+	}
 }
 
 export function createDefaultCustomAgentStore(cwd = process.cwd()): CustomAgentStore {
@@ -253,4 +286,29 @@ function parseSubagents(value: string): CustomAgentSubagent[] {
 	} catch {
 		return [];
 	}
+}
+
+export function isValidCustomAgentName(name: string): boolean {
+	return CUSTOM_AGENT_NAME_PATTERN.test(name);
+}
+
+function agentNameCandidate(displayName: string, id: string): string {
+	const candidate = displayName
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.replace(/-+/g, "-");
+	if (isValidCustomAgentName(candidate)) return candidate;
+	return `agent-${id.replace(/^agent_/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+}
+
+function uniqueAgentName(baseName: string, used: Set<string>): string {
+	let name = baseName;
+	let suffix = 2;
+	while (used.has(name)) {
+		name = `${baseName}-${suffix}`;
+		suffix += 1;
+	}
+	return name;
 }

@@ -124,6 +124,14 @@ export class PiboPluginRegistry {
 		this.registerProfileAliases(profile);
 	}
 
+	removeProfile(name: string): void {
+		const resolvedName = this.profileAliases.get(name) ?? name;
+		if (!this.profiles.delete(resolvedName)) return;
+		for (const [alias, profileName] of this.profileAliases.entries()) {
+			if (profileName === resolvedName) this.profileAliases.delete(alias);
+		}
+	}
+
 	registerGatewayAction(action: PiboGatewayAction): void {
 		const slashCommands = this.getGatewaySlashCommandsToRegister(action);
 		this.addUnique(this.gatewayActions, action.name, action, "gateway action");
