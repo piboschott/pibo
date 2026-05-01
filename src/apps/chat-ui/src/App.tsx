@@ -475,7 +475,7 @@ export function App() {
 
 			<div
 				className={`min-h-0 ${
-					area === "agents" ? "" : `grid ${
+					area === "agents" ? "h-full overflow-hidden" : `grid ${
 						showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-[240px_minmax(0,1fr)]"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-[240px_minmax(0,1fr)]"
@@ -1259,7 +1259,7 @@ function AgentsView({
 	};
 
 	return (
-		<div className="min-h-0 grid grid-cols-[300px_minmax(0,1fr)] max-[920px]:grid-cols-1">
+		<div className="h-full min-h-0 overflow-hidden grid grid-cols-[300px_minmax(0,1fr)] max-[920px]:grid-cols-1">
 			<aside className="border-r border-slate-800 bg-[#1a262b] min-h-0 overflow-auto">
 				<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
 					<span>Agents</span>
