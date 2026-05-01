@@ -29,6 +29,8 @@ import {
 import { createRunToolDefinitions, type PiboRunToolController } from "../runs/tools.js";
 import type { PiboThinkingLevel } from "./thinking.js";
 import { getInstalledCliToolContextFile } from "../tools/registry.js";
+import { createCodexCompatToolDefinitions } from "../tools/codex-compat.js";
+import { createCodexCompatExtension } from "./codex-compat.js";
 
 export type PiboRuntimeOptions = {
 	cwd?: string;
@@ -105,12 +107,17 @@ function getEnabledToolDefinitions(
 	runToolController?: PiboRunToolController,
 ): ToolDefinition[] {
 	const profileTools = profile.tools.filter(hasEnabledToolDefinition);
-	const subagentTools = subagentRunner
+	const codexCompatEnabled = profile.toolPackages.codexCompat === true;
+	const subagentTools = subagentRunner && !codexCompatEnabled
 		? createSubagentToolDefinitions(profile.subagents, subagentRunner)
+		: [];
+	const codexCompatTools = codexCompatEnabled
+		? createCodexCompatToolDefinitions({ subagents: profile.subagents, subagentRunner })
 		: [];
 	const yieldableTools = [
 		...profileTools.filter((tool) => tool.yieldable !== false).map((tool) => tool.definition),
 		...subagentTools,
+		...codexCompatTools,
 	];
 	const runControlEnabled = profile.toolPackages.runControl !== false;
 	const runTools = runControlEnabled && runToolController && yieldableTools.length > 0
@@ -120,6 +127,7 @@ function getEnabledToolDefinitions(
 	return [
 		...profileTools.map((tool) => tool.definition),
 		...subagentTools,
+		...codexCompatTools,
 		...runTools,
 	];
 }
@@ -130,6 +138,27 @@ function hasEnabledToolDefinition(tool: ToolProfile): tool is ToolProfile & { de
 
 function isGeneratedPiboTool(name: string): boolean {
 	return name.startsWith("pibo_subagent_") || name.startsWith("pibo_run_");
+}
+
+function getProfileExtensionFactories(
+	profile: InitialSessionContext,
+	extensionFactories: readonly ExtensionFactory[] | undefined,
+): ExtensionFactory[] | undefined {
+	if (profile.toolPackages.codexCompat !== true) {
+		return extensionFactories ? [...extensionFactories] : undefined;
+	}
+	return [
+		createCodexCompatExtension({
+			isChildSession: profile.parentSessionId !== undefined,
+			webSearch: profile.toolPackages.providerWebSearch === true
+				? {
+						external_web_access: true,
+						search_context_size: "medium",
+					}
+				: undefined,
+		}),
+		...(extensionFactories ?? []),
+	];
 }
 
 function createInspectionSubagentRunner(): PiboSubagentRunner {
@@ -197,7 +226,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			authStorage,
 			resourceLoaderOptions: {
 				additionalSkillPaths: skillPaths,
-				extensionFactories: options.extensionFactories,
+				extensionFactories: getProfileExtensionFactories(profile, options.extensionFactories),
 				noContextFiles: profile.autoContextFiles === false,
 				agentsFilesOverride: (base) => ({
 					agentsFiles: mergeContextFiles(
@@ -281,8 +310,8 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 			tools: profile.tools.map((tool) => ({
 				name: tool.name,
 				hasDefinition: Boolean(tool.definition),
-				registered: registeredToolNames.has(tool.name),
-				active: activeToolNames.has(tool.name),
+				registered: registeredToolNames.has(tool.name) || (tool.name === "web_search" && profile.toolPackages.providerWebSearch === true),
+				active: activeToolNames.has(tool.name) || (tool.name === "web_search" && profile.toolPackages.providerWebSearch === true),
 			})).concat(generatedTools),
 			subagents: profile.subagents.map((subagent) => {
 				const toolName = createSubagentToolName(subagent.name);

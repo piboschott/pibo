@@ -41,6 +41,8 @@ export type BuiltinToolsMode = "default" | "disabled";
 
 export type ToolPackageProfile = {
 	runControl?: boolean;
+	codexCompat?: boolean;
+	providerWebSearch?: boolean;
 };
 
 export type InitialSessionContextOptions = {
