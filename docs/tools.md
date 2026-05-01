@@ -26,6 +26,8 @@ npm run dev -- tools guide browser-use browser-use
 npm run dev -- tools guide browser-use remote-browser
 npm run dev -- tools path browser-use
 npm run dev -- tools env browser-use
+npm run dev -- tools browser-use
+npm run dev -- tools browser-use lease acquire
 ```
 
 ## Browser Use
@@ -51,6 +53,15 @@ By default, the Pibo Browser Use wrapper starts a Pibo-managed persistent Chrome
 ```
 
 This is intentionally different from upstream `browser-use --profile`, which can copy Chrome profiles into a temporary user-data directory. Sign-ins made through the default Pibo wrapper path persist across Browser Use daemon restarts and shell sessions. Use `--fresh-profile` only when a disposable temporary browser profile is wanted.
+
+For authenticated Chat Web App testing, use isolated Browser Use leases instead of sharing one long-lived browser-use session between agents:
+
+```bash
+eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat --owner "$USER")"
+browser-use state
+```
+
+The lease prints shell exports for a cloned authenticated Chrome user-data directory and a dedicated `PIBO_BROWSER_USE_SESSION`. In that shell, later `browser-use` commands use the leased session by default. Prepare or refresh the authenticated template with `npm run dev -- tools browser-use auth-template env` when lease acquisition reports that no template profile exists.
 
 The installer uses `uv` to create the virtual environment and install the pinned package `browser-use[cli]==0.12.6`. The version is pinned so the Browser Use CLI surface stays aligned with the bundled guides. Browser Use system setup stays visible through `pibo tools doctor browser-use`; if Browser Use reports missing optional components, install them explicitly for the workflow that needs them.
 
