@@ -73,6 +73,8 @@ The channel context exposes only the pibo boundary:
 
 Pibo Sessions are stored in SQLite by default at `.pibo/pibo-sessions.sqlite`. A Pibo Session keeps product identity (`id`), technical Pi identity (`piSessionId`), channel, kind, profile, owner scope, optional parent/origin relationships, optional workspace, title, and plugin metadata.
 
+In the Chat Web App, personal sessions can be archived before deletion. Permanent deletion is available only for archived sessions and requires typing `Delete this session`; it removes the selected Pibo Session, child sessions, and their Chat Web read-model/event-log rows.
+
 The main source folders are:
 
 - `src/core/` for runtime, events, profiles, and session routing

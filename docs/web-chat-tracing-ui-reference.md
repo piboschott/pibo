@@ -352,6 +352,7 @@ Recommended V1:
 - Error rendering.
 - Agent delegation rendering.
 - Basic execution result rendering.
+- Archived-session deletion guarded by a destructive confirmation modal requiring `Delete this session`.
 - Agent Designer for persisted custom profiles built from native plugin tools, skills, context files, subagents, and the `pibo-run-control` package toggle. The Agents area uses a single profile sidebar with editable custom agents, archived custom agents, and read-only plugin profile inspection plus copy-to-custom actions. Archived custom agents are read-only and can be permanently deleted only after exact-name confirmation.
 
 Recommended later phases:

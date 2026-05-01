@@ -24,7 +24,7 @@ import {
 	UserRound,
 	X,
 } from "lucide-react";
-import { deleteCustomAgent, getBootstrap, getTrace, patchCustomAgent, patchRoom, patchSession, postAction, postCustomAgent, postMessage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
+import { deleteCustomAgent, deleteSession, getBootstrap, getTrace, patchCustomAgent, patchRoom, patchSession, postAction, postCustomAgent, postMessage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboWebSessionNode } from "./types";
 import { adaptTrace } from "./tracing/adapt";
 import { TraceTimeline } from "./tracing/TraceTimeline";
@@ -51,6 +51,7 @@ type LoadBootstrapOptions = {
 };
 
 const LAST_SELECTION_STORAGE_KEY = "pibo.chat.lastSelection";
+const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 
 type StoredSelection = {
 	roomId?: string;
@@ -79,6 +80,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
 	const [creatingRoom, setCreatingRoom] = useState(false);
+	const [deleteSessionTarget, setDeleteSessionTarget] = useState<PiboWebSessionNode | null>(null);
+	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
+	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
 	const bootstrapRequestId = useRef(0);
 	const traceRequestId = useRef(0);
@@ -458,6 +462,43 @@ export function App({ route }: { route: ChatAppRoute }) {
 		}
 	};
 
+	const requestSessionDelete = (node: PiboWebSessionNode) => {
+		setDeleteSessionTarget(node);
+		setDeleteSessionConfirmText("");
+	};
+
+	const permanentlyDeleteSession = async () => {
+		if (!deleteSessionTarget) return;
+		setDeletingSession(true);
+		try {
+			const deleted = await deleteSession(deleteSessionTarget.piboSessionId, deleteSessionConfirmText);
+			const deletedSelected = selectedPiboSessionId ? deleted.deletedSessionIds.includes(selectedPiboSessionId) : false;
+			if (deletedSelected) {
+				setSelectedPiboSessionId(null);
+				setTraceView(null);
+			}
+			const data = await loadBootstrap(
+				deletedSelected ? undefined : (selectedPiboSessionId ?? undefined),
+				showArchivedRef.current,
+				selectedRoomId ?? undefined,
+			);
+			if (area === "sessions") {
+				if (data.selectedPiboSessionId !== selectedPiboSessionId) {
+					setTraceLoadingSessionId(data.selectedPiboSessionId);
+					setTraceView(null);
+				}
+				navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+			}
+			setDeleteSessionTarget(null);
+			setDeleteSessionConfirmText("");
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setDeletingSession(false);
+		}
+	};
+
 	const createRoom = async () => {
 		if (creatingRoom) return;
 		setCreatingRoom(true);
@@ -671,6 +712,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 										onSelect={(piboSessionId) => void selectSession(piboSessionId)}
 										onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)}
 										onArchive={(piboSessionId, archived) => void setSessionArchived(piboSessionId, archived)}
+										onDelete={requestSessionDelete}
 									/>
 								))}
 							</div>
@@ -790,6 +832,19 @@ export function App({ route }: { route: ChatAppRoute }) {
 						</div>
 					</aside>
 				) : null}
+				{deleteSessionTarget ? (
+					<DeleteSessionModal
+						session={deleteSessionTarget}
+						confirmText={deleteSessionConfirmText}
+						deleting={deletingSession}
+						onConfirmTextChange={setDeleteSessionConfirmText}
+						onCancel={() => {
+							setDeleteSessionTarget(null);
+							setDeleteSessionConfirmText("");
+						}}
+						onDelete={() => void permanentlyDeleteSession()}
+					/>
+				) : null}
 				</>
 				)}
 			</div>
@@ -838,6 +893,79 @@ function HeaderIconButton({
 		>
 			{children}
 		</button>
+	);
+}
+
+function DeleteSessionModal({
+	session,
+	confirmText,
+	deleting,
+	onConfirmTextChange,
+	onCancel,
+	onDelete,
+}: {
+	session: PiboWebSessionNode;
+	confirmText: string;
+	deleting: boolean;
+	onConfirmTextChange: (value: string) => void;
+	onCancel: () => void;
+	onDelete: () => void;
+}) {
+	return (
+		<div className="fixed inset-0 z-50 bg-black/70 grid place-items-center p-4">
+			<div className="w-full max-w-lg border border-red-500/70 bg-[#1a262b] rounded-sm shadow-xl">
+				<div className="px-4 py-3 border-b border-red-500/50 flex items-center justify-between gap-3">
+					<div>
+						<h2 className="text-sm font-bold uppercase tracking-wider text-red-200">Delete Session</h2>
+						<div className="font-mono text-[11px] text-slate-500 truncate">{session.piboSessionId}</div>
+					</div>
+					<button
+						type="button"
+						onClick={onCancel}
+						disabled={deleting}
+						title="Cancel"
+						aria-label="Cancel"
+						className="h-8 w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+					>
+						<X size={14} />
+					</button>
+				</div>
+				<div className="p-4 grid gap-3">
+					<div className="border border-red-500/60 bg-red-500/10 text-red-100 rounded-sm p-3 text-sm">
+						This permanently deletes the archived session, its child sessions, and their Chat events. This cannot be undone.
+					</div>
+					<div className="text-sm text-slate-300">
+						Type <span className="font-mono text-red-200">{SESSION_DELETE_CONFIRM_TEXT}</span> to confirm.
+					</div>
+					<input
+						value={confirmText}
+						onChange={(event) => onConfirmTextChange(event.target.value)}
+						className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-red-500"
+						placeholder={SESSION_DELETE_CONFIRM_TEXT}
+						autoFocus
+					/>
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={onCancel}
+							disabled={deleting}
+							className="h-8 inline-flex items-center border border-slate-700 rounded-sm px-3 text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							onClick={onDelete}
+							disabled={deleting || confirmText !== SESSION_DELETE_CONFIRM_TEXT}
+							className="h-8 inline-flex items-center gap-2 border border-red-500 rounded-sm px-3 text-red-200 bg-red-500/10 disabled:opacity-50"
+						>
+							<Trash2 size={14} />
+							Delete permanently
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
 	);
 }
 
@@ -973,6 +1101,7 @@ function SessionNode({
 	onSelect,
 	onRename,
 	onArchive,
+	onDelete,
 	depth = 0,
 }: {
 	node: PiboWebSessionNode;
@@ -980,6 +1109,7 @@ function SessionNode({
 	onSelect: (piboSessionId: string) => void;
 	onRename: (piboSessionId: string, title: string | null) => void;
 	onArchive: (piboSessionId: string, archived: boolean) => void;
+	onDelete: (node: PiboWebSessionNode) => void;
 	depth?: number;
 }) {
 	const [editing, setEditing] = useState(false);
@@ -1113,6 +1243,17 @@ function SessionNode({
 						>
 							{node.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
 						</button>
+						{node.archived ? (
+							<button
+								type="button"
+								onClick={() => onDelete(node)}
+								title="Delete Session"
+								aria-label="Delete Session"
+								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-300"
+							>
+								<Trash2 size={13} />
+							</button>
+						) : null}
 					</div>
 				)}
 			</div>
@@ -1124,6 +1265,7 @@ function SessionNode({
 					onSelect={onSelect}
 					onRename={onRename}
 					onArchive={onArchive}
+					onDelete={onDelete}
 					depth={depth + 1}
 				/>
 			)) : null}

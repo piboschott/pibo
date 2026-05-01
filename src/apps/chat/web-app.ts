@@ -56,6 +56,10 @@ type ChatSessionCreateBody = {
 	roomId?: unknown;
 };
 
+type ChatSessionDeleteBody = {
+	confirmText?: unknown;
+};
+
 type ChatRoomCreateBody = {
 	name?: unknown;
 	topic?: unknown;
@@ -329,6 +333,13 @@ function normalizeClientTxnId(value: unknown): string | undefined {
 	if (!id) throw new PiboWebHttpError("clientTxnId must be a non-empty string", 400);
 	if (id.length > 160) throw new PiboWebHttpError("clientTxnId is too long", 400);
 	return id;
+}
+
+function normalizeSessionDeleteConfirmation(value: unknown): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new PiboWebHttpError('Type "Delete this session" to permanently delete it.', 400);
+	}
+	return value.trim();
 }
 
 function normalizeMessageText(value: unknown): string {
@@ -661,6 +672,36 @@ function deleteSessionsForAgentProfile(
 	const ownedSessions = listOwnedSessions(context, webSession);
 	const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
 	const ids = new Set(ownedSessions.filter((session) => session.profile === profileName).map((session) => session.id));
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const session of ownedSessions) {
+			if (session.parentId && ids.has(session.parentId) && !ids.has(session.id)) {
+				ids.add(session.id);
+				changed = true;
+			}
+		}
+	}
+	const orderedIds = [...ids].sort(
+		(left, right) => sessionDepth(sessionsById.get(right), sessionsById) - sessionDepth(sessionsById.get(left), sessionsById),
+	);
+	state.readModel.deleteSessions(orderedIds);
+	state.eventLog.deleteSessions(orderedIds);
+	for (const id of orderedIds) deleteSession(id);
+	return orderedIds;
+}
+
+function deleteSessionSubtree(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	rootSession: PiboSession,
+): string[] {
+	const deleteSession = context.channelContext.deleteSession;
+	if (!deleteSession) throw new PiboWebHttpError("Session deletion is not available", 501);
+	const ownedSessions = listOwnedSessions(context, webSession);
+	const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
+	const ids = new Set([rootSession.id]);
 	let changed = true;
 	while (changed) {
 		changed = false;
@@ -2173,6 +2214,22 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				if (!updated) throw new PiboWebHttpError("Session not found", 404);
 				state.readModel.upsertSession(updated);
 				return responseJson({ session: updated });
+			}
+
+			if (patchSessionId && request.method === "DELETE") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, patchSessionId);
+				if (!isChatWebSessionArchived(selectedSession)) {
+					throw new PiboWebHttpError("Archive the session before permanently deleting it.", 400);
+				}
+				const body = await readJsonBody<ChatSessionDeleteBody>(request);
+				const confirmText = normalizeSessionDeleteConfirmation(body.confirmText);
+				if (confirmText !== "Delete this session") {
+					throw new PiboWebHttpError('Type "Delete this session" to permanently delete this session.', 400);
+				}
+				const deletedSessionIds = deleteSessionSubtree(state, context, webSession, selectedSession);
+				return responseJson({ deletedSessionIds });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace` && request.method === "GET") {

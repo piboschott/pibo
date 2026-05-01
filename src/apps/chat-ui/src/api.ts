@@ -103,6 +103,17 @@ export async function patchSession(
 	});
 }
 
+export async function deleteSession(
+	piboSessionId: string,
+	confirmText: string,
+): Promise<{ deletedSessionIds: string[] }> {
+	return requestJson<{ deletedSessionIds: string[] }>(`/api/chat/sessions/${encodeURIComponent(piboSessionId)}`, {
+		method: "DELETE",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ confirmText }),
+	});
+}
+
 export async function postMessage(piboSessionId: string, text: string, clientTxnId: string, roomId?: string): Promise<unknown> {
 	return requestJson("/api/chat/message", {
 		method: "POST",

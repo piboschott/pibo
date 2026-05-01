@@ -40,6 +40,8 @@ Pibo separates product session identity from Pi Coding Agent's technical session
 
 Pibo Sessions are stored in `.pibo/pibo-sessions.sqlite`. They carry channel, kind, profile, owner scope, optional `parentId` for true hierarchy, optional `originId` for fork/clone derivation, workspace, title, and plugin metadata. Core code must not parse meaning out of the Pibo Session ID.
 
+Chat Web sessions have an archive-first lifecycle. Archived sessions remain restorable and visible through the archived-session filter. Permanent deletion is allowed only for archived sessions, requires confirming `Delete this session`, and deletes the selected session plus child sessions from the Pibo Session store, Chat Web read model, and durable chat event log.
+
 ## Pi Session Controls
 
 Pibo exposes Pi session controls through typed execution actions while keeping the selected Pibo Session as the route.

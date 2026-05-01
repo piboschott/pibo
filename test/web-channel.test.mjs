@@ -833,6 +833,87 @@ test("chat web app renames and archives owned sessions", async () => {
 	}
 });
 
+test("chat web app permanently deletes archived sessions with their child sessions", async () => {
+	const { channel, baseURL, sessions } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const created = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: "{}",
+		});
+		assert.equal(created.status, 201);
+		const payload = await created.json();
+		const childSession = sessions.create({
+			channel: "pibo.chat-web",
+			kind: "subagent",
+			profile: "pibo-minimal",
+			ownerScope: "user:user-1",
+			parentId: payload.session.id,
+		});
+
+		const deleteBeforeArchive = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "DELETE",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ confirmText: "Delete this session" }),
+		});
+		assert.equal(deleteBeforeArchive.status, 400);
+		assert.deepEqual(await deleteBeforeArchive.json(), { error: "Archive the session before permanently deleting it." });
+
+		const archived = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ archived: true }),
+		});
+		assert.equal(archived.status, 200);
+
+		const wrongConfirm = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "DELETE",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ confirmText: "delete" }),
+		});
+		assert.equal(wrongConfirm.status, 400);
+		assert.deepEqual(await wrongConfirm.json(), {
+			error: 'Type "Delete this session" to permanently delete this session.',
+		});
+
+		const deleted = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "DELETE",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ confirmText: "Delete this session" }),
+		});
+		assert.equal(deleted.status, 200);
+		const deletedPayload = await deleted.json();
+		assert.deepEqual(new Set(deletedPayload.deletedSessionIds), new Set([payload.session.id, childSession.id]));
+		assert.equal(sessions.get(payload.session.id), undefined);
+		assert.equal(sessions.get(childSession.id), undefined);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app renders origin sessions as top-level sessions", async () => {
 	const { channel, baseURL, sessions } = await startWebHostChannel({
 		auth: createFakeAuthService(),
