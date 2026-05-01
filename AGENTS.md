@@ -78,9 +78,3 @@ When reading Pibo Sessions, use the debug CLI first: `npm run dev -- debug sessi
 
 ## Frontend Design
 If you are doing any frontend design, be sure to read `DESIGN.md`.
-
-## Browser Use
-Always use `browser-use` for frontend development.
-Start in one persistent terminal with `eval "$(npm run --silent dev -- tools env browser-use)"`, then keep using that same shell for later `browser-use` commands.
-For authenticated Pibo Chat Web App testing, prefer `eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat --owner "$USER")"`.
-Discover the rest procedurally through `npm run dev -- tools show browser-use`, `npm run dev -- tools browser-use`, and `npm run dev -- tools guide browser-use browser-use`.

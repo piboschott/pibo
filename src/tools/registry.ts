@@ -15,6 +15,7 @@ export interface CliToolEntry {
   runtime: ToolPythonRuntimeSpec;
   guides: readonly ToolGuide[];
   notes: readonly string[];
+  agentContextSnippet: string;
 }
 
 export interface CliToolStatus {
@@ -24,6 +25,9 @@ export interface CliToolStatus {
   rootDir: string;
   homeDir: string;
 }
+
+const MAX_AGENT_CONTEXT_SNIPPET_LENGTH = 480;
+const INSTALLED_TOOLS_CONTEXT_PATH = '.pibo/context/installed-pibo-tools.md';
 
 const REGISTRY: CliToolEntry[] = [
   {
@@ -44,8 +48,26 @@ const REGISTRY: CliToolEntry[] = [
       'Use pibo tools browser-use lease acquire for isolated authenticated browser slots when multiple agents need Chat Web App access.',
       'Guides are available through pibo tools guide and are not loaded into pibo profiles automatically.',
     ],
+    agentContextSnippet: [
+      'Browser automation CLI for frontend development and web testing.',
+      'Start in one persistent shell with `eval "$(npm run --silent dev -- tools env browser-use)"`.',
+      'For authenticated Pibo Chat Web App testing, prefer `eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat --owner "$USER")"`.',
+      'Discover details with `npm run dev -- tools show browser-use` and `npm run dev -- tools guide browser-use browser-use`.',
+    ].join('\n'),
   },
 ];
+
+for (const entry of REGISTRY) {
+  const snippet = entry.agentContextSnippet.trim();
+  if (snippet.length === 0) {
+    throw new Error(`CLI tool "${entry.name}" is missing agentContextSnippet`);
+  }
+  if (snippet.length > MAX_AGENT_CONTEXT_SNIPPET_LENGTH) {
+    throw new Error(
+      `CLI tool "${entry.name}" agentContextSnippet exceeds ${MAX_AGENT_CONTEXT_SNIPPET_LENGTH} characters`,
+    );
+  }
+}
 
 export function listCliToolEntries(): readonly CliToolEntry[] {
   return REGISTRY;
@@ -68,6 +90,28 @@ export function getCliToolStatus(entry: CliToolEntry): CliToolStatus {
 
 export function findToolGuide(entry: CliToolEntry, guideName: string): ToolGuide | undefined {
   return entry.guides.find((guide) => guide.name === guideName);
+}
+
+export function getInstalledCliToolContextFile(): { path: string; content: string } | undefined {
+  const installedEntries = REGISTRY.filter((entry) => getCliToolStatus(entry).installed);
+  if (installedEntries.length === 0) return undefined;
+
+  const sections = installedEntries.flatMap((entry) => [
+    `## ${entry.name}`,
+    entry.agentContextSnippet,
+    '',
+  ]);
+
+  return {
+    path: INSTALLED_TOOLS_CONTEXT_PATH,
+    content: [
+      '# Installed Pibo Tools',
+      '',
+      'These curated CLI tools are installed in this environment. The CLI remains the source of truth; use the referenced commands to discover each workflow step by step.',
+      '',
+      ...sections,
+    ].join('\n').trimEnd(),
+  };
 }
 
 export async function installCliTool(entry: CliToolEntry, runSetup: boolean): Promise<void> {

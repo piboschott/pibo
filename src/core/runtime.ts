@@ -28,6 +28,7 @@ import {
 } from "../subagents/tool.js";
 import { createRunToolDefinitions, type PiboRunToolController } from "../runs/tools.js";
 import type { PiboThinkingLevel } from "./thinking.js";
+import { getInstalledCliToolContextFile } from "../tools/registry.js";
 
 export type PiboRuntimeOptions = {
 	cwd?: string;
@@ -187,6 +188,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 		sessionStartEvent,
 	}) => {
 		const contextFiles = await loadContextFiles(runtimeCwd, profile.contextFiles);
+		const installedToolContextFile = getInstalledCliToolContextFile();
 		const skillPaths = getEnabledSkillPaths(runtimeCwd, profile);
 		const customTools = getEnabledToolDefinitions(profile, options.subagentRunner, options.runToolController);
 		const services = await createAgentSessionServices({
@@ -198,7 +200,10 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 				extensionFactories: options.extensionFactories,
 				noContextFiles: profile.autoContextFiles === false,
 				agentsFilesOverride: (base) => ({
-					agentsFiles: mergeContextFiles(base.agentsFiles, contextFiles),
+					agentsFiles: mergeContextFiles(
+						base.agentsFiles,
+						installedToolContextFile ? [...contextFiles, installedToolContextFile] : contextFiles,
+					),
 				}),
 			},
 		});

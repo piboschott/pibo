@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -11,6 +11,8 @@ import { piboCorePlugin } from "../dist/plugins/builtin.js";
 import { createDefaultPiboPluginRegistry } from "../dist/plugins/builtin.js";
 import { definePiboPlugin, PiboPluginRegistry } from "../dist/plugins/registry.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
+import { findCliToolEntry, getInstalledCliToolContextFile } from "../dist/tools/registry.js";
+import { getToolPythonRuntimePaths } from "../dist/tools/python-runtime.js";
 
 const noopSubagentRunner = {
 	async runSubagent(input) {
@@ -26,6 +28,17 @@ const noopSubagentRunner = {
 		};
 	},
 };
+
+async function withPiboHome(piboHome, run) {
+	const previous = process.env.PIBO_HOME;
+	process.env.PIBO_HOME = piboHome;
+	try {
+		return await run();
+	} finally {
+		if (previous === undefined) delete process.env.PIBO_HOME;
+		else process.env.PIBO_HOME = previous;
+	}
+}
 
 test("subagent helpers create stable tool names and reject collisions", () => {
 	assert.equal(createSubagentToolName("research-helper"), "pibo_subagent_research_helper");
@@ -62,10 +75,50 @@ test("profiles can disable automatic AGENTS.md context discovery", async () => {
 		.addContextFile({ path: "profile-context.md" })
 		.createSession();
 
-	const inspection = await inspectPiboProfile({ cwd, profile, persistSession: false });
-	const contextFileNames = inspection.contextFiles.map((contextFile) => basename(contextFile.path));
+	await withPiboHome(join(cwd, "pibo-home"), async () => {
+		const inspection = await inspectPiboProfile({ cwd, profile, persistSession: false });
+		const contextFileNames = inspection.contextFiles.map((contextFile) => basename(contextFile.path));
 
-	assert.deepEqual(contextFileNames, ["profile-context.md"]);
+		assert.deepEqual(contextFileNames, ["profile-context.md"]);
+	});
+});
+
+test("installed pibo tools are injected into the runtime context and disappear when removed", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-installed-tools-context-"));
+	const profile = new InitialSessionContextBuilder("context-profile").withAutoContextFiles(false).createSession();
+	const browserUse = findCliToolEntry("browser-use");
+
+	assert.ok(browserUse);
+
+	await withPiboHome(join(cwd, "pibo-home"), async () => {
+		const paths = getToolPythonRuntimePaths(browserUse.name, browserUse.runtime);
+		mkdirSync(paths.binDir, { recursive: true });
+		writeFileSync(paths.executablePath, "#!/bin/sh\n");
+
+		const toolContextFile = getInstalledCliToolContextFile();
+		assert.ok(toolContextFile);
+		assert.equal(toolContextFile.path, ".pibo/context/installed-pibo-tools.md");
+		assert.match(toolContextFile.content, /# Installed Pibo Tools/);
+		assert.match(toolContextFile.content, /## browser-use/);
+		assert.match(toolContextFile.content, /tools env browser-use/);
+		assert.match(toolContextFile.content, /tools browser-use lease acquire/);
+
+		const withToolInstalled = await inspectPiboProfile({ cwd, profile, persistSession: false });
+		assert.equal(
+			withToolInstalled.contextFiles.some((contextFile) => contextFile.path === toolContextFile.path),
+			true,
+		);
+
+		rmSync(paths.rootDir, { recursive: true, force: true });
+
+		assert.equal(getInstalledCliToolContextFile(), undefined);
+
+		const afterRemoval = await inspectPiboProfile({ cwd, profile, persistSession: false });
+		assert.equal(
+			afterRemoval.contextFiles.some((contextFile) => contextFile.path === ".pibo/context/installed-pibo-tools.md"),
+			false,
+		);
+	});
 });
 
 test("subagent tool definitions delegate execution to the provided runner", async () => {
