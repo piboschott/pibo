@@ -32,12 +32,14 @@ import { TraceTimeline, type SessionBreadcrumbItem, type SessionDerivationLink, 
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
 import { childTraceOrder, compareTraceOrder, liveTraceOrder } from "../../../shared/trace-order.js";
+import { ContextFilesView } from "./context/ContextFilesView";
 
-type Area = "sessions" | "agents" | "settings";
+type Area = "sessions" | "agents" | "context" | "settings";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string }
 	| { area: "agents" }
+	| { area: "context" }
 	| { area: "settings" };
 
 type ForkActionResponse = {
@@ -162,6 +164,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 		(target: ChatAppRoute, replace = false) => {
 			if (target.area === "agents") {
 				void navigate({ to: "/agents", replace });
+				return;
+			}
+			if (target.area === "context") {
+				void navigate({ to: "/context", replace });
 				return;
 			}
 			if (target.area === "settings") {
@@ -648,13 +654,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const sessionGroups = splitSessionNodesByArchive(bootstrap.sessions);
 	const personalRoom = findPersonalRoom(bootstrap.rooms);
 	const roomGroups = splitRoomNodes(bootstrap.rooms);
+	const contextAgentProfiles = [...new Set([...bootstrap.agents.map((agent) => agent.name), ...bootstrap.customAgents.map((agent) => agent.profileName)])];
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[56px_1fr]">
 			<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800">
 				<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 				<nav className="flex gap-1">
-					{(["sessions", "agents", "settings"] as const).map((item) => (
+					{(["sessions", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
 							type="button"
@@ -672,12 +679,6 @@ export function App({ route }: { route: ChatAppRoute }) {
 							{item}
 						</button>
 					))}
-					<a
-						href="/apps/context-files"
-						className="h-8 px-3 inline-flex items-center border rounded-sm text-xs uppercase tracking-wider border-slate-700 text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-					>
-						context
-					</a>
 				</nav>
 				<div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
 					<UserRound size={14} />
@@ -691,7 +692,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			<div
 				className={`min-h-0 ${
 					area === "agents" ? "h-full overflow-hidden" : `grid ${
-						showRawEvents
+						area === "sessions" && showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-[240px_minmax(0,1fr)]"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-[240px_minmax(0,1fr)]"
 					}`
@@ -712,21 +713,23 @@ export function App({ route }: { route: ChatAppRoute }) {
 				<aside className="min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800">
 					<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
 						<span>{area}</span>
-						<div className="flex items-center gap-1">
-							<button
-								type="button"
-								onClick={() =>
-									void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined).then((data) => {
-										if (area === "sessions") navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
-									})
-								}
-								title="Refresh"
-								aria-label="Refresh"
-								className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-							>
-								<RefreshCw size={13} />
-							</button>
-						</div>
+						{area === "sessions" ? (
+							<div className="flex items-center gap-1">
+								<button
+									type="button"
+									onClick={() =>
+										void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined).then((data) => {
+											if (area === "sessions") navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+										})
+									}
+									title="Refresh"
+									aria-label="Refresh"
+									className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+								>
+									<RefreshCw size={13} />
+								</button>
+							</div>
+						) : null}
 					</div>
 					{area === "sessions" ? (
 						<div className="p-2 space-y-3">
@@ -862,6 +865,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 								</div>
 							) : null}
 						</div>
+					) : area === "context" ? (
+						<ContextSidebar />
 					) : (
 						<SettingsSidebar />
 					)}
@@ -964,6 +969,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 								}}
 							/>
 						</>
+					) : area === "context" ? (
+						<ContextFilesView agentProfiles={contextAgentProfiles} />
 					) : (
 						<SettingsView
 							showThinking={showThinking}
@@ -974,7 +981,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 					)}
 				</main>
 
-					{showRawEvents ? (
+					{area === "sessions" && showRawEvents ? (
 						<aside className="min-h-0 overflow-auto bg-[#0e1116] border-l border-slate-800 max-[980px]:hidden">
 						<div className="h-11 px-3 border-b border-slate-800 flex items-center text-xs font-bold uppercase tracking-wider">Raw Events</div>
 						<div className="p-3 flex flex-col gap-2">
@@ -2338,6 +2345,26 @@ function SettingsSidebar() {
 				>
 					<span className="block text-sm truncate text-slate-200">General</span>
 					<span className="block text-[10px] font-mono truncate text-slate-500">browser-local</span>
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function ContextSidebar() {
+	return (
+		<div className="p-2">
+			<div className="mb-4">
+				<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Context</div>
+				<button
+					type="button"
+					className="mb-1 flex w-full items-center gap-2 border border-[#11a4d4] bg-[#11a4d4]/10 p-2 text-left"
+				>
+					<Layers size={13} className="text-[#11a4d4]" />
+					<div className="min-w-0">
+						<span className="block truncate text-sm text-slate-200">Context Files</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">managed-editor</span>
+					</div>
 				</button>
 			</div>
 		</div>

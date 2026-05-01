@@ -15,6 +15,7 @@ function chatRouteFromPath(pathname: string): ChatAppRoute {
 		.split("/")
 		.filter(Boolean)
 		.map((part) => decodeURIComponent(part));
+	if (parts[0] === "context") return { area: "context" };
 	if (parts[0] === "agents") return { area: "agents" };
 	if (parts[0] === "settings") return { area: "settings" };
 	if (parts[0] === "rooms" && parts[1] && parts[2] === "sessions" && parts[3]) {
@@ -48,12 +49,16 @@ const agentsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "agents",
 });
+const contextRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "context",
+});
 const settingsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "settings",
 });
 const router = createRouter({
-	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, agentsRoute, settingsRoute]),
+	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, agentsRoute, contextRoute, settingsRoute]),
 	basepath: "/apps/chat",
 });
 
