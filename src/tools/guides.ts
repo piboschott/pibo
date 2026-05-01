@@ -19,14 +19,14 @@ The browser-use command provides persistent browser automation. A background dae
 
 ## Prerequisites
 
-Start each shell by applying the Pibo tool environment:
+Initialize one persistent browser-use shell by applying the Pibo tool environment once:
 
 \`\`\`bash
 eval "$(pibo tools env browser-use)"
 browser-use doctor
 \`\`\`
 
-Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, it includes detected desktop variables such as \`DISPLAY\`, \`WAYLAND_DISPLAY\`, and \`XAUTHORITY\` when a local desktop is available.
+Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. Keep running later \`browser-use\` commands in that same shell; a new shell needs the one-time initialization again. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, it includes detected desktop variables such as \`DISPLAY\`, \`WAYLAND_DISPLAY\`, and \`XAUTHORITY\` when a local desktop is available.
 
 ## Core Workflow
 
@@ -122,7 +122,7 @@ If \`browser-use connect\` cannot find Chrome, ask the user whether they want to
 
 ## Tips
 
-1. Always apply \`eval "$(pibo tools env browser-use)"\` before using the CLI from Pibo.
+1. Apply \`eval "$(pibo tools env browser-use)"\` once per persistent shell before using the CLI from Pibo, then reuse that shell.
 2. Always run \`state\` before using element indices.
 3. Re-run \`state\` after navigation or large DOM changes because element indices can change.
 4. For forms, verify inputs with \`get value <index>\`; \`state\` does not always show current text values.
@@ -153,14 +153,14 @@ This guide is for agents running in a sandbox, CI, cloud VM, or remote coding en
 
 ## Prerequisites
 
-Start each shell by applying the Pibo tool environment:
+Initialize one persistent browser-use shell by applying the Pibo tool environment once:
 
 \`\`\`bash
 eval "$(pibo tools env browser-use)"
 browser-use doctor
 \`\`\`
 
-Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, this lets Browser Use see a local desktop session when one exists.
+Inside the Pibo source repo, use \`eval "$(npm run --silent dev -- tools env browser-use)"\` instead. Keep running later \`browser-use\` commands in that same shell; a new shell needs the one-time initialization again. If command substitution is not available, run the env command and apply the printed exports manually. On Linux, this lets Browser Use see a local desktop session when one exists.
 
 ## Core Workflow
 

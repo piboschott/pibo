@@ -37,6 +37,8 @@ test("pibo tools exposes browser-use guides outside the profile skill system", a
 		assert.match(guide.stdout, /pibo tools env browser-use/);
 		assert.match(guide.stdout, /eval "\$\(pibo tools env browser-use\)"/);
 		assert.match(guide.stdout, /npm run --silent dev -- tools env browser-use/);
+		assert.match(guide.stdout, /once per persistent shell/);
+		assert.match(guide.stdout, /reuse that shell/);
 		assert.match(guide.stdout, /timeout 30s/);
 		assert.match(guide.stdout, /Do not issue parallel/);
 		assert.match(guide.stdout, /get value <index>/);

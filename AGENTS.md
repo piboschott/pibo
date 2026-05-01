@@ -77,7 +77,7 @@ Always read `GLOSSARY.md`. It contains a shared vocabulary for our project.
 If you are doing any frontend design, be sure to read `DESIGN.md`.
 
 ## Browser Use
-Always use `browser-use` for frontend development: `npm run dev -- tools guide browser-use`.
+Always use `browser-use` for frontend development. In one persistent terminal, initialize the Browser Use environment once with `eval "$(npm run --silent dev -- tools env browser-use)"`, then run later `browser-use` commands directly from that same terminal. Use `npm run dev -- tools guide browser-use` for the full guide.
 For Pibo Chat Web App browser testing, use the existing authenticated Browser Use session `pibo-auth` first:
 `browser-use --session pibo-auth state`.
 Do not create a new browser session for authenticated Chat Web App testing unless `pibo-auth` is unavailable or explicitly stale.

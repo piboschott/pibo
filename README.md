@@ -174,6 +174,8 @@ npm run dev -- tools env browser-use
 
 The first curated tool is `browser-use`, pinned to `browser-use[cli]==0.12.6` so the CLI surface stays aligned with the bundled guides. It is installed into an isolated runtime under `~/.pibo/tools/browser-use` and uses `~/.pibo/tools/browser-use/home` as its tool home. See `docs/tools.md`.
 
+When using Browser Use from this repo, initialize its shell environment once in a persistent terminal with `eval "$(npm run --silent dev -- tools env browser-use)"`, then run later `browser-use` commands directly in that same terminal.
+
 ## Web Auth
 
 `npm run gateway:web` starts three separate pieces on the same origin:

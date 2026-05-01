@@ -56,6 +56,7 @@ Die reine JS-Projektion ist bei synthetischen Browser-Messungen noch moderat, ab
    - Verify: In der Browser-Konsole ist sichtbar, wie viele Nodes pro Streaming-Delta rendern.
 
 2. Browser-Use QA Ablauf dokumentieren.
+   - Browser-Use Environment einmal in einer persistenten Shell initialisieren und diese Shell fuer alle Browser-Use Befehle wiederverwenden.
    - Authentifizierte Session `pibo-auth` nutzen.
    - Testfall: lange Session oeffnen, neue Nachricht senden, waehrend Streaming in andere Session wechseln und zurueck.
    - Verify: reproduzierbare Messpunkte vor und nach jedem Umbau.
@@ -203,6 +204,7 @@ Die reine JS-Projektion ist bei synthetischen Browser-Messungen noch moderat, ab
    - Neue Store-Ausgabe muss gleiche sichtbare Reihenfolge erzeugen.
 
 3. Browser QA.
+   - Persistente Browser-Use Shell mit einmalig initialisiertem Environment.
    - Authentifizierte `pibo-auth` Session.
    - Lange Session mit vielen Tool Calls.
    - Live Assistant Streaming.
@@ -249,5 +251,5 @@ Diese Reihenfolge liefert frueh sichtbare Verbesserungen, ohne sofort die gesamt
 - `node --test test/chat-trace.test.mjs`
 - `npm test`
 - `npm run gateway:web`
-- Browser QA mit `browser-use --session pibo-auth`
+- Browser QA mit persistenter Browser-Use Shell und `browser-use --session pibo-auth`
 - Manuelle Pruefung: lange Session, laufendes Streaming, Sessionwechsel, Raw Panel, Thinking Toggle

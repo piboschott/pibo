@@ -127,12 +127,15 @@ export XDG_RUNTIME_DIR="/run/user/1000"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus"
 ```
 
-Apply these exports before headed Browser Use runs:
+Apply these exports once in a persistent Browser Use shell, then keep using that same shell for later `browser-use` commands:
 
 ```bash
 eval "$(npm run --silent dev -- tools env browser-use)"
+browser-use doctor
 browser-use --headed --session debug open https://example.com
 ```
+
+If you start a new shell, apply the exports once again before running Browser Use. The exports are shell-local and are not written system-wide.
 
 If no desktop display is detected, `pibo tools install browser-use` and `pibo tools doctor browser-use` warn that headed mode is unavailable. Headless Browser Use still works:
 
