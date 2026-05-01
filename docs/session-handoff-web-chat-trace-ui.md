@@ -65,6 +65,8 @@ Bring the Pibo Chat Web App closer to the existing `pydantic-tracing` trace UI:
   - Parent and child sessions can be reopened directly from the trace header without switching back to the sidebar first.
 - Added an origin-session shortcut in the trace header for forked or cloned sessions.
   - When the selected session has an `originId`, the header exposes a separate origin control instead of treating the origin as part of the parent breadcrumb chain.
+- Added a derived-session picker in the trace header for sessions that already produced forks or clones.
+  - The picker lists direct derived sessions from the selected session, including status and profile, and opens them without requiring a sidebar search.
 - Served the built chat UI from `/apps/chat`, falling back to the older inline HTML only if the build is missing.
 
 ## Important Design Decisions
@@ -77,6 +79,7 @@ Bring the Pibo Chat Web App closer to the existing `pydantic-tracing` trace UI:
 - Trace expansion state is browser-local component state. The default expansion depth is `1`, so top-level messages are readable without expanding nested tool and reasoning details.
 - Trace-header breadcrumbs follow session hierarchy only. They reflect `parentId` nesting for subagent sessions and do not imply that fork or clone origin sessions are nested.
 - Fork and clone derivation stays visible through a dedicated header affordance backed by `originId`, so branch ancestry is inspectable without changing the session tree semantics.
+- Sessions also expose their direct derived branches in the header so users can move laterally across the branch family without collapsing the distinction between hierarchy (`parentId`) and derivation (`originId`).
 - Composer auto-resize is based on rendered textarea metrics. Global form-control font overrides must not override Tailwind text and line-height utilities used by the composer.
 - Custom agent definitions are persisted by the web app and registered as dynamic profiles before routed sessions are created.
 - The Agent Designer configures native Pibo agent capabilities only. CLI tools remain globally available through the operator environment and stay outside agent profile configuration.

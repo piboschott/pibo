@@ -32,13 +32,13 @@ Scope: Last 10 commits on the current branch, metadata only. No diff review yet.
 
 ### 3. `51e8629` - Show derived session picker in trace header
 
-- Review status: `todo`
-- Documentation follow-up: `tbd`
+- Review status: `done`
+- Documentation follow-up: `required`
 - Date: `2026-05-01T21:18:05+02:00`
 - Author: `pibo`
 - Full hash: `51e8629fa1be6a64cdb8af2e31c8cb241fa3e37e`
 - Description: `-`
-- Notes: `-`
+- Notes: `Documented the new derived-session picker in the trace header and clarified that it lists direct branch descendants separately from hierarchy breadcrumbs and origin links.`
 
 ### 4. `63003e5` - Document browser-use auth lease workflow
 
