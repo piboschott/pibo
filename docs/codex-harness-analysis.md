@@ -11,8 +11,8 @@ Dieses Dokument beschreibt, wie Codex als Agent-Harness aufgebaut ist, welche mo
 Fuer euer Ziel ist nicht die gesamte Codex-Architektur entscheidend, sondern fast nur das, was das Modell tatsaechlich sieht:
 
 1. einen vertrauten Prompt-Rahmen
-2. dieselben oder sehr aehnliche Toolnamen und Toolbeschreibungen
-3. dieselbe Subagent-Semantik
+2. vertraute Toolbeschreibungen auf Pibo-Run-Basis
+3. Pibo-Subagent-Semantik mit Codex-aehnlichem Arbeitsgefuehl
 4. dasselbe Skill-Modell auf `SKILL.md`-Basis
 5. Projektinstruktionen wie `AGENTS.md`, `RULES.md`, `GLOSSARY.md`
 6. einen expliziten Laufzeitkontext
@@ -21,11 +21,11 @@ Der zentrale Punkt ist deshalb nicht "Codex komplett nachbauen", sondern "die ag
 
 Was dafuer primaer nachgebaut werden sollte:
 
-- `exec_command` plus `write_stdin` oder ein sehr nahes Shell-Alias-Modell
+- `bash` aus dem Pibo Run-Paket als Shell-Oberflaeche
 - `apply_patch`
 - `view_image`
 - `web_search`
-- Subagents mit `spawn_agent` / `send_input` / `resume_agent` / `wait_agent` / `close_agent`
+- Subagents ueber Pibos generierte `pibo_subagent_*`- und `pibo_run_*`-Tools
 - dieselben Agent-Rollen `default`, `explorer`, `worker`
 - derselbe Skills-Contract mit `SKILL.md`
 - hierarchische Projektinstruktionen und expliziter Environment-Context
@@ -44,8 +44,8 @@ Die bisherige breite Analyse ist als Referenz nuetzlich, aber sie setzt den Schw
 
 Pragmatisch heisst das:
 
-- Der Agent muss glauben, in einer sehr aehnlichen Toolwelt zu arbeiten.
-- Der Agent muss dieselben Kernkonzepte sehen: Tools, Subagents, Skills, Repo-Instruktionen, Environment.
+- Der Agent muss in einer vertrauten, aber Pibo-nativen Toolwelt arbeiten.
+- Der Agent muss dieselben Kernkonzepte sehen: Tools, Subagents, Runs, Skills, Repo-Instruktionen, Environment.
 - Alles, was nur fuer Menschen, Clients oder Marketplace-Verwaltung existiert, ist nachrangig, solange es nicht als Prompt- oder Tooloberflaeche beim Modell ankommt.
 
 Das ist fuer Pibo besonders passend, weil eure bestehende Architektur bereits genau die richtige Trennung hat:
@@ -131,32 +131,26 @@ Die Tests in `core/src/tools/spec_tests.rs` zeigen fuer aktuelle Defaults unter 
 - `apply_patch` bei Modellen/Setups, die es unterstuetzen
 - `web_search`
 - `view_image`
-- Multi-Agent v1:
-  - `spawn_agent`
-  - `send_input`
-  - `resume_agent`
-  - `wait_agent`
-  - `close_agent`
+- Pibo Run Control:
+  - `pibo_run_*`
+  - `pibo_subagent_*`
 
 Wichtig: Der konkrete Shell-Toolname ist modell- und featureabhaengig. Ein Pibo-Plugin sollte deshalb entweder dieselben Namen anbieten oder sauber aliasen.
 
-### 3.2 Shell/Exec-Familie
+### 3.2 Shell/Run-Familie
 
 Codex kennt mehrere Shell-Backends:
 
 - `shell`
 - `local_shell`
 - `shell_command`
-- `exec_command`
-- `write_stdin`
 
 Die Auswahl erfolgt ueber `ToolsConfig`:
 
 - Legacy/default shell
 - `shell_command`
-- Unified Exec mit PTY: `exec_command` + `write_stdin`
 
-Unified Exec ist das modernere PTY-basierte Modell und ist fuer Codex-Feeling besonders wichtig, weil es Langlaeufer, Interaktivitaet und Prozess-Fortsetzung besser abbildet.
+Fuer Pibo ist die Zielentscheidung anders: Das Codex-Compat-Profil nutzt das native Pibo-Run-`bash`-Tool. Langlaeufer, Status, Lesen, Abbrechen und Notifications gehoeren in Pibos Run-Control-Schicht.
 
 ### 3.3 Plan/User-Input
 
@@ -203,45 +197,41 @@ Feature-gated bzw. optional:
 - `code_mode` + `wait`
 - `list_dir`
 - `test_sync_tool`
-- Agent-Jobs:
-  - `spawn_agents_on_csv`
-  - `report_agent_job_result`
+- Agent-Jobs fuer CSV-basierte Parallelisierung und Ergebnis-Reporting
 
 ## 4. Multi-Agent-System
 
 Codex hat ein eingebautes Subagent-System, nicht nur "ein Tool, das irgendwas extern startet".
 
-### 4.1 Default heute: Multi-Agent v1
+### 4.1 Pibo-Zielbild
 
-Stable default ist `Collab = true`, aber `MultiAgentV2 = false` per Default.
+Pibo bildet dieses Thema nicht ueber Codex-Lifecycle-Tools nach. Das Codex-Compat-Profil nutzt:
 
-Das heisst standardmaessig:
+- `pibo_subagent_*` fuer rollenbasierte Child-Agents
+- `pibo_run_*` fuer yielded Runs, Status, Lesen, Warten, Abbruch und Acknowledgement
 
-- `spawn_agent`
-- `send_input`
-- `resume_agent`
-- `wait_agent`
-- `close_agent`
+Die Interface-Namen bleiben damit Pibo-nativ. Das gewuenschte Codex-Feeling kommt ueber Toolbeschreibungen, Prompt-Hinweise und aehnliche Arbeitsablaeufe, nicht ueber eine zweite Agent-Lifecycle-Schicht.
 
-### 4.2 V1-Modell
+### 4.2 Codex-Referenzmodell
 
-V1 arbeitet mit Agent-IDs und klassischem Request/Wait:
+Codex arbeitet mit Agent-IDs und klassischem Request/Wait. Fuer Pibo relevant sind die Verhaltensmuster:
 
-- `spawn_agent` gibt `agent_id` und optional `nickname` zurueck
-- `send_input` sendet Text oder strukturierte Items an einen bestehenden Agenten
-- `wait_agent` wartet auf Finalstatus
-- `resume_agent` oeffnet geschlossene Agenten wieder
+- Agent starten
+- Zusatzinput senden
+- bounded wait
+- geschlossene Agenten wieder aufnehmen
+- Agenten schliessen
 
-### 4.3 V2-Modell
+### 4.3 V2-Referenzmodell
 
 Unter `MultiAgentV2` wird auf Task-Pfade umgestellt:
 
-- `spawn_agent`
-- `send_message`
-- `followup_task`
-- `wait_agent`
-- `close_agent`
-- `list_agents`
+- Task starten
+- Nachricht senden
+- Follow-up-Task erzeugen
+- bounded wait
+- Task schliessen
+- Agents listen
 
 Statt Agent-ID steht der kanonische Task-Name im Zentrum, z.B. `/root/task_1/subtask_a`.
 
@@ -250,7 +240,7 @@ Wichtige V2-Eigenschaften:
 - Child-Agents haben dieselben Tools wie der Parent.
 - Child-Agents koennen selbst weitere Child-Agents spawnnen.
 - Kommunikation laeuft ueber Mailbox-/Inter-Agent-Communication statt nur ueber direkte Blocking-Calls.
-- `wait_agent` liefert in V2 absichtlich nur Mailbox-/Status-Summaries und nicht direkt den Final-Content.
+- Wait liefert in V2 absichtlich nur Mailbox-/Status-Summaries und nicht direkt den Final-Content.
 
 ### 4.4 Built-in Agent Roles
 
@@ -503,7 +493,7 @@ Wenn ihr nur dieselben Toolnamen nachbaut, fehlt ein grosser Teil des Verhaltens
 
 ### 10.4 Promptseitige Guidance fuer Toolbenutzung
 
-Beispiel: `spawn_agent` ist in Codex nicht nur ein Funktionsschema, sondern traeegt viel Policy/Gebrauchsanweisung im Tool-Description-Text.
+Subagent- und Run-Tools sind nicht nur Funktionsschemata; sie tragen viel Policy/Gebrauchsanweisung im Tool-Description-Text.
 
 ### 10.5 Mailbox- und Completion-Mechanik fuer Agents
 
@@ -522,17 +512,12 @@ Wenn das Ziel "fast wie Codex aus Sicht des Modells" ist, wuerde ich die Parity 
 
 ### 11.1 Muss-Parity
 
-- identische oder sehr nahe Toolnamen fuer die Kern-Tools
-- `exec_command` und `write_stdin`
+- vertraute Toolbeschreibungen fuer die Kern-Tools
+- Pibo Run-`bash` als einzige Shell-Oberflaeche
 - `apply_patch`
 - `view_image`
 - `web_search`
-- Multi-Agent v1 zuerst:
-  - `spawn_agent`
-  - `send_input`
-  - `resume_agent`
-  - `wait_agent`
-  - `close_agent`
+- Pibo-native Subagent- und Run-Control-Tools
 - Agent-Rollen `default`, `explorer`, `worker`
 - Skills weiter als `SKILL.md`-Bundles
 - AGENTS.md/RULES/GLOSSARY als User-/Project-Instructions

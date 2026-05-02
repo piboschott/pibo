@@ -19,20 +19,19 @@ The important boundary is that this is agent tooling, not gateway behavior. The 
 
 The target behavior is not "keep an LLM tool call open while the model keeps thinking". Current provider tool-calling APIs do not work that way. The target behavior is "return a handle quickly, let the agent continue, and make the runtime responsible for tracking the handle until the result is consumed or cleaned up".
 
-## What Codex Does
+## Current Pibo Decision
 
-Codex has two related patterns.
+Pibo does not expose Codex-specific shell or lifecycle tools in the Codex compatibility profile. The profile uses the native Pibo Run package:
 
-### Unified Exec
+- `bash` is the shell-command tool.
+- `pibo_run_*` tools own yielded run lifecycle.
+- `pibo_subagent_*` tools own child-agent lifecycle.
 
-Codex exposes:
+The Codex implementation remains useful as a reference for behavior, not for model-visible names.
 
-- `exec_command`
-- `write_stdin`
+### Shell Runs
 
-`exec_command` starts a command and waits for `yield_time_ms`. If the command exits within that window, Codex returns the output and exit code. If it keeps running, Codex stores the process and returns a `session_id`.
-
-The agent can later call `write_stdin` with the `session_id`. Passing empty input is effectively a poll/wait. Passing input interacts with the running process.
+The Pibo `bash` tool should support the same practical workflow: start shell work, return quickly when it is still running, and allow later inspection through the run-control tools.
 
 Relevant Codex files:
 
@@ -53,14 +52,7 @@ Important details:
 
 ### Subagents
 
-Codex exposes:
-
-- `spawn_agent`
-- `wait_agent`
-- `send_input`
-- `close_agent`
-
-`spawn_agent` starts an agent and returns an identifier. `wait_agent` waits for a bounded time. If nothing is ready, it returns a timeout result rather than failing. The agent can later wait again.
+Pibo uses generated `pibo_subagent_*` tools and yielded runs for child-agent orchestration. The useful Codex behavior is bounded waiting, completion notifications, and resumable inspection. The Codex-specific lifecycle tool names are not part of the Pibo Codex-compat surface.
 
 Relevant Codex files:
 
@@ -69,7 +61,7 @@ Relevant Codex files:
 - `/home/pibo/code/codex/codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs`
 - `/home/pibo/code/codex/codex-rs/core/src/codex.rs`
 
-Codex also has a mailbox/notification layer for subagent completion. When a child agent completes, Codex can enqueue a notification for the parent thread. This prevents completed child work from being lost if the parent does not immediately call `wait_agent`.
+Codex also has a mailbox/notification layer for subagent completion. When a child agent completes, Codex can enqueue a notification for the parent thread. This prevents completed child work from being lost if the parent does not immediately wait on the child work.
 
 Relevant concepts:
 
