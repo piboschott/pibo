@@ -83,5 +83,8 @@ If no usable browser exists, create one through the Browser Use auth flow instea
 
 If MCP DevTools resources are unavailable, use direct CDP against the authenticated target as the fallback. Only restart the matching web/gateway ports after confirming the existing tab is usable but its backend is down.
 
+## Server Access
+There is a reachable server at `217.154.222.150`; access it via SSH as `root`.
+
 ## Frontend Design
 If you are doing any frontend design, be sure to read `DESIGN.md`.
