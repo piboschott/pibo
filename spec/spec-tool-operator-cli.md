@@ -59,19 +59,23 @@ This specification does not define internal runtime event contracts.
 - **REQ-021**: Curated tool guides MUST NOT be loaded automatically into Pibo agent profiles.
 - **REQ-022**: `browser-use` MUST be pinned to `browser-use[cli]==0.12.6` in the curated tool registry.
 - **REQ-023**: Curated tools MUST install into isolated runtimes under `~/.pibo/tools/<name>`.
-- **REQ-024**: Runtime commands MUST remain available: `profile`, `tui`, `tui:routed`, `gateway`, `gateway:web`, and `client`.
-- **REQ-025**: `pibo debug` with no action or help flags MUST print compact debug discovery output.
-- **REQ-026**: `pibo debug db` MUST list known local SQLite stores and expose schema, table, and read-only query subcommands.
-- **REQ-027**: `pibo debug db query <store> <sql>` MUST open the target store read-only, reject mutating statements, accept one SQL statement, and apply a bounded default row limit when no explicit SQL `limit` is present.
-- **REQ-028**: `pibo debug session <url-or-pibo-session-id>` MUST summarize Pibo Session metadata, child sessions, Chat Web read-model state, and optional event headers without dumping full event payloads or Pi JSONL transcripts.
-- **REQ-029**: `pibo debug session` MUST warn when a canonical Chat URL room id does not match the selected Pibo Session's `metadata.chatRoomId`.
-- **REQ-030**: `pibo debug trace <pibo-session-id>` MUST rebuild the Chat Web trace view using the same reconstruction logic as `/api/chat/trace`.
-- **REQ-031**: `pibo debug trace --running-only` MUST filter output to trace nodes whose status is `running`.
-- **REQ-032**: `pibo debug trace --check` MUST report trace consistency diagnostics for duplicate ids, missing parents, missing source/stable-key/order metadata, and stable-order regressions.
-- **REQ-033**: `pibo debug events <pibo-session-id>` MUST inspect compact Chat Web event rows and MUST support selecting event types and payload field paths.
-- **REQ-034**: `pibo debug events --fields` MUST extract only the requested payload fields and MUST NOT dump the complete stored payload by default.
-- **REQ-035**: `pibo debug events stats` MUST report grouped counts for retained events and MUST support filtering by topic, session key, and retention class.
-- **REQ-036**: `pibo debug events prune` MUST require explicit `--topic`, `--retention`, and `--before` filters and MUST preserve rows still needed by named consumers unless `--destructive` is passed.
+- **REQ-024**: `pibo tools browser-use targets` MUST list Chrome CDP targets without launching a new browser, and MUST include Chat Web auth and composer hints when probing is enabled.
+- **REQ-025**: `pibo tools browser-use targets --json` MUST print machine-readable target data.
+- **REQ-026**: `pibo tools browser-use attach-chat` MUST select an existing authenticated Chat Web target with a composer textarea and print shell exports for `PIBO_CDP_URL`, `PIBO_CDP_TARGET_ID`, `PIBO_CDP_TARGET_WS`, and `PIBO_CHAT_URL`.
+- **REQ-027**: `pibo tools browser-use attach-chat` MUST fail with a clear suggestion instead of starting a new browser when no usable Chat Web target exists.
+- **REQ-028**: Runtime commands MUST remain available: `profile`, `tui`, `tui:routed`, `gateway`, `gateway:web`, and `client`.
+- **REQ-029**: `pibo debug` with no action or help flags MUST print compact debug discovery output.
+- **REQ-030**: `pibo debug db` MUST list known local SQLite stores and expose schema, table, and read-only query subcommands.
+- **REQ-031**: `pibo debug db query <store> <sql>` MUST open the target store read-only, reject mutating statements, accept one SQL statement, and apply a bounded default row limit when no explicit SQL `limit` is present.
+- **REQ-032**: `pibo debug session <url-or-pibo-session-id>` MUST summarize Pibo Session metadata, child sessions, Chat Web read-model state, and optional event headers without dumping full event payloads or Pi JSONL transcripts.
+- **REQ-033**: `pibo debug session` MUST warn when a canonical Chat URL room id does not match the selected Pibo Session's `metadata.chatRoomId`.
+- **REQ-034**: `pibo debug trace <pibo-session-id>` MUST rebuild the Chat Web trace view using the same reconstruction logic as `/api/chat/trace`.
+- **REQ-035**: `pibo debug trace --running-only` MUST filter output to trace nodes whose status is `running`.
+- **REQ-036**: `pibo debug trace --check` MUST report trace consistency diagnostics for duplicate ids, missing parents, missing source/stable-key/order metadata, and stable-order regressions.
+- **REQ-037**: `pibo debug events <pibo-session-id>` MUST inspect compact Chat Web event rows and MUST support selecting event types and payload field paths.
+- **REQ-038**: `pibo debug events --fields` MUST extract only the requested payload fields and MUST NOT dump the complete stored payload by default.
+- **REQ-039**: `pibo debug events stats` MUST report grouped counts for retained events and MUST support filtering by topic, session key, and retention class.
+- **REQ-040**: `pibo debug events prune` MUST require explicit `--topic`, `--retention`, and `--before` filters and MUST preserve rows still needed by named consumers unless `--destructive` is passed.
 - **CON-001**: The CLI is agent-facing; avoid large all-in-one help text.
 - **CON-002**: Optional external tools and MCP servers are configured on demand and are not bundled into the core runtime.
 - **CON-003**: The Debug CLI is local operator tooling. It MUST NOT become a profile tool or expose runtime capabilities to agents.
@@ -175,14 +179,16 @@ type CliToolEntry = {
 - **AC-005**: Given `pibo mcp --help`, When executed, Then help remains progressive.
 - **AC-006**: Given `pibo tools guide browser-use browser-use`, When executed, Then one browser-use guide is printed.
 - **AC-007**: Given `pibo tools install browser-use --no-setup`, When executed, Then it prints the install target without installing runtime setup.
-- **AC-008**: Given `pibo debug --help`, When executed, Then output lists only the immediate debug command groups and next-step hints.
-- **AC-009**: Given `pibo debug db query sessions "select id from pibo_sessions"`, When executed, Then it returns bounded rows from the read-only sessions store.
-- **AC-010**: Given a Chat URL whose room id differs from session metadata, When `pibo debug session <url> --json` runs, Then the JSON output contains a mismatch warning.
-- **AC-011**: Given a Chat Web session with running trace nodes, When `pibo debug trace <id> --running-only` runs, Then output includes only running trace nodes.
-- **AC-012**: Given a Chat Web session, When `pibo debug trace <id> --check --json` runs, Then the JSON output contains a `checks` object with a status and issue list.
-- **AC-013**: Given stored Chat Web events, When `pibo debug events <id> --type tool_execution_finished --fields toolName,toolCallId,result.details.status` runs, Then output includes those fields and omits full payload dumps.
-- **AC-014**: Given retained `pibo.output` events, When `pibo debug events stats --topic pibo.output --session ps_... --retention live_delta` runs, Then output includes a grouped count row for that session and retention class.
-- **AC-015**: Given retained `pibo.output` `live_delta` rows older than a cutoff, When `pibo debug events prune --topic pibo.output --retention live_delta --before <iso-date>` runs, Then output reports the bounded prune result and does not require `--destructive` for consumer-safe cleanup.
+- **AC-008**: Given a Chrome CDP `/json/list` endpoint, When `pibo tools browser-use targets --cdp-url <url> --no-probe` runs, Then it prints a compact target table without launching a browser.
+- **AC-009**: Given multiple Chat Web targets, When `pibo tools browser-use attach-chat` runs, Then it selects the authenticated target with a composer textarea instead of the first target.
+- **AC-010**: Given `pibo debug --help`, When executed, Then output lists only the immediate debug command groups and next-step hints.
+- **AC-011**: Given `pibo debug db query sessions "select id from pibo_sessions"`, When executed, Then it returns bounded rows from the read-only sessions store.
+- **AC-012**: Given a Chat URL whose room id differs from session metadata, When `pibo debug session <url> --json` runs, Then the JSON output contains a mismatch warning.
+- **AC-013**: Given a Chat Web session with running trace nodes, When `pibo debug trace <id> --running-only` runs, Then output includes only running trace nodes.
+- **AC-014**: Given a Chat Web session, When `pibo debug trace <id> --check --json` runs, Then the JSON output contains a `checks` object with a status and issue list.
+- **AC-015**: Given stored Chat Web events, When `pibo debug events <id> --type tool_execution_finished --fields toolName,toolCallId,result.details.status` runs, Then output includes those fields and omits full payload dumps.
+- **AC-016**: Given retained `pibo.output` events, When `pibo debug events stats --topic pibo.output --session ps_... --retention live_delta` runs, Then output includes a grouped count row for that session and retention class.
+- **AC-017**: Given retained `pibo.output` `live_delta` rows older than a cutoff, When `pibo debug events prune --topic pibo.output --retention live_delta --before <iso-date>` runs, Then output reports the bounded prune result and does not require `--destructive` for consumer-safe cleanup.
 
 ## 6. Test Automation Strategy
 
@@ -225,6 +231,8 @@ pibo tools
 pibo tools show browser-use
 pibo tools guides browser-use
 pibo tools guide browser-use browser-use
+pibo tools browser-use targets
+pibo tools browser-use attach-chat
 ```
 
 ### Debug Discovery Flow

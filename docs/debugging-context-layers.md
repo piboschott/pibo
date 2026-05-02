@@ -16,11 +16,11 @@ This note records where debugging knowledge should live so future agents do not 
 
 `docs/browser-use-mcp-debugging-report.md` and handoff documents are incident records. Keep detailed timelines, failed paths, hypotheses, and proposed tooling work there. Promote only durable lessons into `AGENTS.md`, `docs/tools.md`, `docs/mcp.md`, specs, or implementation.
 
-Specs are for behavior that should be implemented and tested. A proposed command such as `pibo tools browser-use targets` belongs in the tool CLI spec before or while it is implemented; a temporary manual workaround does not.
+Specs are for behavior that should be implemented and tested. Implemented commands such as `pibo tools browser-use targets` and `pibo tools browser-use attach-chat` belong in the tool CLI spec. A temporary manual workaround does not.
 
 ## Current Lessons Promoted
 
-- Browser debugging starts by discovering existing CDP targets and classifying authentication state.
+- Browser debugging starts with `pibo tools browser-use targets`, which discovers existing CDP targets and classifies authentication/composer state.
 - Authenticated Browser Use work should use an auth template plus isolated leases.
-- DevTools MCP should attach to the same browser through `--browserUrl`; if Codex cannot see MCP resources, direct CDP is the recovery path.
+- DevTools MCP should attach to the same browser through `--browserUrl`; if Codex cannot see MCP resources, `pibo tools browser-use attach-chat` plus direct CDP is the recovery path.
 - Auth and debug browser state are separate from gateway/channel debugging. Restart a gateway only after the selected tab and its backend port have been identified.

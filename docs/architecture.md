@@ -333,7 +333,7 @@ The operator CLIs are optimized for agent-driven discovery. Each level should an
 
 `pibo mcp` is a local operator tool for discovering and calling external MCP servers from the shell. It is separate from the pibo plugin/runtime boundary: MCP servers are configured in `mcp_servers.json`, not in `PiboPluginRegistry`, and their tools are invoked directly by the CLI. The usage guide lives in `docs/mcp.md`.
 
-`pibo tools` is the matching operator surface for curated external CLI tools. These are not MCP servers and are not Pibo profile skills. A tool entry can install an isolated runtime, expose doctor/path/env commands, and print on-demand guides for agents. The first curated tool is `browser-use`, installed under `~/.pibo/tools/browser-use` with its own Python venv and tool home.
+`pibo tools` is the matching operator surface for curated external CLI tools. These are not MCP servers and are not Pibo profile skills. A tool entry can install an isolated runtime, expose doctor/path/env commands, and print on-demand guides for agents. The first curated tool is `browser-use`, installed under `~/.pibo/tools/browser-use` with its own Python venv and tool home. Its Pibo-specific helper commands can inspect existing Chrome CDP targets and export the best authenticated Chat Web target without launching a fresh unauthenticated browser.
 
 `pibo debug` is the local operator surface for targeted diagnostics against Pibo-owned SQLite stores. It is not a profile tool and does not expose runtime capabilities to agents. The command can list known stores, discover table schemas, run read-only SQL with row limits, inspect one Pibo Session from a Pibo Session ID or canonical Chat Web URL, rebuild the Chat Web trace view, and extract selected event payload fields. Session inspection summarizes Pibo Session metadata, child sessions, Chat Web read-model state, and optional event headers without dumping full event payloads or Pi JSONL transcripts. Trace inspection uses the same `buildTraceView` logic as `/api/chat/trace`, so UI trace state can be debugged without writing ad hoc scripts. `pibo debug trace --check` adds consistency diagnostics for duplicate ids, missing parents, missing source/stable-key/order metadata, and sibling order regressions.
 
@@ -365,6 +365,8 @@ The first bundled tool preset is `browser-use`, pinned to `browser-use[cli]==0.1
 npm run dev -- tools guides browser-use
 npm run dev -- tools guide browser-use browser-use
 npm run dev -- tools guide browser-use remote-browser
+npm run dev -- tools browser-use targets
+npm run dev -- tools browser-use attach-chat
 ```
 
 ## Current Scripts
