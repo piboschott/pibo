@@ -2577,6 +2577,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					.find((item) => item.piboSessionId === selectedSession.id);
 				const metadata = await loadPiSessionMetadata(selectedSession, selectedSession.workspace ?? process.cwd());
 				const lastEventSequence = state.readModel.getLatestEventSequence(selectedSession.id);
+				const latestStreamId = state.eventLog.getLatestStreamId({ piboSessionId: selectedSession.id });
 				const version = createTraceViewVersion({
 					session: selectedSession,
 					sessions: ownedSessions,
@@ -2585,6 +2586,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						: [],
 					status: indexedSession?.status,
 					metadata,
+					latestStreamId,
 				});
 				const headers = { etag: etagForVersion(version), "x-pibo-trace-version": version };
 				if (requestMatchesVersion(request, version)) {
@@ -2600,6 +2602,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					status: indexedSession?.status,
 					includeRawEvents,
 					rawEventsLimit,
+					latestStreamId,
 				});
 				setTraceCache(state.traceCache, cacheKey, trace);
 				return responseJson(trace, { headers });

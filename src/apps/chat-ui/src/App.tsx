@@ -38,7 +38,7 @@ import { adaptTrace } from "./tracing/adapt";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
-import { childTraceOrder, compareTraceOrder, liveTraceOrder } from "../../../shared/trace-order.js";
+import { childTraceOrder, compareTraceOrder, liveTraceOrder, parseTraceStreamFrameId } from "../../../shared/trace-order.js";
 import { ContextFilesView } from "./context/ContextFilesView";
 import { BasePromptView } from "./context/BasePromptView";
 import { PiboToolsView } from "./context/PiboToolsView";
@@ -379,6 +379,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 		await queryClient.invalidateQueries({ queryKey: ["chat", "trace", piboSessionId], refetchType: "none" });
 		await queryClient.refetchQueries({ queryKey: ["chat", "trace", piboSessionId], type: "active" });
 	}, [queryClient]);
+	const refreshSelectedTrace = useCallback(
+		() => selectedPiboSessionId ? refreshTrace(selectedPiboSessionId) : Promise.resolve(),
+		[refreshTrace, selectedPiboSessionId],
+	);
+	const refreshSelectedBootstrap = useCallback(
+		() => loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { force: true }),
+		[loadBootstrap, selectedPiboSessionId, selectedRoomId],
+	);
 
 	const updateSelectedSessionProfile = useCallback(async (profile: string) => {
 		if (!selectedPiboSessionId || !bootstrap || profile === bootstrap.session.profile) return;
@@ -918,8 +926,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onOpenSession={openSession}
 						onSelectSessionView={selectSessionView}
 						onCommand={runCommand}
-						onRefreshTrace={() => selectedPiboSessionId ? refreshTrace(selectedPiboSessionId) : Promise.resolve()}
-						onRefreshBootstrap={() => loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { force: true })}
+						onRefreshTrace={refreshSelectedTrace}
+						onRefreshBootstrap={refreshSelectedBootstrap}
 						onSend={async (text) => {
 							if (!selectedPiboSessionId || selectedRoomArchived) return;
 							try {
@@ -1054,9 +1062,13 @@ function SessionTracePane({
 	const queryClient = useQueryClient();
 	const pendingStreamEventsBySession = useRef(new Map<string, ChatStreamEvent[]>());
 	const pendingStreamFrame = useRef<number | undefined>(undefined);
-	const traceQueryKey = selectedPiboSessionId
-		? chatTraceQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT })
-		: null;
+	const traceQueryKey = useMemo(
+		() =>
+			selectedPiboSessionId
+				? chatTraceQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT })
+				: null,
+		[selectedPiboSessionId, showRawEvents],
+	);
 	const traceQuery = useQuery({
 		queryKey: traceQueryKey ?? ["chat", "trace", "idle", "compact", DEFAULT_RAW_EVENTS_LIMIT],
 		queryFn: () => {
@@ -1071,6 +1083,7 @@ function SessionTracePane({
 		refetchOnWindowFocus: false,
 		retry: 1,
 	});
+	const currentTraceView = traceQuery.data ?? null;
 
 	const flushPendingStreamEvents = useCallback((piboSessionId: string) => {
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId);
@@ -1116,14 +1129,21 @@ function SessionTracePane({
 
 	useEffect(() => {
 		if (!selectedPiboSessionId || !traceQueryKey) return;
+		if (!currentTraceView || currentTraceView.piboSessionId !== selectedPiboSessionId) return;
 		const params = selectedRoomId
 			? new URLSearchParams({ roomId: selectedRoomId, piboSessionId: selectedPiboSessionId })
 			: new URLSearchParams({ piboSessionId: selectedPiboSessionId });
+		if (currentTraceView?.latestStreamId !== undefined) {
+			params.set("since", `${currentTraceView.latestStreamId}:999999`);
+		}
 		const events = new EventSource(`/api/chat/events?${params.toString()}`);
 		let traceTimer: ReturnType<typeof setTimeout> | undefined;
 		let bootstrapTimer: ReturnType<typeof setTimeout> | undefined;
-		const scheduleTraceRefresh = (delayMs: number) => {
-			if (traceTimer) return;
+		const scheduleTraceRefresh = (delayMs: number, reset = false) => {
+			if (traceTimer) {
+				if (!reset) return;
+				clearTimeout(traceTimer);
+			}
 			traceTimer = setTimeout(() => {
 				traceTimer = undefined;
 				onRefreshTrace().catch((caught) => onError(errorMessage(caught)));
@@ -1142,8 +1162,11 @@ function SessionTracePane({
 			const targetPiboSessionId = event.piboSessionId || selectedPiboSessionId;
 			const flushImmediately = event.type !== "TEXT_MESSAGE_CONTENT" && event.type !== "REASONING_MESSAGE_CONTENT";
 			enqueueStreamEvent(targetPiboSessionId, event, flushImmediately);
-			if (targetPiboSessionId === selectedPiboSessionId && eventShouldRefreshTrace(event)) {
-				scheduleTraceRefresh(0);
+			const traceRefreshDelay = eventTraceRefreshDelay(event);
+			if (targetPiboSessionId === selectedPiboSessionId && traceRefreshDelay !== undefined) {
+				scheduleTraceRefresh(traceRefreshDelay, true);
+			} else if (targetPiboSessionId === selectedPiboSessionId && event.type !== "ready") {
+				scheduleTraceRefresh(1500, true);
 			}
 			if (eventShouldRefreshNavigation(event)) {
 				scheduleBootstrapRefresh(targetPiboSessionId === selectedPiboSessionId ? 0 : 150);
@@ -1154,9 +1177,8 @@ function SessionTracePane({
 			if (bootstrapTimer) clearTimeout(bootstrapTimer);
 			events.close();
 		};
-	}, [enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, selectedRoomId, traceQueryKey]);
+	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, selectedRoomId, traceQueryKey]);
 
-	const currentTraceView = traceQuery.data ?? null;
 	const selectedTrace = useMemo(() => {
 		if (!currentTraceView) return null;
 		return adaptTrace(currentTraceView.piboSessionId, currentTraceView.title, currentTraceView.nodes);
@@ -3316,6 +3338,7 @@ type CompactRawEvent = RawEvent & { count: number };
 type ChatStreamEventMeta = {
 	piboSessionId?: string;
 	streamFrameId?: string;
+	streamId?: number;
 	streamFrameIndex?: number;
 };
 
@@ -3324,12 +3347,12 @@ type ChatStreamEvent = ChatStreamEventMeta & (
 	| { type: "RUN_STARTED"; runId: string; input?: { text?: string; source?: string } }
 	| { type: "RUN_FINISHED"; runId: string }
 	| { type: "RUN_ERROR"; runId?: string; message: string }
-	| { type: "TEXT_MESSAGE_START"; messageId: string; role: "assistant" }
-	| { type: "TEXT_MESSAGE_CONTENT"; messageId: string; delta: string }
-	| { type: "TEXT_MESSAGE_END"; messageId: string; finalText?: string }
-	| { type: "REASONING_MESSAGE_START"; messageId: string }
-	| { type: "REASONING_MESSAGE_CONTENT"; messageId: string; delta: string }
-	| { type: "REASONING_MESSAGE_END"; messageId: string; finalText?: string }
+	| { type: "TEXT_MESSAGE_START"; messageId: string; runId?: string; role: "assistant" }
+	| { type: "TEXT_MESSAGE_CONTENT"; messageId: string; runId?: string; delta: string }
+	| { type: "TEXT_MESSAGE_END"; messageId: string; runId?: string; finalText?: string }
+	| { type: "REASONING_MESSAGE_START"; messageId: string; runId?: string }
+	| { type: "REASONING_MESSAGE_CONTENT"; messageId: string; runId?: string; delta: string }
+	| { type: "REASONING_MESSAGE_END"; messageId: string; runId?: string; finalText?: string }
 	| { type: "TOOL_CALL_START"; toolCallId: string; toolName: string; args?: unknown; runId?: string }
 	| { type: "TOOL_CALL_ARGS"; toolCallId: string; args: unknown; argsComplete: boolean }
 	| { type: "TOOL_CALL_RESULT"; toolCallId: string; result: unknown; isError: boolean }
@@ -3342,26 +3365,28 @@ function chatStreamEvent(message: MessageEvent): ChatStreamEvent | undefined {
 	try {
 		const parsed = JSON.parse(message.data) as { type?: unknown };
 		if (typeof parsed.type !== "string") return undefined;
-		const streamFrameIndex = streamFrameIndexFromId(message.lastEventId);
+		const streamFrame = message.lastEventId ? parseTraceStreamFrameId(message.lastEventId) : undefined;
 		return {
 			...(parsed as ChatStreamEvent),
 			...(message.lastEventId ? { streamFrameId: message.lastEventId } : {}),
-			...(streamFrameIndex === undefined ? {} : { streamFrameIndex }),
+			...(streamFrame ? { streamId: streamFrame.streamId, streamFrameIndex: streamFrame.frameIndex } : {}),
 		};
 	} catch {
 		return undefined;
 	}
 }
 
-function streamFrameIndexFromId(value: string): number | undefined {
-	const frame = value.split(":")[1];
-	if (frame === undefined) return undefined;
-	const parsed = Number(frame);
-	return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function eventShouldRefreshTrace(event: ChatStreamEvent): boolean {
-	return event.type === "RUN_FINISHED" || event.type === "RUN_ERROR" || event.type === "TEXT_MESSAGE_END";
+function eventTraceRefreshDelay(event: ChatStreamEvent): number | undefined {
+	if (
+		event.type === "RUN_FINISHED" ||
+		event.type === "TEXT_MESSAGE_END"
+	) {
+		return 300;
+	}
+	if (event.type === "RUN_ERROR") {
+		return 0;
+	}
+	return undefined;
 }
 
 function eventShouldRefreshNavigation(event: ChatStreamEvent): boolean {
@@ -3369,7 +3394,7 @@ function eventShouldRefreshNavigation(event: ChatStreamEvent): boolean {
 }
 
 function liveOrder(event: ChatStreamEvent, nodeType: PiboTraceNode["type"]): PiboTraceOrderKey {
-	return liveTraceOrder(event.streamFrameIndex, nodeType);
+	return liveTraceOrder(event.streamId, event.streamFrameIndex, nodeType);
 }
 
 function applyChatStreamEvents(view: PiboSessionTraceView, events: ChatStreamEvent[]): PiboSessionTraceView {
@@ -3387,7 +3412,7 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 
 	switch (event.type) {
 		case "RUN_STARTED":
-			nodes = upsertTraceNode(nodes, {
+			nodes = insertTraceNodeIfMissing(nodes, {
 				id: messageTurnNodeId(event.runId),
 				piboSessionId: view.piboSessionId,
 				eventId: event.runId,
@@ -3404,11 +3429,7 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 			});
 			break;
 		case "RUN_FINISHED":
-			nodes = updateTraceNode(nodes, messageTurnNodeId(event.runId), (node) => ({
-				...node,
-				status: "done",
-				completedAt: createdAt,
-			}));
+			nodes = completeRunNodes(nodes, event.runId, createdAt);
 			break;
 		case "RUN_ERROR": {
 			if (event.runId) {
@@ -3438,40 +3459,40 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 			break;
 		}
 		case "TEXT_MESSAGE_START":
-			nodes = upsertTraceNode(nodes, assistantNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")));
+			nodes = insertTraceNodeIfMissing(nodes, assistantNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")));
 			break;
 		case "TEXT_MESSAGE_CONTENT":
-			nodes = appendTextToNode(nodes, assistantNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")), event.delta);
+			nodes = appendTextToNode(nodes, assistantNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")), event.delta);
 			break;
 		case "TEXT_MESSAGE_END":
 			nodes = upsertTraceNode(nodes, {
-				...assistantNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")),
+				...assistantNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "assistant.message")),
 				status: "done",
 				completedAt: createdAt,
 				...(event.finalText === undefined ? {} : { summary: event.finalText, output: event.finalText }),
 			});
-			nodes = updateTraceNode(nodes, messageTurnNodeId(event.messageId), (node) => ({
+			nodes = updateTraceNode(nodes, messageTurnNodeId(event.runId ?? event.messageId), (node) => ({
 				...node,
 				status: "done",
 				completedAt: createdAt,
 			}));
 			break;
 		case "REASONING_MESSAGE_START":
-			nodes = upsertTraceNode(nodes, reasoningNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")));
+			nodes = insertTraceNodeIfMissing(nodes, reasoningNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")));
 			break;
 		case "REASONING_MESSAGE_CONTENT":
-			nodes = appendTextToNode(nodes, reasoningNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")), event.delta);
+			nodes = appendTextToNode(nodes, reasoningNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")), event.delta);
 			break;
 		case "REASONING_MESSAGE_END":
 			nodes = upsertTraceNode(nodes, {
-				...reasoningNode(event.messageId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")),
+				...reasoningNode(event.messageId, event.runId, view.piboSessionId, createdAt, liveOrder(event, "model.reasoning")),
 				status: "done",
 				completedAt: createdAt,
 				...(event.finalText === undefined ? {} : { summary: event.finalText, output: event.finalText }),
 			});
 			break;
 		case "TOOL_CALL_START":
-			nodes = upsertTraceNode(nodes, {
+			nodes = insertTraceNodeIfMissing(nodes, {
 				id: toolNodeId(event.toolCallId),
 				parentId: event.runId ? messageTurnNodeId(event.runId) : undefined,
 				piboSessionId: view.piboSessionId,
@@ -3562,6 +3583,10 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 	};
 }
 
+function insertTraceNodeIfMissing(nodes: PiboTraceNode[], node: PiboTraceNode): PiboTraceNode[] {
+	return findTraceNode(nodes, node.id) ? nodes : upsertTraceNode(nodes, node);
+}
+
 function upsertTraceNode(nodes: PiboTraceNode[], update: PiboTraceNode): PiboTraceNode[] {
 	const existing = findTraceNode(nodes, update.id);
 	if (existing) {
@@ -3618,6 +3643,24 @@ function updateTraceNodeInTree(
 	return undefined;
 }
 
+function completeRunNodes(nodes: PiboTraceNode[], runId: string, completedAt: string): PiboTraceNode[] {
+	const turnNodeId = messageTurnNodeId(runId);
+	let changed = false;
+	const next = nodes.map((node) => {
+		const completedChildren = node.children.length ? completeRunNodes(node.children, runId, completedAt) : node.children;
+		const childrenChanged = completedChildren !== node.children;
+		const belongsToRun = node.id === turnNodeId || node.eventId === runId || node.parentId === turnNodeId;
+		if (!childrenChanged && (!belongsToRun || node.status !== "running")) return node;
+		changed = true;
+		return {
+			...node,
+			...(belongsToRun && node.status === "running" ? { status: "done" as const, completedAt } : {}),
+			children: completedChildren,
+		};
+	});
+	return changed ? next : nodes;
+}
+
 function appendTextToNode(nodes: PiboTraceNode[], node: PiboTraceNode, delta: string): PiboTraceNode[] {
 	const existing = findTraceNode(nodes, node.id);
 	if (!existing) {
@@ -3654,16 +3697,18 @@ function findTraceNode(nodes: PiboTraceNode[], id: string): PiboTraceNode | unde
 }
 
 function assistantNode(
-	eventId: string,
+	messageId: string,
+	runId: string | undefined,
 	piboSessionId: string,
 	startedAt: string,
 	orderKey: PiboTraceOrderKey,
 ): PiboTraceNode {
+	const parentEventId = runId ?? messageId;
 	return {
-		id: assistantMessageNodeId(eventId),
-		parentId: messageTurnNodeId(eventId),
+		id: assistantMessageNodeId(messageId),
+		parentId: messageTurnNodeId(parentEventId),
 		piboSessionId,
-		eventId,
+		eventId: parentEventId,
 		type: "assistant.message",
 		title: "Agent Message",
 		status: "running",
@@ -3671,23 +3716,25 @@ function assistantNode(
 		summary: "",
 		output: "",
 		source: "live",
-		stableKey: `assistant:${eventId}`,
+		stableKey: `assistant:${messageId}`,
 		orderKey,
 		children: [],
 	};
 }
 
 function reasoningNode(
-	eventId: string,
+	messageId: string,
+	runId: string | undefined,
 	piboSessionId: string,
 	startedAt: string,
 	orderKey: PiboTraceOrderKey,
 ): PiboTraceNode {
+	const parentEventId = runId ?? messageId;
 	return {
-		id: thinkingNodeId(eventId),
-		parentId: messageTurnNodeId(eventId),
+		id: thinkingNodeId(messageId),
+		parentId: messageTurnNodeId(parentEventId),
 		piboSessionId,
-		eventId,
+		eventId: parentEventId,
 		type: "model.reasoning",
 		title: "Thinking",
 		status: "running",
@@ -3695,7 +3742,7 @@ function reasoningNode(
 		summary: "",
 		output: "",
 		source: "live",
-		stableKey: `reasoning:${eventId}`,
+		stableKey: `reasoning:${messageId}`,
 		orderKey,
 		children: [],
 	};

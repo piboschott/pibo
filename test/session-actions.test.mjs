@@ -233,18 +233,115 @@ test("routed session normalizes assistant thinking events", async () => {
 		text: "hello",
 		source: "actor",
 	};
-	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_start" } });
-	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "plan" } });
-	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_end", content: "plan done" } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_start", contentIndex: 2 } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 2, delta: "plan" } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 2, content: "plan done" } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_start", contentIndex: 2 } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 2, delta: "next" } });
+	listener({ type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 2, content: "next done" } });
 
 	assert.deepEqual(
 		events.map((event) => event.type),
-		["thinking_started", "thinking_delta", "thinking_finished"],
+		["thinking_started", "thinking_delta", "thinking_finished", "thinking_started", "thinking_delta", "thinking_finished"],
 	);
 	assert.equal(events[1].text, "plan");
 	assert.equal(events[1].eventId, "event-1");
+	assert.equal(events[1].contentIndex, 2);
+	assert.equal(events[1].thinkingIndex, 0);
 	assert.equal(events[2].text, "plan done");
 	assert.equal(events[2].eventId, "event-1");
+	assert.equal(events[2].contentIndex, 2);
+	assert.equal(events[2].thinkingIndex, 0);
+	assert.equal(events[4].text, "next");
+	assert.equal(events[4].eventId, "event-1");
+	assert.equal(events[4].contentIndex, 2);
+	assert.equal(events[4].thinkingIndex, 1);
+	assert.equal(events[5].text, "next done");
+	assert.equal(events[5].eventId, "event-1");
+	assert.equal(events[5].contentIndex, 2);
+	assert.equal(events[5].thinkingIndex, 1);
+
+	await routed.dispose();
+});
+
+test("routed session assigns distinct assistant indexes when provider reuses content index", async () => {
+	let listener;
+	const events = [];
+	const runtime = {
+		cwd: process.cwd(),
+		session: {
+			subscribe(callback) {
+				listener = callback;
+				return () => {};
+			},
+			isStreaming: false,
+			getActiveToolNames() {
+				return [];
+			},
+			async prompt() {},
+			async abort() {},
+			getSessionTree() {
+				return [];
+			},
+			getAvailableThinkingLevels() {
+				return [];
+			},
+			supportsThinking() {
+				return false;
+			},
+			thinkingLevel: "none",
+			sessionManager: {
+				getLeafId() {
+					return "leaf";
+				},
+				getHeader() {
+					return undefined;
+				},
+			},
+			sessionId: "pi:test",
+			sessionFile: undefined,
+			sessionName: undefined,
+		},
+		setRebindSession() {},
+		async dispose() {},
+	};
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.activeMessage = {
+		type: "message",
+		piboSessionId: "route:test",
+		id: "event-1",
+		text: "hello",
+		source: "actor",
+	};
+	listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "plan" } });
+	listener({
+		type: "message_end",
+		message: { role: "assistant", content: [{ type: "thinking", thinking: "t" }, { type: "text", text: "plan" }] },
+	});
+	listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "final" } });
+	listener({
+		type: "message_end",
+		message: { role: "assistant", content: [{ type: "thinking", thinking: "t" }, { type: "text", text: "final" }] },
+	});
+
+	assert.deepEqual(
+		events.map((event) => event.type),
+		["assistant_delta", "assistant_message", "assistant_delta", "assistant_message"],
+	);
+	assert.equal(events[0].eventId, "event-1");
+	assert.equal(events[0].contentIndex, 1);
+	assert.equal(events[0].assistantIndex, 0);
+	assert.equal(events[1].text, "plan");
+	assert.equal(events[1].contentIndex, 1);
+	assert.equal(events[1].assistantIndex, 0);
+	assert.equal(events[2].text, "final");
+	assert.equal(events[2].contentIndex, 1);
+	assert.equal(events[2].assistantIndex, 1);
+	assert.equal(events[3].text, "final");
+	assert.equal(events[3].contentIndex, 1);
+	assert.equal(events[3].assistantIndex, 1);
 
 	await routed.dispose();
 });
@@ -306,6 +403,14 @@ test("routed session normalizes tool call events", async () => {
 			content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "echo hi" } }],
 		},
 		assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0 },
+	});
+	listener({
+		type: "message_update",
+		message: {
+			role: "assistant",
+			content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "echo hi" } }],
+		},
+		assistantMessageEvent: { type: "toolcall_end", contentIndex: 0 },
 	});
 	listener({
 		type: "tool_execution_start",

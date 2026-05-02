@@ -19,6 +19,7 @@ export type TraceOrderKey = {
 	transcriptIndex?: number;
 	contentPartIndex?: number;
 	eventSequence?: number;
+	streamId?: number;
 	streamFrameIndex?: number;
 	phaseRank: number;
 };
@@ -66,14 +67,30 @@ export function eventTraceOrder(eventSequence: number | undefined, type: TraceNo
 	};
 }
 
-export function liveTraceOrder(streamFrameIndex: number | undefined, type: TraceNodeKind): TraceOrderKey {
+export function liveTraceOrder(
+	streamId: number | undefined,
+	streamFrameIndex: number | undefined,
+	type: TraceNodeKind,
+): TraceOrderKey {
+	const streamOrder = streamId ?? Number.MAX_SAFE_INTEGER;
 	const frameIndex = streamFrameIndex ?? Number.MAX_SAFE_INTEGER;
 	return {
 		sourceRank: TRACE_SOURCE_RANK.live,
-		turnSeq: frameIndex,
+		turnSeq: streamOrder,
+		streamId: streamOrder,
 		streamFrameIndex: frameIndex,
 		phaseRank: TRACE_PHASE_RANK[type],
 	};
+}
+
+export function parseTraceStreamFrameId(value: string): { streamId: number; frameIndex: number } | undefined {
+	const [stream, frame] = value.split(":");
+	if (stream === undefined || frame === undefined) return undefined;
+	const streamId = Number(stream);
+	const frameIndex = Number(frame);
+	if (!Number.isInteger(streamId) || streamId < 0) return undefined;
+	if (!Number.isInteger(frameIndex) || frameIndex < 0) return undefined;
+	return { streamId, frameIndex };
 }
 
 export function childTraceOrder(parent: TraceOrderKey | undefined, type: TraceNodeKind): TraceOrderKey | undefined {
@@ -93,6 +110,7 @@ export function compareTraceOrder(left?: TraceOrderKey, right?: TraceOrderKey): 
 		left.turnSeq - right.turnSeq ||
 		(left.transcriptIndex ?? Number.MAX_SAFE_INTEGER) - (right.transcriptIndex ?? Number.MAX_SAFE_INTEGER) ||
 		(left.eventSequence ?? Number.MAX_SAFE_INTEGER) - (right.eventSequence ?? Number.MAX_SAFE_INTEGER) ||
+		(left.streamId ?? Number.MAX_SAFE_INTEGER) - (right.streamId ?? Number.MAX_SAFE_INTEGER) ||
 		(left.streamFrameIndex ?? Number.MAX_SAFE_INTEGER) - (right.streamFrameIndex ?? Number.MAX_SAFE_INTEGER) ||
 		(left.contentPartIndex ?? 0) - (right.contentPartIndex ?? 0) ||
 		left.phaseRank - right.phaseRank ||

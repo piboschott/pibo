@@ -52,23 +52,31 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function messageContentIndex(candidate: PiEventCandidate): number | undefined {
+	return typeof candidate.assistantMessageEvent?.contentIndex === "number"
+		? candidate.assistantMessageEvent.contentIndex
+		: undefined;
+}
+
 function promptSource(source: PiboEventSource | undefined): "interactive" | "rpc" {
 	return source === "user" || source === "ui" ? "interactive" : "rpc";
 }
 
-function textFromMessage(message: unknown): string {
-	if (!message || typeof message !== "object") return "";
+function lastTextPartFromMessage(message: unknown): { text: string; contentIndex: number } | undefined {
+	if (!message || typeof message !== "object") return undefined;
 
 	const content = (message as { content?: unknown }).content;
-	if (!Array.isArray(content)) return "";
+	if (!Array.isArray(content)) return undefined;
 
-	return content
-		.map((part) => {
-			if (!part || typeof part !== "object") return "";
-			const candidate = part as { type?: unknown; text?: unknown };
-			return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : "";
-		})
-		.join("");
+	for (let index = content.length - 1; index >= 0; index -= 1) {
+		const part = content[index];
+		if (!part || typeof part !== "object") continue;
+		const candidate = part as { type?: unknown; text?: unknown };
+		if (candidate.type === "text" && typeof candidate.text === "string" && candidate.text.length > 0) {
+			return { text: candidate.text, contentIndex: index };
+		}
+	}
+	return undefined;
 }
 
 function toolCallFromMessage(message: unknown, contentIndex: unknown): PiToolCall | undefined {
@@ -100,7 +108,6 @@ function normalizeToolCallEvent(piboSessionId: string, candidate: PiEventCandida
 	if (
 		candidate.type === "message_update" &&
 		(candidate.assistantMessageEvent?.type === "toolcall_start" ||
-			candidate.assistantMessageEvent?.type === "toolcall_delta" ||
 			candidate.assistantMessageEvent?.type === "toolcall_end")
 	) {
 		const toolCall = toolCallFromAssistantEvent(candidate);
@@ -169,14 +176,19 @@ function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEven
 		candidate.assistantMessageEvent?.type === "text_delta" &&
 		typeof candidate.assistantMessageEvent.delta === "string"
 	) {
-		return { type: "assistant_delta", piboSessionId, text: candidate.assistantMessageEvent.delta };
+		return {
+			type: "assistant_delta",
+			piboSessionId,
+			contentIndex: messageContentIndex(candidate),
+			text: candidate.assistantMessageEvent.delta,
+		};
 	}
 
 	if (
 		candidate.type === "message_update" &&
 		candidate.assistantMessageEvent?.type === "thinking_start"
 	) {
-		return { type: "thinking_started", piboSessionId };
+		return { type: "thinking_started", piboSessionId, contentIndex: messageContentIndex(candidate) };
 	}
 
 	if (
@@ -184,15 +196,15 @@ function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEven
 		candidate.assistantMessageEvent?.type === "thinking_delta" &&
 		typeof candidate.assistantMessageEvent.delta === "string"
 	) {
-		return { type: "thinking_delta", piboSessionId, text: candidate.assistantMessageEvent.delta };
+		return { type: "thinking_delta", piboSessionId, contentIndex: messageContentIndex(candidate), text: candidate.assistantMessageEvent.delta };
 	}
 
 	if (candidate.type === "message_update" && candidate.assistantMessageEvent?.type === "thinking_end") {
 		const text =
 			typeof candidate.assistantMessageEvent.content === "string" ? candidate.assistantMessageEvent.content : undefined;
 		return text === undefined
-			? { type: "thinking_finished", piboSessionId }
-			: { type: "thinking_finished", piboSessionId, text };
+			? { type: "thinking_finished", piboSessionId, contentIndex: messageContentIndex(candidate) }
+			: { type: "thinking_finished", piboSessionId, contentIndex: messageContentIndex(candidate), text };
 	}
 
 	const toolCallEvent = normalizeToolCallEvent(piboSessionId, candidate);
@@ -217,9 +229,14 @@ function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEven
 							: "Assistant message failed.",
 				};
 			}
-			const text = textFromMessage(candidate.message);
-			if (text) {
-				return { type: "assistant_message", piboSessionId, text };
+			const textPart = lastTextPartFromMessage(candidate.message);
+			if (textPart) {
+				return {
+					type: "assistant_message",
+					piboSessionId,
+					contentIndex: textPart.contentIndex,
+					text: textPart.text,
+				};
 			}
 		}
 	}
@@ -232,6 +249,10 @@ export class RoutedSession {
 	private processing = false;
 	private disposed = false;
 	private activeMessage?: PiboMessageEvent;
+	private activeAssistantIndex?: number;
+	private nextAssistantIndex = 0;
+	private activeThinkingIndex?: number;
+	private nextThinkingIndex = 0;
 	private unsubscribe?: () => void;
 
 	constructor(
@@ -466,6 +487,10 @@ export class RoutedSession {
 
 				try {
 					this.activeMessage = event;
+					this.activeAssistantIndex = undefined;
+					this.nextAssistantIndex = 0;
+					this.activeThinkingIndex = undefined;
+					this.nextThinkingIndex = 0;
 					await this.runtime.session.prompt(event.text, { source: promptSource(event.source) });
 					this.emit({
 						type: "message_finished",
@@ -482,6 +507,10 @@ export class RoutedSession {
 					});
 				} finally {
 					this.activeMessage = undefined;
+					this.activeAssistantIndex = undefined;
+					this.nextAssistantIndex = 0;
+					this.activeThinkingIndex = undefined;
+					this.nextThinkingIndex = 0;
 				}
 			}
 		} finally {
@@ -554,14 +583,45 @@ export class RoutedSession {
 	}
 
 	private withActiveMessage(event: PiboOutputEvent): PiboOutputEvent {
+		if (this.activeMessage?.id && event.type === "assistant_delta") {
+			const assistantIndex = this.activeAssistantIndex ?? this.nextAssistantIndex;
+			if (this.activeAssistantIndex === undefined) {
+				this.nextAssistantIndex += 1;
+				this.activeAssistantIndex = assistantIndex;
+			}
+			return { ...event, eventId: this.activeMessage.id, assistantIndex };
+		}
+
+		if (this.activeMessage?.id && event.type === "assistant_message") {
+			const assistantIndex = this.activeAssistantIndex ?? this.nextAssistantIndex;
+			if (this.activeAssistantIndex === undefined) {
+				this.nextAssistantIndex += 1;
+			}
+			this.activeAssistantIndex = undefined;
+			return { ...event, eventId: this.activeMessage.id, assistantIndex };
+		}
+
+		if (this.activeMessage?.id && event.type === "thinking_started") {
+			const thinkingIndex = this.nextThinkingIndex;
+			this.nextThinkingIndex += 1;
+			this.activeThinkingIndex = thinkingIndex;
+			return { ...event, eventId: this.activeMessage.id, thinkingIndex };
+		}
+
+		if (this.activeMessage?.id && (event.type === "thinking_delta" || event.type === "thinking_finished")) {
+			const thinkingIndex = this.activeThinkingIndex ?? this.nextThinkingIndex;
+			if (this.activeThinkingIndex === undefined) {
+				this.nextThinkingIndex += 1;
+				this.activeThinkingIndex = thinkingIndex;
+			}
+			const output = { ...event, eventId: this.activeMessage.id, thinkingIndex };
+			if (event.type === "thinking_finished") this.activeThinkingIndex = undefined;
+			return output;
+		}
+
 		if (
 			this.activeMessage?.id &&
-			(event.type === "assistant_delta" ||
-				event.type === "assistant_message" ||
-				event.type === "thinking_started" ||
-				event.type === "thinking_delta" ||
-				event.type === "thinking_finished" ||
-				event.type === "tool_call" ||
+			(event.type === "tool_call" ||
 				event.type === "tool_execution_started" ||
 				event.type === "tool_execution_updated" ||
 				event.type === "tool_execution_finished" ||

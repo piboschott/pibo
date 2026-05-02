@@ -8,6 +8,7 @@ import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { ChatWebReadModel } from "../dist/apps/chat/read-model.js";
 import { chatStreamFramesFromOutputEvent, createChatStreamState } from "../dist/apps/chat/stream.js";
 import { buildSessionNodes, buildTraceView, traceNodesFromEntries } from "../dist/apps/chat/trace.js";
+import { compareTraceOrder, liveTraceOrder, parseTraceStreamFrameId } from "../dist/shared/trace-order.js";
 
 function createTestSession(overrides = {}) {
 	return {
@@ -32,6 +33,28 @@ function createPersistedPiSession(cwd) {
 		role: "assistant",
 		content: [{ type: "text", text: "previous answer" }],
 		stopReason: "stop",
+	});
+	return manager.getSessionId();
+}
+
+function createPersistedRunningPiSession(cwd) {
+	const manager = SessionManager.create(cwd);
+	manager.appendMessage({
+		role: "user",
+		content: [{ type: "text", text: "previous question" }],
+	});
+	manager.appendMessage({
+		role: "assistant",
+		content: [{ type: "text", text: "previous answer" }],
+		stopReason: "stop",
+	});
+	manager.appendMessage({
+		role: "user",
+		content: [{ type: "text", text: "active question" }],
+	});
+	manager.appendMessage({
+		role: "assistant",
+		content: [{ type: "text", text: "transcript partial" }],
 	});
 	return manager.getSessionId();
 }
@@ -73,8 +96,8 @@ test("chat stream adapter emits AGUI-style start delta and end frames", () => {
 			state,
 		),
 		[
-			{ type: "TEXT_MESSAGE_START", messageId: "turn-1", role: "assistant" },
-			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1", delta: "hel" },
+			{ type: "TEXT_MESSAGE_START", messageId: "turn-1", runId: "turn-1", role: "assistant" },
+			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1", runId: "turn-1", delta: "hel" },
 		],
 	);
 	assert.deepEqual(
@@ -82,14 +105,124 @@ test("chat stream adapter emits AGUI-style start delta and end frames", () => {
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", text: "lo" },
 			state,
 		),
-		[{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1", delta: "lo" }],
+		[{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1", runId: "turn-1", delta: "lo" }],
 	);
 	assert.deepEqual(
 		chatStreamFramesFromOutputEvent(
 			{ type: "assistant_message", piboSessionId: "chat:test", eventId: "turn-1", text: "hello" },
 			state,
 		),
-		[{ type: "TEXT_MESSAGE_END", messageId: "turn-1", finalText: "hello" }],
+		[{ type: "TEXT_MESSAGE_END", messageId: "turn-1", runId: "turn-1", finalText: "hello" }],
+	);
+});
+
+test("chat stream adapter keeps separate assistant text content parts for one turn", () => {
+	const state = createChatStreamState();
+
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 1, text: "first" },
+			state,
+		),
+		[
+			{ type: "TEXT_MESSAGE_START", messageId: "turn-1:assistant:1", runId: "turn-1", role: "assistant" },
+			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1:assistant:1", runId: "turn-1", delta: "first" },
+		],
+	);
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 5, text: "second" },
+			state,
+		),
+		[
+			{ type: "TEXT_MESSAGE_START", messageId: "turn-1:assistant:5", runId: "turn-1", role: "assistant" },
+			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1:assistant:5", runId: "turn-1", delta: "second" },
+		],
+	);
+});
+
+test("chat stream adapter prefers assistant message index over reused content index", () => {
+	const state = createChatStreamState();
+
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", assistantIndex: 0, contentIndex: 1, text: "plan" },
+			state,
+		),
+		[
+			{ type: "TEXT_MESSAGE_START", messageId: "turn-1:assistant:0", runId: "turn-1", role: "assistant" },
+			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1:assistant:0", runId: "turn-1", delta: "plan" },
+		],
+	);
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", assistantIndex: 1, contentIndex: 1, text: "final" },
+			state,
+		),
+		[
+			{ type: "TEXT_MESSAGE_START", messageId: "turn-1:assistant:1", runId: "turn-1", role: "assistant" },
+			{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1:assistant:1", runId: "turn-1", delta: "final" },
+		],
+	);
+});
+
+test("live trace order uses SSE stream id before frame index", () => {
+	assert.deepEqual(parseTraceStreamFrameId("58722:1"), { streamId: 58722, frameIndex: 1 });
+	assert.equal(parseTraceStreamFrameId("58722"), undefined);
+	assert.equal(parseTraceStreamFrameId("58722:nope"), undefined);
+
+	const first = liveTraceOrder(58722, 1, "tool.call");
+	const second = liveTraceOrder(58723, 0, "model.reasoning");
+	assert.equal(compareTraceOrder(first, second) < 0, true);
+});
+
+test("chat stream adapter keeps separate reasoning content parts for one turn", () => {
+	const state = createChatStreamState();
+
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, text: "first" },
+			state,
+		),
+		[
+			{ type: "REASONING_MESSAGE_START", messageId: "turn-1:thinking:0", runId: "turn-1" },
+			{ type: "REASONING_MESSAGE_CONTENT", messageId: "turn-1:thinking:0", runId: "turn-1", delta: "first" },
+		],
+	);
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 2, text: "second" },
+			state,
+		),
+		[
+			{ type: "REASONING_MESSAGE_START", messageId: "turn-1:thinking:2", runId: "turn-1" },
+			{ type: "REASONING_MESSAGE_CONTENT", messageId: "turn-1:thinking:2", runId: "turn-1", delta: "second" },
+		],
+	);
+});
+
+test("chat stream adapter prefers pibo thinking segments over repeated provider content indexes", () => {
+	const state = createChatStreamState();
+
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, thinkingIndex: 0, text: "first" },
+			state,
+		),
+		[
+			{ type: "REASONING_MESSAGE_START", messageId: "turn-1:thinking:0", runId: "turn-1" },
+			{ type: "REASONING_MESSAGE_CONTENT", messageId: "turn-1:thinking:0", runId: "turn-1", delta: "first" },
+		],
+	);
+	assert.deepEqual(
+		chatStreamFramesFromOutputEvent(
+			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, thinkingIndex: 1, text: "second" },
+			state,
+		),
+		[
+			{ type: "REASONING_MESSAGE_START", messageId: "turn-1:thinking:1", runId: "turn-1" },
+			{ type: "REASONING_MESSAGE_CONTENT", messageId: "turn-1:thinking:1", runId: "turn-1", delta: "second" },
+		],
 	);
 });
 
@@ -469,6 +602,86 @@ test("chat trace aggregates live assistant deltas into a streaming response node
 	assert.equal(turn.children[0].output, "Hello world");
 });
 
+test("chat trace keeps separate live assistant messages when content index is reused", async () => {
+	const session = createTestSession();
+	const view = await buildTraceView({
+		session,
+		sessions: [session],
+		status: "running",
+		events: [
+			{
+				id: "event-1",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "message_started",
+				createdAt: "2026-04-29T08:00:00.000Z",
+				payload: {
+					type: "message_started",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					text: "hello",
+					source: "user",
+				},
+			},
+			{
+				id: "event-2",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "assistant_delta",
+				createdAt: "2026-04-29T08:00:01.000Z",
+				payload: {
+					type: "assistant_delta",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					assistantIndex: 0,
+					contentIndex: 1,
+					text: "plan",
+				},
+			},
+			{
+				id: "event-3",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "assistant_message",
+				createdAt: "2026-04-29T08:00:02.000Z",
+				payload: {
+					type: "assistant_message",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					assistantIndex: 0,
+					contentIndex: 1,
+					text: "plan",
+				},
+			},
+			{
+				id: "event-4",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "assistant_delta",
+				createdAt: "2026-04-29T08:00:03.000Z",
+				payload: {
+					type: "assistant_delta",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					assistantIndex: 1,
+					contentIndex: 1,
+					text: "final",
+				},
+			},
+		],
+		cwd: process.cwd(),
+	});
+
+	const turn = view.nodes.find((node) => node.type === "agent.turn");
+	assert.ok(turn);
+	const assistants = turn.children.filter((node) => node.type === "assistant.message");
+	assert.equal(assistants.length, 2);
+	assert.equal(assistants[0].output, "plan");
+	assert.equal(assistants[0].status, "done");
+	assert.equal(assistants[1].output, "final");
+	assert.equal(assistants[1].status, "running");
+});
+
 test("chat trace replaces live assistant deltas with the final assistant message", async () => {
 	const session = createTestSession();
 	const view = await buildTraceView({
@@ -642,6 +855,66 @@ test("chat trace keeps live deltas when the start event fell outside retained hi
 	}
 });
 
+test("chat trace uses event log instead of duplicating the running transcript suffix", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pibo-chat-running-trace-"));
+	const piSessionId = createPersistedRunningPiSession(dir);
+	const session = createTestSession({ piSessionId });
+
+	const trace = await buildTraceView({
+		session,
+		sessions: [session],
+		cwd: dir,
+		status: "running",
+		events: [
+			{
+				id: "event:queued",
+				type: "message_queued",
+				payload: {
+					type: "message_queued",
+					piboSessionId: session.id,
+					eventId: "turn-active",
+					text: "active question",
+					source: "user",
+				},
+				createdAt: "2026-05-02T12:00:00.000Z",
+				eventSequence: 1,
+			},
+			{
+				id: "event:started",
+				type: "message_started",
+				payload: {
+					type: "message_started",
+					piboSessionId: session.id,
+					eventId: "turn-active",
+					text: "active question",
+					source: "user",
+				},
+				createdAt: "2026-05-02T12:00:01.000Z",
+				eventSequence: 2,
+			},
+			{
+				id: "event:delta",
+				type: "assistant_delta",
+				payload: {
+					type: "assistant_delta",
+					piboSessionId: session.id,
+					eventId: "turn-active",
+					text: "live partial",
+				},
+				createdAt: "2026-05-02T12:00:02.000Z",
+				eventSequence: 3,
+			},
+		],
+	});
+
+	const flat = flattenTraceNodes(trace.nodes);
+	assert.equal(flat.filter((node) => node.type === "user.message" && node.summary === "active question").length, 1);
+	assert.equal(flat.filter((node) => node.type === "assistant.message" && node.summary === "live partial").length, 1);
+	assert.equal(flat.some((node) => node.type === "assistant.message" && node.summary === "transcript partial"), false);
+
+	rmSync(dir, { recursive: true, force: true });
+});
+
 test("chat trace replaces live thinking deltas with finished reasoning text", async () => {
 	const session = createTestSession();
 	const view = await buildTraceView({
@@ -698,6 +971,97 @@ test("chat trace replaces live thinking deltas with finished reasoning text", as
 	assert.equal(turn.children.length, 1);
 	assert.equal(turn.children[0].status, "done");
 	assert.equal(turn.children[0].output, "final reasoning");
+});
+
+test("chat trace keeps multiple live thinking blocks ordered around tools", async () => {
+	const session = createTestSession();
+	const view = await buildTraceView({
+		session,
+		sessions: [session],
+		status: "running",
+		events: [
+			{
+				id: "event-1",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "message_started",
+				createdAt: "2026-04-29T08:00:00.000Z",
+				eventSequence: 1,
+				payload: {
+					type: "message_started",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					text: "search",
+					source: "user",
+				},
+			},
+			{
+				id: "event-2",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "thinking_finished",
+				createdAt: "2026-04-29T08:00:01.000Z",
+				eventSequence: 2,
+				payload: {
+					type: "thinking_finished",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					contentIndex: 0,
+					thinkingIndex: 0,
+					text: "first reasoning",
+				},
+			},
+			{
+				id: "event-3",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "tool_execution_finished",
+				createdAt: "2026-04-29T08:00:02.000Z",
+				eventSequence: 3,
+				payload: {
+					type: "tool_execution_finished",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					toolCallId: "tool-1",
+					toolName: "web_search",
+					result: { ok: true },
+					isError: false,
+				},
+			},
+			{
+				id: "event-4",
+				piboSessionId: "chat:test",
+				eventId: "turn-1",
+				type: "thinking_finished",
+				createdAt: "2026-04-29T08:00:03.000Z",
+				eventSequence: 4,
+				payload: {
+					type: "thinking_finished",
+					piboSessionId: "chat:test",
+					eventId: "turn-1",
+					contentIndex: 0,
+					thinkingIndex: 1,
+					text: "second reasoning",
+				},
+			},
+		],
+		cwd: process.cwd(),
+	});
+
+	const turn = view.nodes.find((node) => node.type === "agent.turn");
+	assert.ok(turn);
+	assert.deepEqual(
+		turn.children.map((node) => [node.type, node.output]),
+		[
+			["model.reasoning", "first reasoning"],
+			["tool.call", { ok: true }],
+			["model.reasoning", "second reasoning"],
+		],
+	);
+	assert.deepEqual(
+		turn.children.map((node) => node.stableKey),
+		["reasoning:turn-1:thinking:0", "tool:tool-1", "reasoning:turn-1:thinking:1"],
+	);
 });
 
 test("chat trace closes interrupted live assistant deltas when the session is idle", async () => {

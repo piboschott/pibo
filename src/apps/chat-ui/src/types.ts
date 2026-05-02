@@ -21,6 +21,7 @@ export type PiboTraceOrderKey = {
 	transcriptIndex?: number;
 	contentPartIndex?: number;
 	eventSequence?: number;
+	streamId?: number;
 	streamFrameIndex?: number;
 	phaseRank: number;
 };
@@ -112,6 +113,7 @@ export type PiboSessionTraceView = {
 	piSessionId: string;
 	title: string;
 	version: string;
+	latestStreamId?: number;
 	nodes: PiboTraceNode[];
 	rawEvents: Array<{ id: string; type: string; createdAt: string; payload: unknown }>;
 };

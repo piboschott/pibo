@@ -84,6 +84,7 @@ export type PiboSessionTraceView = {
 	piSessionId: string;
 	title: string;
 	version: string;
+	latestStreamId?: number;
 	nodes: PiboTraceNode[];
 	rawEvents: ChatWebStoredEvent[];
 };
@@ -103,6 +104,7 @@ type TraceBuildInput = {
 	cwd?: string;
 	includeRawEvents?: boolean;
 	rawEventsLimit?: number;
+	latestStreamId?: number;
 };
 
 type MessageSessionEntry = Extract<SessionEntry, { type: "message" }>;
@@ -234,14 +236,15 @@ export async function buildSessionNodes(
 
 export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessionTraceView> {
 	const metadata = await loadPiSessionMetadata(input.session, input.session.workspace ?? input.cwd);
-	const entries = metadata.sessionPath ? readEntries(metadata.sessionPath) : [];
+	const allEntries = metadata.sessionPath ? readEntries(metadata.sessionPath) : [];
+	const sessionStatus = input.status ?? "idle";
+	const openTranscriptEventIds = findOpenTranscriptEventIds(input.events, sessionStatus);
+	const entries = projectTranscriptEntries(allEntries, sessionStatus, openTranscriptEventIds);
 	const nodes = traceNodesFromEntries(input.session.id, entries);
 	const byId = mapTraceNodesById(nodes);
 	const childByParent = mapChildren(input.sessions);
 	const linkedChildByToolCallId = mapSubagentSessionLinks(input.events);
 	const hasPersistedTranscript = entries.some((entry) => entry.type === "message");
-	const sessionStatus = input.status ?? "idle";
-	const openTranscriptEventIds = findOpenTranscriptEventIds(input.events, sessionStatus);
 
 	for (const storedEvent of input.events) {
 		if (
@@ -334,7 +337,9 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 			events: input.events,
 			status: sessionStatus,
 			metadata,
+			latestStreamId: input.latestStreamId,
 		}),
+		latestStreamId: input.latestStreamId,
 		nodes: nestedNodes,
 		rawEvents: input.includeRawEvents === false ? [] : input.events.slice(-(input.rawEventsLimit ?? input.events.length)),
 	};
@@ -346,6 +351,7 @@ export function createTraceViewVersion(input: {
 	events: Pick<ChatWebStoredEvent, "id" | "eventSequence" | "createdAt">[];
 	status?: PiboWebSessionStatus;
 	metadata?: SessionMetadata;
+	latestStreamId?: number;
 }): string {
 	const relevantSessions = input.sessions
 		.map((session) => ({
@@ -376,6 +382,7 @@ export function createTraceViewVersion(input: {
 				events: {
 					lastSequence: eventTail?.eventSequence ?? null,
 					lastCreatedAt: eventTail?.createdAt ?? null,
+					latestStreamId: input.latestStreamId ?? null,
 				},
 				sessions: relevantSessions,
 			}),
@@ -418,6 +425,23 @@ function readEntries(path: string): SessionEntry[] {
 	if (!existsSync(path)) return [];
 	const content = readFileSync(path, "utf8");
 	return parseSessionEntries(content).filter((entry): entry is SessionEntry => entry.type !== "session");
+}
+
+function projectTranscriptEntries(
+	entries: SessionEntry[],
+	sessionStatus: PiboWebSessionStatus,
+	openTranscriptEventIds: ReadonlySet<string>,
+): SessionEntry[] {
+	if (sessionStatus !== "running" || openTranscriptEventIds.size === 0) return entries;
+	let lastUserMessageIndex = -1;
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (entry.type === "message" && messageRole(entry) === "user") {
+			lastUserMessageIndex = index;
+			break;
+		}
+	}
+	return lastUserMessageIndex === -1 ? entries : entries.slice(0, lastUserMessageIndex);
 }
 
 function messageRole(entry: MessageSessionEntry): unknown {
@@ -778,31 +802,35 @@ function traceNodeFromEvent(
 				input: event.type === "message_started" ? { text: event.text, source: event.source } : undefined,
 				stableKey: eventId ? `turn:${eventId}` : base.stableKey,
 			};
-		case "thinking_finished":
+		case "thinking_finished": {
 			if (!hasVisibleText(event.text)) return undefined;
+			const thinkingId = thinkingEventNodeId(event);
 			return {
 				...base,
-				id: eventId ? thinkingNodeId(eventId) : id,
+				id: thinkingId ? thinkingNodeId(thinkingId) : id,
 				parentId: turnParentId,
 				type: "model.reasoning",
 				title: "Thinking",
 				status: "done",
 				summary: event.text,
 				output: event.text,
-				stableKey: eventId ? `reasoning:${eventId}` : base.stableKey,
+				stableKey: thinkingId ? `reasoning:${thinkingId}` : base.stableKey,
 			};
-		case "assistant_message":
+		}
+		case "assistant_message": {
+			const assistantId = assistantEventNodeId(event);
 			return {
 				...base,
-				id: eventId ? assistantMessageNodeId(eventId) : id,
+				id: assistantId ? assistantMessageNodeId(assistantId) : id,
 				parentId: turnParentId,
 				type: "assistant.message",
 				title: "Agent Message",
 				status: "done",
 				summary: event.text,
 				output: event.text,
-				stableKey: eventId ? `assistant:${eventId}` : base.stableKey,
+				stableKey: assistantId ? `assistant:${assistantId}` : base.stableKey,
 			};
+		}
 			case "tool_call":
 			case "tool_execution_started":
 			case "tool_execution_updated":
@@ -891,7 +919,8 @@ function mergeAssistantDeltaEvent(
 ): void {
 	if (event.text.length === 0) return;
 
-	const id = event.eventId ? assistantMessageNodeId(event.eventId) : `event:assistant_delta:${cryptoSafeId(event)}`;
+	const assistantId = assistantEventNodeId(event);
+	const id = assistantId ? assistantMessageNodeId(assistantId) : `event:assistant_delta:${cryptoSafeId(event)}`;
 	const existing = byId.get(id);
 	if (existing) {
 		const text = `${typeof existing.output === "string" ? existing.output : ""}${event.text}`;
@@ -913,7 +942,7 @@ function mergeAssistantDeltaEvent(
 		summary: event.text,
 		output: event.text,
 		source: "event-log",
-		stableKey: event.eventId ? `assistant:${event.eventId}` : id,
+		stableKey: assistantId ? `assistant:${assistantId}` : id,
 		orderKey: eventTraceNodeOrder(eventSequence, event.type),
 		children: [],
 	};
@@ -939,7 +968,8 @@ function mergeThinkingDeltaEvent(
 ): void {
 	if (event.text.length === 0) return;
 
-	const id = event.eventId ? thinkingNodeId(event.eventId) : `event:thinking_delta:${cryptoSafeId(event)}`;
+	const thinkingId = thinkingEventNodeId(event);
+	const id = thinkingId ? thinkingNodeId(thinkingId) : `event:thinking_delta:${cryptoSafeId(event)}`;
 	const existing = byId.get(id);
 	if (existing) {
 		const text = `${typeof existing.output === "string" ? existing.output : ""}${event.text}`;
@@ -961,7 +991,7 @@ function mergeThinkingDeltaEvent(
 		summary: event.text,
 		output: event.text,
 		source: "event-log",
-		stableKey: event.eventId ? `reasoning:${event.eventId}` : id,
+		stableKey: thinkingId ? `reasoning:${thinkingId}` : id,
 		orderKey: eventTraceNodeOrder(eventSequence, event.type),
 		children: [],
 	};
@@ -1079,8 +1109,14 @@ function eventStableKey(event: PiboOutputEvent): string {
 	}
 	if (event.type === "subagent_session" && event.toolCallId) return `tool:${event.toolCallId}`;
 	if (eventId && (event.type === "message_started" || event.type === "message_finished")) return `turn:${eventId}`;
-	if (eventId && (event.type === "thinking_started" || event.type === "thinking_delta" || event.type === "thinking_finished")) return `reasoning:${eventId}`;
-	if (eventId && (event.type === "assistant_delta" || event.type === "assistant_message")) return `assistant:${eventId}`;
+	if (event.type === "thinking_started" || event.type === "thinking_delta" || event.type === "thinking_finished") {
+		const thinkingId = thinkingEventNodeId(event);
+		if (thinkingId) return `reasoning:${thinkingId}`;
+	}
+	if (event.type === "assistant_delta" || event.type === "assistant_message") {
+		const assistantId = assistantEventNodeId(event);
+		if (assistantId) return `assistant:${assistantId}`;
+	}
 	return `event:${event.type}:${eventId ?? cryptoSafeId(event)}`;
 }
 
@@ -1092,8 +1128,24 @@ function assistantMessageNodeId(eventId: string): string {
 	return `event:assistant:${eventId}`;
 }
 
+function assistantEventNodeId(
+	event: Extract<PiboOutputEvent, { type: "assistant_delta" | "assistant_message" }>,
+): string | undefined {
+	if (!event.eventId) return undefined;
+	const partIndex = typeof event.assistantIndex === "number" ? event.assistantIndex : event.contentIndex;
+	return typeof partIndex === "number" ? `${event.eventId}:assistant:${partIndex}` : event.eventId;
+}
+
 function thinkingNodeId(eventId: string): string {
 	return `event:thinking:${eventId}`;
+}
+
+function thinkingEventNodeId(
+	event: Extract<PiboOutputEvent, { type: "thinking_started" | "thinking_delta" | "thinking_finished" }>,
+): string | undefined {
+	if (!event.eventId) return undefined;
+	const partIndex = typeof event.thinkingIndex === "number" ? event.thinkingIndex : event.contentIndex;
+	return typeof partIndex === "number" ? `${event.eventId}:thinking:${partIndex}` : event.eventId;
 }
 
 function mapTraceNodesById(nodes: PiboTraceNode[]): Map<string, PiboTraceNode> {

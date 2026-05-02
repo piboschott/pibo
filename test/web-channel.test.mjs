@@ -801,6 +801,66 @@ test("chat web app replays durable SSE frames with stream cursors", async () => 
 	}
 });
 
+test("chat web app trace exposes an SSE cursor that skips replayed history", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const sessionPayload = await sessionResponse.json();
+		emitOutput({
+			type: "assistant_message",
+			piboSessionId: sessionPayload.session.id,
+			eventId: "run-1",
+			text: "old before cursor",
+		});
+
+		const traceResponse = await fetch(
+			`${baseURL}/api/chat/trace?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}`,
+			{ headers: { "x-test-user": "user-1" } },
+		);
+		assert.equal(traceResponse.status, 200);
+		const trace = await traceResponse.json();
+		assert.equal(typeof trace.latestStreamId, "number");
+
+		const controller = new AbortController();
+		const response = await fetch(
+			`${baseURL}/api/chat/events?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}&since=${trace.latestStreamId}:999999`,
+			{
+				headers: { "x-test-user": "user-1" },
+				signal: controller.signal,
+			},
+		);
+		assert.equal(response.status, 200);
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		let text = "";
+		text += decoder.decode((await reader.read()).value, { stream: true });
+
+		emitOutput({
+			type: "assistant_message",
+			piboSessionId: sessionPayload.session.id,
+			eventId: "run-2",
+			text: "new after cursor",
+		});
+		for (let index = 0; index < 6 && !text.includes("new after cursor"); index += 1) {
+			const chunk = await reader.read();
+			assert.equal(chunk.done, false);
+			text += decoder.decode(chunk.value, { stream: true });
+		}
+		controller.abort();
+
+		assert.doesNotMatch(text, /old before cursor/);
+		assert.match(text, /new after cursor/);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app room SSE frames include unfocused session ids", async () => {
 	const { channel, baseURL, emitOutput } = await startWebHostChannel({
 		auth: createFakeAuthService(),

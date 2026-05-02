@@ -193,6 +193,8 @@ export type PiboAssistantMessageEvent = {
 	type: "assistant_message";
 	piboSessionId: string;
 	eventId?: string;
+	assistantIndex?: number;
+	contentIndex?: number;
 	text: string;
 };
 
@@ -210,12 +212,16 @@ export type PiboThinkingStartedEvent = {
 	type: "thinking_started";
 	piboSessionId: string;
 	eventId?: string;
+	contentIndex?: number;
+	thinkingIndex?: number;
 };
 
 export type PiboThinkingDeltaEvent = {
 	type: "thinking_delta";
 	piboSessionId: string;
 	eventId?: string;
+	contentIndex?: number;
+	thinkingIndex?: number;
 	text: string;
 };
 
@@ -223,6 +229,8 @@ export type PiboThinkingFinishedEvent = {
 	type: "thinking_finished";
 	piboSessionId: string;
 	eventId?: string;
+	contentIndex?: number;
+	thinkingIndex?: number;
 	text?: string;
 };
 
@@ -269,7 +277,7 @@ export type PiboOutputEvent =
 	| PiboMessageQueuedEvent
 	| PiboMessageStartedEvent
 	| { type: "message_finished"; piboSessionId: string; eventId?: string; source?: PiboEventSource }
-	| { type: "assistant_delta"; piboSessionId: string; eventId?: string; text: string }
+	| { type: "assistant_delta"; piboSessionId: string; eventId?: string; assistantIndex?: number; contentIndex?: number; text: string }
 	| PiboThinkingStartedEvent
 	| PiboThinkingDeltaEvent
 	| PiboThinkingFinishedEvent

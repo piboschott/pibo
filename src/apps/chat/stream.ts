@@ -5,12 +5,12 @@ export type ChatStreamEvent = { piboSessionId?: string } & (
 	| { type: "RUN_STARTED"; runId: string; input?: { text?: string; source?: string } }
 	| { type: "RUN_FINISHED"; runId: string }
 	| { type: "RUN_ERROR"; runId?: string; message: string }
-	| { type: "TEXT_MESSAGE_START"; messageId: string; role: "assistant" }
-	| { type: "TEXT_MESSAGE_CONTENT"; messageId: string; delta: string }
-	| { type: "TEXT_MESSAGE_END"; messageId: string; finalText?: string }
-	| { type: "REASONING_MESSAGE_START"; messageId: string }
-	| { type: "REASONING_MESSAGE_CONTENT"; messageId: string; delta: string }
-	| { type: "REASONING_MESSAGE_END"; messageId: string; finalText?: string }
+	| { type: "TEXT_MESSAGE_START"; messageId: string; runId?: string; role: "assistant" }
+	| { type: "TEXT_MESSAGE_CONTENT"; messageId: string; runId?: string; delta: string }
+	| { type: "TEXT_MESSAGE_END"; messageId: string; runId?: string; finalText?: string }
+	| { type: "REASONING_MESSAGE_START"; messageId: string; runId?: string }
+	| { type: "REASONING_MESSAGE_CONTENT"; messageId: string; runId?: string; delta: string }
+	| { type: "REASONING_MESSAGE_END"; messageId: string; runId?: string; finalText?: string }
 	| { type: "TOOL_CALL_START"; toolCallId: string; toolName: string; args?: unknown; runId?: string }
 	| { type: "TOOL_CALL_ARGS"; toolCallId: string; args: unknown; argsComplete: boolean }
 	| { type: "TOOL_CALL_RESULT"; toolCallId: string; result: unknown; isError: boolean }
@@ -36,6 +36,7 @@ export function createChatStreamState(): ChatStreamState {
 export function chatStreamFramesFromOutputEvent(event: PiboOutputEvent, state: ChatStreamState): ChatStreamEvent[] {
 	const eventId = "eventId" in event && typeof event.eventId === "string" ? event.eventId : undefined;
 	const frames: ChatStreamEvent[] = [];
+	const reasoningMessageId = reasoningIdFromOutputEvent(event);
 
 	switch (event.type) {
 		case "message_started":
@@ -52,29 +53,31 @@ export function chatStreamFramesFromOutputEvent(event: PiboOutputEvent, state: C
 			break;
 		case "assistant_delta":
 			if (eventId && event.text.length > 0) {
-				ensureTextMessageStarted(frames, state, eventId);
-				frames.push({ type: "TEXT_MESSAGE_CONTENT", messageId: eventId, delta: event.text });
+				const messageId = textMessageIdFromOutputEvent(event);
+				ensureTextMessageStarted(frames, state, messageId, eventId);
+				frames.push({ type: "TEXT_MESSAGE_CONTENT", messageId, runId: eventId, delta: event.text });
 			}
 			break;
 		case "assistant_message":
 			if (eventId) {
-				ensureTextMessageStarted(frames, state, eventId);
-				frames.push({ type: "TEXT_MESSAGE_END", messageId: eventId, finalText: event.text });
+				const messageId = textMessageIdFromOutputEvent(event);
+				ensureTextMessageStarted(frames, state, messageId, eventId);
+				frames.push({ type: "TEXT_MESSAGE_END", messageId, runId: eventId, finalText: event.text });
 			}
 			break;
 		case "thinking_started":
-			if (eventId) ensureReasoningStarted(frames, state, eventId);
+			if (reasoningMessageId) ensureReasoningStarted(frames, state, reasoningMessageId, eventId);
 			break;
 		case "thinking_delta":
-			if (eventId && event.text.length > 0) {
-				ensureReasoningStarted(frames, state, eventId);
-				frames.push({ type: "REASONING_MESSAGE_CONTENT", messageId: eventId, delta: event.text });
+			if (reasoningMessageId && event.text.length > 0) {
+				ensureReasoningStarted(frames, state, reasoningMessageId, eventId);
+				frames.push({ type: "REASONING_MESSAGE_CONTENT", messageId: reasoningMessageId, runId: eventId, delta: event.text });
 			}
 			break;
 		case "thinking_finished":
-			if (eventId) {
-				ensureReasoningStarted(frames, state, eventId);
-				frames.push({ type: "REASONING_MESSAGE_END", messageId: eventId, finalText: event.text });
+			if (reasoningMessageId) {
+				ensureReasoningStarted(frames, state, reasoningMessageId, eventId);
+				frames.push({ type: "REASONING_MESSAGE_END", messageId: reasoningMessageId, runId: eventId, finalText: event.text });
 			}
 			break;
 		case "tool_call":
@@ -115,16 +118,32 @@ export function chatStreamFramesFromOutputEvent(event: PiboOutputEvent, state: C
 	return frames;
 }
 
-function ensureTextMessageStarted(frames: ChatStreamEvent[], state: ChatStreamState, messageId: string): void {
-	if (state.textMessageIds.has(messageId)) return;
-	state.textMessageIds.add(messageId);
-	frames.push({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" });
+function reasoningIdFromOutputEvent(event: PiboOutputEvent): string | undefined {
+	if (event.type !== "thinking_started" && event.type !== "thinking_delta" && event.type !== "thinking_finished") {
+		return undefined;
+	}
+	if (!event.eventId) return undefined;
+	const partIndex = typeof event.thinkingIndex === "number" ? event.thinkingIndex : event.contentIndex;
+	return typeof partIndex === "number" ? `${event.eventId}:thinking:${partIndex}` : event.eventId;
 }
 
-function ensureReasoningStarted(frames: ChatStreamEvent[], state: ChatStreamState, messageId: string): void {
+function textMessageIdFromOutputEvent(
+	event: Extract<PiboOutputEvent, { type: "assistant_delta" | "assistant_message" }>,
+): string {
+	const partIndex = typeof event.assistantIndex === "number" ? event.assistantIndex : event.contentIndex;
+	return partIndex === undefined || !event.eventId ? event.eventId ?? "" : `${event.eventId}:assistant:${partIndex}`;
+}
+
+function ensureTextMessageStarted(frames: ChatStreamEvent[], state: ChatStreamState, messageId: string, runId?: string): void {
+	if (state.textMessageIds.has(messageId)) return;
+	state.textMessageIds.add(messageId);
+	frames.push({ type: "TEXT_MESSAGE_START", messageId, runId, role: "assistant" });
+}
+
+function ensureReasoningStarted(frames: ChatStreamEvent[], state: ChatStreamState, messageId: string, runId?: string): void {
 	if (state.reasoningMessageIds.has(messageId)) return;
 	state.reasoningMessageIds.add(messageId);
-	frames.push({ type: "REASONING_MESSAGE_START", messageId });
+	frames.push({ type: "REASONING_MESSAGE_START", messageId, runId });
 }
 
 function ensureToolCallStarted(
