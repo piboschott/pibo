@@ -109,11 +109,13 @@ Pibo does not inject MCP tool schemas, headers, environment variables, command p
 
 `browser-use` is a Pibo CLI tool, not an MCP server. It is installed and managed through `pibo tools`, so it does not appear in the Agent Designer `MCP Servers` section.
 
-To expose Chrome DevTools through MCP, add a real MCP server entry:
+For Chat UI debugging, use Browser Use and DevTools together: open the target app in Browser Use first, then attach Chrome DevTools MCP to that same Chrome with `--browserUrl`. Do not use standalone `--headless` for this workflow unless an isolated unauthenticated browser is intentional.
+
+To expose Chrome DevTools through MCP, add a real MCP server entry using the Browser Use CDP port:
 
 ```bash
-npm run dev -- mcp config add chrome-devtools '{"command":"npx","args":["-y","chrome-devtools-mcp@latest","--headless"]}'
-npm run dev -- mcp config describe chrome-devtools "Control and inspect a local Chrome browser through the official Chrome DevTools MCP server."
+npm run dev -- mcp config add chrome-devtools '{"command":"npx","args":["-y","chrome-devtools-mcp@latest","--browserUrl","http://127.0.0.1:<cdp-port>"]}'
+npm run dev -- mcp config describe chrome-devtools "Use with Pibo Browser Use: open the target app there first, then inspect that same Chrome through DevTools MCP via --browserUrl. Avoid standalone --headless for Chat UI debugging."
 npm run dev -- mcp info chrome-devtools
 ```
 
