@@ -61,7 +61,16 @@ eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat 
 browser-use state
 ```
 
-The lease prints shell exports for a cloned authenticated Chrome user-data directory and a dedicated `PIBO_BROWSER_USE_SESSION`. In that shell, later `browser-use` commands use the leased session by default. Prepare or refresh the authenticated template with `npm run dev -- tools browser-use auth-template env` when lease acquisition reports that no template profile exists.
+The lease prints shell exports for a cloned authenticated Chrome user-data directory and a dedicated `PIBO_BROWSER_USE_SESSION`. In that shell, later `browser-use` commands use the leased session by default.
+
+Prepare or refresh the authenticated template before acquiring leases:
+
+```bash
+eval "$(npm run --silent dev -- tools browser-use auth-template env)"
+browser-use --headed open http://4788.192.168.0.204.sslip.io/apps/chat
+```
+
+Sign in once in that template browser, close it, then acquire leases from normal agent shells. If lease acquisition reports that no template profile exists, repeat the template preparation step.
 
 Additional lease helper commands:
 
@@ -75,6 +84,14 @@ npm run dev -- tools browser-use lease reap-stale
 ```
 
 Use `pibo tools browser-use` as the compact discovery entrypoint. `auth-template` helps prepare or locate the authenticated Chrome user-data-dir template. `lease list`, `lease release`, and `lease reap-stale` are the operator surface for inspecting and cleaning up isolated authenticated browser slots.
+
+For low-level Chat Web debugging, prefer an already-open authenticated browser over launching a new profile. Start with CDP target discovery:
+
+```bash
+curl -s http://127.0.0.1:56663/json/list
+```
+
+Inspect Chat Web targets before interacting with them. The usable target is the one that is authenticated and has the composer textarea; the first target may be unauthenticated, stale, or attached to a different gateway. If Browser Use cannot attach cleanly or MCP resources are not visible, connect directly to the target WebSocket from `/json/list` and use CDP `Runtime.evaluate`, `Network`, and DOM inspection.
 
 The installer uses `uv` to create the virtual environment and install the pinned package `browser-use[cli]==0.12.6`. The version is pinned so the Browser Use CLI surface stays aligned with the bundled guides. Browser Use system setup stays visible through `pibo tools doctor browser-use`; if Browser Use reports missing optional components, install them explicitly for the workflow that needs them.
 

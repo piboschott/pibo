@@ -149,6 +149,14 @@ If \`pibo-auth\` is unavailable and must be recreated, the default wrapper behav
 browser-use --headed --session pibo-auth open http://4788.192.168.0.204.sslip.io/apps/chat
 \`\`\`
 
+For low-level Chat Web debugging, prefer an already-open authenticated browser over launching a new profile. Start by listing CDP targets:
+
+\`\`\`bash
+curl -s http://127.0.0.1:56663/json/list
+\`\`\`
+
+Inspect Chat Web targets and pick the one that is authenticated and has a composer textarea. If Browser Use cannot attach cleanly or MCP resources are unavailable, use the target \`webSocketDebuggerUrl\` from \`/json/list\` and direct CDP \`Runtime.evaluate\`, \`Network\`, and DOM inspection.
+
 For authenticated sites, the default Pibo wrapper path is the persistent path. Use \`profile list\` only to inspect available Chrome profiles:
 
 \`\`\`bash

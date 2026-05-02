@@ -111,7 +111,7 @@ Pibo does not inject MCP tool schemas, headers, environment variables, command p
 
 `browser-use` is a Pibo CLI tool, not an MCP server. It is installed and managed through `pibo tools`, so it does not appear in the Agent Designer `MCP Servers` section.
 
-For Chat UI debugging, use Browser Use and DevTools together: open the target app in Browser Use first, then attach Chrome DevTools MCP to that same Chrome with `--browserUrl`. Do not use standalone `--headless` for this workflow unless an isolated unauthenticated browser is intentional.
+For Chat UI debugging, use Browser Use and DevTools together: open or reuse the target app in Browser Use first, then attach Chrome DevTools MCP to that same Chrome with `--browserUrl`. Do not use standalone `--headless` for this workflow unless an isolated unauthenticated browser is intentional.
 
 To expose Chrome DevTools through MCP, add a real MCP server entry using the Browser Use CDP port:
 
@@ -122,6 +122,15 @@ npm run dev -- mcp info chrome-devtools
 ```
 
 The final `info` command starts the MCP server and lists its available tools, such as page navigation, screenshots, console inspection, network inspection, script evaluation, and performance tracing. Refresh the Chat Web Agent Designer after adding the config entry.
+
+If Codex cannot see MCP resources, treat direct CDP as the recovery path rather than starting a fresh unauthenticated browser:
+
+```bash
+curl -s http://127.0.0.1:<cdp-port>/json/version
+curl -s http://127.0.0.1:<cdp-port>/json/list
+```
+
+Pick the Chat Web target that is authenticated and has a composer textarea, then connect directly to its `webSocketDebuggerUrl`. MCP Tool Context for DevTools should stay short: name the server, say it attaches to the Browser Use CDP port with `--browserUrl`, and point agents to `npm run dev -- mcp info chrome-devtools` for discovery.
 
 ## Registry
 
