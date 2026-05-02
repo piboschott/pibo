@@ -6,6 +6,7 @@ import test from "node:test";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { createDefaultPiboPluginRegistry, createGatewayProducerPiboPluginRegistry } from "../dist/plugins/builtin.js";
 import { definePiboPlugin, PiboPluginRegistry } from "../dist/plugins/registry.js";
+import { upsertPiPackage } from "../dist/pi-packages/store.js";
 import { findCliToolEntry } from "../dist/tools/registry.js";
 import { getToolPythonRuntimePaths } from "../dist/tools/python-runtime.js";
 
@@ -17,6 +18,16 @@ async function withPiboHome(piboHome, run) {
 	} finally {
 		if (previous === undefined) delete process.env.PIBO_HOME;
 		else process.env.PIBO_HOME = previous;
+	}
+}
+
+async function withCwd(cwd, run) {
+	const previous = process.cwd();
+	process.chdir(cwd);
+	try {
+		return await run();
+	} finally {
+		process.chdir(previous);
 	}
 }
 
@@ -139,6 +150,28 @@ test("capability catalog exposes installed pibo tool context hints", async () =>
 		assert.match(browserUseCatalogEntry.snippet, /tools browser-use lease acquire/);
 
 		rmSync(paths.rootDir, { recursive: true, force: true });
+	});
+});
+
+test("capability catalog exposes registered Pi packages without activating them", async () => {
+	const cwd = join(tmpdir(), `pibo-plugin-registry-pi-packages-${Math.random().toString(36).slice(2)}`);
+	mkdirSync(cwd, { recursive: true });
+	await withCwd(cwd, () => {
+		upsertPiPackage({
+			id: "catalog-package",
+			name: "catalog-package",
+			source: "/tmp/catalog-package",
+			installSpec: "/tmp/catalog-package",
+			resourceTypes: ["skill"],
+			installStatus: "registered",
+			diagnostics: [{ type: "warning", message: "not installed" }],
+		});
+		const registry = createDefaultPiboPluginRegistry();
+		const catalog = registry.getCapabilityCatalog();
+		const minimal = registry.createProfile("minimal");
+
+		assert.equal(catalog.piPackages.find((pkg) => pkg.id === "catalog-package")?.installStatus, "registered");
+		assert.deepEqual(minimal.piPackages, []);
 	});
 });
 

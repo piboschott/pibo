@@ -4,7 +4,9 @@ import type { InitialSessionContext } from "../core/profiles.js";
 import { findPiPackage } from "./store.js";
 
 export type PiboPiPackageRuntimeOptions = {
-	additionalExtensionPaths: string[];
+	resourceLoaderOptions: {
+		additionalExtensionPaths: string[];
+	};
 	diagnostics: AgentSessionRuntimeDiagnostic[];
 };
 
@@ -13,22 +15,37 @@ export function getPiPackageRuntimeOptions(cwd: string, profile: InitialSessionC
 	const additionalExtensionPaths: string[] = [];
 
 	for (const selected of profile.piPackages.filter((pkg) => pkg.enabled !== false)) {
-		const registered = findPiPackage(selected.name, cwd) ?? findPiPackage(selected.source, cwd);
+		const registered = findPiPackage(selected.id, cwd);
 		if (!registered) {
 			diagnostics.push({
 				type: "error",
-				message: `Selected Pi package "${selected.name}" is not registered in Pibo.`,
+				message: `Selected Pi package "${selected.id}" is not registered in Pibo.`,
 			});
 			continue;
 		}
-		if (registered.installSpec.startsWith("/") && !existsSync(registered.installSpec)) {
+		if (registered.installStatus === "error") {
 			diagnostics.push({
 				type: "error",
-				message: `Selected Pi package "${registered.name}" path does not exist: ${registered.installSpec}`,
+				message: `Selected Pi package "${registered.name}" is in error state and was skipped.`,
 			});
 			continue;
 		}
-		additionalExtensionPaths.push(registered.installSpec);
+		const runtimePath = registered.installPath ?? (registered.installSpec.startsWith("/") ? registered.installSpec : undefined);
+		if (!runtimePath) {
+			diagnostics.push({
+				type: "warning",
+				message: `Selected Pi package "${registered.name}" is not installed and was skipped.`,
+			});
+			continue;
+		}
+		if (!existsSync(runtimePath)) {
+			diagnostics.push({
+				type: "error",
+				message: `Selected Pi package "${registered.name}" path does not exist: ${runtimePath}`,
+			});
+			continue;
+		}
+		additionalExtensionPaths.push(runtimePath);
 		diagnostics.push({
 			type: "info",
 			message: `Loaded Pi package ${registered.name} (${registered.resourceTypes.join(", ") || "resources pending"})`,
@@ -41,7 +58,9 @@ export function getPiPackageRuntimeOptions(cwd: string, profile: InitialSessionC
 	}
 
 	return {
-		additionalExtensionPaths: [...new Set(additionalExtensionPaths)],
+		resourceLoaderOptions: {
+			additionalExtensionPaths: [...new Set(additionalExtensionPaths)],
+		},
 		diagnostics,
 	};
 }

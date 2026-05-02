@@ -192,7 +192,8 @@ export type AgentCatalog = {
 		promptNames?: string[];
 		themeNames?: string[];
 		discoveredToolNames?: string[];
-		installed: boolean;
+		installStatus: "registered" | "installed" | "missing" | "error";
+		installPath?: string;
 		diagnostics: Array<{ type: "info" | "warning" | "error"; message: string }>;
 	}>;
 };

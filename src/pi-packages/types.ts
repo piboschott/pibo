@@ -8,9 +8,9 @@ export type PiboPiPackageDiagnostic = {
 export type PiboPiPackageInfo = {
 	id: string;
 	name: string;
-	description?: string;
 	source: string;
 	installSpec: string;
+	description?: string;
 	version?: string;
 	repositoryUrl?: string;
 	resourceTypes: PiPackageResourceType[];
@@ -19,13 +19,35 @@ export type PiboPiPackageInfo = {
 	promptNames?: string[];
 	themeNames?: string[];
 	discoveredToolNames?: string[];
-	installed: boolean;
+	installStatus: "registered" | "installed" | "missing" | "error";
+	installPath?: string;
 	diagnostics: PiboPiPackageDiagnostic[];
-	addedAt?: string;
-	updatedAt?: string;
+	addedAt: string;
+	updatedAt: string;
 };
 
 export type PiboPiPackageStoreData = {
 	version: 1;
 	packages: PiboPiPackageInfo[];
+};
+
+export type PiboPiPackageInput = Omit<PiboPiPackageInfo, "addedAt" | "updatedAt"> & {
+	addedAt?: string;
+	updatedAt?: string;
+};
+
+export type ParsedPiPackageSource = {
+	kind: "npm" | "local";
+	name: string;
+	source: string;
+	installSpec: string;
+	packageName?: string;
+	path?: string;
+	diagnostics: PiboPiPackageDiagnostic[];
+};
+
+export type PiPackageInstallResult = {
+	installStatus: PiboPiPackageInfo["installStatus"];
+	installPath?: string;
+	diagnostics: PiboPiPackageDiagnostic[];
 };

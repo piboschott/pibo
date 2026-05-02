@@ -34,8 +34,7 @@ export type SkillProfile = {
 };
 
 export type PiPackageProfile = {
-	name: string;
-	source: string;
+	id: string;
 	enabled?: boolean;
 };
 

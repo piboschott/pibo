@@ -8,7 +8,8 @@ import {
 	SettingsManager,
 	type ResolvedPaths,
 } from "@mariozechner/pi-coding-agent";
-import type { PiboPiPackageDiagnostic, PiboPiPackageInfo, PiPackageResourceType } from "./types.js";
+import { installOrResolvePiPackage } from "./installer.js";
+import type { ParsedPiPackageSource, PiboPiPackageDiagnostic, PiboPiPackageInput, PiPackageResourceType } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,17 +21,21 @@ type PackageJsonLike = {
 	pi?: unknown;
 };
 
-export async function inspectPiPackageSource(source: string, cwd = process.cwd()): Promise<PiboPiPackageInfo> {
+export async function inspectPiPackageSource(source: string, cwd = process.cwd()): Promise<PiboPiPackageInput> {
 	const parsed = await parsePiPackageSource(source, cwd);
 	const diagnostics: PiboPiPackageDiagnostic[] = [...parsed.diagnostics];
-	const metadata = parsed.kind === "npm"
+	const install = await installOrResolvePiPackage(parsed, cwd);
+	diagnostics.push(...install.diagnostics);
+	const registryMetadata = parsed.kind === "npm"
 		? await readNpmMetadata(parsed.packageName ?? parsed.name, diagnostics)
-		: readLocalMetadata(parsed.path ?? parsed.source, diagnostics);
-	const resolved = await resolvePackageResources(parsed.installSpec, cwd, diagnostics);
-	if (!resolved.installed) {
-		const error = diagnostics.find((diagnostic) => diagnostic.type === "error");
-		throw new Error(error?.message ?? `Could not resolve Pi package resources for ${parsed.installSpec}`);
-	}
+		: {};
+	const localMetadata = install.installPath
+		? readLocalMetadata(install.installPath, diagnostics)
+		: parsed.path ? readLocalMetadata(parsed.path, diagnostics) : {};
+	const metadata = mergePackageMetadata(registryMetadata, localMetadata, parsed.name);
+	const resolved = install.installPath
+		? await resolvePackageResources(install.installPath, cwd, diagnostics)
+		: emptyResolvedPaths();
 	const resourceTypes = mergeResourceTypes(resourceTypesFromManifest(metadata.pi), resourceTypesFromResolvedPaths(resolved));
 
 	if (resourceTypes.length === 0) {
@@ -53,20 +58,13 @@ export async function inspectPiPackageSource(source: string, cwd = process.cwd()
 		skillNames: namesOrUndefined(resolved.skills),
 		promptNames: namesOrUndefined(resolved.prompts),
 		themeNames: namesOrUndefined(resolved.themes),
-		installed: resolved.installed,
+		installStatus: install.installStatus,
+		installPath: install.installPath,
 		diagnostics,
 	};
 }
 
-export async function parsePiPackageSource(source: string, cwd = process.cwd()): Promise<{
-	kind: "npm" | "local";
-	name: string;
-	source: string;
-	installSpec: string;
-	packageName?: string;
-	path?: string;
-	diagnostics: PiboPiPackageDiagnostic[];
-}> {
+export async function parsePiPackageSource(source: string, cwd = process.cwd()): Promise<ParsedPiPackageSource> {
 	const trimmed = source.trim();
 	if (!trimmed) throw new Error("Pi package source is required");
 	if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
@@ -84,14 +82,12 @@ export async function parsePiPackageSource(source: string, cwd = process.cwd()):
 			throw new Error("Pi package URL must point to a package detail page, for example https://pi.dev/packages/pi-web-access");
 		}
 		const packageName = decodeURIComponent(encodedName).replace(/\/+$/, "");
-		if (!packageName) {
-			throw new Error("Pi package URL must include a package name");
-		}
+		validatePackageName(packageName);
 		return {
 			kind: "npm",
 			name: packageName,
 			packageName,
-			source: `https://pi.dev/packages/${encodedName}`,
+			source: `https://pi.dev/packages/${packageName}`,
 			installSpec: `npm:${packageName}`,
 			diagnostics: [],
 		};
@@ -153,24 +149,37 @@ function readLocalMetadata(path: string, diagnostics: PiboPiPackageDiagnostic[])
 }
 
 async function resolvePackageResources(
-	installSpec: string,
+	resourceSource: string,
 	cwd: string,
 	diagnostics: PiboPiPackageDiagnostic[],
-): Promise<ResolvedPaths & { installed: boolean }> {
+): Promise<ResolvedPaths> {
 	const packageManager = new DefaultPackageManager({
 		cwd,
 		agentDir: getAgentDir(),
 		settingsManager: SettingsManager.create(cwd, getAgentDir()),
 	});
 	try {
-		const resolved = await packageManager.resolveExtensionSources([installSpec], { temporary: true });
-		return { ...resolved, installed: true };
+		return await packageManager.resolveExtensionSources([resourceSource], { temporary: true });
 	} catch (error) {
 		diagnostics.push({
 			type: "error",
 			message: `Could not resolve Pi package resources: ${error instanceof Error ? error.message : String(error)}`,
 		});
-		return { extensions: [], skills: [], prompts: [], themes: [], installed: false };
+		return emptyResolvedPaths();
+	}
+}
+
+function validatePackageName(packageName: string): void {
+	if (!packageName) throw new Error("Pi package URL must include a package name");
+	const parts = packageName.split("/");
+	if (packageName.startsWith("@")) {
+		if (parts.length !== 2 || !parts[0].slice(1) || !parts[1]) {
+			throw new Error("Scoped Pi package URLs must look like https://pi.dev/packages/@scope/package-name");
+		}
+		return;
+	}
+	if (parts.length !== 1 || !parts[0]) {
+		throw new Error("Pi package URL must include a single package name or scoped package name");
 	}
 }
 
@@ -183,6 +192,20 @@ function normalizePackageJson(value: unknown): PackageJsonLike {
 		repository: candidate.repository,
 		pi: candidate.pi,
 	};
+}
+
+function mergePackageMetadata(primary: PackageJsonLike, fallback: PackageJsonLike, defaultName: string): PackageJsonLike {
+	return {
+		name: fallback.name ?? primary.name ?? defaultName,
+		version: fallback.version ?? primary.version,
+		description: fallback.description ?? primary.description,
+		repository: fallback.repository ?? primary.repository,
+		pi: fallback.pi ?? primary.pi,
+	};
+}
+
+function emptyResolvedPaths(): ResolvedPaths {
+	return { extensions: [], skills: [], prompts: [], themes: [] };
 }
 
 function stringField(value: unknown): string | undefined {

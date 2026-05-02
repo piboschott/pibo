@@ -212,7 +212,7 @@ export class PiboPluginRegistry {
 				contextFiles: sessionContext.contextFiles.filter((contextFile) => contextFile.enabled !== false).map(contextFileKey),
 				subagents: sessionContext.subagents.filter((subagent) => subagent.enabled !== false),
 				mcpServers: [...sessionContext.mcpServers],
-				piPackages: sessionContext.piPackages.filter((pkg) => pkg.enabled !== false).map((pkg) => pkg.name),
+				piPackages: sessionContext.piPackages.filter((pkg) => pkg.enabled !== false).map((pkg) => pkg.id),
 				builtinTools: sessionContext.builtinTools,
 				builtinToolNames: [...sessionContext.builtinToolNames],
 				autoContextFiles: sessionContext.autoContextFiles,

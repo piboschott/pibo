@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode } from "../../core/profiles.js";
+import { findPiPackage } from "../../pi-packages/store.js";
 
 export type CustomAgentSubagent = {
 	name: string;
@@ -148,7 +149,7 @@ export class CustomAgentStore {
 			contextFiles: [...(input.contextFiles ?? [])],
 			subagents: sanitizeSubagents(input.subagents ?? []),
 			mcpServers: uniqueStrings(input.mcpServers ?? []),
-			piPackages: uniqueStrings(input.piPackages ?? []),
+			piPackages: sanitizePiPackages(input.piPackages ?? []),
 			builtinTools: input.builtinTools ?? "default",
 			builtinToolNames: sanitizeBuiltinToolNames(input.builtinToolNames),
 			autoContextFiles: input.autoContextFiles ?? true,
@@ -178,7 +179,7 @@ export class CustomAgentStore {
 			contextFiles: input.contextFiles ? [...input.contextFiles] : existing.contextFiles,
 			subagents: input.subagents ? sanitizeSubagents(input.subagents) : existing.subagents,
 			mcpServers: input.mcpServers ? uniqueStrings(input.mcpServers) : existing.mcpServers,
-			piPackages: input.piPackages ? uniqueStrings(input.piPackages) : existing.piPackages,
+			piPackages: input.piPackages ? sanitizePiPackages(input.piPackages) : existing.piPackages,
 			builtinTools: input.builtinTools ?? existing.builtinTools,
 			builtinToolNames: input.builtinToolNames ? sanitizeBuiltinToolNames(input.builtinToolNames) : existing.builtinToolNames,
 			autoContextFiles: input.autoContextFiles ?? existing.autoContextFiles,
@@ -397,6 +398,14 @@ function parseStringArray(value: string): string[] {
 
 function uniqueStrings(value: readonly string[]): string[] {
 	return [...new Set(value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
+}
+
+function sanitizePiPackages(value: readonly string[]): string[] {
+	const packages = uniqueStrings(value);
+	for (const pkg of packages) {
+		if (!findPiPackage(pkg)) throw new Error(`Unknown Pi package "${pkg}"`);
+	}
+	return packages;
 }
 
 function sanitizeBuiltinToolNames(value: readonly string[] | undefined): string[] {

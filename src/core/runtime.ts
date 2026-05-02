@@ -54,7 +54,7 @@ export type PiboProfileInspection = {
 	skills: Array<{ name: string; path: string }>;
 	tools: Array<{ name: string; hasDefinition: boolean; registered: boolean; active: boolean }>;
 	subagents: Array<{ name: string; targetProfile: string; active: boolean }>;
-	piPackages: Array<{ name: string; source: string; active: boolean }>;
+	piPackages: Array<{ id: string; active: boolean }>;
 	contextFiles: Array<{ path: string; bytes: number }>;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
 };
@@ -260,7 +260,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			agentDir: runtimeAgentDir,
 			authStorage,
 			resourceLoaderOptions: {
-				additionalExtensionPaths: piPackageOptions.additionalExtensionPaths,
+				...piPackageOptions.resourceLoaderOptions,
 				additionalSkillPaths: skillPaths,
 				extensionFactories: getProfileExtensionFactories(profile, options.extensionFactories),
 				noExtensions: true,
@@ -380,8 +380,7 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 				};
 			}),
 			piPackages: profile.piPackages.map((pkg) => ({
-				name: pkg.name,
-				source: pkg.source,
+				id: pkg.id,
 				active: pkg.enabled !== false,
 			})),
 			contextFiles: resourceLoader.getAgentsFiles().agentsFiles.map((contextFile) => ({

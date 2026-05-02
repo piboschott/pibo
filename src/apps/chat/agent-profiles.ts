@@ -13,7 +13,7 @@ export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition)
 				.withBuiltinToolNames(agent.builtinToolNames)
 				.withAutoContextFiles(agent.autoContextFiles)
 				.withMcpServers(agent.mcpServers)
-				.withPiPackages(agent.piPackages.map((name) => ({ name, source: name })))
+				.withPiPackages(agent.piPackages.map((id) => ({ id })))
 				.withToolPackages({ runControl: agent.runControl });
 
 			for (const skillName of agent.skills) builder.addSkill(context.getSkill(skillName));

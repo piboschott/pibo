@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { PiboPiPackageInfo, PiboPiPackageStoreData } from "./types.js";
+import type { PiboPiPackageInfo, PiboPiPackageInput, PiboPiPackageStoreData } from "./types.js";
 
 const STORE_VERSION = 1;
 
@@ -11,6 +11,7 @@ export function defaultPiPackageStorePath(cwd = process.cwd()): string {
 export function ensurePiPackageStorage(cwd = process.cwd()): void {
 	mkdirSync(resolve(cwd, ".pibo/pi-packages/npm"), { recursive: true });
 	mkdirSync(resolve(cwd, ".pibo/pi-packages/git"), { recursive: true });
+	mkdirSync(resolve(cwd, ".pibo/pi-packages/local"), { recursive: true });
 }
 
 export function loadPiPackageStore(path = defaultPiPackageStorePath()): PiboPiPackageStoreData {
@@ -40,10 +41,15 @@ export function listPiPackages(cwd = process.cwd()): PiboPiPackageInfo[] {
 
 export function findPiPackage(nameOrId: string, cwd = process.cwd()): PiboPiPackageInfo | undefined {
 	const lookup = nameOrId.trim();
-	return listPiPackages(cwd).find((pkg) => pkg.id === lookup || pkg.name === lookup || pkg.source === lookup);
+	return listPiPackages(cwd).find((pkg) => (
+		pkg.id === lookup ||
+		pkg.name === lookup ||
+		pkg.source === lookup ||
+		pkg.installSpec === lookup
+	));
 }
 
-export function upsertPiPackage(pkg: PiboPiPackageInfo, cwd = process.cwd()): PiboPiPackageInfo {
+export function upsertPiPackage(pkg: PiboPiPackageInput, cwd = process.cwd()): PiboPiPackageInfo {
 	ensurePiPackageStorage(cwd);
 	const path = defaultPiPackageStorePath(cwd);
 	const data = loadPiPackageStore(path);
@@ -51,11 +57,21 @@ export function upsertPiPackage(pkg: PiboPiPackageInfo, cwd = process.cwd()): Pi
 	const existingIndex = data.packages.findIndex(
 		(candidate) => candidate.id === pkg.id || candidate.name === pkg.name || candidate.source === pkg.source,
 	);
-	const next: PiboPiPackageInfo = {
-		...pkg,
-		addedAt: existingIndex >= 0 ? data.packages[existingIndex].addedAt : now,
-		updatedAt: now,
-	};
+	const existing = existingIndex >= 0 ? data.packages[existingIndex] : undefined;
+	const next: PiboPiPackageInfo = existing && existing.installStatus === "installed" && pkg.installStatus === "error"
+		? {
+				...existing,
+				diagnostics: mergeDiagnostics(existing.diagnostics, [
+					{ type: "warning", message: `Latest package refresh failed; keeping previous installed record for ${existing.name}.` },
+					...pkg.diagnostics,
+				]),
+				updatedAt: now,
+			}
+		: {
+				...pkg,
+				addedAt: existing ? existing.addedAt : pkg.addedAt ?? now,
+				updatedAt: now,
+			};
 	if (existingIndex >= 0) data.packages[existingIndex] = next;
 	else data.packages.push(next);
 	data.packages.sort((left, right) => left.name.localeCompare(right.name));
@@ -67,7 +83,12 @@ export function removePiPackage(nameOrId: string, cwd = process.cwd()): PiboPiPa
 	const path = defaultPiPackageStorePath(cwd);
 	const data = loadPiPackageStore(path);
 	const lookup = nameOrId.trim();
-	const index = data.packages.findIndex((pkg) => pkg.id === lookup || pkg.name === lookup || pkg.source === lookup);
+	const index = data.packages.findIndex((pkg) => (
+		pkg.id === lookup ||
+		pkg.name === lookup ||
+		pkg.source === lookup ||
+		pkg.installSpec === lookup
+	));
 	if (index < 0) return undefined;
 	const [removed] = data.packages.splice(index, 1);
 	savePiPackageStore(data, path);
@@ -94,7 +115,8 @@ function sanitizeStoredPackage(value: unknown): PiboPiPackageInfo {
 		promptNames: stringArray(candidate.promptNames),
 		themeNames: stringArray(candidate.themeNames),
 		discoveredToolNames: stringArray(candidate.discoveredToolNames),
-		installed: candidate.installed === true,
+		installStatus: installStatus(candidate),
+		installPath: stringOrUndefined(candidate.installPath),
 		diagnostics: Array.isArray(candidate.diagnostics) ? candidate.diagnostics.flatMap((diagnostic) => {
 			if (!diagnostic || typeof diagnostic !== "object") return [];
 			const item = diagnostic as Partial<PiboPiPackageInfo["diagnostics"][number]>;
@@ -102,9 +124,36 @@ function sanitizeStoredPackage(value: unknown): PiboPiPackageInfo {
 			if (typeof item.message !== "string" || !item.message.trim()) return [];
 			return [{ type: item.type, message: item.message.trim() }];
 		}) : [],
-		addedAt: stringOrUndefined(candidate.addedAt),
-		updatedAt: stringOrUndefined(candidate.updatedAt),
+		addedAt: stringOrUndefined(candidate.addedAt) ?? new Date().toISOString(),
+		updatedAt: stringOrUndefined(candidate.updatedAt) ?? new Date().toISOString(),
 	};
+}
+
+function installStatus(candidate: Partial<PiboPiPackageInfo> & { installed?: unknown }): PiboPiPackageInfo["installStatus"] {
+	if (
+		candidate.installStatus === "registered" ||
+		candidate.installStatus === "installed" ||
+		candidate.installStatus === "missing" ||
+		candidate.installStatus === "error"
+	) {
+		return candidate.installStatus;
+	}
+	return candidate.installed === true ? "installed" : "registered";
+}
+
+function mergeDiagnostics(
+	left: PiboPiPackageInfo["diagnostics"],
+	right: PiboPiPackageInfo["diagnostics"],
+): PiboPiPackageInfo["diagnostics"] {
+	const seen = new Set<string>();
+	const merged: PiboPiPackageInfo["diagnostics"] = [];
+	for (const diagnostic of [...left, ...right]) {
+		const key = `${diagnostic.type}\0${diagnostic.message}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(diagnostic);
+	}
+	return merged;
 }
 
 function stringOrUndefined(value: unknown): string | undefined {

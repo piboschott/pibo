@@ -376,11 +376,12 @@ function normalizeNameArray(value: unknown, label: string): string[] {
 
 function normalizeRegisteredPiPackages(value: unknown): string[] {
 	const names = normalizeNameArray(value, "piPackages");
-	const registered = new Set(listPiPackages().flatMap((pkg) => [pkg.id, pkg.name]));
+	const packages = listPiPackages();
+	const registered = new Map(packages.flatMap((pkg) => [[pkg.id, pkg.id], [pkg.name, pkg.id]]));
 	for (const name of names) {
 		if (!registered.has(name)) throw new PiboWebHttpError(`Unknown Pi package "${name}"`, 400);
 	}
-	return names;
+	return [...new Set(names.map((name) => registered.get(name) ?? name))];
 }
 
 function normalizeBuiltinTools(value: unknown): "default" | "disabled" {
@@ -887,6 +888,14 @@ async function buildAgentCatalog(context: PiboWebAppContext) {
 		mcpServers: await listMcpServerInfos(),
 		piPackages: listPiPackages(),
 	};
+}
+
+function agentsSelectingPiPackage(state: ChatWebAppState, packageId: string): CustomAgentDefinition[] {
+	const pkg = findPiPackage(packageId);
+	const aliases = new Set([packageId, ...(pkg ? [pkg.id, pkg.name] : [])]);
+	return state.agentStore
+		.list(undefined, { includeArchived: true })
+		.filter((agent) => agent.piPackages.some((selected) => aliases.has(selected)));
 }
 
 function normalizeAgentDeleteConfirmation(value: unknown): string {
@@ -2333,11 +2342,30 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return responseJson({ package: pkg });
 			}
 
+			if (piPackageId && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const existing = findPiPackage(piPackageId);
+				if (!existing) throw new PiboWebHttpError("Pi package is not registered", 404);
+				const body = await readJsonBody<ChatPiPackageBody>(request);
+				const source = typeof body.source === "string" && body.source.trim() ? body.source.trim() : existing.source;
+				const pkg = upsertPiPackage(await inspectPiPackageSource(source, process.cwd()), process.cwd());
+				return responseJson({ package: pkg });
+			}
+
 			if (piPackageId && request.method === "DELETE") {
 				requireSameOriginJsonRequest(request);
 				await requireSession(request, context);
+				const existing = findPiPackage(piPackageId);
+				if (!existing) throw new PiboWebHttpError("Pi package is not registered", 404);
+				const affectedAgents = agentsSelectingPiPackage(state, piPackageId);
+				if (affectedAgents.length > 0) {
+					throw new PiboWebHttpError(
+						`Pi package is selected by custom agents: ${affectedAgents.map((agent) => agent.profileName).join(", ")}`,
+						409,
+					);
+				}
 				const removed = removePiPackage(piPackageId);
-				if (!removed) throw new PiboWebHttpError("Pi package is not registered", 404);
 				return responseJson({ removedPackage: removed });
 			}
 

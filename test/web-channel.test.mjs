@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -28,6 +28,16 @@ function createFakeAuthService() {
 			return session;
 		},
 	};
+}
+
+async function withCwd(cwd, run) {
+	const previous = process.cwd();
+	process.chdir(cwd);
+	try {
+		return await run();
+	} finally {
+		process.chdir(previous);
+	}
 }
 
 async function startWebHostChannel(options = {}) {
@@ -1021,6 +1031,77 @@ test("chat web app creates custom agents from the native capability catalog", as
 	} finally {
 		await channel.stop?.();
 	}
+});
+
+test("chat web app manages Pi package registrations and custom agent selections", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-web-pi-packages-"));
+	const packageDir = join(cwd, "local-package");
+	mkdirSync(join(packageDir, "skills"), { recursive: true });
+	writeFileSync(join(packageDir, "skills", "demo.md"), "# Demo\n", "utf-8");
+	writeFileSync(join(packageDir, "package.json"), JSON.stringify({
+		name: "local-web-package",
+		pi: { skills: ["skills/*.md"] },
+	}), "utf-8");
+
+	await withCwd(cwd, async () => {
+		const { channel, baseURL } = await startWebHostChannel({
+			auth: createFakeAuthService(),
+			profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		});
+
+		try {
+			const added = await fetch(`${baseURL}/api/chat/pi-packages`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({ source: packageDir }),
+			});
+			assert.equal(added.status, 201);
+			const addedPayload = await added.json();
+			assert.equal(addedPayload.package.id, "local-web-package");
+			assert.equal(addedPayload.package.installStatus, "installed");
+
+			const catalog = await fetch(`${baseURL}/api/chat/agent-catalog`, {
+				headers: { "x-test-user": "user-1" },
+			});
+			assert.equal(catalog.status, 200);
+			const catalogPayload = await catalog.json();
+			assert.equal(catalogPayload.catalog.piPackages[0].id, "local-web-package");
+
+			const createdAgent = await fetch(`${baseURL}/api/chat/agents`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({
+					displayName: "package-agent",
+					piPackages: ["local-web-package"],
+				}),
+			});
+			assert.equal(createdAgent.status, 201);
+			const agentPayload = await createdAgent.json();
+			assert.deepEqual(agentPayload.agent.piPackages, ["local-web-package"]);
+
+			const blockedDelete = await fetch(`${baseURL}/api/chat/pi-packages/${encodeURIComponent("local-web-package")}`, {
+				method: "DELETE",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: "{}",
+			});
+			assert.equal(blockedDelete.status, 409);
+			assert.match((await blockedDelete.json()).error, /package-agent/);
+		} finally {
+			await channel.stop?.();
+		}
+	});
 });
 
 test("chat web app exposes and updates MCP server descriptions", async () => {

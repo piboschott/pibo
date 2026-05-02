@@ -5,6 +5,17 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { CustomAgentStore } from "../dist/apps/chat/agent-store.js";
+import { upsertPiPackage } from "../dist/pi-packages/store.js";
+
+async function withCwd(cwd, run) {
+	const previous = process.cwd();
+	process.chdir(cwd);
+	try {
+		return await run();
+	} finally {
+		process.chdir(previous);
+	}
+}
 
 test("custom agent store migrates legacy profile names before listing", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
@@ -126,4 +137,34 @@ test("custom agent store persists selected built-in tools", () => {
 	assert.deepEqual(store.get(agent.id).builtinToolNames, ["read"]);
 
 	store.close();
+});
+
+test("custom agent store persists selected registered Pi packages", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-agent-store-pi-packages-"));
+	await withCwd(cwd, () => {
+		upsertPiPackage({
+			id: "demo-package",
+			name: "demo-package",
+			source: "/tmp/demo-package",
+			installSpec: "/tmp/demo-package",
+			resourceTypes: ["extension"],
+			installStatus: "installed",
+			installPath: "/tmp/demo-package",
+			diagnostics: [],
+		});
+		const store = new CustomAgentStore(join(cwd, "agents.sqlite"));
+		const agent = store.create({
+			ownerScope: "user:test",
+			displayName: "package-agent",
+			piPackages: ["demo-package", "demo-package"],
+		});
+
+		assert.deepEqual(agent.piPackages, ["demo-package"]);
+		assert.throws(
+			() => store.update(agent.id, { piPackages: ["missing-package"] }),
+			/Unknown Pi package "missing-package"/,
+		);
+
+		store.close();
+	});
 });

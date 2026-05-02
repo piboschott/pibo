@@ -19,7 +19,7 @@ export async function runPiPackagesCli(argv = process.argv): Promise<void> {
 			return;
 		}
 		for (const pkg of packages) {
-			console.log(`${pkg.name.padEnd(24)} ${(pkg.resourceTypes.join(", ") || "unknown").padEnd(20)} ${pkg.installSpec}`);
+			console.log(`${pkg.name.padEnd(24)} ${pkg.installStatus.padEnd(10)} ${(pkg.resourceTypes.join(", ") || "unknown").padEnd(20)} ${pkg.installSpec}`);
 		}
 	});
 
@@ -28,7 +28,7 @@ export async function runPiPackagesCli(argv = process.argv): Promise<void> {
 		console.log(`Added Pi package ${pkg.name}`);
 		console.log(`  source: ${pkg.source}`);
 		console.log(`  install: ${pkg.installSpec}`);
-		console.log(`  resources: ${pkg.resourceTypes.join(", ") || "unknown"}`);
+		console.log(`  status: ${pkg.installStatus}`);
 		console.log(`Next: pibo pi-packages inspect ${pkg.id}`);
 	});
 
@@ -65,7 +65,14 @@ export async function runPiPackagesCli(argv = process.argv): Promise<void> {
 			} catch (error) {
 				diagnostics.push(error instanceof Error ? error.message : String(error));
 			}
-			const status = diagnostics.length ? "error" : "ok";
+			if (pkg.installPath && !pkg.installPath.startsWith("npm:")) {
+				try {
+					await parsePiPackageSource(pkg.installPath);
+				} catch (error) {
+					diagnostics.push(error instanceof Error ? error.message : String(error));
+				}
+			}
+			const status = diagnostics.length || pkg.installStatus === "error" || pkg.installStatus === "missing" ? "error" : "ok";
 			console.log(`${pkg.name}\t${status}\t${pkg.installSpec}`);
 			for (const diagnostic of [...pkg.diagnostics.map((item) => item.message), ...diagnostics]) {
 				console.log(`  ${diagnostic}`);

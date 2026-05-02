@@ -3178,7 +3178,7 @@ function contextFileMeta(contextFile: AgentCatalog["contextFiles"][number]): str
 
 function piPackageMeta(pkg: AgentCatalog["piPackages"][number]): string {
 	const resources = pkg.resourceTypes.length ? pkg.resourceTypes.join(" + ") : "resources pending";
-	const version = pkg.version ? `v${pkg.version}` : pkg.installed ? "installed" : "not installed";
+	const version = pkg.version ? `v${pkg.version}` : pkg.installStatus;
 	const diagnostics = pkg.diagnostics.some((diagnostic) => diagnostic.type === "error") ? " / needs attention" : "";
 	return `${resources} / ${version}${diagnostics}`;
 }
