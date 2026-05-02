@@ -2,7 +2,7 @@
 title: Pibo Web Chat Trace UI
 version: 0.1
 date_created: 2026-04-28
-last_updated: 2026-05-01
+last_updated: 2026-05-02
 owner: Pibo
 tags: [design, web, chat, tracing, sessions, subagents]
 ---
@@ -55,6 +55,8 @@ Out of scope for V1:
 - **Delegation**: A trace node representing a subagent call from one session to another session.
 - **Async Agent**: A trace node representing a subagent call started indirectly through a yielded run, usually by `pibo_run_start`.
 - **Trace Node**: A UI node representing a structured unit of agent work.
+- **Trace Order Key**: Explicit ordering metadata attached to a trace node. Transcript-backed nodes use Pi transcript order, stored event nodes use the Chat Web read-model event sequence, and live nodes use the SSE stream cursor and frame index.
+- **Live Segment Identity**: The stable identity used while a visible assistant or thinking segment is streaming. Visible assistant segments use `assistantIndex` when present. Thinking segments use `thinkingIndex` when present. Both fall back to provider `contentIndex` only for older events.
 - **Read Model**: Pibo-owned SQLite data optimized for web rendering and navigation. It is derived from Pibo events, Pibo Sessions, and Pi session files.
 - **Source of Truth**: The canonical owner of state. Pi session JSONL files remain the source of truth for persisted agent transcript content.
 - **Execution Command**: A Pibo wrapper action such as `status`, `abort`, `clear_queue`, `session.clone`, `session.fork`, or `thinking`.
@@ -125,7 +127,7 @@ Out of scope for V1:
 - **REQ-055**: Thinking deltas must update a live `model.reasoning` trace node when thinking display is enabled. `thinking_finished` closes only the reasoning node and must not imply that the full agent turn is finished.
 - **REQ-056**: Trace reconstruction must keep live transcript echo events for a running turn when the retained raw event window contains `assistant_delta`, `assistant_message`, `thinking_started`, `thinking_delta`, or `thinking_finished` for the same `eventId`, even if `message_started` is no longer present in the retained window.
 - **REQ-057**: The Raw Events inspector must be hidden by default and exposed through an explicit debug control.
-- **REQ-058**: The Raw Events inspector must compact adjacent `assistant_delta` and `thinking_delta` events with the same `piboSessionId` and `eventId` for readability.
+- **REQ-058**: The Raw Events inspector must compact adjacent `assistant_delta` and `thinking_delta` events with the same `piboSessionId`, `eventId`, and live segment identity for readability.
 - **REQ-059**: Sidebar sessions must support manual rename and archive/unarchive operations.
 - **REQ-060**: Archived sessions must be hidden by default and retrievable through an explicit archived-session display control.
 - **REQ-061**: The chat composer textarea must default to one visible line.
@@ -159,6 +161,9 @@ Out of scope for V1:
 - **REQ-083**: Async subagent trace nodes created from `pibo_run_start` MUST reconcile their displayed terminal status from later run-control snapshots such as `pibo_run_wait` or `pibo_run_read`.
 - **REQ-084**: A final visible assistant text entry after intermediate assistant text and tool calls MUST remain a separate `assistant.message` node in canonical transcript order.
 - **REQ-085**: Chat Web live updates MUST refresh trace/bootstrap state after `TEXT_MESSAGE_END` in addition to run finish and run error lifecycle frames, so final persisted transcript state can replace stale live execution state.
+- **REQ-086**: Chat Web live assistant message identity MUST prefer `assistantIndex` over provider `contentIndex` so separate assistant text segments remain separate when a provider reuses `contentIndex` in one turn.
+- **REQ-087**: Chat Web live reasoning identity MUST prefer `thinkingIndex` over provider `contentIndex` so separate thinking segments remain separate when a provider reuses `contentIndex` in one turn.
+- **REQ-088**: Trace sorting MUST use explicit trace order metadata from Pi transcript order, Chat Web read-model event sequence, or SSE stream cursor/frame order instead of wall-clock timestamps as the primary ordering source.
 - **CON-001**: Pibo must not move channel, auth, profile, or UI policy into Pi Coding Agent.
 - **CON-002**: Pibo must preserve the existing product boundary: Pi owns agent execution and session JSONL; Pibo owns channels, routing, auth, policy, web UI, and read models.
 - **CON-003**: The Web App must consume Pibo view models derived from Pi JSONL and Pibo events, not raw Pi events directly.
@@ -218,9 +223,23 @@ type PiboTraceNodeType =
 
 type PiboTraceNodeStatus = "running" | "done" | "error";
 
+type PiboTraceSource = "transcript" | "event-log" | "live";
+
+type PiboTraceOrderKey = {
+  sourceRank: number;
+  turnSeq: number;
+  transcriptIndex?: number;
+  contentPartIndex?: number;
+  eventSequence?: number;
+  streamId?: number;
+  streamFrameIndex?: number;
+  phaseRank: number;
+};
+
 type PiboTraceNode = {
   id: string;
   parentId?: string;
+  entryId?: string;
   piboSessionId: string;
   eventId?: string;
   toolCallId?: string;
@@ -236,7 +255,30 @@ type PiboTraceNode = {
   output?: unknown;
   error?: string;
   linkedPiboSessionId?: string;
+  source?: PiboTraceSource;
+  stableKey?: string;
+  orderKey?: PiboTraceOrderKey;
   children: PiboTraceNode[];
+};
+
+type ChatWebStoredEvent = {
+  id: string;
+  piboSessionId: string;
+  eventSequence?: number;
+  eventId?: string;
+  type: string;
+  createdAt: string;
+  payload: unknown;
+};
+
+type PiboSessionTraceView = {
+  piboSessionId: string;
+  piSessionId: string;
+  title: string;
+  version: string;
+  latestStreamId?: number;
+  nodes: PiboTraceNode[];
+  rawEvents: ChatWebStoredEvent[];
 };
 ```
 
@@ -263,6 +305,10 @@ type PiboTraceNode = {
 Trace reconstruction must treat empty or whitespace-only reasoning text as transport/provider noise. Persisted Pi `thinking` parts and live `thinking_finished` events only produce `model.reasoning` nodes when they contain visible text after trimming.
 
 Trace reconstruction must distinguish persisted transcript content from live transcript echo events. When Pi JSONL already contains persisted messages, live transcript echo events are normally filtered to avoid duplicate user and assistant nodes. The exception is a currently running turn: any retained live delta or thinking event for the turn's `eventId` is sufficient evidence that the event is still open, even if `message_started` has fallen outside the retained raw event window.
+
+Live trace updates must assign stable keys by segment, not only by turn. `assistant.message` live nodes use `assistantIndex` when available and fall back to `contentIndex`; `model.reasoning` live nodes use `thinkingIndex` when available and fall back to `contentIndex`. This prevents a later final assistant answer from merging into an earlier progress answer when the provider reuses a content index.
+
+Trace sorting must use `orderKey` metadata. Transcript-backed nodes use Pi JSONL entry and content-part order, event-log nodes use the read model's per-session event sequence, and live nodes use the SSE cursor's stream id and frame index.
 
 Trace reconstruction must reconcile yielded-run snapshots by `runId`. If an `agent.async` node was created from an initial `pibo_run_start` result with status `running`, and a later run-control result reports `completed`, `cancelled`, or `failed` for the same `runId`, the `agent.async` node must reflect the terminal status and terminal timestamp.
 
@@ -326,7 +372,7 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
 - **AC-017**: Given the user uses expansion controls, When they select default, collapse all, expand all, or expand to a nesting level, Then the trace tree updates according to that selected expansion depth.
 - **AC-018**: Given a running turn has emitted many thinking deltas, When the trace endpoint returns a latest-event window that no longer contains `message_started`, Then subsequent `assistant_delta` events for the same `eventId` still appear as a live assistant response.
 - **AC-019**: Given a `thinking_finished` event is received, When no `message_finished` event has been received for that `eventId`, Then the selected session remains in a running state and the UI continues to accept assistant streaming updates.
-- **AC-020**: Given the Raw Events inspector is opened, When adjacent assistant or thinking delta events share `piboSessionId` and `eventId`, Then they are displayed as one compacted raw event with an aggregate count.
+- **AC-020**: Given the Raw Events inspector is opened, When adjacent assistant or thinking delta events share `piboSessionId`, `eventId`, and live segment identity, Then they are displayed as one compacted raw event with an aggregate count.
 - **AC-021**: Given a session is renamed or archived, When the sidebar reloads, Then the manual title or archive visibility state is reflected without changing the linked Pi Session ID.
 - **AC-022**: Given the composer contains one line, When the user inserts line breaks up to five lines, Then the textarea grows and the send icon button remains one-line high and bottom-aligned.
 - **AC-023**: Given the composer contains more than five lines, When the internal scrollbar appears, Then the textarea height remains stable and the cursor baseline and bottom spacing do not visually jump.
@@ -349,6 +395,8 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
 - **AC-036**: Given `pibo_run_start` initially reports an async subagent run as `running`, When a later `pibo_run_wait` or `pibo_run_read` result reports the same `runId` as `completed`, Then the reconstructed `agent.async` node is `done`.
 - **AC-037**: Given an assistant emits progress text, then a tool call, then final assistant text, When the trace is reconstructed from persisted Pi entries, Then both assistant text entries remain visible in transcript order around the tool call.
 - **AC-038**: Given the client receives `TEXT_MESSAGE_END`, When the selected session is still mounted, Then Chat Web schedules an immediate trace/bootstrap refresh.
+- **AC-039**: Given a provider reuses the same `contentIndex` for an intermediate assistant response and a final assistant response in one routed turn, When live SSE frames are applied before reload, Then the responses render as separate `assistant.message` nodes in the streamed order.
+- **AC-040**: Given live trace nodes and persisted trace nodes have overlapping timestamps, When the trace view sorts nodes, Then explicit `orderKey` metadata determines the order before timestamp fallback is considered.
 
 ## 6. Test Automation Strategy
 
@@ -360,6 +408,8 @@ The full `/tree` command is not a V1 Web Chat command because full tree browsing
   - Read-model repository insert/query behavior.
   - Async yielded-run snapshot reconciliation by `runId`.
   - Persisted assistant progress/final text ordering around tool calls.
+  - Live assistant and reasoning segment identity when providers reuse `contentIndex`.
+  - Trace order-key comparison across transcript, event-log, and live sources.
 
 - **Integration Tests**:
   - Chat API session list and selected session endpoints.

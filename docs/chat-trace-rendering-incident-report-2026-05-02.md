@@ -260,15 +260,17 @@ The goal is not abstraction for its own sake. The goal is to prevent future chan
 
 ### 2. Assistant text content parts
 
-Current fix targets Thinking blocks because that was the observed bug. Assistant text still mostly uses `eventId` as message id.
+Status after the live model-response ordering fix:
 
-Risk:
+- Pibo preserves provider `contentIndex` on visible assistant text events when available.
+- Pibo assigns a turn-local `assistantIndex` to each visible assistant text segment.
+- Chat stream and trace identity prefer `assistantIndex` over `contentIndex`, with `contentIndex` retained as a fallback for older stored events.
 
-If Pi streams multiple text parts in one assistant turn around tools, assistant text may have similar identity/merge problems.
+This fixed the later observed case where Pi reused the same provider `contentIndex` for an intermediate assistant response and the final assistant response in one turn. Without `assistantIndex`, the final response could merge into the earlier live row until reload.
 
-Recommendation:
+Remaining risk:
 
-Inspect whether Pi emits `contentIndex` for `text_delta` and whether Pibo should preserve it for `assistant_delta`. If multi-text-part turns are possible, extend the same content-part identity approach to assistant text.
+Shared identity helper coverage is still useful so future trace changes update server reconstruction, stream frames, and live UI application consistently.
 
 ### 3. Tool call lifecycle consistency
 
@@ -499,7 +501,7 @@ If the user/operator must understand that a tool was used, it must become a visi
 ## Open Questions
 
 - Does Pi always provide `contentIndex` for every `thinking_*` update across supported providers?
-- Does Pi provide `contentIndex` for text deltas, and can multiple text parts occur in one assistant turn?
+- Can providers omit or reuse `contentIndex` for text deltas in additional patterns that require more routed-session segment-state coverage?
 - Should trace nodes represent `thinking_started` as an empty running node even before the first non-empty delta?
 - Should raw event retention preserve all non-empty `thinking_finished` events longer than transient deltas?
 - Should `debug trace --check` compare transcript part count against event-log part count for the same turn?
@@ -509,7 +511,7 @@ If the user/operator must understand that a tool was used, it must become a visi
 
 - Add shared trace identity helpers.
 - Move `ChatStreamEvent` type to shared code.
-- Extend assistant text events with `contentIndex` if Pi supports multi-text-part turns.
+- Keep assistant text segment tests covering reused provider `contentIndex`.
 - Add fixture replay tests for real broken sessions.
 - Add Playwright trace-order tests.
 - Extend `debug trace --check` with duplicate/collapse/orphan checks.

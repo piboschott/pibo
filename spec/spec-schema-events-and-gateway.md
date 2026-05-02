@@ -2,7 +2,7 @@
 title: Pibo Event And Gateway Schema Specification
 version: 1.0
 date_created: 2026-04-28
-last_updated: 2026-05-01
+last_updated: 2026-05-02
 owner: Pibo maintainers
 tags: [schema, events, gateway, sessions]
 ---
@@ -32,6 +32,9 @@ This specification does not define HTTP chat API payloads; those are covered by 
 - **Pibo Session ID**: The `PiboSession.id` value used for product routing and event correlation.
 - **Subagent Session Event**: A router output event that links a parent tool call to a routed child Pibo Session.
 - **Chat Stream Event**: A compact web UI frame derived from `PiboOutputEvent`. `AGENT_DELEGATION` is a Chat Stream Event name, not a `PiboOutputEvent` type.
+- **Content Index**: A provider-supplied assistant message content-part index when Pi exposes one.
+- **Assistant Index**: A Pibo-assigned turn-local index for one visible assistant text segment. It is distinct from Content Index because providers may reuse the same content index for separate visible assistant messages in one turn.
+- **Thinking Index**: A Pibo-assigned turn-local index for one reasoning/thinking segment. It is distinct from Content Index for the same reason as Assistant Index.
 
 ## 3. Requirements, Constraints & Guidelines
 
@@ -47,8 +50,12 @@ This specification does not define HTTP chat API payloads; those are covered by 
 - **REQ-010**: Routed sessions MUST emit `session_error` when Pi prompt or action execution fails.
 - **REQ-011**: Assistant visible text deltas MUST be emitted as `assistant_delta`.
 - **REQ-012**: Final visible assistant text MUST be emitted as `assistant_message` when Pi provides non-empty final assistant text.
+- **REQ-012A**: Assistant visible text events SHOULD preserve provider `contentIndex` when available and MUST include a stable `assistantIndex` when multiple visible assistant text segments can occur in one routed turn.
+- **REQ-012B**: Consumers that need live identity for visible assistant text MUST prefer `assistantIndex` over `contentIndex`, and MAY fall back to `contentIndex` for older stored events.
 - **REQ-013**: Thinking traces MUST use `thinking_started`, `thinking_delta`, and `thinking_finished`, separate from visible assistant text.
 - **REQ-013A**: `thinking_finished` MUST be interpreted as the end of the thinking block only. It MUST NOT be interpreted as the end of the full agent turn or the end of visible assistant text streaming.
+- **REQ-013B**: Thinking events SHOULD preserve provider `contentIndex` when available and MUST include a stable `thinkingIndex` when multiple thinking segments can occur in one routed turn.
+- **REQ-013C**: Consumers that need live identity for thinking text MUST prefer `thinkingIndex` over `contentIndex`, and MAY fall back to `contentIndex` for older stored events.
 - **REQ-014**: Tool call argument streaming MUST use `tool_call` with `argsComplete` indicating whether the tool call arguments are complete.
 - **REQ-015**: Tool execution lifecycle MUST use `tool_execution_started`, `tool_execution_updated`, and `tool_execution_finished`.
 - **REQ-016**: Optional raw Pi events MUST be forwarded only when the router is configured with `forwardPiEvents`.
@@ -110,11 +117,11 @@ type PiboExecutionEvent = {
 type PiboOutputEvent =
   | { type: "message_queued"; piboSessionId: string; eventId?: string; queuedMessages: number; text: string; source?: PiboEventSource }
   | { type: "message_started"; piboSessionId: string; eventId?: string; text: string; source?: PiboEventSource }
-  | { type: "assistant_delta"; piboSessionId: string; eventId?: string; text: string }
-  | { type: "assistant_message"; piboSessionId: string; eventId?: string; text: string }
-  | { type: "thinking_started"; piboSessionId: string; eventId?: string }
-  | { type: "thinking_delta"; piboSessionId: string; eventId?: string; text: string }
-  | { type: "thinking_finished"; piboSessionId: string; eventId?: string; text?: string }
+  | { type: "assistant_delta"; piboSessionId: string; eventId?: string; assistantIndex?: number; contentIndex?: number; text: string }
+  | { type: "assistant_message"; piboSessionId: string; eventId?: string; assistantIndex?: number; contentIndex?: number; text: string }
+  | { type: "thinking_started"; piboSessionId: string; eventId?: string; thinkingIndex?: number; contentIndex?: number }
+  | { type: "thinking_delta"; piboSessionId: string; eventId?: string; thinkingIndex?: number; contentIndex?: number; text: string }
+  | { type: "thinking_finished"; piboSessionId: string; eventId?: string; thinkingIndex?: number; contentIndex?: number; text?: string }
   | { type: "tool_call"; piboSessionId: string; eventId?: string; toolCallId: string; toolName: string; args: unknown; argsComplete: boolean }
   | { type: "tool_execution_started"; piboSessionId: string; eventId?: string; toolCallId: string; toolName: string; args: unknown }
   | { type: "tool_execution_updated"; piboSessionId: string; eventId?: string; toolCallId: string; toolName: string; args: unknown; partialResult: unknown }
@@ -161,12 +168,14 @@ type GatewayEventFrame = {
 - **AC-007**: Given Pi emits `thinking_finished` followed by visible text deltas for the same message, When normalized, Then the router emits `thinking_finished` followed by `assistant_delta` events and does not emit `message_finished` until Pi prompt completion.
 - **AC-008**: Given a generated subagent tool is called with a tool call id, When the child Pibo Session is resolved, Then a `subagent_session` event is emitted with the same tool call id and the child Pibo Session ID before the parent awaits the child reply.
 - **AC-009**: Given `pibo_run_start` starts `pibo_subagent_qa_researcher`, When the tool result is stored, Then the payload retains `toolName: "pibo_subagent_qa_researcher"` and enough arguments to reconstruct the async subagent trace node.
+- **AC-010**: Given Pi emits two separate visible assistant text segments with the same provider `contentIndex` during one routed turn, When normalized, Then the first segment's `assistant_delta` and `assistant_message` share one `assistantIndex`, and the second segment's `assistant_delta` and `assistant_message` share a different `assistantIndex`.
+- **AC-011**: Given Pi emits two separate thinking segments with the same provider `contentIndex` during one routed turn, When normalized, Then the segments are distinguishable by `thinkingIndex`.
 
 ## 6. Test Automation Strategy
 
 - **Test Levels**: Unit and integration tests.
 - **Frameworks**: Node.js built-in test runner and TypeScript compiler.
-- **Focused Commands**: `node --test test/gateway-request.test.mjs`, `node --test test/session-actions.test.mjs`, `node --test test/channel-runtime.test.mjs`.
+- **Focused Commands**: `node --test test/gateway-request.test.mjs`, `node --test test/session-actions.test.mjs`, `node --test test/chat-trace.test.mjs`, `node --test test/web-channel.test.mjs`, `node --test test/channel-runtime.test.mjs`.
 - **Primary Command**: `npm test`.
 
 ## 7. Rationale & Context
