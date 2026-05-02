@@ -40,7 +40,7 @@ The `codex-compat` profile exposes these model-visible tool names:
 | `exec_command` | Implemented | Runs shell commands through a pipe-backed child process. Long-running commands can return a `session_id`. |
 | `write_stdin` | Implemented | Writes to an existing `exec_command` process session and returns recent output. |
 | `apply_patch` | Implemented | Invokes the local `apply_patch` command with a Codex-style patch body. |
-| `web_search` | Provider-delegated | Not a local tool execution. Injected into supported provider Responses payloads as `web_search_preview`. |
+| `web_search` | Provider-delegated | Not a local tool execution. Injected into supported provider Responses payloads as `web_search`. |
 | `view_image` | Implemented | Reads a local image file and returns an inline image tool result. |
 | `spawn_agent` | Implemented as adapter | Starts a Pibo routed child session using one of the Codex-compatible roles. |
 | `send_input` | Implemented as adapter | Sends follow-up input to an existing delegated child-agent handle. |
@@ -64,7 +64,7 @@ Implemented prompt additions:
 Implemented provider behavior:
 
 - If provider web search is enabled for the profile, the runtime mutates Responses-style provider payloads before the request is sent.
-- The injected provider tool has `type: "web_search_preview"`.
+- The injected provider tool has `type: "web_search"`.
 - Supported visible web-search configuration fields include:
   - `external_web_access`
   - `filters.allowed_domains`

@@ -51,7 +51,7 @@ function hasWebSearchTool(tools: unknown[]): boolean {
 
 function buildWebSearchProviderTool(config: CodexCompatibleWebSearchConfig): Record<string, unknown> {
 	const tool: Record<string, unknown> = {
-		type: "web_search_preview",
+		type: "web_search",
 	};
 	if (config.search_context_size) tool.search_context_size = config.search_context_size;
 	if (config.user_location) tool.user_location = config.user_location;

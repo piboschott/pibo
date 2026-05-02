@@ -99,7 +99,7 @@ test("codex-compatible web search is serialized as a provider Responses tool", (
 	);
 
 	assert.deepEqual(payload.tools.at(-1), {
-		type: "web_search_preview",
+		type: "web_search",
 		search_context_size: "high",
 		user_location: { type: "approximate", country: "US", timezone: "America/New_York" },
 		filters: { allowed_domains: ["example.com"] },
