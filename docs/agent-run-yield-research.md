@@ -131,7 +131,7 @@ The same run-control concept applies to multiple kinds of long-running work:
 - generic yieldable tool calls
 - bash or process tool calls
 
-V1 started with subagent runs because Pibo already had routed sessions, `threadKey`, and event streams. V2 generalizes the same `runId` model to yieldable tools, including subagents and process-style tools such as `pibo_exec`.
+V1 started with subagent runs because Pibo already had routed sessions, `threadKey`, and event streams. V2 generalizes the same `runId` model to yieldable tools, including subagents and process-style tools such as Pi Coding Agent's `bash`.
 
 Bash should be treated as a normal tool conceptually. Implementation-wise it still needs process-manager behavior: output buffering, exit codes, cancellation, and cleanup.
 
@@ -169,8 +169,8 @@ Implemented tools:
 
 For processes later:
 
-- `pibo_exec_start`
-- `pibo_exec_write`
+- `bash_start`
+- `bash_write`
 - `pibo_run_wait`
 - `pibo_run_status`
 - `pibo_run_cancel`
@@ -240,7 +240,7 @@ Example reminder:
 
 ```xml
 <pibo_run_notification>
-{"runId":"run_123","kind":"tool","toolName":"pibo_exec","status":"running","summary":"A yielded tool run started earlier is still running. Continue other work or use pibo_run_wait when blocked."}
+{"runId":"run_123","kind":"tool","toolName":"bash","status":"running","summary":"A yielded tool run started earlier is still running. Continue other work or use pibo_run_wait when blocked."}
 </pibo_run_notification>
 ```
 
@@ -304,7 +304,7 @@ A Codex-like process runner needs:
 - cleanup/pruning of old processes
 - sandbox/approval policy if commands can mutate the system
 
-`pibo_exec` is the first process-style yieldable tool. It covers command execution with bounded output, exit code reporting, timeout handling, and run-registry storage. Future process tools can add streaming output or stdin support if a real workflow requires it.
+Pi Coding Agent's `bash` is the process-style yieldable tool. It covers command execution with bounded output, exit code reporting, timeout handling, process-tree cleanup, streaming updates, and full-output access when truncated. Future process tools can add stdin support if a real workflow requires it.
 
 ## Things Codex Does Well
 
@@ -358,7 +358,7 @@ Use:
 - Should run notifications trigger a follow-up turn automatically, or only become visible on the next user/agent turn?
 - What exact hook should inspect unconsumed runs when an agent turn ends?
 - What are the cleanup rules for abandoned runs?
-- Which process tools need streaming output or stdin support beyond `pibo_exec`?
+- Which process tools need stdin support beyond `bash`?
 - How should nested yielded subagent tool calls be represented in notifications?
 - no gateway-first API
 - no persistence

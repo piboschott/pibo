@@ -5,6 +5,7 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
+	createBashToolDefinition,
 	getAgentDir,
 	InteractiveMode,
 	SessionManager,
@@ -104,11 +105,23 @@ function getEnabledSkillPaths(cwd: string, profile: InitialSessionContext): stri
 
 function getEnabledToolDefinitions(
 	profile: InitialSessionContext,
+	options: {
+		runtimeCwd: string;
+		shellCommandPrefix?: string;
+		shellPath?: string;
+	},
 	subagentRunner?: PiboSubagentRunner,
 	runToolController?: PiboRunToolController,
 ): ToolDefinition[] {
 	const profileTools = profile.tools.filter(hasEnabledToolDefinition);
 	const codexCompatEnabled = profile.toolPackages.codexCompat === true;
+	const runControlEnabled = profile.toolPackages.runControl === true;
+	const runControlBashTool: ToolDefinition | undefined = runControlEnabled && runToolController
+		? createBashToolDefinition(options.runtimeCwd, {
+				commandPrefix: options.shellCommandPrefix,
+				shellPath: options.shellPath,
+			}) as unknown as ToolDefinition
+		: undefined;
 	const subagentTools = subagentRunner && !codexCompatEnabled
 		? createSubagentToolDefinitions(profile.subagents, subagentRunner)
 		: [];
@@ -116,16 +129,17 @@ function getEnabledToolDefinitions(
 		? createCodexCompatToolDefinitions({ subagents: profile.subagents, subagentRunner })
 		: [];
 	const yieldableTools = [
+		...(runControlBashTool ? [runControlBashTool] : []),
 		...profileTools.filter((tool) => tool.yieldable !== false).map((tool) => tool.definition),
 		...subagentTools,
 		...codexCompatTools,
 	];
-	const runControlEnabled = profile.toolPackages.runControl !== false;
 	const runTools = runControlEnabled && runToolController && yieldableTools.length > 0
 		? createRunToolDefinitions(yieldableTools, runToolController)
 		: [];
 
 	return [
+		...(runControlBashTool ? [runControlBashTool] : []),
 		...profileTools.map((tool) => tool.definition),
 		...subagentTools,
 		...codexCompatTools,
@@ -221,7 +235,6 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 		const installedToolContextFile = getInstalledCliToolContextFile();
 		const mcpAgentContextFile = await getMcpAgentContextFile(profile.mcpServers);
 		const skillPaths = getEnabledSkillPaths(runtimeCwd, profile);
-		const customTools = getEnabledToolDefinitions(profile, options.subagentRunner, options.runToolController);
 		const services = await createAgentSessionServices({
 			cwd: runtimeCwd,
 			agentDir: runtimeAgentDir,
@@ -242,6 +255,16 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 				}),
 			},
 		});
+		const customTools = getEnabledToolDefinitions(
+			profile,
+			{
+				runtimeCwd,
+				shellCommandPrefix: services.settingsManager.getShellCommandPrefix(),
+				shellPath: services.settingsManager.getShellPath(),
+			},
+			options.subagentRunner,
+			options.runToolController,
+		);
 
 		const created = await createAgentSessionFromServices({
 			services,
@@ -281,6 +304,7 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 	const profile = options.profile ?? createDefaultPiboProfile();
 	const hasEnabledSubagents = profile.subagents.some((subagent) => subagent.enabled !== false);
 	const hasYieldableTools =
+		profile.toolPackages.runControl === true ||
 		hasEnabledSubagents ||
 		profile.tools.some((tool) => tool.enabled !== false && tool.definition !== undefined && tool.yieldable !== false);
 	const runtime = await createPiboRuntime({

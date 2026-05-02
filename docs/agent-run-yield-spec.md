@@ -100,7 +100,7 @@ type PiboRunStartParams = {
 };
 ```
 
-Generated per-subagent tools are normal synchronous tools, always parallel-capable, and yieldable. Pibo does not expose a per-subagent sequential execution mode; an agent sequences dependent work by waiting for one direct tool result before issuing the next call. `pibo_exec` is also a normal synchronous tool and can be yielded with `pibo_run_start`.
+Generated per-subagent tools are normal synchronous tools, always parallel-capable, and yieldable. Pibo does not expose a per-subagent sequential execution mode; an agent sequences dependent work by waiting for one direct tool result before issuing the next call. When `pibo-run-control` is enabled, Pi Coding Agent's built-in `bash` tool can also be yielded with `pibo_run_start`.
 
 `pibo_run_list` returns a compact snapshot of runs owned by the current agent session.
 
@@ -195,7 +195,7 @@ Example completion notification:
 
 ```xml
 <pibo_run_notification>
-{"completed":[{"runId":"run_123","kind":"tool","toolName":"pibo_exec","status":"completed","summary":"pibo_exec run completed."}],"running":["run_456","run_789"]}
+{"completed":[{"runId":"run_123","kind":"tool","toolName":"bash","status":"completed","summary":"bash run completed."}],"running":["run_456","run_789"]}
 </pibo_run_notification>
 ```
 
@@ -266,7 +266,7 @@ Multiple yielded runs can be active at the same time.
 Example:
 
 ```text
-run_1 pibo_exec running
+run_1 bash running
 run_2 pibo_subagent_qa_researcher completed
 run_3 pibo_subagent_qa_reviewer running
 ```

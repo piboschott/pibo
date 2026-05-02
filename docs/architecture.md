@@ -122,7 +122,7 @@ pibo_run_cancel
 pibo_run_ack
 ```
 
-`pibo_run_start` wraps one yieldable tool call as a yielded run and returns a `runId`. The wrapped tool still exists as a normal synchronous tool; the run wrapper only changes execution lifecycle. Built-in yieldable tools include generated `pibo_subagent_<name>` tools and `pibo_exec`.
+`pibo_run_start` wraps one yieldable tool call as a yielded run and returns a `runId`. The wrapped tool still exists as a normal synchronous tool; the run wrapper only changes execution lifecycle. When `pibo-run-control` is enabled, Pi Coding Agent's built-in `bash` tool is registered as yieldable through Pibo. Generated `pibo_subagent_<name>` tools are also yieldable.
 
 Yielded runs use `tracked` by default. Tracked runs create compact `<pibo_run_notification>` service messages for the parent agent when they start, finish, fail, or remain unconsumed across natural turn boundaries. Notifications contain only run ids and summaries; the agent must call `pibo_run_read` to retrieve the full result. `detached` runs are explicit fire-and-forget work: they remain inspectable with `includeDetached`, but they do not create automatic reminders.
 
@@ -146,7 +146,7 @@ Replay is cursor-based. `appendOnce` returns an existing event when the same top
 
 The durable job queue is at-least-once. A worker claims a pending job for a visibility window, and `ack` only succeeds for the current worker before that claim expires. Failed or exhausted jobs move to the dead-letter table. Dead jobs are replayable through the debug CLI, which creates a new live job with provenance in its payload instead of leaving the entry as an unrecoverable graveyard.
 
-Yielded runs write both a durable run record and a `runs` queue job when `pibo_run_start` is called. The current execution still runs in-process; the durable records make run state inspectable across restarts. If a process disappears while a run is still marked running, store recovery fails non-retryable runs by default. Retryable runs can be released back to pending, but arbitrary yieldable tools, `pibo_exec`, and subagent runs remain non-retryable unless explicitly marked safe later.
+Yielded runs write both a durable run record and a `runs` queue job when `pibo_run_start` is called. The current execution still runs in-process; the durable records make run state inspectable across restarts. If a process disappears while a run is still marked running, store recovery fails non-retryable runs by default. Retryable runs can be released back to pending, but arbitrary yieldable tools, `bash`, and subagent runs remain non-retryable unless explicitly marked safe later.
 
 Chat Web continues to keep `web_chat_events` as its read model and `chat_events` as the room/user-facing durable log. Normalized `PiboOutputEvent` values are additionally mirrored to the `pibo.output` topic for operational replay/debugging. Trace nodes are still reconstructed at read time from Pi JSONL plus Chat Web stores; Pibo does not materialize trace nodes durably.
 

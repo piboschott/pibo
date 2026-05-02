@@ -29,7 +29,7 @@ test("default plugin registry builds profiles from registered resources", () => 
 	assert.equal(minimal.profileName, "pibo-minimal");
 	assert.deepEqual(
 		minimal.tools.map((tool) => tool.name),
-		["pibo_exec"],
+		[],
 	);
 	assert.equal(runYieldQa.profileName, "pibo-run-yield-qa");
 	assert.deepEqual(
@@ -113,7 +113,7 @@ test("gateway producer profile is available only through its parked registry", (
 	assert.equal(gatewayProducer.profileName, "pibo-gateway-producer");
 	assert.deepEqual(
 		gatewayProducer.tools.map((tool) => tool.name),
-		["pibo_exec", "pibo_gateway_send"],
+		["pibo_gateway_send"],
 	);
 });
 

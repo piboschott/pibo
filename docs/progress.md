@@ -6,7 +6,7 @@ Pibo is a minimal TypeScript wrapper around Pi Coding Agent. This file is a shor
 
 - V1 profile builder exists in `src/core/profiles.ts`.
 - The default profile loads the local `pi-agent-harness` skill.
-- Core tools are registered: `pibo_exec`.
+- The default profile loads the local `pi-agent-harness` skill and relies on Pi Coding Agent built-in tools.
 - The Pi TUI can be started through `npm run tui`.
 - The explicit local routed TUI can be started through `npm run tui:routed -- <profile>` and renders routed assistant deltas as a live streaming widget.
 - Routed thinking events are normalized separately from assistant text and can be displayed by opt-in channel UI toggles such as local `/thinking-show`, `--show-thinking`, the chat web toggle, or gateway client `/thinking-show`. Routed `/thinking` keeps the Pi meaning and controls model effort.

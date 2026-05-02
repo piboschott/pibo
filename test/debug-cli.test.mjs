@@ -127,13 +127,13 @@ test("pibo debug trace prints rebuilt Chat Web trace nodes", async () => {
 	try {
 		const trace = await execFileAsync("node", [cliPath, "debug", "trace", "ps_running", "--running-only"], { cwd });
 		assert.match(trace.stdout, /status\ttype\ttitle\tid\trunId\tlinkedPiboSessionId/);
-		assert.match(trace.stdout, /running\ttool.call\t\s+pibo_exec\ttool:tool_1/);
+		assert.match(trace.stdout, /running\ttool.call\t\s+bash\ttool:tool_1/);
 		assert.match(trace.stdout, /nodes: 2/);
 
 		const json = await execFileAsync("node", [cliPath, "debug", "trace", "ps_running", "--json"], { cwd });
 		const parsed = JSON.parse(json.stdout);
 		assert.equal(parsed.status, "running");
-		assert.equal(parsed.nodes.some((node) => node.status === "running" && node.title === "pibo_exec"), true);
+		assert.equal(parsed.nodes.some((node) => node.status === "running" && node.title === "bash"), true);
 
 		const checked = await execFileAsync("node", [cliPath, "debug", "trace", "ps_running", "--check", "--json"], { cwd });
 		const checkedParsed = JSON.parse(checked.stdout);
@@ -520,7 +520,7 @@ async function makeDebugFixture() {
 				piboSessionId: "ps_running",
 				eventId: "evt_running",
 				toolCallId: "tool_1",
-				toolName: "pibo_exec",
+				toolName: "bash",
 				args: { cmd: "sleep 10" },
 			}),
 		);

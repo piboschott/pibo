@@ -405,7 +405,7 @@ test("local routed TUI renders tool execution events with Pi tool styling", asyn
 			piboSessionId: "ps_local_tui",
 			eventId: "msg-1",
 			toolCallId: "tool-1",
-			toolName: "pibo_exec",
+			toolName: "bash",
 			args: { command: "echo Hallo" },
 			argsComplete: true,
 		});
@@ -414,14 +414,14 @@ test("local routed TUI renders tool execution events with Pi tool styling", asyn
 			piboSessionId: "ps_local_tui",
 			eventId: "msg-1",
 			toolCallId: "tool-1",
-			toolName: "pibo_exec",
+			toolName: "bash",
 			args: { command: "echo Hallo" },
 		});
 	}
 
 	const liveWidget = ctx.widgets.get("pibo.local.tool.tool-1");
 	assert.ok(liveWidget);
-	assert.equal(liveWidget.render(80).some((line) => line.includes("pibo_exec")), true);
+	assert.equal(liveWidget.render(80).some((line) => line.includes("echo Hallo")), true);
 
 	for (const listener of client.eventListeners) {
 		listener({
@@ -429,7 +429,7 @@ test("local routed TUI renders tool execution events with Pi tool styling", asyn
 			piboSessionId: "ps_local_tui",
 			eventId: "msg-1",
 			toolCallId: "tool-1",
-			toolName: "pibo_exec",
+			toolName: "bash",
 			result: { content: [{ type: "text", text: "Echo: Hallo" }] },
 			isError: false,
 		});
@@ -440,7 +440,6 @@ test("local routed TUI renders tool execution events with Pi tool styling", asyn
 
 	const renderer = fake.renderers.get("pibo.local-routed");
 	const rendered = renderer(fake.messages.at(-1)).render(80);
-	assert.equal(rendered.some((line) => line.includes("pibo_exec")), true);
 	assert.equal(rendered.some((line) => line.includes("Echo: Hallo")), true);
 });
 

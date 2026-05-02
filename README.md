@@ -96,7 +96,7 @@ The Chat Web App now also has a dedicated Context area at `/apps/chat/context`. 
 
 ## Profiles
 
-The default profile is registered by the core plugin. It loads the local `pi-agent-harness` skill and registers `pibo_exec`.
+The default profile is registered by the core plugin. It loads the local `pi-agent-harness` skill and uses Pi Coding Agent's built-in tools for normal coding work.
 
 Profiles can opt into registered subagents. Pibo exposes enabled subagents to Pi as generated tools named `pibo_subagent_<name>`, routed through normal pibo sessions. Generated subagent tools are always parallel-capable; agents sequence subagent work by waiting for a direct result before issuing a later call or by using `pibo_run_start` for yielded work.
 

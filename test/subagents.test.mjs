@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
-import { inspectPiboProfile } from "../dist/core/runtime.js";
+import { createPiboRuntime, inspectPiboProfile } from "../dist/core/runtime.js";
 import { PiboSessionRouter } from "../dist/core/session-router.js";
 import { createSubagentToolDefinitions, createSubagentToolName } from "../dist/subagents/tool.js";
 import { piboCorePlugin } from "../dist/plugins/builtin.js";
@@ -26,6 +26,30 @@ const noopSubagentRunner = {
 				text: `helper result for ${input.subagent.name}`,
 			},
 		};
+	},
+};
+
+const noopRunToolController = {
+	startToolRun() {
+		throw new Error("not used");
+	},
+	listRuns() {
+		return [];
+	},
+	getRunStatus() {
+		throw new Error("not used");
+	},
+	waitForRun() {
+		throw new Error("not used");
+	},
+	readRun() {
+		throw new Error("not used");
+	},
+	cancelRun() {
+		throw new Error("not used");
+	},
+	ackRun() {
+		throw new Error("not used");
 	},
 };
 
@@ -266,7 +290,6 @@ test("default run-yield QA profile exposes run control tools", async () => {
 		inspection.subagents.map((subagent) => subagent.name),
 		["qa-researcher", "qa-reviewer"],
 	);
-	assert.equal(activeTools.has("pibo_exec"), true);
 	assert.equal(activeTools.has("pibo_subagent_qa_researcher"), true);
 	assert.equal(activeTools.has("pibo_subagent_qa_reviewer"), true);
 	assert.equal(activeTools.has("pibo_run_start"), true);
@@ -277,4 +300,29 @@ test("default run-yield QA profile exposes run control tools", async () => {
 	assert.equal(activeTools.has("pibo_run_ack"), true);
 	assert.equal(inspection.subagents.every((subagent) => subagent.active), true);
 	assert.equal(inspection.diagnostics.length, 0);
+});
+
+test("run-control package exposes Pi bash as a yieldable tool", async () => {
+	const registry = createDefaultPiboPluginRegistry();
+	const profile = registry.createProfile("run-yield-qa");
+	const runtime = await createPiboRuntime({
+		profile,
+		persistSession: false,
+		subagentRunner: noopSubagentRunner,
+		runToolController: noopRunToolController,
+	});
+
+	try {
+		const activeTools = new Set(runtime.session.getActiveToolNames());
+		assert.equal(activeTools.has("bash"), true);
+		assert.equal(activeTools.has("pibo_exec"), false);
+
+		const startTool = runtime.session.getToolDefinition("pibo_run_start");
+		assert.ok(startTool);
+		const toolNameSchema = startTool.parameters.properties.toolName;
+		assert.equal(toolNameSchema.enum.includes("bash"), true);
+		assert.equal(toolNameSchema.enum.includes("pibo_exec"), false);
+	} finally {
+		await runtime.dispose();
+	}
 });

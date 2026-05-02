@@ -86,7 +86,7 @@ async function startWebHostChannel(options = {}) {
 		},
 		getCapabilityCatalog() {
 			return options.capabilityCatalog ?? {
-				nativeTools: [{ name: "pibo_exec", description: "Exec", yieldable: true, hasDefinition: true }],
+				nativeTools: [],
 				skills: [{ name: "pi-agent-harness", path: ".codex/skills/pi-agent-harness/SKILL.md" }],
 				subagents: [],
 				contextFiles: [],
@@ -909,7 +909,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 		});
 		assert.equal(catalog.status, 200);
 		const catalogPayload = await catalog.json();
-		assert.deepEqual(catalogPayload.catalog.nativeTools.map((tool) => tool.name), ["pibo_exec"]);
+		assert.deepEqual(catalogPayload.catalog.nativeTools.map((tool) => tool.name), []);
 
 		const createdAgent = await fetch(`${baseURL}/api/chat/agents`, {
 			method: "POST",
@@ -921,7 +921,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 			body: JSON.stringify({
 				displayName: "research-agent",
 				description: "Uses native catalog entries only.",
-				nativeTools: ["pibo_exec"],
+				nativeTools: [],
 				skills: ["pi-agent-harness"],
 				autoContextFiles: false,
 				runControl: true,
@@ -932,7 +932,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 		const agentPayload = await createdAgent.json();
 		assert.equal(agentPayload.agent.profileName, "research-agent");
 		assert.equal(agentPayload.agent.displayName, "research-agent");
-		assert.deepEqual(agentPayload.agent.nativeTools, ["pibo_exec"]);
+		assert.deepEqual(agentPayload.agent.nativeTools, []);
 		assert.equal(agentPayload.agent.autoContextFiles, false);
 		assert.equal(agentPayload.agent.runControl, true);
 

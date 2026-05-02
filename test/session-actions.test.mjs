@@ -296,27 +296,27 @@ test("routed session normalizes tool call events", async () => {
 	};
 	listener({
 		type: "message_update",
-		message: { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "pibo_exec", arguments: {} }] },
+		message: { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: {} }] },
 		assistantMessageEvent: { type: "toolcall_start", contentIndex: 0 },
 	});
 	listener({
 		type: "message_update",
 		message: {
 			role: "assistant",
-			content: [{ type: "toolCall", id: "tool-1", name: "pibo_exec", arguments: { command: "echo hi" } }],
+			content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "echo hi" } }],
 		},
 		assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0 },
 	});
 	listener({
 		type: "tool_execution_start",
 		toolCallId: "tool-1",
-		toolName: "pibo_exec",
+		toolName: "bash",
 		args: { command: "echo hi" },
 	});
 	listener({
 		type: "tool_execution_end",
 		toolCallId: "tool-1",
-		toolName: "pibo_exec",
+		toolName: "bash",
 		result: { content: [{ type: "text", text: "ok" }] },
 		isError: false,
 	});

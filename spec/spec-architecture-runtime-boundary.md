@@ -165,9 +165,9 @@ type PiboChannelContext = {
 
 | Profile | Aliases | Capabilities |
 | --- | --- | --- |
-| `pibo-minimal` | `minimal` | Harness skill, `pibo_exec` |
-| `pibo-run-yield-qa` | `run-yield-qa`, `yield-qa` | Minimal tools plus QA subagents |
-| `pibo-gateway-producer` | `gateway-producer` | Parked opt-in profile with minimal tools plus `pibo_gateway_send` |
+| `pibo-minimal` | `minimal` | Harness skill plus Pi built-in tools |
+| `pibo-run-yield-qa` | `run-yield-qa`, `yield-qa` | Harness skill, QA subagents, and run-control-yieldable Pi `bash` |
+| `pibo-gateway-producer` | `gateway-producer` | Parked opt-in profile with `pibo_gateway_send` |
 
 ## 5. Acceptance Criteria
 
@@ -256,7 +256,7 @@ The event links the parent tool call to the routed child Pibo Session before the
 
 ```xml
 <pibo_run_notification>
-{"completed":[{"runId":"run_...","kind":"tool","status":"completed","toolName":"pibo_exec","summary":"pibo_exec run completed."}],"failed":[],"cancelled":[],"running":[],"instruction":"Use pibo_run_read for completed or failed runs. Use pibo_run_wait, pibo_run_status, pibo_run_cancel, or pibo_run_ack for runs you still need to manage."}
+{"completed":[{"runId":"run_...","kind":"tool","status":"completed","toolName":"bash","summary":"bash run completed."}],"failed":[],"cancelled":[],"running":[],"instruction":"Use pibo_run_read for completed or failed runs. Use pibo_run_wait, pibo_run_status, pibo_run_cancel, or pibo_run_ack for runs you still need to manage."}
 </pibo_run_notification>
 ```
 

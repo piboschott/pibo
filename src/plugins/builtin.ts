@@ -9,13 +9,11 @@ import type {
 } from "../core/events.js";
 import { InitialSessionContextBuilder, type InitialSessionContext } from "../core/profiles.js";
 import { parsePiboThinkingLevel } from "../core/thinking.js";
-import { createPiboCoreToolProfiles } from "./core-tools.js";
 import { piboCodexCompatPlugin } from "./codex-compat.js";
 import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 
-const CORE_PROFILE_TOOLS = ["pibo_exec"] as const;
-const GATEWAY_PROFILE_TOOLS = [...CORE_PROFILE_TOOLS, "pibo_gateway_send"] as const;
+const GATEWAY_PROFILE_TOOLS = ["pibo_gateway_send"] as const;
 const RUN_YIELD_QA_SUBAGENTS = ["qa-researcher", "qa-reviewer"] as const;
 
 function getObjectParams(event: PiboExecutionEvent): PiboJsonObject | undefined {
@@ -80,7 +78,6 @@ export const piboCorePlugin = definePiboPlugin({
 			name: "pi-agent-harness",
 			path: ".codex/skills/pi-agent-harness/SKILL.md",
 		});
-		api.registerTools(createPiboCoreToolProfiles());
 		api.registerSubagents([
 			{
 				name: "qa-researcher",
@@ -98,10 +95,9 @@ export const piboCorePlugin = definePiboPlugin({
 		api.registerProfile({
 			name: "pibo-minimal",
 			aliases: ["minimal"],
-			description: "Minimal pibo profile with the harness skill, example context, and test tools.",
+			description: "Minimal pibo profile with the harness skill.",
 			create(context) {
 				return createBaseProfileBuilder("pibo-minimal", context)
-					.addTools(context.getTools(CORE_PROFILE_TOOLS))
 					.createSession();
 			},
 		});
@@ -111,7 +107,7 @@ export const piboCorePlugin = definePiboPlugin({
 			description: "QA profile with two simple subagents for testing yielded run control.",
 			create(context) {
 				return createBaseProfileBuilder("pibo-run-yield-qa", context)
-					.addTools(context.getTools(CORE_PROFILE_TOOLS))
+					.withToolPackages({ runControl: true })
 					.addSubagents(context.getSubagents(RUN_YIELD_QA_SUBAGENTS))
 					.createSession();
 			},

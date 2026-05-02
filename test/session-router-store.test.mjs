@@ -65,7 +65,7 @@ test("session router uses the Pibo session profile when creating a runtime", asy
 		});
 
 		assert.equal(output.type, "execution_result");
-		assert.equal(output.result.activeTools.includes("pibo_exec"), true);
+		assert.equal(output.result.activeTools.includes("bash"), true);
 
 		const current = await router.emit({
 			type: "execution",
