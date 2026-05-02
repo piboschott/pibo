@@ -35,8 +35,8 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, getBootstrap, getTrace, patchCustomAgent, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode } from "./types";
+import { deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, getBootstrap, getTrace, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelDefaults, ModelProfile, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode } from "./types";
 import { adaptTrace } from "./tracing/adapt";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
 import { JsonRenderer } from "./tracing/JsonRenderer";
@@ -1003,6 +1003,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 									setShowThinking={setShowThinking}
 									expandThinking={expandThinking}
 									setExpandThinking={setExpandThinking}
+									modelDefaults={bootstrap.modelDefaults}
+									onModelDefaultsChanged={(modelDefaults) => {
+										setBootstrap((current) => current ? { ...current, modelDefaults } : current);
+									}}
 									piPackages={bootstrap.agentCatalog?.piPackages}
 									onPiPackageChanged={upsertPiPackageInBootstrap}
 									onPiPackageRemoved={removePiPackageFromBootstrap}
@@ -2300,6 +2304,8 @@ function AgentsView({
 				subagents: draft.subagents.filter((item) => item.name.trim() && item.targetProfile.trim()),
 				mcpServers: draft.mcpServers,
 				piPackages: draft.piPackages,
+				mainModel: draft.mainModel,
+				subagentModel: draft.subagentModel,
 				builtinTools: draft.builtinTools,
 				builtinToolNames: draft.builtinToolNames,
 				autoContextFiles: draft.autoContextFiles,
@@ -2509,6 +2515,20 @@ function AgentsView({
 						<input value={draft.displayName} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} className={`min-w-0 bg-[#0e1116] border rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60 ${agentNameError ? "border-[#f59e0b]" : "border-slate-700"}`} placeholder="agent-name" />
 						{agentNameError ? <div className="text-xs text-amber-100">{agentNameError}</div> : null}
 						<textarea value={draft.description} disabled={readOnly} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} className="min-h-[72px] bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60" placeholder="Description" />
+						<ModelProfileInputs
+							title="Main Agent Model"
+							value={draft.mainModel}
+							readOnly={readOnly}
+							placeholderLabel="settings default"
+							onChange={(mainModel) => setDraft((current) => ({ ...current, mainModel }))}
+						/>
+						<ModelProfileInputs
+							title="Subagent Model"
+							value={draft.subagentModel}
+							readOnly={readOnly}
+							placeholderLabel="settings default"
+							onChange={(subagentModel) => setDraft((current) => ({ ...current, subagentModel }))}
+						/>
 						<InlineCheckboxToggle disabled={readOnly} checked={draft.autoContextFiles} title="Load AGENTS.md / CLAUDE.md" onToggle={() => setDraft((current) => ({ ...current, autoContextFiles: !current.autoContextFiles }))} />
 						<BuiltinToolsDesigner draft={draft} setDraft={setDraft} readOnly={readOnly} />
 					</DesignerPanel>
@@ -2611,6 +2631,8 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		subagents: [],
 		mcpServers: [],
 		piPackages: [],
+		mainModel: undefined,
+		subagentModel: undefined,
 		builtinTools: "default",
 		builtinToolNames: [...DEFAULT_BUILTIN_TOOL_NAMES],
 		autoContextFiles: true,
@@ -2631,6 +2653,8 @@ function agentToDraft(agent: CustomAgent): AgentDraft {
 		subagents: agent.subagents,
 		mcpServers: agent.mcpServers,
 		piPackages: agent.piPackages ?? [],
+		mainModel: agent.mainModel,
+		subagentModel: agent.subagentModel,
 		builtinTools: agent.builtinTools,
 		builtinToolNames: normalizeBuiltinToolNames(agent.builtinToolNames, agent.builtinTools),
 		autoContextFiles: agent.autoContextFiles ?? true,
@@ -2650,6 +2674,8 @@ function profileToDraft(profile: BootstrapData["agents"][number], catalog?: Agen
 		subagents: profile.subagents ?? [],
 		mcpServers: profile.mcpServers ?? [],
 		piPackages: profile.piPackages ?? [],
+		mainModel: profile.mainModel ?? profile.model,
+		subagentModel: profile.subagentModel ?? profile.model,
 		builtinTools: profile.builtinTools ?? "default",
 		builtinToolNames: normalizeBuiltinToolNames(profile.builtinToolNames, profile.builtinTools),
 		autoContextFiles: profile.autoContextFiles ?? true,
@@ -2895,7 +2921,7 @@ function SettingsSidebar({
 					<Settings size={13} className="text-[#11a4d4]" />
 					<div className="min-w-0">
 						<span className="block truncate text-sm text-slate-200">General</span>
-						<span className="block truncate font-mono text-[10px] text-slate-500">browser-local</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">browser + runtime</span>
 					</div>
 				</button>
 				<button
@@ -3613,6 +3639,8 @@ function SettingsView({
 	setShowThinking,
 	expandThinking,
 	setExpandThinking,
+	modelDefaults,
+	onModelDefaultsChanged,
 	piPackages,
 	onPiPackageChanged,
 	onPiPackageRemoved,
@@ -3622,6 +3650,8 @@ function SettingsView({
 	setShowThinking: (value: boolean) => void;
 	expandThinking: boolean;
 	setExpandThinking: (value: boolean) => void;
+	modelDefaults?: ModelDefaults;
+	onModelDefaultsChanged: (value: ModelDefaults) => void;
 	piPackages?: PiPackageCatalogItem[];
 	onPiPackageChanged: (pkg: PiPackageCatalogItem) => void;
 	onPiPackageRemoved: (pkg: PiPackageCatalogItem) => void;
@@ -3664,7 +3694,124 @@ function SettingsView({
 						localStorage.setItem("pibo.chat.expandThinking", String(next));
 					}}
 				/>
+				<ModelDefaultsSettings
+					modelDefaults={modelDefaults}
+					onChanged={onModelDefaultsChanged}
+				/>
 			</DesignerPanel>
+		</div>
+	);
+}
+
+function ModelDefaultsSettings({
+	modelDefaults,
+	onChanged,
+}: {
+	modelDefaults?: ModelDefaults;
+	onChanged: (value: ModelDefaults) => void;
+}) {
+	const [draft, setDraft] = useState<ModelDefaults>(modelDefaults ?? {});
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		setDraft(modelDefaults ?? {});
+	}, [modelDefaults]);
+
+	const save = async (next: ModelDefaults) => {
+		setDraft(next);
+		setSaving(true);
+		try {
+			const saved = await patchModelDefaults(next);
+			onChanged(saved);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="grid gap-3 border-t border-slate-800 pt-3">
+			<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Runtime Model Defaults</div>
+			<ModelProfileInputs
+				title="Main Agent Default"
+				value={draft.main}
+				readOnly={saving}
+				placeholderLabel="provider fallback"
+				onChange={(main) => void save({ ...draft, main })}
+			/>
+			<ModelProfileInputs
+				title="Subagent Default"
+				value={draft.subagent}
+				readOnly={saving}
+				placeholderLabel="provider fallback"
+				onChange={(subagent) => void save({ ...draft, subagent })}
+			/>
+			{error ? <div className="text-xs text-amber-100">{error}</div> : null}
+		</div>
+	);
+}
+
+function ModelProfileInputs({
+	title,
+	value,
+	readOnly,
+	placeholderLabel,
+	onChange,
+}: {
+	title: string;
+	value?: ModelProfile;
+	readOnly: boolean;
+	placeholderLabel: string;
+	onChange: (value: ModelProfile | undefined) => void;
+}) {
+	const [provider, setProvider] = useState(value?.provider ?? "");
+	const [id, setId] = useState(value?.id ?? "");
+
+	useEffect(() => {
+		setProvider(value?.provider ?? "");
+		setId(value?.id ?? "");
+	}, [value?.id, value?.provider]);
+
+	const emit = (nextProvider: string, nextId: string) => {
+		if (!nextProvider && !nextId) {
+			onChange(undefined);
+			return;
+		}
+		if (nextProvider && nextId) {
+			onChange({ provider: nextProvider, id: nextId });
+		}
+	};
+
+	return (
+		<div className="grid gap-2">
+			<div className="text-[11px] uppercase tracking-wider text-slate-500">{title}</div>
+			<div className="grid grid-cols-2 max-[1100px]:grid-cols-1 gap-2">
+				<input
+					value={provider}
+					disabled={readOnly}
+					onChange={(event) => {
+						const nextProvider = event.target.value.trim();
+						setProvider(nextProvider);
+						emit(nextProvider, id);
+					}}
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+					placeholder={`${placeholderLabel} provider`}
+				/>
+				<input
+					value={id}
+					disabled={readOnly}
+					onChange={(event) => {
+						const nextId = event.target.value.trim();
+						setId(nextId);
+						emit(provider, nextId);
+					}}
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+					placeholder={`${placeholderLabel} model`}
+				/>
+			</div>
 		</div>
 	);
 }

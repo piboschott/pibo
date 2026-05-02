@@ -87,6 +87,8 @@ export type InitialSessionContextOptions = {
 	sessionId?: string;
 	parentSessionId?: string;
 	model?: ModelProfile;
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	skills?: readonly SkillProfile[];
 	tools?: readonly ToolProfile[];
 	subagents?: readonly SubagentProfile[];
@@ -104,6 +106,8 @@ export class InitialSessionContext {
 	readonly sessionId?: string;
 	readonly parentSessionId?: string;
 	readonly model?: ModelProfile;
+	readonly mainModel?: ModelProfile;
+	readonly subagentModel?: ModelProfile;
 	readonly skills: readonly SkillProfile[];
 	readonly tools: readonly ToolProfile[];
 	readonly subagents: readonly SubagentProfile[];
@@ -120,6 +124,8 @@ export class InitialSessionContext {
 		this.sessionId = options.sessionId;
 		this.parentSessionId = options.parentSessionId;
 		this.model = options.model ? { ...options.model } : undefined;
+		this.mainModel = options.mainModel ? { ...options.mainModel } : undefined;
+		this.subagentModel = options.subagentModel ? { ...options.subagentModel } : undefined;
 		this.skills = [...(options.skills ?? [])];
 		this.tools = [...(options.tools ?? [])];
 		this.subagents = [...(options.subagents ?? [])];
@@ -138,6 +144,8 @@ export class InitialSessionContextBuilder {
 	private sessionId?: string;
 	private parentSessionId?: string;
 	private model?: ModelProfile;
+	private mainModel?: ModelProfile;
+	private subagentModel?: ModelProfile;
 	private skills: SkillProfile[] = [];
 	private tools: ToolProfile[] = [];
 	private subagents: SubagentProfile[] = [];
@@ -165,6 +173,16 @@ export class InitialSessionContextBuilder {
 
 	withModel(model: ModelProfile): this {
 		this.model = { ...model };
+		return this;
+	}
+
+	withMainModel(model: ModelProfile): this {
+		this.mainModel = { ...model };
+		return this;
+	}
+
+	withSubagentModel(model: ModelProfile): this {
+		this.subagentModel = { ...model };
 		return this;
 	}
 
@@ -254,6 +272,8 @@ export class InitialSessionContextBuilder {
 			sessionId: this.sessionId,
 			parentSessionId: this.parentSessionId,
 			model: this.model,
+			mainModel: this.mainModel,
+			subagentModel: this.subagentModel,
 			skills: this.skills,
 			tools: this.tools,
 			subagents: this.subagents,

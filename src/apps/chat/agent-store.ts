@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode } from "../../core/profiles.js";
+import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode, type ModelProfile } from "../../core/profiles.js";
 import { findPiPackage } from "../../pi-packages/store.js";
 
 export type CustomAgentSubagent = {
@@ -25,6 +25,8 @@ export type CustomAgentDefinition = {
 	subagents: CustomAgentSubagent[];
 	mcpServers: string[];
 	piPackages: string[];
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
@@ -46,6 +48,8 @@ export type CreateCustomAgentInput = {
 	subagents?: CustomAgentSubagent[];
 	mcpServers?: string[];
 	piPackages?: string[];
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools?: BuiltinToolsMode;
 	builtinToolNames?: string[];
 	autoContextFiles?: boolean;
@@ -66,6 +70,8 @@ type AgentRow = {
 	subagents_json: string;
 	mcp_servers_json: string;
 	pi_packages_json: string;
+	main_model_json: string | null;
+	subagent_model_json: string | null;
 	builtin_tools: BuiltinToolsMode;
 	builtin_tool_names_json: string;
 	auto_context_files: 0 | 1;
@@ -97,6 +103,8 @@ export class CustomAgentStore {
 				subagents_json TEXT NOT NULL,
 				mcp_servers_json TEXT NOT NULL DEFAULT '[]',
 				pi_packages_json TEXT NOT NULL DEFAULT '[]',
+				main_model_json TEXT,
+				subagent_model_json TEXT,
 				builtin_tools TEXT NOT NULL,
 				builtin_tool_names_json TEXT NOT NULL DEFAULT '["read","bash","edit","write"]',
 				auto_context_files INTEGER NOT NULL DEFAULT 1,
@@ -113,6 +121,7 @@ export class CustomAgentStore {
 		this.migrateAutoContextFilesColumn();
 		this.migrateMcpServersColumn();
 		this.migratePiPackagesColumn();
+		this.migrateModelColumns();
 		this.migrateBuiltinToolNamesColumn();
 		this.migrateLegacyProfileNames();
 	}
@@ -150,6 +159,8 @@ export class CustomAgentStore {
 			subagents: sanitizeSubagents(input.subagents ?? []),
 			mcpServers: uniqueStrings(input.mcpServers ?? []),
 			piPackages: sanitizePiPackages(input.piPackages ?? []),
+			mainModel: sanitizeModelProfile(input.mainModel),
+			subagentModel: sanitizeModelProfile(input.subagentModel),
 			builtinTools: input.builtinTools ?? "default",
 			builtinToolNames: sanitizeBuiltinToolNames(input.builtinToolNames),
 			autoContextFiles: input.autoContextFiles ?? true,
@@ -180,6 +191,8 @@ export class CustomAgentStore {
 			subagents: input.subagents ? sanitizeSubagents(input.subagents) : existing.subagents,
 			mcpServers: input.mcpServers ? uniqueStrings(input.mcpServers) : existing.mcpServers,
 			piPackages: input.piPackages ? sanitizePiPackages(input.piPackages) : existing.piPackages,
+			mainModel: input.mainModel === undefined ? existing.mainModel : sanitizeModelProfile(input.mainModel),
+			subagentModel: input.subagentModel === undefined ? existing.subagentModel : sanitizeModelProfile(input.subagentModel),
 			builtinTools: input.builtinTools ?? existing.builtinTools,
 			builtinToolNames: input.builtinToolNames ? sanitizeBuiltinToolNames(input.builtinToolNames) : existing.builtinToolNames,
 			autoContextFiles: input.autoContextFiles ?? existing.autoContextFiles,
@@ -198,6 +211,8 @@ export class CustomAgentStore {
 					subagents_json = ?,
 					mcp_servers_json = ?,
 					pi_packages_json = ?,
+					main_model_json = ?,
+					subagent_model_json = ?,
 					builtin_tools = ?,
 					builtin_tool_names_json = ?,
 					auto_context_files = ?,
@@ -215,6 +230,8 @@ export class CustomAgentStore {
 				JSON.stringify(sanitizeSubagents(updated.subagents)),
 				JSON.stringify(updated.mcpServers),
 				JSON.stringify(updated.piPackages),
+				updated.mainModel ? JSON.stringify(updated.mainModel) : null,
+				updated.subagentModel ? JSON.stringify(updated.subagentModel) : null,
 				updated.builtinTools,
 				JSON.stringify(updated.builtinToolNames),
 				updated.autoContextFiles ? 1 : 0,
@@ -260,6 +277,8 @@ export class CustomAgentStore {
 					subagents_json,
 					mcp_servers_json,
 					pi_packages_json,
+					main_model_json,
+					subagent_model_json,
 					builtin_tools,
 					builtin_tool_names_json,
 					auto_context_files,
@@ -267,7 +286,7 @@ export class CustomAgentStore {
 					created_at,
 					updated_at,
 					archived_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				agent.id,
@@ -281,6 +300,8 @@ export class CustomAgentStore {
 				JSON.stringify(sanitizeSubagents(agent.subagents)),
 				JSON.stringify(agent.mcpServers),
 				JSON.stringify(agent.piPackages),
+				agent.mainModel ? JSON.stringify(agent.mainModel) : null,
+				agent.subagentModel ? JSON.stringify(agent.subagentModel) : null,
 				agent.builtinTools,
 				JSON.stringify(agent.builtinToolNames),
 				agent.autoContextFiles ? 1 : 0,
@@ -350,6 +371,18 @@ export class CustomAgentStore {
 		}
 	}
 
+	private migrateModelColumns(): void {
+		const columns = new Set(
+			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
+		);
+		if (!columns.has("main_model_json")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN main_model_json TEXT").run();
+		}
+		if (!columns.has("subagent_model_json")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN subagent_model_json TEXT").run();
+		}
+	}
+
 	private migrateBuiltinToolNamesColumn(): void {
 		const columns = new Set(
 			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -377,6 +410,8 @@ function agentFromRow(row: AgentRow): CustomAgentDefinition {
 		subagents: parseSubagents(row.subagents_json),
 		mcpServers: parseStringArray(row.mcp_servers_json),
 		piPackages: parseStringArray(row.pi_packages_json),
+		mainModel: parseModelProfile(row.main_model_json),
+		subagentModel: parseModelProfile(row.subagent_model_json),
 		builtinTools: row.builtin_tools,
 		builtinToolNames: sanitizeBuiltinToolNames(parseStringArray(row.builtin_tool_names_json)),
 		autoContextFiles: row.auto_context_files !== 0,
@@ -422,6 +457,24 @@ function parseSubagents(value: string): CustomAgentSubagent[] {
 	} catch {
 		return [];
 	}
+}
+
+function parseModelProfile(value: string | null): ModelProfile | undefined {
+	if (!value) return undefined;
+	try {
+		return sanitizeModelProfile(JSON.parse(value));
+	} catch {
+		return undefined;
+	}
+}
+
+function sanitizeModelProfile(value: ModelProfile | undefined): ModelProfile | undefined {
+	if (!value) return undefined;
+	if (typeof value.provider !== "string" || typeof value.id !== "string") return undefined;
+	const provider = value.provider.trim();
+	const id = value.id.trim();
+	if (!provider || !id) return undefined;
+	return { provider, id };
 }
 
 function sanitizeSubagents(value: unknown[]): CustomAgentSubagent[] {

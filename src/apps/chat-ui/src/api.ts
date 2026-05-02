@@ -1,4 +1,4 @@
-import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, PiboRoom, PiboSession, PiboSessionTraceView } from "./types";
+import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, PiboRoom, PiboSession, PiboSessionTraceView } from "./types";
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -322,6 +322,8 @@ export type SaveCustomAgentInput = {
 	subagents: CustomAgent["subagents"];
 	mcpServers: string[];
 	piPackages: string[];
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools: "default" | "disabled";
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
@@ -345,6 +347,14 @@ export async function patchCustomAgent(
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(input),
 	});
+}
+
+export async function patchModelDefaults(input: ModelDefaults): Promise<ModelDefaults> {
+	return (await requestJson<{ modelDefaults: ModelDefaults }>("/api/chat/model-defaults", {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	})).modelDefaults;
 }
 
 export async function deleteCustomAgent(id: string, confirmName: string): Promise<{ deletedAgentId: string; deletedSessionIds: string[] }> {
@@ -505,6 +515,7 @@ function normalizeBootstrap(payload: Partial<BootstrapData>): BootstrapData {
 		sessions,
 		agents: payload.agents ?? [],
 		customAgents: payload.customAgents ?? [],
+		modelDefaults: payload.modelDefaults,
 		agentCatalog: payload.agentCatalog
 			? {
 				...payload.agentCatalog,

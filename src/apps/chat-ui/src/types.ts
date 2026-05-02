@@ -129,8 +129,19 @@ export type BootstrapData = {
 	sessions: PiboWebSessionNode[];
 	agents: AgentProfile[];
 	customAgents: CustomAgent[];
+	modelDefaults?: ModelDefaults;
 	agentCatalog?: AgentCatalog;
 	capabilities: { actions: Array<{ name: string; description?: string; slashCommands: string[] }> };
+};
+
+export type ModelProfile = {
+	provider: string;
+	id: string;
+};
+
+export type ModelDefaults = {
+	main?: ModelProfile;
+	subagent?: ModelProfile;
 };
 
 export type AgentProfile = {
@@ -143,6 +154,9 @@ export type AgentProfile = {
 	subagents?: CustomAgentSubagent[];
 	mcpServers?: string[];
 	piPackages?: string[];
+	model?: ModelProfile;
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools?: "default" | "disabled";
 	builtinToolNames?: string[];
 	autoContextFiles?: boolean;
@@ -222,6 +236,8 @@ export type CustomAgent = {
 	subagents: CustomAgentSubagent[];
 	mcpServers: string[];
 	piPackages: string[];
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools: "default" | "disabled";
 	builtinToolNames: string[];
 	autoContextFiles: boolean;

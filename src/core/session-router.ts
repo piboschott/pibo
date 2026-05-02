@@ -63,6 +63,8 @@ function profileForSession(
 		sessionId: piSessionId,
 		parentSessionId: parentPiSessionId,
 		model: baseProfile.model,
+		mainModel: baseProfile.mainModel,
+		subagentModel: baseProfile.subagentModel,
 		skills: baseProfile.skills,
 		tools: baseProfile.tools,
 		subagents: baseProfile.subagents,

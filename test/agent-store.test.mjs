@@ -168,3 +168,23 @@ test("custom agent store persists selected registered Pi packages", async () => 
 		store.close();
 	});
 });
+
+test("custom agent store persists main and subagent model overrides", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	const agent = store.create({
+		ownerScope: "user:test",
+		displayName: "model-agent",
+		mainModel: { provider: "openai", id: "gpt-5.4" },
+		subagentModel: { provider: "kimi-coding", id: "kimi-for-coding" },
+	});
+
+	assert.deepEqual(agent.mainModel, { provider: "openai", id: "gpt-5.4" });
+	assert.deepEqual(agent.subagentModel, { provider: "kimi-coding", id: "kimi-for-coding" });
+
+	const updated = store.update(agent.id, { subagentModel: { provider: "openai", id: "gpt-5.5" } });
+	assert.deepEqual(updated.mainModel, { provider: "openai", id: "gpt-5.4" });
+	assert.deepEqual(updated.subagentModel, { provider: "openai", id: "gpt-5.5" });
+
+	store.close();
+});

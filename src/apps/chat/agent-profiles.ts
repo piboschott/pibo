@@ -15,6 +15,8 @@ export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition)
 				.withMcpServers(agent.mcpServers)
 				.withPiPackages(agent.piPackages.map((id) => ({ id })))
 				.withToolPackages({ runControl: agent.runControl });
+			if (agent.mainModel) builder.withMainModel(agent.mainModel);
+			if (agent.subagentModel) builder.withSubagentModel(agent.subagentModel);
 
 			for (const skillName of agent.skills) builder.addSkill(context.getSkill(skillName));
 			for (const contextFileKey of agent.contextFiles) builder.addContextFile(context.getContextFile(contextFileKey));

@@ -22,6 +22,7 @@ import {
 	type InitialSessionContext,
 	type ToolProfile,
 } from "./profiles.js";
+import { loadPiboModelDefaults, selectRequestedModelProfile } from "./model-defaults.js";
 import { createDefaultPiboProfile } from "../plugins/builtin.js";
 import {
 	createSubagentToolDefinitions,
@@ -301,7 +302,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			services,
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
-			model: resolveProfileModel(profile, services),
+			model: resolveProfileModel(profile, services, runtimeCwd),
 			thinkingLevel: options.thinkingLevel,
 			customTools,
 			noTools: profile.builtinTools === "disabled" ? "builtin" : undefined,
@@ -336,19 +337,21 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 function resolveProfileModel(
 	profile: InitialSessionContext,
 	services: Awaited<ReturnType<typeof createAgentSessionServices>>,
+	cwd: string,
 ) {
-	if (!profile.model) return undefined;
+	const requestedModel = selectRequestedModelProfile(profile, loadPiboModelDefaults(cwd));
+	if (!requestedModel) return undefined;
 
-	const model = services.modelRegistry.find(profile.model.provider, profile.model.id);
+	const model = services.modelRegistry.find(requestedModel.provider, requestedModel.id);
 	if (!model) {
 		throw new Error(
-			`Profile "${profile.profileName}" requests unknown model ${profile.model.provider}/${profile.model.id}.`,
+			`Profile "${profile.profileName}" requests unknown model ${requestedModel.provider}/${requestedModel.id}.`,
 		);
 	}
 
 	if (!services.modelRegistry.hasConfiguredAuth(model)) {
 		throw new Error(
-			`Profile "${profile.profileName}" requires configured auth for ${profile.model.provider}/${profile.model.id}.`,
+			`Profile "${profile.profileName}" requires configured auth for ${requestedModel.provider}/${requestedModel.id}.`,
 		);
 	}
 

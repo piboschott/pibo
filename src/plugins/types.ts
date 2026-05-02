@@ -19,6 +19,7 @@ import type {
 	ContextFileProfile,
 	BuiltinToolsMode,
 	InitialSessionContext,
+	ModelProfile,
 	ProviderToolProfile,
 	SkillProfile,
 	SubagentProfile,
@@ -52,6 +53,9 @@ export type PiboProfileInfo = {
 	subagents: SubagentProfile[];
 	mcpServers: string[];
 	piPackages: string[];
+	model?: ModelProfile;
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;

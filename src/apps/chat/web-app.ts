@@ -33,6 +33,12 @@ import {
 	type CustomAgentSubagent,
 	type UpdateCustomAgentInput,
 } from "./agent-store.js";
+import {
+	loadPiboModelDefaults,
+	savePiboModelDefaults,
+	type PiboModelDefaults,
+} from "../../core/model-defaults.js";
+import type { ModelProfile } from "../../core/profiles.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
 import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
@@ -116,6 +122,8 @@ type ChatAgentBody = {
 	subagents?: unknown;
 	mcpServers?: unknown;
 	piPackages?: unknown;
+	mainModel?: unknown;
+	subagentModel?: unknown;
 	builtinTools?: unknown;
 	builtinToolNames?: unknown;
 	autoContextFiles?: unknown;
@@ -140,6 +148,11 @@ type ChatPiPackageBody = {
 type ChatPiPackagePatchBody = {
 	enabled?: unknown;
 	source?: unknown;
+};
+
+type ChatModelDefaultsBody = {
+	main?: unknown;
+	subagent?: unknown;
 };
 
 type ChatMessageBody = {
@@ -464,6 +477,23 @@ function normalizeRunControl(value: unknown): boolean {
 	return value;
 }
 
+function normalizeModelProfile(value: unknown, fieldName: string): ModelProfile | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new PiboWebHttpError(`${fieldName} must be an object`, 400);
+	}
+	const raw = value as Record<string, unknown>;
+	if (typeof raw.provider !== "string" || typeof raw.id !== "string") {
+		throw new PiboWebHttpError(`${fieldName} must include provider and id`, 400);
+	}
+	const provider = raw.provider.trim();
+	const id = raw.id.trim();
+	if (!provider || !id) {
+		throw new PiboWebHttpError(`${fieldName} must include provider and id`, 400);
+	}
+	return { provider, id };
+}
+
 function normalizeMcpServerDescriptionBody(value: unknown): string {
 	if (typeof value !== "string") throw new PiboWebHttpError("MCP server description must be a string", 400);
 	const description = value.replace(/\s+/g, " ").trim();
@@ -574,6 +604,17 @@ function createRoomStore(path?: string): PiboRoomStore {
 
 function createAgentStore(path?: string): CustomAgentStore {
 	return path ? new CustomAgentStore(path) : createDefaultCustomAgentStore();
+}
+
+function loadChatModelDefaults(cwd = process.cwd()): PiboModelDefaults {
+	return loadPiboModelDefaults(cwd);
+}
+
+function updateChatModelDefaults(body: ChatModelDefaultsBody, cwd = process.cwd()): PiboModelDefaults {
+	return savePiboModelDefaults({
+		main: normalizeModelProfile(body.main, "main"),
+		subagent: normalizeModelProfile(body.subagent, "subagent"),
+	}, cwd);
 }
 
 function createReliabilityStore(path?: string): PiboReliabilityStore {
@@ -899,6 +940,8 @@ function createAgentInput(ownerScope: string, body: ChatAgentBody) {
 		subagents: normalizeAgentSubagents(body.subagents),
 		mcpServers: normalizeNameArray(body.mcpServers, "mcpServers"),
 		piPackages: normalizeRegisteredPiPackages(body.piPackages),
+		mainModel: normalizeModelProfile(body.mainModel, "mainModel"),
+		subagentModel: normalizeModelProfile(body.subagentModel, "subagentModel"),
 		builtinTools: normalizeBuiltinTools(body.builtinTools),
 		builtinToolNames: normalizeBuiltinToolNames(body.builtinToolNames),
 		autoContextFiles: normalizeAutoContextFiles(body.autoContextFiles),
@@ -916,6 +959,8 @@ function createAgentUpdate(body: ChatAgentBody): UpdateCustomAgentInput {
 	if (body.subagents !== undefined) update.subagents = normalizeAgentSubagents(body.subagents);
 	if (body.mcpServers !== undefined) update.mcpServers = normalizeNameArray(body.mcpServers, "mcpServers");
 	if (body.piPackages !== undefined) update.piPackages = normalizeRegisteredPiPackages(body.piPackages);
+	if (body.mainModel !== undefined) update.mainModel = normalizeModelProfile(body.mainModel, "mainModel");
+	if (body.subagentModel !== undefined) update.subagentModel = normalizeModelProfile(body.subagentModel, "subagentModel");
 	if (body.builtinTools !== undefined) update.builtinTools = normalizeBuiltinTools(body.builtinTools);
 	if (body.builtinToolNames !== undefined) update.builtinToolNames = normalizeBuiltinToolNames(body.builtinToolNames);
 	if (body.autoContextFiles !== undefined) update.autoContextFiles = normalizeAutoContextFiles(body.autoContextFiles);
@@ -2382,6 +2427,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					sessions,
 					agents: context.channelContext.getProfiles?.() ?? [],
 					customAgents: state.agentStore.list(webSession.ownerScope, { includeArchived: true }),
+					modelDefaults: loadChatModelDefaults(process.cwd()),
 					agentCatalog: await buildAgentCatalog(context),
 					capabilities: {
 						actions: context.channelContext.getGatewayActions(),
@@ -2395,6 +2441,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					catalog: await buildAgentCatalog(context),
 					profiles: context.channelContext.getProfiles?.() ?? [],
 				});
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/model-defaults` && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const body = await readJsonBody<ChatModelDefaultsBody>(request);
+				return responseJson({ modelDefaults: updateChatModelDefaults(body, process.cwd()) });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/pi-packages` && request.method === "GET") {
