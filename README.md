@@ -9,7 +9,7 @@ Pi remains the inner engine for model turns, tools, streaming, sessions, and com
 Pibo V1 targets Node.js 24+.
 
 ```bash
-npm install -g pibo
+npm install -g @pasko70/pibo
 pibo --help
 ```
 
