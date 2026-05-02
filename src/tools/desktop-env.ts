@@ -95,3 +95,13 @@ export function printDesktopEnvStatus(indent = '  '): void {
   console.log(`${indent}desktop: not detected`);
   console.log(`${indent}warning: headed browser mode is unavailable; use headless mode or start a desktop display first.`);
 }
+
+export function printLinuxVirtualDisplayHint(indent = '  '): void {
+  if (process.platform !== 'linux') return;
+
+  console.log(`${indent}linux headed browser hint:`);
+  console.log(`${indent}  Install a virtual X display if this host has no desktop session.`);
+  console.log(`${indent}  Ubuntu/Debian: sudo apt update && sudo apt install -y xvfb xauth x11-xserver-utils`);
+  console.log(`${indent}  Start one display: Xvfb :0 -screen 0 1920x1080x24 -ac -nolisten tcp`);
+  console.log(`${indent}  Then export DISPLAY=:0 before running browser-use.`);
+}

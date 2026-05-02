@@ -4,7 +4,13 @@ import { mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ErrorCode, formatCliError } from '../cli-errors.js';
-import { getDesktopProcessEnv, printDesktopEnvStatus } from './desktop-env.js';
+import {
+  detectDesktopEnv,
+  getDesktopProcessEnv,
+  hasDesktopDisplay,
+  printDesktopEnvStatus,
+  printLinuxVirtualDisplayHint,
+} from './desktop-env.js';
 
 export interface ToolPythonRuntimeSpec {
   packageName: string;
@@ -155,6 +161,9 @@ export async function printToolPythonRuntimeDoctor(
   console.log(`  venv: ${existsSync(paths.venvDir) ? 'present' : 'missing'}`);
   console.log(`  executable: ${existsSync(paths.executablePath) ? paths.executablePath : 'missing'}`);
   printDesktopEnvStatus('  ');
+  if (name === 'browser-use' && process.platform === 'linux' && !hasDesktopDisplay(detectDesktopEnv())) {
+    printLinuxVirtualDisplayHint('  ');
+  }
 
   if (existsSync(paths.executablePath)) {
     const doctor = await runBuffered(paths.executablePath, ['doctor'], getToolPythonRuntimeEnv(paths, spec));

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { printDesktopEnvStatus } from './desktop-env.js';
+import { detectDesktopEnv, hasDesktopDisplay, printDesktopEnvStatus, printLinuxVirtualDisplayHint } from './desktop-env.js';
 import { type ToolGuide, BROWSER_USE_GUIDE, REMOTE_BROWSER_GUIDE } from './guides.js';
 import {
   type ToolPythonRuntimeSpec,
@@ -139,6 +139,9 @@ export async function installCliTool(entry: CliToolEntry, runSetup: boolean): Pr
   console.log(`  executable: ${status.executablePath}`);
   console.log(`  home: ${status.homeDir}`);
   printDesktopEnvStatus('  ');
+  if (entry.name === 'browser-use' && process.platform === 'linux' && !hasDesktopDisplay(detectDesktopEnv())) {
+    printLinuxVirtualDisplayHint('  ');
+  }
   console.log(`  env: pibo tools env ${entry.name}`);
 }
 

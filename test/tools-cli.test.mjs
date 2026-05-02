@@ -84,6 +84,11 @@ test("pibo tools install supports a no-setup dry target", async () => {
 		assert.match(result.stdout, /Install target browser-use/);
 		assert.match(result.stdout, /pibo-home\/tools\/browser-use/);
 		assert.match(result.stdout, /desktop: /);
+		if (process.platform === "linux" && /desktop: not detected/.test(result.stdout)) {
+			assert.match(result.stdout, /linux headed browser hint:/);
+			assert.match(result.stdout, /Install a virtual X display if this host has no desktop session\./);
+			assert.match(result.stdout, /Xvfb :0 -screen 0 1920x1080x24 -ac -nolisten tcp/);
+		}
 		assert.match(result.stdout, /env: pibo tools env browser-use/);
 	} finally {
 		await rm(cwd, { recursive: true, force: true });
