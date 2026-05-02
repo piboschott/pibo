@@ -4,6 +4,23 @@ Pibo turns Pi Coding Agent into an agent-native runtime with discoverable CLI to
 
 Pi remains the inner engine for model turns, tools, streaming, sessions, and compaction. Pibo owns the outer product boundary: profiles, plugin registration, channels, routing, Pibo Sessions, auth, policy, and transport-specific adapters.
 
+## Install
+
+Pibo V1 targets Node.js 24+.
+
+```bash
+npm install -g pibo
+pibo --help
+```
+
+For local development from source:
+
+```bash
+npm install
+npm run build
+npm run start -- --help
+```
+
 ## Docs
 
 - `docs/architecture.md` describes the current runtime architecture and boundaries.

@@ -1,5 +1,4 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Breadcrumbs } from "@components-pasko/breadcrumbs";
 import { Check, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, GitBranch, GitFork, ListTree, MessageSquarePlus, RefreshCw, RotateCcw } from "lucide-react";
 import type { Span, Trace } from "../types";
 import { countRender } from "../renderMetrics";
@@ -43,6 +42,10 @@ export type SessionDerivationLink = {
 	profile: string;
 	status: "idle" | "running" | "error";
 };
+
+type BreadcrumbDisplayItem =
+	| { type: "item"; item: SessionBreadcrumbItem; current: boolean }
+	| { type: "ellipsis" };
 
 const timelineContentStyle = {
 	"--trace-readable-width": "min(100%, clamp(36rem, 58vw, 64rem))",
@@ -351,49 +354,60 @@ function SessionBreadcrumbs({
 	onOpenSession: (piboSessionId: string) => void;
 }) {
 	if (items.length <= 1) return null;
-	const labels = Object.fromEntries(items.map((item) => [item.piboSessionId, item.label]));
-	const pathname = `/${items.map((item) => encodeURIComponent(item.piboSessionId)).join("/")}`;
-	const sessionIds = new Set(items.map((item) => item.piboSessionId));
+	const displayItems = getBreadcrumbDisplayItems(items);
 
 	return (
-		<Breadcrumbs
-			pathname={pathname}
-			labels={labels}
-			maxItems={5}
-			keepFirst={1}
-			keepLast={2}
-			separator={<ChevronRight size={12} />}
-			ellipsis="..."
-			ariaLabel="Session hierarchy"
-			unstyled
-			classNames={{
-				nav: "min-w-0",
-				list: "flex min-w-0 items-center gap-1 overflow-hidden text-[11px] leading-4",
-				item: "inline-flex min-w-0 items-center",
-				link: "block min-w-0 max-w-48 truncate font-mono text-slate-400 transition-colors hover:text-[#11a4d4]",
-				current: "block min-w-0 max-w-56 truncate font-mono text-slate-200",
-				separator: "shrink-0 text-slate-600",
-				ellipsis: "shrink-0 px-1 font-mono text-slate-500",
-				label: "block min-w-0 truncate",
-			}}
-			renderLink={({ item, className, children }) => {
-				const piboSessionId = item.decodedSegment;
-				if (!sessionIds.has(piboSessionId)) return <span className={className}>{children}</span>;
-				return (
-					<a
-						href={`/sessions/${encodeURIComponent(piboSessionId)}`}
-						className={className}
-						onClick={(event) => {
-							event.preventDefault();
-							onOpenSession(piboSessionId);
-						}}
-					>
-						{children}
-					</a>
-				);
-			}}
-		/>
+		<nav aria-label="Session hierarchy" className="min-w-0">
+			<ol className="flex min-w-0 items-center gap-1 overflow-hidden text-[11px] leading-4">
+				{displayItems.map((entry, index) => (
+					entry.type === "ellipsis" ? (
+						<li key={`ellipsis-${index}`} className="inline-flex shrink-0 items-center gap-1">
+							{index > 0 ? <ChevronRight size={12} className="shrink-0 text-slate-600" /> : null}
+							<span className="shrink-0 px-1 font-mono text-slate-500">...</span>
+						</li>
+					) : (
+						<li key={entry.item.piboSessionId} className="inline-flex min-w-0 items-center gap-1">
+							{index > 0 ? <ChevronRight size={12} className="shrink-0 text-slate-600" /> : null}
+							{entry.current ? (
+								<span className="block min-w-0 max-w-56 truncate font-mono text-slate-200">{entry.item.label}</span>
+							) : (
+								<a
+									href={`/sessions/${encodeURIComponent(entry.item.piboSessionId)}`}
+									className="block min-w-0 max-w-48 truncate font-mono text-slate-400 transition-colors hover:text-[#11a4d4]"
+									onClick={(event) => {
+										event.preventDefault();
+										onOpenSession(entry.item.piboSessionId);
+									}}
+								>
+									{entry.item.label}
+								</a>
+							)}
+						</li>
+					)
+				))}
+			</ol>
+		</nav>
 	);
+}
+
+function getBreadcrumbDisplayItems(items: readonly SessionBreadcrumbItem[]): BreadcrumbDisplayItem[] {
+	if (items.length <= 5) {
+		return items.map((item, index) => ({
+			type: "item",
+			item,
+			current: index === items.length - 1,
+		}));
+	}
+
+	return [
+		{ type: "item", item: items[0], current: false },
+		{ type: "ellipsis" },
+		...items.slice(-2).map((item, index, tail) => ({
+			type: "item" as const,
+			item,
+			current: index === tail.length - 1,
+		})),
+	];
 }
 
 function EmptyTraceAgentChooser({

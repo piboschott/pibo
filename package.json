@@ -1,9 +1,16 @@
 {
   "name": "pibo",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
   "type": "module",
   "description": "Minimal TypeScript wrapper around Pi Coding Agent.",
+  "files": [
+    "dist",
+    "context",
+    ".codex/skills/pi-agent-harness/SKILL.md",
+    ".codex/skills/pi-agent-harness/agents/openai.yaml",
+    "README.md",
+    "src/mcp/LICENSE.mcp-cli"
+  ],
   "bin": {
     "pibo": "dist/bin/pibo.js"
   },
@@ -28,10 +35,10 @@
     "start": "node dist/bin/pibo.js",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run chat-ui:typecheck && npm run context-files-ui:typecheck",
-    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm run build"
   },
   "dependencies": {
-    "@components-pasko/breadcrumbs": "file:../pasko-components/packages/breadcrumbs",
     "@mariozechner/pi-ai": "^0.70.2",
     "@mariozechner/pi-coding-agent": "^0.70.2",
     "@mdxeditor/editor": "^3.55.0",
