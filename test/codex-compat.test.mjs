@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import test from "node:test";
 import { buildCodexCompatSystemPrompt, addCodexCompatWebSearchProviderTool } from "../dist/core/codex-compat.js";
@@ -12,6 +13,8 @@ test("default registry exposes the codex-compatible profile and tool surface", (
 	assert.equal(profile.profileName, "codex-compat");
 	assert.equal(profile.builtinTools, "disabled");
 	assert.equal(profile.toolPackages.codexCompat, true);
+	assert.equal(profile.toolPackages.providerWebSearch, false);
+	assert.equal(profile.toolPackages.runControl, true);
 	assert.deepEqual(
 		profile.tools.map((tool) => tool.name),
 		[
@@ -20,20 +23,18 @@ test("default registry exposes the codex-compatible profile and tool surface", (
 			"apply_patch",
 			"web_search",
 			"view_image",
-			"spawn_agent",
-			"send_input",
-			"resume_agent",
-			"wait_agent",
-			"close_agent",
 		],
 	);
 	assert.deepEqual(
 		profile.subagents.map((subagent) => subagent.name),
 		["default", "explorer", "worker"],
 	);
+	assert.deepEqual(profile.contextFiles.map((contextFile) => contextFile.key), ["Codex Base Prompt"]);
+	assert.deepEqual(profile.contextFiles.map((contextFile) => basename(contextFile.path)), ["codex-base-prompt.md"]);
+	assert.equal(existsSync(profile.contextFiles[0].path), true);
 });
 
-test("codex-compatible profile inspection shows active generated tools and provider web search", async () => {
+test("codex-compatible profile inspection shows active generated tools and local web search", async () => {
 	const registry = createDefaultPiboPluginRegistry();
 	const profile = registry.createProfile("codex-compat");
 	const inspection = await inspectPiboProfile({ profile, persistSession: false });
@@ -45,26 +46,41 @@ test("codex-compatible profile inspection shows active generated tools and provi
 		"apply_patch",
 		"web_search",
 		"view_image",
+	]) {
+		assert.equal(activeTools.has(toolName), true, `${toolName} should be active`);
+	}
+	for (const toolName of [
 		"spawn_agent",
 		"send_input",
 		"resume_agent",
 		"wait_agent",
 		"close_agent",
 	]) {
+		assert.equal(activeTools.has(toolName), false, `${toolName} should not be active`);
+	}
+	for (const toolName of [
+		"pibo_subagent_default",
+		"pibo_subagent_explorer",
+		"pibo_subagent_worker",
+		"pibo_run_start",
+		"pibo_run_list",
+		"pibo_run_status",
+		"pibo_run_wait",
+		"pibo_run_read",
+		"pibo_run_cancel",
+		"pibo_run_ack",
+	]) {
 		assert.equal(activeTools.has(toolName), true, `${toolName} should be active`);
 	}
-	assert.deepEqual(
-		inspection.contextFiles
-			.map((contextFile) => basename(contextFile.path))
-			.filter((path) => /^(?:AGENTS|RULES|GLOSSARY)\.md$/.test(path)),
-		["AGENTS.md", "RULES.md", "GLOSSARY.md"],
-	);
-	assert.equal(inspection.subagents.every((subagent) => subagent.active), false);
+	const contextFileNames = inspection.contextFiles.map((contextFile) => basename(contextFile.path));
+	assert.equal(contextFileNames.includes("codex-base-prompt.md"), true);
+	assert.equal(profile.contextFiles.some((contextFile) => /^(?:AGENTS|RULES|GLOSSARY)\.md$/.test(basename(contextFile.path))), false);
+	assert.equal(inspection.subagents.every((subagent) => subagent.active), true);
 });
 
 test("codex-compatible prompt adds environment and child-agent framing without plan-mode tools", () => {
 	const prompt = buildCodexCompatSystemPrompt({
-		baseSystemPrompt: "Base prompt with AGENTS.md, RULES.md, and GLOSSARY.md content.",
+		baseSystemPrompt: "Base prompt with Codex base-prompt context.",
 		cwd: "/repo",
 		shell: "bash",
 		currentDate: "2026-05-02",

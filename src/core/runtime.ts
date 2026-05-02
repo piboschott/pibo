@@ -122,11 +122,11 @@ function getEnabledToolDefinitions(
 				shellPath: options.shellPath,
 			}) as unknown as ToolDefinition
 		: undefined;
-	const subagentTools = subagentRunner && !codexCompatEnabled
+	const subagentTools = subagentRunner
 		? createSubagentToolDefinitions(profile.subagents, subagentRunner)
 		: [];
 	const codexCompatTools = codexCompatEnabled
-		? createCodexCompatToolDefinitions({ subagents: profile.subagents, subagentRunner })
+		? createCodexCompatToolDefinitions()
 		: [];
 	const yieldableTools = [
 		...(runControlBashTool ? [runControlBashTool] : []),

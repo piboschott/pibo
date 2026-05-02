@@ -2618,11 +2618,6 @@ const CODEX_COMPAT_TOOL_NAMES = new Set([
 	"apply_patch",
 	"web_search",
 	"view_image",
-	"spawn_agent",
-	"send_input",
-	"resume_agent",
-	"wait_agent",
-	"close_agent",
 ]);
 type CatalogGroup<T> = {
 	key: string;

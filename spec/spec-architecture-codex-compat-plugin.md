@@ -9,7 +9,7 @@ tags: [architecture, design, plugins, profiles, tools, prompt, subagents, auth]
 
 # Introduction
 
-This specification defines a narrow Codex-compatibility layer for Pibo. The goal is not to clone the full Codex product. The goal is to make a Codex-tuned model experience a Pibo runtime that feels close to Codex in the model-visible environment: prompt structure, tool surface, subagent semantics, skill system, project instructions, and runtime context.
+This specification defines a narrow Codex-compatibility layer for Pibo. The goal is not to clone the full Codex product. The goal is to make a Codex-tuned model experience a Pibo runtime that keeps useful Codex-compatible coding affordances while using Pibo's native agent orchestration model: Pibo subagents, yielded runs, run notifications, and run-control tools.
 
 ## 1. Purpose & Scope
 
@@ -17,9 +17,9 @@ This specification covers:
 
 - A new `codex-compat` plugin and profile set for Pibo.
 - Codex-like model-visible tools, tool names, and tool descriptions.
-- Provider-delegated `web_search` using the same authentication path already used by Pibo and Pi.
-- Codex-like subagent roles and subagent tool semantics.
-- Codex-like prompt assembly, including project docs and environment context.
+- Local `web_search` with an optional provider-backed path using the same authentication path already used by Pibo and Pi when provider search is enabled.
+- Codex-like subagent roles exposed through Pibo's native subagent and yielded-run system.
+- Codex-like prompt assembly, including one Codex base-prompt context file and environment context.
 - A phased implementation plan and acceptance criteria.
 
 This specification does not cover:
@@ -41,7 +41,8 @@ Assumptions:
 - **Codex compatibility plugin**: A Pibo plugin that exposes a Codex-like agent-facing environment without recreating the full Codex product.
 - **Agent-visible parity**: Parity focused only on what the model can see: instructions, tools, skills, subagents, context files, and runtime metadata.
 - **Codex-compatible profile**: A Pibo profile that selects the Codex-like tool surface, skills, subagents, and prompt contract.
-- **Provider-delegated web search**: A `web_search` tool exposed to the model but executed by the model provider through the Responses API rather than by a local browser stack.
+- **Local web search**: A `web_search` tool exposed to the model and executed by Pibo as a local HTTP search-result fetch.
+- **OpenAI provider-backed web search**: An optional `web_search` path executed by OpenAI through the Responses API rather than by a local browser stack.
 - **Compatibility alias**: A tool or profile name chosen to match Codex naming even when the underlying implementation is different.
 - **Root agent**: The main routed Pibo session for the user-facing conversation.
 - **Child agent**: A delegated agent session created through the Codex-compatible multi-agent tool surface.
@@ -52,9 +53,9 @@ Assumptions:
 - **REQ-001**: Pibo MUST implement Codex compatibility as a narrow plugin and profile layer, not as a fork of Pi Coding Agent.
 - **REQ-002**: The Codex-compatible environment MUST prioritize model-visible parity over human UI parity.
 - **REQ-003**: The Codex compatibility layer MUST reuse Pibo's existing provider authentication path and MUST NOT introduce a second independent auth flow for model-backed tools.
-- **REQ-004**: `web_search` MUST be implemented as a provider-delegated tool using the same model provider request path as normal model turns.
+- **REQ-004**: `web_search` MUST be exposed as a Codex-compatible model-visible tool. The default implementation MAY be local, and OpenAI provider-backed search MAY be enabled by profile configuration.
 - **REQ-005**: The Codex-compatible `web_search` tool MUST support the same visible control concepts as Codex:
-  - cached vs live external web access
+  - cached vs live external web access when provider-backed search is enabled
   - optional allowed domains
   - optional user location
   - optional search context size
@@ -64,16 +65,11 @@ Assumptions:
   - `apply_patch`
   - `web_search`
   - `view_image`
-  - `spawn_agent`
-  - `send_input`
-  - `resume_agent`
-  - `wait_agent`
-  - `close_agent`
-- **REQ-007**: The Codex compatibility layer SHOULD expose `update_plan` and `request_user_input` only if the behavior can be made coherent inside Pibo. If omitted, the prompt contract MUST explicitly steer the model toward direct execution and normal chat questions.
+- **REQ-007**: The Codex compatibility layer MUST NOT expose `request_user_input` in this plugin. Agents should ask normal chat questions when user clarification is needed.
 - **REQ-008**: Codex-compatible subagents MUST expose roles `default`, `explorer`, and `worker`.
 - **REQ-009**: Child-agent prompt framing MUST state that the child agent is part of a team, may continue delegated work, and returns its final result to the parent.
 - **REQ-010**: The compatibility profile MUST continue to use the existing `SKILL.md` skill system.
-- **REQ-011**: The compatibility prompt builder MUST include project instructions from `AGENTS.md`, `RULES.md`, and `GLOSSARY.md`.
+- **REQ-011**: The compatibility plugin MUST register exactly one plugin-owned context file for the Codex base prompt.
 - **REQ-012**: The compatibility prompt builder MUST inject an explicit environment context block with at least `cwd`, `shell`, `current_date`, `timezone`, and visible subagent role information.
 - **REQ-013**: The compatibility layer MUST allow selective reuse of the extracted static Codex base prompt, but MUST remove instructions that depend on product features Pibo does not implement.
 - **REQ-014**: The implementation MUST preserve the current Pibo product boundary: tools, routing, prompt ownership, auth, and policy remain Pibo responsibilities.
@@ -81,15 +77,21 @@ Assumptions:
 - **REQ-016**: The first implementation MUST prefer a single `codex-compat` profile over many variants.
 - **REQ-017**: The first implementation MUST avoid introducing marketplace, connector, or plugin-install semantics into the model prompt.
 - **REQ-018**: Compatibility work MUST remain surgical. Existing non-Codex profiles and unrelated plugin behavior MUST remain unchanged unless directly required for shared infrastructure.
+- **REQ-019**: The compatibility plugin MUST NOT register project-local instruction files such as `AGENTS.md`, `RULES.md`, or `GLOSSARY.md`. Normal Pibo/Pi project-context loading owns repository-specific files.
+- **REQ-020**: Web-search follow-up work MUST be handled as one design track covering OpenAI provider-backed search, local search fallback, cached/live behavior, recency, allowed domains, and browser-use boundaries.
+- **REQ-021**: The compatibility profile MUST enable Pibo's native `pibo-run-control` package and expose generated `pibo_run_*` tools for yielded run lifecycle management.
+- **REQ-022**: The compatibility profile MUST expose Pibo generated subagent tools for the `default`, `explorer`, and `worker` roles using `pibo_subagent_*` names.
+- **REQ-023**: The compatibility profile MUST NOT expose Codex-specific agent lifecycle tools `spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, or `close_agent`.
 - **CON-001**: Pibo MUST NOT implement a local browser runtime purely to satisfy `web_search` parity.
 - **CON-002**: Codex compatibility MUST NOT require Plan mode, Codex-specific TUI state, or approval popups.
-- **CON-003**: Compatibility naming MAY use Codex names even when the underlying implementation is a Pibo adapter, but visible semantics MUST remain truthful.
+- **CON-003**: Compatibility naming MAY use Codex names for coding tools, but agent orchestration MUST use Pibo-native `pibo_subagent_*` and `pibo_run_*` names.
+- **CON-004**: The plugin MUST NOT import OpenAI Codex's app-server, TUI, approval, marketplace, connector, or plugin-install subsystems.
 - **GUD-001**: Prefer thin adapters over new abstractions when existing Pibo plugin/profile/runtime extension points are sufficient.
 - **GUD-002**: Prefer one shared prompt builder path with a Codex-compat mode over a second unrelated prompt stack.
 - **PAT-001**: Treat the compatibility layer as a translation surface:
   - Codex-like names and instructions outside
   - Pibo and Pi implementation details inside
-- **PAT-002**: Reuse existing routed child-session machinery for subagents instead of building a second delegation system.
+- **PAT-002**: Reuse existing routed child-session machinery and Pibo yielded runs for subagents instead of building a second delegation system.
 
 ## 4. Interfaces & Data Contracts
 
@@ -129,24 +131,24 @@ The compatibility profile should expose this initial tool surface:
 | `exec_command` | New Pibo tool adapter | Should support PTY-like long-running command sessions. |
 | `write_stdin` | New Pibo tool adapter | Continues an active exec session. |
 | `apply_patch` | New Pibo freeform patch tool | Match Codex patch flow closely. |
-| `web_search` | Provider-delegated built-in/provider tool | No local browser. |
+| `web_search` | Local Pibo tool by default; optional OpenAI provider-backed tool | No local browser/browser-use runtime owned by the plugin. |
 | `view_image` | Pibo local image view tool | Follow current local-file image viewing semantics. |
-| `spawn_agent` | Adapter over routed child sessions | Codex-compatible role and metadata fields. |
-| `send_input` | Adapter over existing child-session messaging | Reuse delegated context where possible. |
-| `resume_agent` | Adapter | Only if child-agent lifecycle supports closed-state reuse. |
-| `wait_agent` | Adapter | Must expose Codex-like waiting semantics. |
-| `close_agent` | Adapter | Closes child session handles. |
+| `pibo_subagent_default` | Generated Pibo subagent tool | Routes to the `default` child-agent role. |
+| `pibo_subagent_explorer` | Generated Pibo subagent tool | Routes to the `explorer` child-agent role. |
+| `pibo_subagent_worker` | Generated Pibo subagent tool | Routes to the `worker` child-agent role. |
+| `pibo_run_start` | Generated Pibo run-control tool | Starts yieldable tools, including generated subagent tools, as yielded runs. |
+| `pibo_run_list` | Generated Pibo run-control tool | Lists yielded runs owned by the current Pibo Session. |
+| `pibo_run_status` | Generated Pibo run-control tool | Reads compact yielded-run status. |
+| `pibo_run_wait` | Generated Pibo run-control tool | Waits a bounded time for a yielded run. |
+| `pibo_run_read` | Generated Pibo run-control tool | Reads terminal yielded-run results and consumes tracked reminders. |
+| `pibo_run_cancel` | Generated Pibo run-control tool | Cancels a yielded run and suppresses future reminders. |
+| `pibo_run_ack` | Generated Pibo run-control tool | Acknowledges yielded-run updates without reading full results. |
 
-Optional V1 tools:
-
-| Visible tool name | Condition |
-| --- | --- |
-| `update_plan` | Only if the resulting UX and persistence are coherent inside Pibo. |
-| `request_user_input` | Only if a structured question flow exists for the active channel. |
+Non-goals for this plugin include `request_user_input`, `update_plan`, `spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, `close_agent`, Codex approval popups, Codex TUI parity, Codex app-server parity, Codex marketplace behavior, connector semantics, and plugin-install semantics.
 
 ### 4.3 Web Search Contract
 
-The visible `web_search` contract should map to the provider request shape used by Codex:
+The visible provider-backed `web_search` contract should map to the provider request shape used by Codex:
 
 ```ts
 type CodexCompatibleWebSearchConfig = {
@@ -165,7 +167,7 @@ type CodexCompatibleWebSearchConfig = {
 };
 ```
 
-The runtime MUST convert this visible contract into the provider's Responses API request format and MUST continue using Pibo's provider auth token resolution path.
+When provider-backed search is enabled, the runtime MUST convert this visible contract into the provider's Responses API request format and MUST continue using Pibo's provider auth token resolution path.
 
 ### 4.4 Prompt Assembly Contract
 
@@ -174,10 +176,12 @@ The compatibility prompt builder should assemble:
 1. static Codex-compatible base instructions
 2. tool-use instructions for the visible Codex-like tool set
 3. child-agent instructions when the session is a delegated child
-4. project instructions from `AGENTS.md`, `RULES.md`, `GLOSSARY.md`
+4. one plugin-owned Codex base-prompt context file
 5. explicit environment context
 6. visible skills section
 7. optional visible plugin section only if needed for model guidance
+
+The compatibility plugin must not explicitly register project-local files such as `AGENTS.md`, `RULES.md`, or `GLOSSARY.md`. Those files remain the responsibility of the normal Pibo/Pi project-context loader.
 
 Recommended environment context shape:
 
@@ -205,18 +209,19 @@ Recommended environment context shape:
 
 ## 5. Acceptance Criteria
 
-- **AC-001**: Given the `codex-compat` profile is created, When it is inspected, Then the visible tool names include the Codex-compatible core tool surface defined by this specification.
-- **AC-002**: Given a normal model turn under `codex-compat`, When the prompt is assembled, Then it includes project instructions from `AGENTS.md`, `RULES.md`, and `GLOSSARY.md` when present.
+- **AC-001**: Given the `codex-compat` profile is created, When it is inspected, Then the visible tool names include the Codex-compatible coding tools and Pibo-native `pibo_run_*` and `pibo_subagent_*` orchestration tools defined by this specification.
+- **AC-002**: Given the `codex-compat` profile is inspected, When context files are listed, Then the plugin-owned context files include the Codex base prompt and do not include `AGENTS.md`, `RULES.md`, or `GLOSSARY.md`.
 - **AC-003**: Given a normal model turn under `codex-compat`, When the prompt is assembled, Then it includes an explicit environment context block with cwd, shell, date, timezone, and subagent role visibility.
-- **AC-004**: Given `web_search` is available, When a turn is sent to the provider, Then `web_search` is represented in the provider tool request instead of being executed by a local browser stack.
-- **AC-005**: Given provider-backed web search is used, When auth is required, Then the same provider authentication path used by Pibo and Pi model requests is reused.
-- **AC-006**: Given the session runs in a constrained mode that prefers cached web access, When the `web_search` tool spec is generated, Then it sets the cached/live equivalent consistently.
-- **AC-007**: Given a delegated child agent is spawned, When the child session prompt is built, Then it includes team-oriented child-agent instructions distinct from the root session.
+- **AC-004**: Given the default `codex-compat` profile is active, When `web_search` is inspected, Then it is available as a local generated tool rather than a local browser stack.
+- **AC-005**: Given provider-backed web search is enabled, When auth is required, Then the same provider authentication path used by Pibo and Pi model requests is reused.
+- **AC-006**: Given provider-backed web search is enabled and the session runs in a constrained mode that prefers cached web access, When the `web_search` provider tool spec is generated, Then it sets the cached/live equivalent consistently.
+- **AC-007**: Given a delegated child agent is started through Pibo subagent tooling, When the child session prompt is built, Then it includes team-oriented child-agent instructions distinct from the root session.
 - **AC-008**: Given the compatibility profile uses subagents, When the model sees available roles, Then `default`, `explorer`, and `worker` are visible and documented.
 - **AC-009**: Given the compatibility profile is enabled, When unrelated existing profiles are created, Then their existing capabilities remain unchanged.
 - **AC-010**: Given static Codex prompt content is imported, When the compatibility prompt is rendered, Then instructions that depend on unsupported Codex-only product features are absent.
-- **AC-011**: Given `update_plan` and `request_user_input` are not implemented in V1, When the compatibility prompt is assembled, Then the instructions do not imply those tools are available.
+- **AC-011**: Given `request_user_input` is intentionally out of scope, When the compatibility prompt is assembled, Then the instructions do not imply the tool is available.
 - **AC-012**: Given the compatibility tool surface includes `apply_patch`, When the model edits files manually, Then the visible editing contract matches the patch-based flow expected by Codex-tuned behavior.
+- **AC-013**: Given Codex-specific agent lifecycle tools are intentionally out of scope, When the compatibility profile is inspected, Then `spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, and `close_agent` are not active tools.
 
 ## 6. Test Automation Strategy
 
@@ -226,14 +231,15 @@ Recommended environment context shape:
 - **Focused Test Areas**:
   - compatibility profile inspection
   - prompt assembly snapshots
-  - provider request serialization for `web_search`
+  - optional provider request serialization for OpenAI-backed `web_search`
   - child-agent prompt framing
   - tool registration and name visibility
+  - Pibo run-control and generated subagent tool visibility
   - auth reuse for provider-backed web search
 - **Snapshot Scope**:
   - visible tool inventory for `codex-compat`
   - rendered prompt sections
-  - generated web-search provider request body
+  - generated web-search provider request body when provider-backed search is enabled
 - **Regression Scope**:
   - existing default profile creation
   - existing subagent execution
@@ -248,22 +254,24 @@ Pibo already has the correct architectural boundary for this work:
 - profiles already select tools, skills, subagents, and context files
 - runtime creation already injects custom tools and skills
 - subagents already map to routed child sessions
+- yielded runs already provide tracked/detached lifecycle, notifications, wait/read/cancel/ack semantics, and trace reconstruction
 - provider-backed model calls already exist and already own authentication
 
 The compatibility layer therefore does not require a new agent runtime. It requires a new compatibility translation surface.
 
-Provider-delegated `web_search` is the correct first choice because it is closer to Codex behavior than building a local browser search stack. Codex itself exposes `web_search` as a provider tool contract and processes the resulting provider events. Reusing Pibo and Pi provider auth is mandatory because a second auth path would create operational drift and inconsistent model access.
+Local `web_search` is the current default because it keeps the Codex-compatible tool visible without adding a second provider dependency to the profile. Codex itself exposes `web_search` as a provider tool contract with cached/live controls, so Pibo keeps an optional provider-backed path available for future use. Reusing Pibo and Pi provider auth remains mandatory if provider-backed search is enabled because a second auth path would create operational drift and inconsistent model access.
 
 ## 8. Dependencies & External Integrations
 
 ### External Systems
 
 - **EXT-001**: Pi Coding Agent - inner runtime for turns, tools, sessions, and streaming.
-- **EXT-002**: Model provider Responses API - required for provider-backed `web_search` and normal model turns.
+- **EXT-002**: Model provider Responses API - required for normal model turns and optional provider-backed `web_search`.
 
 ### Third-Party Services
 
-- **SVC-001**: Existing configured model provider - must support the Responses-style tool contract used by the compatibility layer.
+- **SVC-001**: Existing configured model provider - must support the Responses-style tool contract used by normal model turns.
+- **SVC-002**: Optional search provider - required only when Pibo enables provider-backed `web_search` instead of local search.
 
 ### Infrastructure Dependencies
 
@@ -271,7 +279,7 @@ Provider-delegated `web_search` is the correct first choice because it is closer
 
 ### Data Dependencies
 
-- **DAT-001**: Local project instruction files such as `AGENTS.md`, `RULES.md`, and `GLOSSARY.md`.
+- **DAT-001**: Codex base-prompt context file owned by the compatibility plugin.
 - **DAT-002**: Existing `SKILL.md` skill directories and paths.
 
 ### Technology Platform Dependencies
@@ -289,23 +297,23 @@ Provider-delegated `web_search` is the correct first choice because it is closer
 
 1. Add `pibo.codex-compat` plugin registration and a single `codex-compat` profile.
 2. Implement prompt builder support for Codex-compatible base instructions and environment context.
-3. Add `web_search` provider delegation using existing provider auth.
+3. Add default local `web_search` and keep provider delegation optional.
 4. Add Codex-compatible shell and patch tools.
 5. Add Codex-compatible subagent role exposure and collab tool adapters.
-6. Evaluate whether `update_plan` and `request_user_input` belong in V1 or V2.
+6. Update tests so the profile exposes the Codex base-prompt context file and no plugin-owned project-local instruction files.
 
-### 9.2 Edge Case: Missing Optional Tools
+### 9.2 Edge Case: Structured User Input
 
-If `request_user_input` is not implemented in V1, the compatibility prompt must not reference a structured question tool and must instead instruct the agent to ask concise direct questions in the normal conversation.
+The compatibility prompt must not reference `request_user_input`. If clarification is needed, the model should ask concise direct questions in the normal conversation.
 
-### 9.3 Edge Case: Provider Without Web Search Support
+### 9.3 Edge Case: Provider-Backed Search Without Support
 
-If the active provider or model cannot accept provider-backed `web_search`, the `codex-compat` profile must either:
+If provider-backed `web_search` is enabled and the configured search provider path cannot accept OpenAI-style `web_search`, the profile must either:
 
-- hide `web_search` completely, or
-- fail profile activation with an explicit configuration error.
+- fall back to the local `web_search` implementation, or
+- fail profile activation with an explicit configuration error for provider-backed search.
 
-Silent fallback to an unrelated local browser search path is not acceptable for V1.
+Silent fallback to an unrelated local browser search path is not acceptable.
 
 ### 9.4 Edge Case: Child Agent Prompt Drift
 
@@ -315,9 +323,10 @@ If child agents reuse the root prompt unchanged, Codex-tuned delegation behavior
 
 - The repository contains a saved `codex-compat` architecture spec in `spec/`.
 - A compatibility plugin id and primary profile name are defined and documented.
-- Prompt snapshots show Codex-compatible environment and project-doc sections.
-- Provider request snapshots show `web_search` serialized as a provider tool request rather than a local tool execution.
-- Tests confirm provider auth reuse rather than a second auth path.
+- Prompt snapshots show Codex-compatible environment and Codex base-prompt context sections.
+- Profile inspection confirms the Codex base-prompt context file is present and `AGENTS.md`, `RULES.md`, and `GLOSSARY.md` are not plugin-owned context files.
+- Provider request snapshots show `web_search` serialized as a provider tool request when OpenAI provider-backed search is enabled.
+- Tests confirm provider auth reuse rather than a second auth path when provider-backed search is enabled.
 - Profile inspection confirms the expected compatibility tool names and role visibility.
 - Existing non-compat profiles continue to pass their current tests.
 

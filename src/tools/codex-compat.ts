@@ -3,8 +3,6 @@ import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, resolve } from "node:path";
 import { StringEnum, Type } from "@mariozechner/pi-ai";
 import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
-import type { SubagentProfile } from "../core/profiles.js";
-import type { PiboSubagentRunner } from "../subagents/tool.js";
 
 type ExecSession = {
 	id: number;
@@ -15,21 +13,14 @@ type ExecSession = {
 	signal: NodeJS.Signals | null;
 };
 
-type AgentHandle = {
-	id: string;
-	role: string;
-	threadKey: string;
-	status: "running" | "completed" | "failed" | "closed";
-	message: string;
-	result?: unknown;
-	text?: string;
-	error?: string;
-	promise: Promise<void>;
-};
-
 const DEFAULT_YIELD_MS = 1000;
 const DEFAULT_MAX_OUTPUT_CHARS = 20000;
-const MAX_WAIT_MS = 300000;
+const WEB_SEARCH_TIMEOUT_MS = 12000;
+const WEB_SEARCH_LIMITS = {
+	short: 3,
+	medium: 5,
+	long: 8,
+} as const;
 
 function truncate(value: string, maxChars: number): string {
 	if (value.length <= maxChars) return value;
@@ -78,102 +69,89 @@ function mimeTypeForPath(path: string): string {
 	}
 }
 
-function textFromItems(items: unknown): string {
-	if (!Array.isArray(items)) return "";
-	return items
-		.map((item) => {
-			if (!item || typeof item !== "object") return "";
-			const value = item as { text?: unknown; name?: unknown; type?: unknown };
-			if (typeof value.text === "string") return value.text;
-			if (typeof value.name === "string") return value.name;
-			return typeof value.type === "string" ? `[${value.type}]` : "";
-		})
-		.filter(Boolean)
-		.join("\n");
+function decodeHtml(value: string): string {
+	return value
+		.replace(/&amp;/g, "&")
+		.replace(/&quot;/g, "\"")
+		.replace(/&#39;/g, "'")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/<[^>]+>/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
-function summarizeHandle(handle: AgentHandle): Record<string, unknown> {
-	return {
-		agent_id: handle.id,
-		agent_type: handle.role,
-		status: handle.status,
-		message: handle.status === "completed" ? handle.text : handle.error,
-		result: handle.result,
-	};
-}
-
-function findSubagent(subagents: readonly SubagentProfile[], role: string): SubagentProfile {
-	const subagent = subagents.find((candidate) => candidate.name === role);
-	if (!subagent) {
-		throw new Error(`Unknown codex-compatible subagent role "${role}"`);
+function stripDuckDuckGoRedirect(url: string): string {
+	const normalized = url.startsWith("//") ? `https:${url}` : url;
+	try {
+		const parsed = new URL(normalized);
+		const redirected = parsed.searchParams.get("uddg");
+		return redirected ? decodeURIComponent(redirected) : normalized;
+	} catch {
+		return normalized;
 	}
-	return subagent;
 }
 
-function startAgentRun(
-	handles: Map<string, AgentHandle>,
-	runner: PiboSubagentRunner,
-	subagents: readonly SubagentProfile[],
-	role: string,
-	message: string,
-): AgentHandle {
-	const id = `agent_${handles.size + 1}`;
-	const threadKey = id;
-	const subagent = findSubagent(subagents, role);
-	const handle: AgentHandle = {
-		id,
-		role,
-		threadKey,
-		status: "running",
-		message,
-		promise: Promise.resolve(),
-	};
-	handle.promise = runner.runSubagent({ subagent, message, threadKey }).then(
-		(result) => {
-			handle.status = "completed";
-			handle.result = result;
-			handle.text = result.reply.text;
-		},
-		(error) => {
-			handle.status = "failed";
-			handle.error = error instanceof Error ? error.message : String(error);
-		},
-	);
-	handles.set(id, handle);
-	return handle;
+function withDomainFilters(query: string, domains: readonly string[] | undefined): string {
+	if (!domains?.length) return query;
+	const filters = domains.map((domain) => `site:${domain}`).join(" OR ");
+	return `${query} ${filters}`;
 }
 
-async function continueAgentRun(
-	handle: AgentHandle,
-	runner: PiboSubagentRunner,
-	subagents: readonly SubagentProfile[],
-	message: string,
-): Promise<void> {
-	if (handle.status === "closed") throw new Error(`Agent "${handle.id}" is closed`);
-	handle.status = "running";
-	handle.message = message;
-	const subagent = findSubagent(subagents, handle.role);
-	handle.promise = runner.runSubagent({ subagent, message, threadKey: handle.threadKey }).then(
-		(result) => {
-			handle.status = "completed";
-			handle.result = result;
-			handle.text = result.reply.text;
-			handle.error = undefined;
-		},
-		(error) => {
-			handle.status = "failed";
-			handle.error = error instanceof Error ? error.message : String(error);
-		},
-	);
-	await handle.promise;
+function webSearchLimit(value: string | undefined): number {
+	return value === "short" || value === "medium" || value === "long"
+		? WEB_SEARCH_LIMITS[value]
+		: WEB_SEARCH_LIMITS.medium;
 }
 
-export function createCodexCompatToolDefinitions(options: {
-	subagents: readonly SubagentProfile[];
-	subagentRunner?: PiboSubagentRunner;
-}): ToolDefinition[] {
+function parseDuckDuckGoResults(html: string, limit: number): Array<{ title: string; url: string; snippet: string }> {
+	const results: Array<{ title: string; url: string; snippet: string }> = [];
+	const resultPattern =
+		/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+
+	for (const match of html.matchAll(resultPattern)) {
+		const url = stripDuckDuckGoRedirect(decodeHtml(match[1]));
+		if (!/^https?:\/\//.test(url)) continue;
+		results.push({
+			title: decodeHtml(match[2]),
+			url,
+			snippet: decodeHtml(match[3]),
+		});
+		if (results.length >= limit) break;
+	}
+
+	return results;
+}
+
+async function fetchWebSearchResults(
+	query: string,
+	limit: number,
+	signal: AbortSignal | undefined,
+): Promise<Array<{ title: string; url: string; snippet: string }>> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), WEB_SEARCH_TIMEOUT_MS);
+	const abort = () => controller.abort();
+	signal?.addEventListener("abort", abort, { once: true });
+
+	try {
+		const url = `https://html.duckduckgo.com/html/?${new URLSearchParams({ q: query }).toString()}`;
+		const response = await fetch(url, {
+			headers: {
+				"user-agent": "Pibo/0.1 web_search",
+				accept: "text/html",
+			},
+			signal: controller.signal,
+		});
+		if (!response.ok) throw new Error(`Search request failed with HTTP ${response.status}`);
+		return parseDuckDuckGoResults(await response.text(), limit);
+	} finally {
+		clearTimeout(timeout);
+		signal?.removeEventListener("abort", abort);
+	}
+}
+
+export function createCodexCompatToolDefinitions(): ToolDefinition[] {
 	const execSessions = new Map<number, ExecSession>();
-	const agentHandles = new Map<string, AgentHandle>();
 	let nextExecSessionId = 1;
 
 	const execCommand = defineTool({
@@ -331,122 +309,45 @@ export function createCodexCompatToolDefinitions(options: {
 		},
 	});
 
-	const spawnAgent = defineTool({
-		name: "spawn_agent",
-		label: "Spawn Agent",
-		description: "Starts a delegated child agent with a Codex-compatible role.",
-		promptSnippet: "Use spawn_agent for bounded parallel delegation to default, explorer, or worker roles.",
+	const webSearch = defineTool({
+		name: "web_search",
+		label: "Web Search",
+		description: "Searches the web and returns compact result titles, URLs, and snippets.",
+		promptSnippet: "Use web_search when current or externally sourced information is needed.",
 		executionMode: "parallel",
 		parameters: Type.Object({
-			agent_type: Type.Optional(StringEnum(["default", "explorer", "worker"], { description: "Subagent role." })),
-			message: Type.Optional(Type.String({ description: "Initial task for the child agent." })),
-			fork_context: Type.Optional(Type.Boolean({ description: "Accepted for compatibility; Pibo creates a routed child session." })),
-			items: Type.Optional(Type.Array(Type.Any({ description: "Structured input items." }))),
+			search_query: Type.Array(Type.Object({
+				q: Type.String({ description: "Search query." }),
+				recency: Type.Optional(Type.Number({ description: "Accepted for compatibility; currently not enforced." })),
+				domains: Type.Optional(Type.Array(Type.String({ description: "Domains to prefer via site: filters." }))),
+			})),
+			response_length: Type.Optional(StringEnum(["short", "medium", "long"], { description: "Number of results to return per query." })),
 		}),
-		async execute(_toolCallId, params) {
-			if (!options.subagentRunner) throw new Error("spawn_agent requires a routed Pibo runtime");
-			const role = params.agent_type ?? "default";
-			const message = params.message ?? textFromItems(params.items);
-			if (!message.trim()) throw new Error("spawn_agent requires a message or text items");
-			const handle = startAgentRun(agentHandles, options.subagentRunner, options.subagents, role, message);
-			return {
-				content: [{ type: "text", text: JSON.stringify({ agent_id: handle.id, status: handle.status }, null, 2) }],
-				details: summarizeHandle(handle),
-			};
-		},
-	});
+		async execute(_toolCallId, params, signal) {
+			const limit = webSearchLimit(params.response_length);
+			const searches = await Promise.all(params.search_query.map(async (item) => {
+				const query = withDomainFilters(item.q, item.domains);
+				const results = await fetchWebSearchResults(query, limit, signal);
+				return {
+					query: item.q,
+					recency: item.recency,
+					domains: item.domains,
+					results,
+				};
+			}));
 
-	const sendInput = defineTool({
-		name: "send_input",
-		label: "Send Input",
-		description: "Sends a follow-up message to an existing delegated child agent.",
-		promptSnippet: "Use send_input to continue a delegated agent thread by target agent id.",
-		executionMode: "parallel",
-		parameters: Type.Object({
-			target: Type.String({ description: "Agent id returned by spawn_agent." }),
-			message: Type.Optional(Type.String({ description: "Follow-up task or clarification." })),
-			interrupt: Type.Optional(Type.Boolean({ description: "Accepted for compatibility; the message is queued as a new child turn." })),
-			items: Type.Optional(Type.Array(Type.Any({ description: "Structured input items." }))),
-		}),
-		async execute(_toolCallId, params) {
-			if (!options.subagentRunner) throw new Error("send_input requires a routed Pibo runtime");
-			const handle = agentHandles.get(params.target);
-			if (!handle) throw new Error(`Unknown agent "${params.target}"`);
-			const message = params.message ?? textFromItems(params.items);
-			if (!message.trim()) throw new Error("send_input requires a message or text items");
-			void continueAgentRun(handle, options.subagentRunner, options.subagents, message).catch(() => undefined);
-			return {
-				content: [{ type: "text", text: JSON.stringify({ agent_id: handle.id, status: handle.status }, null, 2) }],
-				details: summarizeHandle(handle),
-			};
-		},
-	});
+			const text = searches
+				.map((search) => {
+					const lines = search.results.map((result, index) =>
+						`${index + 1}. ${result.title}\n${result.url}\n${result.snippet}`,
+					);
+					return [`Query: ${search.query}`, ...lines].join("\n");
+				})
+				.join("\n\n");
 
-	const resumeAgent = defineTool({
-		name: "resume_agent",
-		label: "Resume Agent",
-		description: "Returns the current handle state for a delegated child agent.",
-		promptSnippet: "Use resume_agent to inspect an existing delegated agent handle.",
-		executionMode: "parallel",
-		parameters: Type.Object({
-			id: Type.String({ description: "Agent id returned by spawn_agent." }),
-		}),
-		async execute(_toolCallId, params) {
-			const handle = agentHandles.get(params.id);
-			if (!handle) throw new Error(`Unknown agent "${params.id}"`);
 			return {
-				content: [{ type: "text", text: JSON.stringify(summarizeHandle(handle), null, 2) }],
-				details: summarizeHandle(handle),
-			};
-		},
-	});
-
-	const waitAgent = defineTool({
-		name: "wait_agent",
-		label: "Wait Agent",
-		description: "Waits for one or more delegated child agents to reach a terminal status.",
-		promptSnippet: "Use wait_agent only when blocked on delegated agent results.",
-		executionMode: "parallel",
-		parameters: Type.Object({
-			targets: Type.Array(Type.String({ description: "Agent ids to wait on." })),
-			timeout_ms: Type.Optional(Type.Number({ description: "Maximum wait in milliseconds." })),
-		}),
-		async execute(_toolCallId, params) {
-			const timeoutMs = Math.min(Math.max(0, params.timeout_ms ?? 30000), MAX_WAIT_MS);
-			const handles = params.targets.map((target) => {
-				const handle = agentHandles.get(target);
-				if (!handle) throw new Error(`Unknown agent "${target}"`);
-				return handle;
-			});
-			await Promise.race([
-				Promise.all(handles.map((handle) => handle.promise)),
-				new Promise((resolveWait) => setTimeout(resolveWait, timeoutMs)),
-			]);
-			const details = handles.map(summarizeHandle);
-			return {
-				content: [{ type: "text", text: JSON.stringify({ agents: details }, null, 2) }],
-				details: { agents: details },
-			};
-		},
-	});
-
-	const closeAgent = defineTool({
-		name: "close_agent",
-		label: "Close Agent",
-		description: "Closes a delegated child agent handle so it will not receive more input.",
-		promptSnippet: "Use close_agent when a delegated agent handle is no longer needed.",
-		executionMode: "parallel",
-		parameters: Type.Object({
-			target: Type.String({ description: "Agent id returned by spawn_agent." }),
-		}),
-		async execute(_toolCallId, params) {
-			const handle = agentHandles.get(params.target);
-			if (!handle) throw new Error(`Unknown agent "${params.target}"`);
-			const previous = summarizeHandle(handle);
-			handle.status = "closed";
-			return {
-				content: [{ type: "text", text: JSON.stringify({ previous }, null, 2) }],
-				details: { previous },
+				content: [{ type: "text", text: text || "No search results found." }],
+				details: { searches },
 			};
 		},
 	});
@@ -455,11 +356,7 @@ export function createCodexCompatToolDefinitions(options: {
 		execCommand,
 		writeStdin,
 		applyPatch,
+		webSearch,
 		viewImage,
-		spawnAgent,
-		sendInput,
-		resumeAgent,
-		waitAgent,
-		closeAgent,
 	];
 }

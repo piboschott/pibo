@@ -95,8 +95,9 @@ export function buildCodexCompatSystemPrompt(options: {
 	const compatibilityInstructions = [
 		"# Codex-Compatible Runtime",
 		"You are running in Pibo through the codex-compat profile. Match Codex-style tool use where the exposed Pibo tools support it, while staying truthful about implemented behavior.",
+		"Use Pibo's pibo_run_* tools and generated pibo_subagent_* tools for parallel work, yielded runs, and child-agent lifecycle management.",
 		"Use direct execution for normal coding tasks. If a structured planning or user-input tool is not present, ask concise questions in normal chat.",
-		"Provider-backed web search is exposed as a provider tool in supported Responses requests; do not expect a local browser search stack.",
+		"Web search is exposed as a normal Pibo tool so calls and results are visible in the session trace.",
 		childInstructions,
 		"<environment_context>",
 		`  <cwd>${options.cwd}</cwd>`,
