@@ -122,6 +122,12 @@ const spanTypeConfigs: Record<SpanType, SpanTypeConfig> = {
 		borderColor: "border-slate-600",
 		label: "User Input",
 	},
+	"execution.command": {
+		color: "text-yellow-500",
+		bgColor: "bg-yellow-500/20",
+		borderColor: "border-yellow-500",
+		label: "Command",
+	},
 };
 
 const NESTING_INDENT_PX = 12;
@@ -643,6 +649,8 @@ function SpanIcon({ type, className }: { type: SpanType; className?: string }) {
 			return <MessageSquare {...props} />;
 		case "user_input":
 			return <User {...props} />;
+		case "execution.command":
+			return <Bolt {...props} />;
 		default:
 			return <Check {...props} />;
 	}

@@ -4496,7 +4496,7 @@ type ChatStreamEvent = ChatStreamEventMeta & (
 	| { type: "TOOL_CALL_ARGS"; toolCallId: string; args: unknown; argsComplete: boolean }
 	| { type: "TOOL_CALL_RESULT"; toolCallId: string; result: unknown; isError: boolean }
 	| { type: "AGENT_DELEGATION"; toolCallId?: string; toolName: string; subagentName: string; childPiboSessionId: string; threadKey?: string }
-	| { type: "EXECUTION_RESULT"; runId?: string; action: string; result: unknown }
+	| { type: "EXECUTION_RESULT"; runId?: string; eventId?: string; action: string; result: unknown }
 	| { type: "RAW_EVENT"; event: unknown }
 );
 
@@ -4693,10 +4693,18 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 			});
 			break;
 		}
-		case "EXECUTION_RESULT":
+		case "EXECUTION_RESULT": {
 			if (isInternalSessionOperation(event.action)) break;
+			const executionId = event.runId
+				? `event:execution_result:${event.runId}:${event.action}`
+				: `event:execution_result:${event.streamFrameId ?? createdAt}:${event.action}`;
 			nodes = upsertTraceNode(nodes, {
-				id: `event:execution_result:${event.runId ?? event.action}`,
+				id: executionId,
+				parentId: event.runId
+					? messageTurnNodeId(event.runId)
+					: event.eventId
+						? messageTurnNodeId(event.eventId)
+						: undefined,
 				piboSessionId: view.piboSessionId,
 				eventId: event.runId,
 				type: "execution.command",
@@ -4706,11 +4714,12 @@ function applyChatStreamEvent(view: PiboSessionTraceView, event: ChatStreamEvent
 				input: { action: event.action },
 				output: event.result,
 				source: "live",
-				stableKey: `execution:${event.runId ?? event.action}`,
+				stableKey: `execution:${event.runId ?? event.streamFrameId ?? createdAt}:${event.action}`,
 				orderKey: liveOrder(event, "execution.command"),
 				children: [],
 			});
 			break;
+		}
 		case "RAW_EVENT":
 			break;
 	}

@@ -343,7 +343,7 @@ function createExecutionCommandRow(node: PiboTraceNode): CompactTerminalRow {
 		lines: [
 			{
 				prefix: "bullet",
-				tokens: [token("Ran", toneForStatus(node.status), "semibold"), token(" "), ...bashTokens(command)],
+				tokens: [token("Command", "yellow", "semibold"), token(` /${node.title}`, "yellow")],
 			},
 			...preview.lines,
 		],

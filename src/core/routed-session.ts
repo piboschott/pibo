@@ -665,7 +665,8 @@ export class RoutedSession {
 				event.type === "tool_execution_started" ||
 				event.type === "tool_execution_updated" ||
 				event.type === "tool_execution_finished" ||
-				event.type === "session_error")
+				event.type === "session_error" ||
+				event.type === "execution_result")
 		) {
 			return { ...event, eventId: this.activeMessage.id };
 		}

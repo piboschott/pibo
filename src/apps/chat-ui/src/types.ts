@@ -295,7 +295,8 @@ export type SpanType =
 	| "agent.async"
 	| "yielded.run"
 	| "user.prompt"
-	| "user_input";
+	| "user_input"
+	| "execution.command";
 
 export type SpanStatus = "UNSET" | "OK" | "ERROR";
 

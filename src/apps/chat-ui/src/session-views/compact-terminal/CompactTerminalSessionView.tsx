@@ -139,7 +139,9 @@ export function CompactTerminalSessionView({
 							const rowClassName =
 								row.kind === "message.user"
 									? "group border-b border-[#141414] bg-[#11a4d4]/10 py-2 last:border-b-0 hover:bg-[#11a4d4]/15"
-									: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]";
+									: row.kind === "execution.command"
+										? "group border-b border-[#141414] bg-[#f59e0b]/5 py-2 last:border-b-0 hover:bg-[#f59e0b]/10"
+										: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]";
 							return (
 								<div className="px-4">
 									<div

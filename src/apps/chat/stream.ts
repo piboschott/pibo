@@ -15,7 +15,7 @@ export type ChatStreamEvent = { piboSessionId?: string } & (
 	| { type: "TOOL_CALL_ARGS"; toolCallId: string; args: unknown; argsComplete: boolean }
 	| { type: "TOOL_CALL_RESULT"; toolCallId: string; result: unknown; isError: boolean }
 	| { type: "AGENT_DELEGATION"; toolCallId?: string; toolName: string; subagentName: string; childPiboSessionId: string; threadKey?: string }
-	| { type: "EXECUTION_RESULT"; runId?: string; action: string; result: unknown }
+	| { type: "EXECUTION_RESULT"; runId?: string; eventId?: string; action: string; result: unknown }
 	| { type: "RAW_EVENT"; event: PiboOutputEvent }
 );
 
@@ -105,7 +105,7 @@ export function chatStreamFramesFromOutputEvent(event: PiboOutputEvent, state: C
 			});
 			break;
 		case "execution_result":
-			frames.push({ type: "EXECUTION_RESULT", runId: eventId, action: event.action, result: event.result });
+			frames.push({ type: "EXECUTION_RESULT", runId: eventId, eventId: event.eventId, action: event.action, result: event.result });
 			break;
 		case "session_error":
 			frames.push({ type: "RUN_ERROR", runId: eventId, message: event.error });

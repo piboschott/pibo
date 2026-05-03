@@ -889,6 +889,7 @@ function traceNodeFromEvent(
 			if (isInternalSessionOperation(event.action)) return undefined;
 			return {
 				...base,
+				parentId: turnParentId,
 				type: "execution.command",
 				title: event.action,
 				status: "done",

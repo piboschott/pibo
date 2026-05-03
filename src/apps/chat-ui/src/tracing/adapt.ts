@@ -76,7 +76,7 @@ function adaptSpanType(type: PiboTraceNode["type"]): SpanType {
 		case "agent.async":
 			return "agent.async";
 		case "execution.command":
-			return "tool.result";
+			return "execution.command";
 		case "yielded.run":
 			return "yielded.run";
 		case "agent.turn":
