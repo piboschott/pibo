@@ -235,6 +235,8 @@ export class PiboGatewayServer {
 			removeProfile: (name) => this.pluginRegistry.removeProfile(name),
 			upsertContextFile: (contextFile) => this.pluginRegistry.upsertContextFile(contextFile),
 			removeContextFile: (key) => this.pluginRegistry.removeContextFile(key),
+			registerSkill: (skill) => this.pluginRegistry.registerSkill(skill),
+			unregisterSkill: (name) => this.pluginRegistry.unregisterSkill(name),
 			emitProductEvent: (event) => this.pluginRegistry.emitProductEvent(event),
 			subscribeProductEvents: (listener) => this.pluginRegistry.onProductEvent(listener),
 			auth: this.pluginRegistry.getAuthService(),

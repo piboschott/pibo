@@ -1,4 +1,4 @@
-import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, PiboRoom, PiboSession, PiboSessionTraceView } from "./types";
+import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, PiboRoom, PiboSession, PiboSessionTraceView, UserSkill } from "./types";
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -402,6 +402,49 @@ export async function deletePiPackage(id: string): Promise<AgentCatalog["piPacka
 	})).removedPackage;
 }
 
+export async function listUserSkills(): Promise<UserSkill[]> {
+	return (await requestJson<{ skills: UserSkill[] }>("/api/chat/user-skills")).skills;
+}
+
+export async function getUserSkill(id: string): Promise<{ skill: UserSkill; markdown: string }> {
+	return requestJson(`/api/chat/user-skills/${encodeURIComponent(id)}`);
+}
+
+export async function createUserSkill(input: { name: string; description: string; markdown: string }): Promise<UserSkill> {
+	return (await requestJson<{ skill: UserSkill }>("/api/chat/user-skills", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	})).skill;
+}
+
+export async function updateUserSkill(
+	id: string,
+	input: Partial<{ name: string; description: string; markdown: string; enabled: boolean }>,
+): Promise<UserSkill> {
+	return (await requestJson<{ skill: UserSkill }>(`/api/chat/user-skills/${encodeURIComponent(id)}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	})).skill;
+}
+
+export async function deleteUserSkill(id: string): Promise<{ removedSkillId: string }> {
+	return requestJson(`/api/chat/user-skills/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	});
+}
+
+export async function installUserSkill(url: string): Promise<UserSkill> {
+	return (await requestJson<{ skill: UserSkill }>("/api/chat/user-skills/install", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ url }),
+	})).skill;
+}
+
 export async function postRoom(input: { name: string; topic?: string; workspace?: string | null }): Promise<{ room: PiboRoom }> {
 	return requestJson<{ room: PiboRoom }>("/api/chat/rooms", {
 		method: "POST",
@@ -529,6 +572,7 @@ function normalizeBootstrap(payload: Partial<BootstrapData>): BootstrapData {
 				...payload.agentCatalog,
 				piboTools: payload.agentCatalog.piboTools ?? [],
 				piPackages: (payload.agentCatalog.piPackages ?? []).map((pkg) => ({ ...pkg, enabled: pkg.enabled !== false })),
+				userSkills: payload.agentCatalog.userSkills ?? [],
 			}
 			: payload.agentCatalog,
 		capabilities: {

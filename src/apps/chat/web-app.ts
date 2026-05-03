@@ -57,6 +57,8 @@ import {
 import { getDefaultPiboWorkspace } from "../../core/workspace.js";
 import { inspectPiPackageSource } from "../../pi-packages/metadata.js";
 import { findPiPackage, listPiPackages, removePiPackage, setPiPackageEnabled, upsertPiPackage } from "../../pi-packages/store.js";
+import { UserSkillManager } from "../../user-skills/manager.js";
+import { listUserSkills } from "../../user-skills/store.js";
 
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
@@ -82,6 +84,8 @@ type ChatWebAppState = {
 	subscribedContext?: PiboWebAppContext;
 	unsubscribe?: () => void;
 	liveListeners: Set<(event: StoredChatEvent) => void>;
+	userSkillManager: UserSkillManager;
+	syncedUserSkillNames?: Set<string>;
 };
 
 type ChatSessionCreateBody = {
@@ -522,6 +526,57 @@ function normalizeCompactionPromptMarkdown(value: unknown): string {
 	return value;
 }
 
+function normalizeUserSkillName(value: unknown): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new PiboWebHttpError("Skill name is required", 400);
+	}
+	const name = value.trim();
+	if (name.length > 64) throw new PiboWebHttpError("Skill name is too long", 400);
+	if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+		throw new PiboWebHttpError("Skill name must be lowercase kebab-case, e.g. my-skill", 400);
+	}
+	return name;
+}
+
+function normalizeUserSkillDescription(value: unknown): string {
+	if (typeof value !== "string") throw new PiboWebHttpError("Skill description must be a string", 400);
+	return value.trim();
+}
+
+function normalizeUserSkillMarkdown(value: unknown): string {
+	if (typeof value !== "string") throw new PiboWebHttpError("Skill markdown must be a string", 400);
+	return value;
+}
+
+function normalizeUserSkillEnabled(value: unknown): boolean | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "boolean") throw new PiboWebHttpError("enabled must be a boolean", 400);
+	return value;
+}
+
+function normalizeUserSkillUrl(value: unknown): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new PiboWebHttpError("Skill URL is required", 400);
+	}
+	const url = value.trim();
+	if (!url.startsWith("http://") && !url.startsWith("https://") && !url.includes("/")) {
+		throw new PiboWebHttpError("Skill URL must be a valid URL or owner/repo shorthand", 400);
+	}
+	return url;
+}
+
+function userSkillResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/user-skills/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid user skill id", 400);
+	}
+}
+
 function normalizeAgentArchived(value: unknown): boolean | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "boolean") throw new PiboWebHttpError("archived must be a boolean", 400);
@@ -929,6 +984,32 @@ function ensureCustomAgentProfiles(state: ChatWebAppState, context: PiboWebAppCo
 	}
 }
 
+function syncUserSkills(state: ChatWebAppState, context: PiboWebAppContext): void {
+	const registerSkill = context.channelContext.registerSkill;
+	const unregisterSkill = context.channelContext.unregisterSkill;
+	if (!registerSkill || !unregisterSkill) return;
+
+	const userSkills = state.userSkillManager.list();
+	const enabledNames = new Set(userSkills.filter((s) => s.enabled).map((s) => s.name));
+	const currentNames = new Set(userSkills.map((s) => s.name));
+
+	// Unregister disabled or removed user skills
+	for (const name of state.syncedUserSkillNames ?? []) {
+		if (!enabledNames.has(name)) {
+			unregisterSkill(name);
+		}
+	}
+
+	// Register enabled user skills
+	for (const skill of userSkills) {
+		if (skill.enabled) {
+			registerSkill({ name: skill.name, path: skill.path, enabled: true });
+		}
+	}
+
+	state.syncedUserSkillNames = currentNames;
+}
+
 function createAgentInput(ownerScope: string, body: ChatAgentBody) {
 	return {
 		ownerScope,
@@ -997,7 +1078,7 @@ function requireOwnedAgent(agent: CustomAgentDefinition | undefined, webSession:
 	return agent;
 }
 
-async function buildAgentCatalog(context: PiboWebAppContext) {
+async function buildAgentCatalog(context: PiboWebAppContext, state: ChatWebAppState) {
 	return {
 		...(context.channelContext.getCapabilityCatalog?.() ?? {
 			nativeTools: [],
@@ -1011,6 +1092,7 @@ async function buildAgentCatalog(context: PiboWebAppContext) {
 		}),
 		mcpServers: await listMcpServerInfos(),
 		piPackages: listPiPackages(),
+		userSkills: state.userSkillManager.list(),
 	};
 }
 
@@ -2350,6 +2432,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		reliabilityStore: createReliabilityStore(options.reliabilityStorePath),
 		traceCache: new Map(),
 		liveListeners: new Set(),
+		userSkillManager: new UserSkillManager(process.cwd()),
 	};
 
 	const requireSession = (request: Request, context: PiboWebAppContext): Promise<PiboWebSession> =>
@@ -2365,6 +2448,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			const url = new URL(request.url);
 			ensureEventIndexing(state, context);
 			ensureCustomAgentProfiles(state, context);
+			syncUserSkills(state, context);
 
 			const builtAsset = responseBuiltChatAsset(request, url.pathname);
 			if (builtAsset) return builtAsset;
@@ -2428,7 +2512,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					agents: context.channelContext.getProfiles?.() ?? [],
 					customAgents: state.agentStore.list(webSession.ownerScope, { includeArchived: true }),
 					modelDefaults: loadChatModelDefaults(process.cwd()),
-					agentCatalog: await buildAgentCatalog(context),
+					agentCatalog: await buildAgentCatalog(context, state),
 					capabilities: {
 						actions: context.channelContext.getGatewayActions(),
 					},
@@ -2438,7 +2522,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/agent-catalog` && request.method === "GET") {
 				await requireSession(request, context);
 				return responseJson({
-					catalog: await buildAgentCatalog(context),
+					catalog: await buildAgentCatalog(context, state),
 					profiles: context.channelContext.getProfiles?.() ?? [],
 				});
 			}
@@ -2510,6 +2594,81 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const removed = removePiPackage(piPackageId);
 				return responseJson({ removedPackage: removed });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills` && request.method === "GET") {
+				await requireSession(request, context);
+				return responseJson({ skills: state.userSkillManager.list() });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const body = await readJsonBody<{ name?: unknown; description?: unknown; markdown?: unknown }>(request);
+				const skill = state.userSkillManager.create({
+					name: normalizeUserSkillName(body.name),
+					description: normalizeUserSkillDescription(body.description ?? ""),
+					markdown: normalizeUserSkillMarkdown(body.markdown ?? ""),
+				});
+				syncUserSkills(state, context);
+				return responseJson({ skill }, { status: 201 });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills/install` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const body = await readJsonBody<{ url?: unknown }>(request);
+				const skill = await state.userSkillManager.installFromUrl(normalizeUserSkillUrl(body.url));
+				syncUserSkills(state, context);
+				return responseJson({ skill }, { status: 201 });
+			}
+
+			const userSkillId = userSkillResourceId(url.pathname);
+			if (userSkillId && request.method === "GET") {
+				await requireSession(request, context);
+				const skill = state.userSkillManager.get(userSkillId);
+				if (!skill) throw new PiboWebHttpError("Skill not found", 404);
+				const markdown = state.userSkillManager.getSkillMarkdown(skill.id);
+				return responseJson({ skill, markdown });
+			}
+
+			if (userSkillId && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const existing = state.userSkillManager.get(userSkillId);
+				if (!existing) throw new PiboWebHttpError("Skill not found", 404);
+				const body = await readJsonBody<{
+					name?: unknown;
+					description?: unknown;
+					markdown?: unknown;
+					enabled?: unknown;
+				}>(request);
+				const input: {
+					name?: string;
+					description?: string;
+					markdown?: string;
+					enabled?: boolean;
+				} = {};
+				if (body.name !== undefined) input.name = normalizeUserSkillName(body.name);
+				if (body.description !== undefined) input.description = normalizeUserSkillDescription(body.description);
+				if (body.markdown !== undefined) input.markdown = normalizeUserSkillMarkdown(body.markdown);
+				if (body.enabled !== undefined) input.enabled = normalizeUserSkillEnabled(body.enabled);
+				if (Object.keys(input).length === 0) {
+					throw new PiboWebHttpError("No skill update fields provided", 400);
+				}
+				const skill = state.userSkillManager.update(existing.id, input);
+				syncUserSkills(state, context);
+				return responseJson({ skill });
+			}
+
+			if (userSkillId && request.method === "DELETE") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const existing = state.userSkillManager.get(userSkillId);
+				if (!existing) throw new PiboWebHttpError("Skill not found", 404);
+				state.userSkillManager.remove(existing.id);
+				syncUserSkills(state, context);
+				return responseJson({ removedSkillId: existing.id });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/base-prompt` && request.method === "GET") {

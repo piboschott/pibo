@@ -10,7 +10,7 @@ import type {
 } from "../plugins/types.js";
 import type { PiboAuthService } from "../auth/types.js";
 import type { PiboWebApp } from "../web/types.js";
-import type { ContextFileProfile } from "../core/profiles.js";
+import type { ContextFileProfile, SkillProfile } from "../core/profiles.js";
 import type {
 	CreatePiboSessionInput,
 	FindPiboSessionsInput,
@@ -42,6 +42,8 @@ export type PiboChannelContext = {
 	removeProfile?(name: string): void;
 	upsertContextFile?(contextFile: ContextFileProfile): void;
 	removeContextFile?(key: string): void;
+	registerSkill?(skill: SkillProfile): void;
+	unregisterSkill?(name: string): void;
 	emitProductEvent?(event: PiboProductEventInput): PiboProductEvent;
 	subscribeProductEvents?(listener: PiboProductEventListener): () => void;
 	auth?: PiboAuthService;

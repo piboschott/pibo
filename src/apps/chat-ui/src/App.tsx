@@ -32,11 +32,12 @@ import {
 	SendHorizontal,
 	Trash2,
 	UserRound,
+	User,
 	Wrench,
 	X,
 } from "lucide-react";
-import { deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, getBootstrap, getTrace, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, type SaveCustomAgentInput } from "./api";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode } from "./types";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, getBootstrap, getTrace, getUserSkill, installUserSkill, listUserSkills, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, updateUserSkill, type SaveCustomAgentInput } from "./api";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, UserSkill } from "./types";
 import { adaptTrace } from "./tracing/adapt";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
 import { JsonRenderer } from "./tracing/JsonRenderer";
@@ -63,7 +64,7 @@ import {
 
 type Area = "sessions" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
-type SettingsPanel = "general" | "pi-packages";
+type SettingsPanel = "general" | "pi-packages" | "skills";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
@@ -290,6 +291,34 @@ export function App({ route }: { route: ChatAppRoute }) {
 			agentCatalog: {
 				...current.agentCatalog,
 				piPackages: current.agentCatalog.piPackages.filter((candidate) => candidate.id !== pkg.id),
+			},
+		} : current;
+		setBootstrap((current) => applyRemoval(current) ?? null);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applyRemoval(current) ?? undefined);
+	}, [queryClient]);
+
+	const upsertUserSkillInBootstrap = useCallback((skill: UserSkill) => {
+		const applySkill = (current: BootstrapData | null | undefined) => {
+			if (!current?.agentCatalog) return current;
+			const others = current.agentCatalog.userSkills.filter((candidate) => candidate.id !== skill.id);
+			return {
+				...current,
+				agentCatalog: {
+					...current.agentCatalog,
+					userSkills: [...others, skill].sort((left, right) => left.name.localeCompare(right.name)),
+				},
+			};
+		};
+		setBootstrap((current) => applySkill(current) ?? null);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applySkill(current) ?? undefined);
+	}, [queryClient]);
+
+	const removeUserSkillFromBootstrap = useCallback((skillId: string) => {
+		const applyRemoval = (current: BootstrapData | null | undefined) => current?.agentCatalog ? {
+			...current,
+			agentCatalog: {
+				...current.agentCatalog,
+				userSkills: current.agentCatalog.userSkills.filter((candidate) => candidate.id !== skillId),
 			},
 		} : current;
 		setBootstrap((current) => applyRemoval(current) ?? null);
@@ -923,6 +952,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 							activePanel={settingsPanel}
 							onSelect={(panel) => navigateToRoute({ area: "settings", panel })}
 							piPackageCount={bootstrap.agentCatalog?.piPackages.length ?? 0}
+							userSkillCount={bootstrap.agentCatalog?.userSkills.length ?? 0}
 						/>
 					)}
 				</aside>
@@ -1012,6 +1042,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 									piPackages={bootstrap.agentCatalog?.piPackages}
 									onPiPackageChanged={upsertPiPackageInBootstrap}
 									onPiPackageRemoved={removePiPackageFromBootstrap}
+									userSkills={bootstrap.agentCatalog?.userSkills}
+									onUserSkillChanged={upsertUserSkillInBootstrap}
+									onUserSkillRemoved={removeUserSkillFromBootstrap}
 								/>
 							)}
 						</main>
@@ -1412,6 +1445,16 @@ function HeaderIconButton({
 		>
 			{children}
 		</button>
+	);
+}
+
+function Modal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+	return (
+		<div className="fixed inset-0 z-50 bg-black/70 grid place-items-center p-4" onClick={onClose}>
+			<div className="w-full max-w-lg border border-slate-700 bg-[#1a262b] rounded-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+				{children}
+			</div>
+		</div>
 	);
 }
 
@@ -2562,7 +2605,23 @@ function AgentsView({
 							)}
 						/>
 					</DesignerPanel>
-					<CatalogSection title="Skills">{catalog?.skills.map((skill) => <CatalogToggle key={skill.name} disabled={readOnly} checked={draft.skills.includes(skill.name)} title={skill.name} description={skill.path} onToggle={() => setDraft((current) => ({ ...current, skills: toggleName(current.skills, skill.name) }))} />) ?? <EmptyCatalog />}</CatalogSection>
+					<CatalogSection title="Skills">
+						{catalog?.skills.map((skill) => {
+							const isUserSkill = catalog?.userSkills.some((u) => u.name === skill.name);
+							return (
+								<CatalogToggle
+									key={skill.name}
+									disabled={readOnly}
+									checked={draft.skills.includes(skill.name)}
+									title={skill.name}
+									description={skill.path}
+									meta={isUserSkill ? "user" : undefined}
+									metaClass={isUserSkill ? "border-[#a855f7]/60 text-[#d8b4fe]" : undefined}
+									onToggle={() => setDraft((current) => ({ ...current, skills: toggleName(current.skills, skill.name) }))}
+								/>
+							);
+						}) ?? <EmptyCatalog />}
+					</CatalogSection>
 					<CatalogSection title="Packages"><CatalogToggle disabled={readOnly} checked={draft.runControl} title="pibo-run-control" description="Expose pibo_run_* as one package for yielded native tools and subagents." meta="package" onToggle={() => setDraft((current) => ({ ...current, runControl: !current.runControl }))} /></CatalogSection>
 					<PiPackagesDesigner
 						packages={catalog?.piPackages}
@@ -2918,10 +2977,12 @@ function SettingsSidebar({
 	activePanel,
 	onSelect,
 	piPackageCount,
+	userSkillCount,
 }: {
 	activePanel: SettingsPanel;
 	onSelect: (panel: SettingsPanel) => void;
 	piPackageCount: number;
+	userSkillCount: number;
 }) {
 	return (
 		<div className="p-2">
@@ -2945,7 +3006,7 @@ function SettingsSidebar({
 				<button
 					type="button"
 					onClick={() => onSelect("pi-packages")}
-					className={`flex w-full items-center gap-2 border p-2 text-left ${
+					className={`mb-1 flex w-full items-center gap-2 border p-2 text-left ${
 						activePanel === "pi-packages"
 							? "border-[#11a4d4] bg-[#11a4d4]/10"
 							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
@@ -2958,6 +3019,24 @@ function SettingsSidebar({
 					</div>
 					<span className="inline-flex min-w-6 items-center justify-center border border-slate-700 bg-[#101d22] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
 						{piPackageCount}
+					</span>
+				</button>
+				<button
+					type="button"
+					onClick={() => onSelect("skills")}
+					className={`flex w-full items-center gap-2 border p-2 text-left ${
+						activePanel === "skills"
+							? "border-[#11a4d4] bg-[#11a4d4]/10"
+							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+					}`}
+				>
+					<Wrench size={13} className="text-[#11a4d4]" />
+					<div className="min-w-0 flex-1">
+						<span className="block truncate text-sm text-slate-200">Skills</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">user-managed</span>
+					</div>
+					<span className="inline-flex min-w-6 items-center justify-center border border-slate-700 bg-[#101d22] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
+						{userSkillCount}
 					</span>
 				</button>
 			</div>
@@ -3663,6 +3742,9 @@ function SettingsView({
 	piPackages,
 	onPiPackageChanged,
 	onPiPackageRemoved,
+	userSkills,
+	onUserSkillChanged,
+	onUserSkillRemoved,
 }: {
 	activePanel: SettingsPanel;
 	showThinking: boolean;
@@ -3675,6 +3757,9 @@ function SettingsView({
 	piPackages?: PiPackageCatalogItem[];
 	onPiPackageChanged: (pkg: PiPackageCatalogItem) => void;
 	onPiPackageRemoved: (pkg: PiPackageCatalogItem) => void;
+	userSkills?: UserSkill[];
+	onUserSkillChanged: (skill: UserSkill) => void;
+	onUserSkillRemoved: (skillId: string) => void;
 }) {
 	if (activePanel === "pi-packages") {
 		return (
@@ -3684,6 +3769,18 @@ function SettingsView({
 					Pi Packages
 				</h1>
 				<PiPackagesSettings packages={piPackages} onPackageChanged={onPiPackageChanged} onPackageRemoved={onPiPackageRemoved} />
+			</div>
+		);
+	}
+
+	if (activePanel === "skills") {
+		return (
+			<div className="p-6 overflow-auto">
+				<h1 className="text-sm font-bold uppercase tracking-wider mb-4 flex items-center gap-2">
+					<Wrench size={16} />
+					Skills
+				</h1>
+				<UserSkillsSettings skills={userSkills} onSkillChanged={onUserSkillChanged} onSkillRemoved={onUserSkillRemoved} />
 			</div>
 		);
 	}
@@ -4010,6 +4107,316 @@ function PiPackagesSettings({
 				) : <EmptyCatalog message="No Pi packages registered" />
 			) : <EmptyCatalog />}
 		</DesignerPanel>
+	);
+}
+
+function UserSkillsSettings({
+	skills,
+	onSkillChanged,
+	onSkillRemoved,
+}: {
+	skills?: UserSkill[];
+	onSkillChanged: (skill: UserSkill) => void;
+	onSkillRemoved: (skillId: string) => void;
+}) {
+	const [createOpen, setCreateOpen] = useState(false);
+	const [installOpen, setInstallOpen] = useState(false);
+	const [editSkill, setEditSkill] = useState<UserSkill | null>(null);
+	const [editMarkdown, setEditMarkdown] = useState<string>("");
+	const [busy, setBusy] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const skillList = skills ?? [];
+	const enabledCount = skillList.filter((s) => s.enabled).length;
+
+	const toggleEnabled = async (skill: UserSkill) => {
+		if (busy) return;
+		setBusy(`${skill.id}:enabled`);
+		try {
+			const next = await updateUserSkill(skill.id, { enabled: !skill.enabled });
+			onSkillChanged(next);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	const removeSkill = async (skill: UserSkill) => {
+		if (busy) return;
+		if (!window.confirm(`Delete skill "${skill.name}"?`)) return;
+		setBusy(`${skill.id}:delete`);
+		try {
+			await deleteUserSkill(skill.id);
+			onSkillRemoved(skill.id);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	const handleCreate = async (input: { name: string; description: string; markdown: string }) => {
+		setBusy("create");
+		try {
+			const skill = await createUserSkill(input);
+			onSkillChanged(skill);
+			setCreateOpen(false);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	const handleInstall = async (url: string) => {
+		setBusy("install");
+		try {
+			const skill = await installUserSkill(url);
+			onSkillChanged(skill);
+			setInstallOpen(false);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	const handleEdit = async (id: string, input: { name: string; description: string; markdown: string }) => {
+		setBusy("edit");
+		try {
+			const skill = await updateUserSkill(id, input);
+			onSkillChanged(skill);
+			setEditSkill(null);
+			setError(null);
+		} catch (caught) {
+			setError(caught instanceof Error ? caught.message : String(caught));
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	return (
+		<>
+			<DesignerPanel title="Skill Management">
+				<div className="grid gap-2">
+					<div className="flex gap-2">
+						<button
+							type="button"
+							disabled={busy === "create"}
+							onClick={() => setCreateOpen(true)}
+							className="inline-flex items-center gap-2 border border-[#11a4d4] rounded-sm px-3 py-2 text-sm text-[#11a4d4] bg-[#11a4d4]/10 disabled:opacity-50"
+						>
+							<Plus size={14} />
+							Create Skill
+						</button>
+						<button
+							type="button"
+							disabled={busy === "install"}
+							onClick={() => setInstallOpen(true)}
+							className="inline-flex items-center gap-2 border border-slate-700 rounded-sm px-3 py-2 text-sm text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+						>
+							<ExternalLink size={14} />
+							Install from URL
+						</button>
+					</div>
+					{error ? <div className="border border-red-500/60 bg-red-500/10 text-red-200 px-3 py-2 text-sm rounded-sm">{error}</div> : null}
+					<div className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
+						{skillList.length} skills / {enabledCount} enabled
+					</div>
+				</div>
+				{skills ? (
+					skillList.length ? (
+						<div className="grid gap-2">
+							{skillList.map((skill) => (
+								<div key={skill.id} className={`border rounded-sm p-2 ${skill.enabled ? "border-slate-800 bg-[#151f24]" : "border-slate-800 bg-[#151f24] opacity-75"}`}>
+									<div className="flex items-center justify-between gap-2">
+										<div className="min-w-0">
+											<div className="flex items-center gap-2">
+												<span className="min-w-0 truncate text-sm text-slate-200">{skill.name}</span>
+												<span className={`shrink-0 border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider ${skill.enabled ? "border-[#11a4d4]/60 text-[#7dd3fc]" : "border-slate-700 text-slate-500"}`}>{skill.enabled ? "enabled" : "disabled"}</span>
+												<span className="shrink-0 border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider border-slate-700 text-slate-500">{skill.source}</span>
+											</div>
+											<div className="truncate text-xs text-slate-500">{skill.description || skill.path}</div>
+										</div>
+										<div className="flex items-center gap-1">
+											<button
+												type="button"
+												disabled={busy?.startsWith(`${skill.id}:`) ?? false}
+												onClick={() => void toggleEnabled(skill)}
+												className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+											>
+												{skill.enabled ? <PowerOff size={13} /> : <Power size={13} />}
+											</button>
+											<button
+												type="button"
+												disabled={busy?.startsWith(`${skill.id}:`) ?? false}
+												onClick={async () => {
+														try {
+															const data = await getUserSkill(skill.id);
+															setEditSkill(skill);
+															setEditMarkdown(data.markdown);
+														} catch {
+															setEditSkill(skill);
+															setEditMarkdown("");
+														}
+													}}
+												className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+											>
+												<Edit3 size={13} />
+											</button>
+											<button
+												type="button"
+												disabled={busy?.startsWith(`${skill.id}:`) ?? false}
+												onClick={() => void removeSkill(skill)}
+												className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+											>
+												<Trash2 size={13} />
+											</button>
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					) : <EmptyCatalog message="No user skills" />
+				) : <EmptyCatalog />}
+			</DesignerPanel>
+			{createOpen ? (
+				<SkillEditModal
+					title="Create Skill"
+					onSave={handleCreate}
+					onClose={() => setCreateOpen(false)}
+					busy={busy === "create"}
+				/>
+			) : null}
+			{installOpen ? (
+				<SkillInstallModal
+					onInstall={handleInstall}
+					onClose={() => setInstallOpen(false)}
+					busy={busy === "install"}
+				/>
+			) : null}
+			{editSkill ? (
+				<SkillEditModal
+					title="Edit Skill"
+					initialName={editSkill.name}
+					initialDescription={editSkill.description}
+					initialMarkdown={undefined}
+					onSave={(input) => void handleEdit(editSkill.id, input)}
+					onClose={() => setEditSkill(null)}
+					busy={busy === "edit"}
+				/>
+			) : null}
+		</>
+	);
+}
+
+function SkillEditModal({
+	title,
+	initialName = "",
+	initialDescription = "",
+	initialMarkdown = "",
+	onSave,
+	onClose,
+	busy,
+}: {
+	title: string;
+	initialName?: string;
+	initialDescription?: string;
+	initialMarkdown?: string;
+	onSave: (input: { name: string; description: string; markdown: string }) => void;
+	onClose: () => void;
+	busy: boolean;
+}) {
+	const [name, setName] = useState(initialName);
+	const [description, setDescription] = useState(initialDescription);
+	const [markdown, setMarkdown] = useState(initialMarkdown);
+
+	return (
+		<Modal onClose={onClose}>
+			<h2 className="text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-2">
+				<Edit3 size={16} />
+				{title}
+			</h2>
+			<div className="grid gap-3">
+				<input
+					value={name}
+					onChange={(e) => setName(e.target.value)}
+					placeholder="Skill name (kebab-case)"
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4]"
+				/>
+				<input
+					value={description}
+					onChange={(e) => setDescription(e.target.value)}
+					placeholder="Short description"
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4]"
+				/>
+				<textarea
+					value={markdown}
+					onChange={(e) => setMarkdown(e.target.value)}
+					placeholder="Markdown instructions..."
+					rows={10}
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] resize-vertical"
+				/>
+				<div className="flex justify-end gap-2">
+					<button type="button" onClick={onClose} className="px-3 py-2 text-sm border border-slate-700 rounded-sm hover:border-slate-500">Cancel</button>
+					<button
+						type="button"
+						disabled={busy || !name.trim()}
+						onClick={() => onSave({ name, description, markdown })}
+						className="px-3 py-2 text-sm border border-[#11a4d4] rounded-sm bg-[#11a4d4]/10 text-[#11a4d4] disabled:opacity-50"
+					>
+						{busy ? "Saving..." : "Save"}
+					</button>
+				</div>
+			</div>
+		</Modal>
+	);
+}
+
+function SkillInstallModal({
+	onInstall,
+	onClose,
+	busy,
+}: {
+	onInstall: (url: string) => void;
+	onClose: () => void;
+	busy: boolean;
+}) {
+	const [url, setUrl] = useState("");
+
+	return (
+		<Modal onClose={onClose}>
+			<h2 className="text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-2">
+				<ExternalLink size={16} />
+				Install Skill
+			</h2>
+			<div className="grid gap-3">
+				<input
+					value={url}
+					onChange={(e) => setUrl(e.target.value)}
+					placeholder="https://skills.sh/owner/skills/skill-name"
+					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4]"
+				/>
+				<div className="text-[11px] text-slate-500">
+					Supports skills.sh URLs, GitHub tree URLs, or owner/repo shorthand.
+				</div>
+				<div className="flex justify-end gap-2">
+					<button type="button" onClick={onClose} className="px-3 py-2 text-sm border border-slate-700 rounded-sm hover:border-slate-500">Cancel</button>
+					<button
+						type="button"
+						disabled={busy || !url.trim()}
+						onClick={() => onInstall(url)}
+						className="px-3 py-2 text-sm border border-[#11a4d4] rounded-sm bg-[#11a4d4]/10 text-[#11a4d4] disabled:opacity-50"
+					>
+						{busy ? "Installing..." : "Install"}
+					</button>
+				</div>
+			</div>
+		</Modal>
 	);
 }
 

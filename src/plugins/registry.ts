@@ -116,6 +116,14 @@ export class PiboPluginRegistry {
 		this.addUnique(this.skills, skill.name, skill, "skill");
 	}
 
+	unregisterSkill(name: string): boolean {
+		return this.skills.delete(name);
+	}
+
+	getRegisteredSkillNames(): string[] {
+		return [...this.skills.keys()];
+	}
+
 	registerContextFile(contextFile: ContextFileProfile): void {
 		this.addUnique(this.contextFiles, contextFileKey(contextFile), contextFile, "context file");
 	}
