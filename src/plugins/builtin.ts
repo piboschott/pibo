@@ -10,6 +10,7 @@ import type {
 import { InitialSessionContextBuilder, type InitialSessionContext } from "../core/profiles.js";
 import { parsePiboThinkingLevel } from "../core/thinking.js";
 import { createWebSearchToolProfile } from "../tools/web-search.js";
+import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } from "../auth/login-actions.js";
 import { piboCodexCompatPlugin } from "./codex-compat.js";
 import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
@@ -61,6 +62,47 @@ function getThinkingParams(event: PiboExecutionEvent): PiboThinkingParams {
 	if (!raw || raw.level === undefined) return {};
 	if (typeof raw.level !== "string") throw new Error("thinking requires params.level to be a string");
 	return { level: parsePiboThinkingLevel(raw.level) };
+}
+
+function requireLoginStartParams(event: PiboExecutionEvent): { provider: string } {
+	const params = getObjectParams(event);
+	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
+		throw new Error("login.start requires params.provider");
+	}
+	return { provider: params.provider };
+}
+
+function requireLoginCompleteParams(event: PiboExecutionEvent): { provider: string; code: string; state: string } {
+	const params = getObjectParams(event);
+	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
+		throw new Error("login.complete requires params.provider");
+	}
+	if (typeof params.code !== "string" || params.code.length === 0) {
+		throw new Error("login.complete requires params.code");
+	}
+	if (typeof params.state !== "string" || params.state.length === 0) {
+		throw new Error("login.complete requires params.state");
+	}
+	return { provider: params.provider, code: params.code, state: params.state };
+}
+
+function requireLoginApiKeyParams(event: PiboExecutionEvent): { provider: string; apiKey: string } {
+	const params = getObjectParams(event);
+	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
+		throw new Error("login.apikey requires params.provider");
+	}
+	if (typeof params.apiKey !== "string" || params.apiKey.length === 0) {
+		throw new Error("login.apikey requires params.apiKey");
+	}
+	return { provider: params.provider, apiKey: params.apiKey };
+}
+
+function requireLogoutParams(event: PiboExecutionEvent): { provider: string } {
+	const params = getObjectParams(event);
+	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
+		throw new Error("logout requires params.provider");
+	}
+	return { provider: params.provider };
 }
 
 function createBaseProfileBuilder(
@@ -261,6 +303,52 @@ export const piboCorePlugin = definePiboPlugin({
 			description: "Switch the active Pi session to a persisted session file.",
 			async execute(context, event) {
 				return await context.switchSession(requireSwitchParams(event));
+			},
+		});
+		api.registerGatewayAction({
+			name: "login.start",
+			description: "Start an OAuth login flow for a provider. Returns a URL to open in a browser.",
+			slashCommands: ["login-start"],
+			async execute(_context, event) {
+				const params = requireLoginStartParams(event);
+				return await startLogin(params.provider);
+			},
+		});
+		api.registerGatewayAction({
+			name: "login.complete",
+			description: "Complete an OAuth login flow with the authorization code from the provider callback.",
+			slashCommands: ["login-complete"],
+			async execute(_context, event) {
+				const params = requireLoginCompleteParams(event);
+				return await completeLogin(params.provider, params.code, params.state);
+			},
+		});
+		api.registerGatewayAction({
+			name: "login.apikey",
+			description: "Set an API key directly for a provider.",
+			slashCommands: ["login-apikey"],
+			execute(_context, event) {
+				const params = requireLoginApiKeyParams(event);
+				return setApiKey(params.provider, params.apiKey);
+			},
+		});
+		api.registerGatewayAction({
+			name: "login.status",
+			description: "Check the authentication status for providers.",
+			slashCommands: ["login-status"],
+			execute(_context, event) {
+				const params = getObjectParams(event);
+				const provider = typeof params?.provider === "string" ? params.provider : undefined;
+				return { providers: getLoginStatus(provider) };
+			},
+		});
+		api.registerGatewayAction({
+			name: "logout",
+			description: "Remove stored credentials for a provider.",
+			slashCommands: ["logout"],
+			execute(_context, event) {
+				const params = requireLogoutParams(event);
+				return removeLogin(params.provider);
 			},
 		});
 	},
