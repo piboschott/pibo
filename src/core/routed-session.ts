@@ -246,6 +246,60 @@ function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEven
 	return undefined;
 }
 
+/**
+ * Estimate context tokens from agent messages using a simple chars/4 heuristic.
+ * This is a conservative fallback when getContextUsage() returns null because
+ * no post-compaction assistant usage exists yet.
+ */
+function estimateContextTokens(messages: unknown[]): number {
+	let chars = 0;
+	for (const msg of messages) {
+		if (!msg || typeof msg !== "object") continue;
+		const message = msg as { role?: unknown; content?: unknown };
+		if (message.role === "user") {
+			const content = message.content;
+			if (typeof content === "string") {
+				chars += content.length;
+			} else if (Array.isArray(content)) {
+				for (const block of content) {
+					if (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string") {
+						chars += block.text.length;
+					}
+				}
+			}
+		} else if (message.role === "assistant") {
+			const content = (message as { content?: unknown[] }).content;
+			if (Array.isArray(content)) {
+				for (const block of content) {
+					if (!block || typeof block !== "object") continue;
+					if ("type" in block) {
+						if (block.type === "text" && "text" in block && typeof block.text === "string") chars += block.text.length;
+						if (block.type === "thinking" && "thinking" in block && typeof block.thinking === "string") chars += block.thinking.length;
+						if (block.type === "toolCall" && "name" in block && "arguments" in block) {
+							chars += String(block.name).length + JSON.stringify(block.arguments).length;
+						}
+					}
+				}
+			}
+		} else if (message.role === "toolResult" || message.role === "custom") {
+			const content = message.content;
+			if (typeof content === "string") {
+				chars += content.length;
+			} else if (Array.isArray(content)) {
+				for (const block of content) {
+					if (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block && typeof block.text === "string") {
+						chars += block.text.length;
+					}
+					if (block && typeof block === "object" && "type" in block && block.type === "image") {
+						chars += 4800; // approximate image size
+					}
+				}
+			}
+		}
+	}
+	return Math.ceil(chars / 4);
+}
+
 export class RoutedSession {
 	private readonly queue: PiboMessageEvent[] = [];
 	private processing = false;
@@ -256,6 +310,7 @@ export class RoutedSession {
 	private activeThinkingIndex?: number;
 	private nextThinkingIndex = 0;
 	private unsubscribe?: () => void;
+	private isContinuePatched = false;
 
 	constructor(
 		private readonly piboSessionId: string,
@@ -274,7 +329,11 @@ export class RoutedSession {
 	}
 
 	private patchAgentContinue(): void {
+		if (this.isContinuePatched) return;
+		this.isContinuePatched = true;
+
 		const agent = this.runtime.session.agent;
+		if (!agent) return;
 		const originalContinue = agent.continue.bind(agent);
 		const session = this.runtime.session;
 
@@ -286,13 +345,19 @@ export class RoutedSession {
 			const settings = session.settingsManager.getCompactionSettings();
 			if (!settings.enabled) return originalContinue();
 
-			// getContextUsage() already handles the stale-usage-after-compaction
-			// check internally. If tokens is null, the last assistant usage predates
-			// the latest compaction and we should skip until the next LLM response.
+			let contextTokens: number | null = null;
 			const contextUsage = session.getContextUsage();
-			if (!contextUsage || contextUsage.tokens === null) return originalContinue();
+			if (contextUsage && contextUsage.tokens !== null) {
+				contextTokens = contextUsage.tokens;
+			} else {
+				// Fallback: estimate tokens from current messages when no post-compaction
+				// assistant usage is available yet. This prevents context overflow between
+				// tool calls after a compaction.
+				contextTokens = estimateContextTokens(session.messages);
+			}
+			if (contextTokens === null) return originalContinue();
 
-			if (shouldCompact(contextUsage.tokens, contextWindow, settings)) {
+			if (shouldCompact(contextTokens, contextWindow, settings)) {
 				await session.compact();
 			}
 
@@ -310,7 +375,38 @@ export class RoutedSession {
 			if (this.forwardPiEvents) {
 				this.emit({ type: "pi_event", piboSessionId: this.piboSessionId, event });
 			}
+			this.handleCompactionEvent(event);
 		});
+	}
+
+	private handleCompactionEvent(event: unknown): void {
+		if (!event || typeof event !== "object") return;
+		const candidate = event as { type?: unknown; reason?: unknown; result?: unknown; aborted?: unknown; errorMessage?: unknown };
+		if (candidate.type === "compaction_start") {
+			this.emit({
+				type: "compaction_start",
+				piboSessionId: this.piboSessionId,
+				reason: typeof candidate.reason === "string" ? candidate.reason : "unknown",
+			});
+		}
+		if (candidate.type === "compaction_end") {
+			if (candidate.result && candidate.aborted !== true) {
+				// Reset assistant message indices so the next assistant response starts
+				// fresh after compaction, matching the reduced agent context.
+				this.activeAssistantIndex = undefined;
+				this.nextAssistantIndex = 0;
+				this.activeThinkingIndex = undefined;
+				this.nextThinkingIndex = 0;
+			}
+			this.emit({
+				type: "compaction_end",
+				piboSessionId: this.piboSessionId,
+				reason: typeof candidate.reason === "string" ? candidate.reason : "unknown",
+				result: candidate.result,
+				aborted: candidate.aborted === true,
+				errorMessage: typeof candidate.errorMessage === "string" ? candidate.errorMessage : undefined,
+			});
+		}
 	}
 
 	enqueueMessage(event: PiboMessageEvent): PiboOutputEvent {
