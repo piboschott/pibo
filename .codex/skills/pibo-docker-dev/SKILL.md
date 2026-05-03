@@ -9,11 +9,22 @@ Develop Pibo inside a Docker container. Edit files on the host. Run builds, test
 
 ## The rule
 
-Work only in a Git worktree. Never edit files in the main repository.
+Create a new Git worktree for every task. Work only inside that worktree. Never edit files in the main repository (`/root/code/pibo/`).
 
 ## Why
 
 The host runs the live Pibo gateway. If you break it during development, the user loses their connection. A container isolates your experiments. The gateway can crash inside the container without affecting the host.
+
+## Quick reference
+
+```
+1. pibo compute dev spawn --worktree <name> --repo /root/code/pibo
+2. Parse JSON output → save `id` (container name)
+3. Use read/edit/write inside .worktrees/<name>/
+4. Run builds/tests with: docker exec -w /workspace <id> <command>
+5. Commit in the worktree
+6. pibo compute release <id>
+```
 
 ## Workflow
 
@@ -25,32 +36,27 @@ Run:
 pibo compute dev spawn --worktree <branch-name> --repo /root/code/pibo
 ```
 
-The CLI prints progress at every step:
-- Whether the Docker image is cached or needs a rebuild
-- When the git worktree is created
-- When the container starts and which ports it uses
+If this command does not exist, the CLI needs updating. Tell the user.
 
-This command:
-1. Checks if `package.json`, `package-lock.json`, or `Dockerfile` changed since the last image build
-2. Rebuilds the image only if dependencies changed (takes 1-2 minutes; cached otherwise)
-3. Creates a Git worktree at `.worktrees/<branch-name>/`
-4. Starts a container with the worktree mounted at `/workspace`
-5. Mounts the host `node_modules` into the container so you never need `npm install`
+The CLI prints progress:
+- Image cached or rebuilding (1-2 minutes if dependencies changed)
+- Worktree created at `.worktrees/<branch-name>/`
+- Container started with assigned ports
 
-The JSON output contains:
-- `id` — container name
-- `gatewayPort` — host port for the gateway
-- `cdpPort` — host port for browser-use CDP
-- `webUIPortChat` — host port for chat UI dev server
-- `webUIPortContext` — host port for context-files UI dev server
+Parse the JSON output. You need these fields:
+- `id` — the container name (e.g. `pibo-dev-fix-model-select`). Use this in every `docker exec` call.
+- `worktree` — absolute path to the worktree on the host
+- `gatewayPort`, `cdpPort`, `webUIPortChat`, `webUIPortContext` — host ports
 
 ### 2. Edit on the host
 
 Use `read`, `edit`, and `write` inside `.worktrees/<branch-name>/`. The container sees changes instantly because the mount is live.
 
+Never use `read` or `edit` on `/root/code/pibo/` directly. Always target the worktree path.
+
 ### 3. Run commands in the container
 
-Prefix every build, test, or runtime command with `docker exec -w /workspace <id>`:
+Every command that compiles, tests, or starts a process must run inside the container:
 
 ```bash
 docker exec -w /workspace <id> npm run build
@@ -59,23 +65,29 @@ docker exec -w /workspace <id> npm run test
 docker exec -w /workspace <id> npm run dev
 ```
 
-You do not need `npm install`. The container already has all dependencies through the mounted `node_modules`.
+Replace `<id>` with the container name from the JSON output.
 
-### 4. Start the gateway
+You do not need `npm install`. The container mounts the host `node_modules`.
+
+If you add new dependencies to `package.json`, run `npm install` inside the container. The host `node_modules` updates automatically.
+
+### 4. Start the gateway (only inside the container)
 
 ```bash
 docker exec -w /workspace <id> pibo gateway
 ```
 
-The gateway binds to `0.0.0.0:4789` inside the container. Access it from the host through `gatewayHost:gatewayPort`.
+The gateway binds to `0.0.0.0:4789` inside the container. Access it from the host through the `gatewayHost:gatewayPort` from the JSON output.
+
+Never start `pibo gateway` on the host.
 
 ### 5. Debug with browser-use
 
-Browser-use runs inside the container. Use it to inspect the web UIs through the exposed host ports.
+Browser-use runs inside the container. Use it to inspect web UIs through the exposed host ports.
 
 ### 6. Iterate
 
-Keep the container running. Edit on the host. Re-run commands in the container. You do not need to restart the container between iterations.
+Keep the container running. Edit on the host. Re-run commands in the container. Do not stop and restart the container between iterations.
 
 ### 7. Finish
 
@@ -88,13 +100,10 @@ Keep the container running. Edit on the host. Re-run commands in the container. 
    ```bash
    pibo compute release <id>
    ```
-3. Merge the branch into main (the user handles this, but you can prepare it):
+3. Tell the user the branch name and worktree path. They merge when ready.
+4. Clean up (only when the user confirms the merge is done):
    ```bash
    cd /root/code/pibo
-   git merge <branch-name>
-   ```
-4. Remove the worktree:
-   ```bash
    git worktree remove <branch-name>
    git branch -d <branch-name>
    ```
@@ -109,15 +118,11 @@ Each container gets a block of 10 ports. The spawn command assigns the next free
 | 481x  | 4810    | 4811| 4812    | 4813       |
 | 482x  | 4820    | 4821| 4822    | 4823       |
 
-This prevents port collisions when multiple agents work in parallel.
+This prevents collisions when multiple agents work in parallel.
 
-## Dependencies
+## What to avoid
 
-The Docker image caches all `node_modules`. The host `node_modules` is mounted into the container, so builds and typechecks work immediately. If you add new dependencies to `package.json`, run `npm install` inside the container. The mounted `node_modules` updates on the host automatically.
-
-## Reminders
-
-- Work only in `.worktrees/<branch-name>/`. Never touch `/root/code/pibo/` directly.
-- Run builds and tests inside the container.
-- Keep the container alive until you finish.
-- Commit to the worktree branch, not to `main`.
+- Do not edit `/root/code/pibo/` directly. Always use the worktree.
+- Do not run `npm run build`, `npm run test`, or `pibo gateway` on the host.
+- Do not stop the container between edit-and-test cycles.
+- Do not merge the branch yourself unless the user explicitly asks for it.
