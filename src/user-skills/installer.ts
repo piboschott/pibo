@@ -14,13 +14,28 @@ export function parseSkillUrl(url: string): ParsedSource | undefined {
   const trimmed = url.trim();
 
   // skills.sh: https://skills.sh/{owner}/skills/{skill-name}
+  // skills.sh: https://skills.sh/{owner}/{repo}/{skill-name}
   if (trimmed.startsWith("https://skills.sh/")) {
     const rest = trimmed.slice("https://skills.sh/".length);
     const parts = rest.split("/").filter(Boolean);
+    if (parts.length >= 3) {
+      // Format: {owner}/{repo}/{skill-name} (e.g. softaworks/agent-toolkit/writing-clearly)
+      const owner = parts[0];
+      const repo = parts[1];
+      const skillName = parts[2];
+      return { owner, repo, path: `skills/${skillName}`, skillName };
+    }
     if (parts.length >= 2 && parts[1] === "skills") {
       const owner = parts[0];
       const skillName = parts[2] ?? parts[0];
       return { owner, repo: "skills", path: `skills/${skillName}`, skillName };
+    }
+    if (parts.length === 2) {
+      // Format: {owner}/skills or {owner}/{repo}
+      if (parts[1] === "skills") {
+        return { owner: parts[0], repo: "skills" };
+      }
+      return { owner: parts[0], repo: parts[1] };
     }
     if (parts.length === 1) {
       return { owner: parts[0], repo: "skills" };
