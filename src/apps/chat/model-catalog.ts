@@ -1,0 +1,74 @@
+import { createAgentSessionServices } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@mariozechner/pi-ai";
+
+export type ModelCatalog = {
+	providers: ProviderCatalogEntry[];
+};
+
+export type ProviderCatalogEntry = {
+	id: string;
+	label: string;
+	authConfigured: boolean;
+	models: ModelCatalogEntry[];
+};
+
+export type ModelCatalogEntry = {
+	provider: string;
+	id: string;
+	label: string;
+	authConfigured?: boolean;
+	supportsReasoning?: boolean;
+};
+
+type ModelCatalogRegistry = {
+	getAll(): Model<Api>[];
+	getProviderDisplayName?: (provider: string) => string;
+	getProviderAuthStatus?: (provider: string) => { configured: boolean };
+};
+
+export function buildModelCatalogFromRegistry(registry: ModelCatalogRegistry): ModelCatalog {
+	const providers = new Map<string, ProviderCatalogEntry>();
+
+	for (const model of registry.getAll()) {
+		const providerId = model.provider;
+		let provider = providers.get(providerId);
+		if (!provider) {
+			const authConfigured = registry.getProviderAuthStatus?.(providerId).configured ?? false;
+			provider = {
+				id: providerId,
+				label: registry.getProviderDisplayName?.(providerId) ?? providerId,
+				authConfigured,
+				models: [],
+			};
+			providers.set(providerId, provider);
+		}
+
+		provider.models.push({
+			provider: providerId,
+			id: model.id,
+			label: model.name || model.id,
+			authConfigured: provider.authConfigured,
+			supportsReasoning: model.reasoning || undefined,
+		});
+	}
+
+	return {
+		providers: [...providers.values()]
+			.sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
+			.map((provider) => ({
+				...provider,
+				models: [...provider.models].sort(
+					(left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+				),
+			})),
+	};
+}
+
+export async function loadModelCatalog(cwd = process.cwd()): Promise<ModelCatalog> {
+	try {
+		const services = await createAgentSessionServices({ cwd });
+		return buildModelCatalogFromRegistry(services.modelRegistry);
+	} catch {
+		return { providers: [] };
+	}
+}

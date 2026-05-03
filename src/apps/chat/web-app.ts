@@ -40,6 +40,7 @@ import {
 } from "../../core/model-defaults.js";
 import type { ModelProfile } from "../../core/profiles.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
+import { loadModelCatalog } from "./model-catalog.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
 import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
 import {
@@ -2546,6 +2547,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					agents: context.channelContext.getProfiles?.() ?? [],
 					customAgents: serializeCustomAgents(state.agentStore.list(webSession.ownerScope, { includeArchived: true }), context),
 					modelDefaults: loadChatModelDefaults(process.cwd()),
+					modelCatalog: await loadModelCatalog(process.cwd()),
 					agentCatalog: await buildAgentCatalog(context, state),
 					capabilities: {
 						actions: context.channelContext.getGatewayActions(),
