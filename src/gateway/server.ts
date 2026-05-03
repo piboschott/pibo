@@ -14,6 +14,7 @@ import {
 	type GatewayFrame,
 	type GatewayResponseFrame,
 } from "./protocol.js";
+import { clearPidFile, writeGatewayPid } from "./pidfile.js";
 
 export type GatewayServerOptions = {
 	host?: string;
@@ -255,6 +256,13 @@ export class PiboGatewayServer {
 export async function runGatewayServer(options: GatewayServerOptions = {}): Promise<void> {
 	const server = new PiboGatewayServer(options);
 	await server.start();
+	try {
+		writeGatewayPid();
+	} catch (err) {
+		console.error(err instanceof Error ? err.message : String(err));
+		await server.stop();
+		process.exit(1);
+	}
 
 	const host = options.host ?? DEFAULT_GATEWAY_HOST;
 	const port = options.port ?? DEFAULT_GATEWAY_PORT;
@@ -262,6 +270,7 @@ export async function runGatewayServer(options: GatewayServerOptions = {}): Prom
 
 	const stop = async () => {
 		await server.stop();
+		clearPidFile();
 	};
 	process.once("SIGINT", () => {
 		void stop().finally(() => process.exit(0));

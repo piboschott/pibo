@@ -77,6 +77,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		return;
 	}
 
+	if (argv[2] === "gateway") {
+		const { runGatewayCli } = await import("./gateway/cli.js");
+		await runGatewayCli(argv);
+		return;
+	}
+
 	if (argv[2] === "config" && (argv[3] === "--help" || argv[3] === "-h" || argv.length === 3)) {
 		printConfigDiscovery();
 		return;
@@ -227,13 +233,6 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 			await router.disposeAll();
 		});
 	program
-		.command("gateway")
-		.description("Start the local pibo gateway daemon")
-		.action(async () => {
-			const { runGatewayServer } = await import("./gateway/server.js");
-			await runGatewayServer();
-		});
-	program
 		.command("gateway:web")
 		.description("Start the authenticated web gateway")
 		.option("--web-host <host>", "Bind the HTTP web host, for example 0.0.0.0 for LAN access")
@@ -275,7 +274,7 @@ Commands:
   profile      Inspect a pibo profile
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI
-  gateway      Start the local gateway daemon
+  gateway      Manage the local gateway daemon (start, status, stop, restart)
   gateway:web  Start the authenticated web gateway
 
 Next:

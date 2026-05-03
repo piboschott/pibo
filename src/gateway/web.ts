@@ -8,6 +8,7 @@ import { createPiboWebHostPlugin } from "../plugins/web.js";
 import { DEFAULT_WEB_CHANNEL_HOST, DEFAULT_WEB_CHANNEL_PORT, type WebHostChannelOptions } from "../web/channel.js";
 import { loadPiboConfig } from "../config/config.js";
 import { PiboGatewayServer, type GatewayServerOptions } from "./server.js";
+import { clearPidFile, writeGatewayPid } from "./pidfile.js";
 
 export type WebGatewayServerOptions = GatewayServerOptions & {
 	auth?: BetterAuthServiceOptions;
@@ -77,6 +78,13 @@ export async function runWebGatewayServer(options: WebGatewayServerOptions = {})
 		pluginRegistry,
 	});
 	await server.start();
+	try {
+		writeGatewayPid();
+	} catch (err) {
+		console.error(err instanceof Error ? err.message : String(err));
+		await server.stop();
+		process.exit(1);
+	}
 
 	const host = resolvedOptions.web?.host ?? DEFAULT_WEB_CHANNEL_HOST;
 	const port = resolvedOptions.web?.port ?? DEFAULT_WEB_CHANNEL_PORT;
@@ -84,6 +92,7 @@ export async function runWebGatewayServer(options: WebGatewayServerOptions = {})
 
 	const stop = async () => {
 		await server.stop();
+		clearPidFile();
 	};
 	process.once("SIGINT", () => {
 		void stop().finally(() => process.exit(0));
