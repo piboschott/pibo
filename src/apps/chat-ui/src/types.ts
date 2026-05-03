@@ -183,21 +183,9 @@ export type AgentProfile = {
 	runControl?: boolean;
 };
 
-export type UserSkill = {
-	id: string;
-	name: string;
-	description: string;
-	path: string;
-	enabled: boolean;
-	source: "user-created" | "skills.sh" | "github";
-	sourceUrl?: string;
-	createdAt: string;
-	updatedAt: string;
-};
-
 export type AgentCatalog = {
 	nativeTools: Array<{ name: string; description?: string; yieldable: boolean; hasDefinition: boolean; pluginId?: string; pluginName?: string }>;
-	skills: Array<{ name: string; path: string }>;
+	skills: Array<{ name: string; path: string; kind: "builtin" | "plugin" | "user"; pluginId?: string; pluginName?: string }>;
 	subagents: Array<{
 		name: string;
 		description?: string;
@@ -246,7 +234,6 @@ export type AgentCatalog = {
 		addedAt?: string;
 		updatedAt?: string;
 	}>;
-	userSkills: UserSkill[];
 };
 
 export type CustomAgentSubagent = {
@@ -275,6 +262,7 @@ export type CustomAgent = {
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
 	runControl: boolean;
+	brokenContextFiles?: string[];
 	createdAt: string;
 	updatedAt: string;
 	archivedAt?: string;
@@ -295,8 +283,7 @@ export type SpanType =
 	| "agent.async"
 	| "yielded.run"
 	| "user.prompt"
-	| "user_input"
-	| "execution.command";
+	| "user_input";
 
 export type SpanStatus = "UNSET" | "OK" | "ERROR";
 

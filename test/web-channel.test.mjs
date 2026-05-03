@@ -98,7 +98,7 @@ async function startWebHostChannel(options = {}) {
 		getCapabilityCatalog() {
 			return options.capabilityCatalog ?? {
 				nativeTools: [],
-				skills: [{ name: "pi-agent-harness", path: ".codex/skills/pi-agent-harness/SKILL.md" }],
+				skills: [{ name: "pi-agent-harness", path: "skills/builtin/pi-agent-harness/SKILL.md", kind: "builtin" }],
 				subagents: [],
 				contextFiles: [],
 				packages: [{ name: "pibo-run-control", description: "Run control", toolNames: ["pibo_run_start"] }],
@@ -1090,6 +1090,71 @@ test("chat web app creates custom agents from the native capability catalog", as
 		const listedPayload = await listed.json();
 		assert.deepEqual(listedPayload.agents.map((agent) => agent.displayName), ["research-agent"]);
 		assert.equal(listedPayload.agents[0].autoContextFiles, false);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app surfaces broken custom agent context files and allows cleanup", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		capabilityCatalog: {
+			nativeTools: [],
+			skills: [{ name: "pi-agent-harness", path: "skills/builtin/pi-agent-harness/SKILL.md", kind: "builtin" }],
+			subagents: [],
+			contextFiles: [{
+				key: "ctx:git-projekt",
+				label: "Git Projekt",
+				path: ".pibo/context/git-projekt.md",
+				source: "managed",
+				scope: "global",
+			}],
+			packages: [{ name: "pibo-run-control", description: "Run control", toolNames: ["pibo_run_start"] }],
+			piboTools: [],
+			mcpServers: [],
+		},
+	});
+
+	try {
+		const createdAgent = await fetch(`${baseURL}/api/chat/agents`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({
+				displayName: "broken-context-agent",
+				contextFiles: ["ctx:git-projekt", "ctx:pibo-docker-development"],
+			}),
+		});
+		assert.equal(createdAgent.status, 201);
+		const createdPayload = await createdAgent.json();
+		assert.deepEqual(createdPayload.agent.brokenContextFiles, ["ctx:pibo-docker-development"]);
+
+		const bootstrap = await fetch(`${baseURL}/api/chat/bootstrap`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrap.status, 200);
+		const bootstrapPayload = await bootstrap.json();
+		assert.deepEqual(bootstrapPayload.customAgents[0].brokenContextFiles, ["ctx:pibo-docker-development"]);
+
+		const patchedAgent = await fetch(`${baseURL}/api/chat/agents/${encodeURIComponent(createdPayload.agent.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({
+				contextFiles: ["ctx:git-projekt"],
+			}),
+		});
+		assert.equal(patchedAgent.status, 200);
+		const patchedPayload = await patchedAgent.json();
+		assert.deepEqual(patchedPayload.agent.brokenContextFiles, []);
+		assert.deepEqual(patchedPayload.agent.contextFiles, ["ctx:git-projekt"]);
 	} finally {
 		await channel.stop?.();
 	}

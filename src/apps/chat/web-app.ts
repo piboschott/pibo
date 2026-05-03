@@ -40,6 +40,7 @@ import {
 } from "../../core/model-defaults.js";
 import type { ModelProfile } from "../../core/profiles.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
+import { loadModelCatalog } from "./model-catalog.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
 import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
 import {
@@ -57,8 +58,6 @@ import {
 import { getDefaultPiboWorkspace } from "../../core/workspace.js";
 import { inspectPiPackageSource } from "../../pi-packages/metadata.js";
 import { findPiPackage, listPiPackages, removePiPackage, setPiPackageEnabled, upsertPiPackage } from "../../pi-packages/store.js";
-import { UserSkillManager } from "../../user-skills/manager.js";
-import { listUserSkills } from "../../user-skills/store.js";
 
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
@@ -84,10 +83,6 @@ type ChatWebAppState = {
 	subscribedContext?: PiboWebAppContext;
 	unsubscribe?: () => void;
 	liveListeners: Set<(event: StoredChatEvent) => void>;
-	activeEventStreams: Map<string, Set<string>>;
-	pendingDisconnectAborts: Map<string, ReturnType<typeof setTimeout>>;
-	userSkillManager: UserSkillManager;
-	syncedUserSkillNames?: Set<string>;
 };
 
 type ChatSessionCreateBody = {
@@ -528,57 +523,6 @@ function normalizeCompactionPromptMarkdown(value: unknown): string {
 	return value;
 }
 
-function normalizeUserSkillName(value: unknown): string {
-	if (typeof value !== "string" || value.trim().length === 0) {
-		throw new PiboWebHttpError("Skill name is required", 400);
-	}
-	const name = value.trim();
-	if (name.length > 64) throw new PiboWebHttpError("Skill name is too long", 400);
-	if (!/^[a-z][a-z0-9-]*$/.test(name)) {
-		throw new PiboWebHttpError("Skill name must be lowercase kebab-case, e.g. my-skill", 400);
-	}
-	return name;
-}
-
-function normalizeUserSkillDescription(value: unknown): string {
-	if (typeof value !== "string") throw new PiboWebHttpError("Skill description must be a string", 400);
-	return value.trim();
-}
-
-function normalizeUserSkillMarkdown(value: unknown): string {
-	if (typeof value !== "string") throw new PiboWebHttpError("Skill markdown must be a string", 400);
-	return value;
-}
-
-function normalizeUserSkillEnabled(value: unknown): boolean | undefined {
-	if (value === undefined) return undefined;
-	if (typeof value !== "boolean") throw new PiboWebHttpError("enabled must be a boolean", 400);
-	return value;
-}
-
-function normalizeUserSkillUrl(value: unknown): string {
-	if (typeof value !== "string" || value.trim().length === 0) {
-		throw new PiboWebHttpError("Skill URL is required", 400);
-	}
-	const url = value.trim();
-	if (!url.startsWith("http://") && !url.startsWith("https://") && !url.includes("/")) {
-		throw new PiboWebHttpError("Skill URL must be a valid URL or owner/repo shorthand", 400);
-	}
-	return url;
-}
-
-function userSkillResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/user-skills/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid user skill id", 400);
-	}
-}
-
 function normalizeAgentArchived(value: unknown): boolean | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "boolean") throw new PiboWebHttpError("archived must be a boolean", 400);
@@ -707,110 +651,6 @@ function reliabilityRetentionClassForOutputEvent(event: PiboOutputEvent): string
 		return "chat_message";
 	}
 	return "trace_event";
-}
-
-const EVENT_STREAM_ABORT_GRACE_MS = 5000;
-
-function appendDisconnectAbortEvent(
-	state: ChatWebAppState,
-	piboSessionId: string,
-	type: string,
-	payload: Record<string, PiboJsonValue>,
-): void {
-	state.reliabilityStore.append({
-		topic: "chat.abort",
-		key: piboSessionId,
-		eventId: `chat.abort:${piboSessionId}:${type}:${randomUUID()}`,
-		retentionClass: "trace_event",
-		payload: { type, piboSessionId, ...payload },
-	});
-}
-
-function clearPendingDisconnectAbort(
-	state: ChatWebAppState,
-	piboSessionId: string,
-	reason: "reconnected" | "stopped",
-): void {
-	const timer = state.pendingDisconnectAborts.get(piboSessionId);
-	if (!timer) return;
-	clearTimeout(timer);
-	state.pendingDisconnectAborts.delete(piboSessionId);
-	appendDisconnectAbortEvent(state, piboSessionId, "disconnect_abort_cancelled", { reason });
-}
-
-function markEventStreamConnected(state: ChatWebAppState, piboSessionId: string, streamId: string): void {
-	const streams = state.activeEventStreams.get(piboSessionId) ?? new Set<string>();
-	streams.add(streamId);
-	state.activeEventStreams.set(piboSessionId, streams);
-	clearPendingDisconnectAbort(state, piboSessionId, "reconnected");
-}
-
-function markEventStreamDisconnected(input: {
-	state: ChatWebAppState;
-	context: PiboWebAppContext;
-	piboSessionId: string;
-	streamId: string;
-}): void {
-	const streams = input.state.activeEventStreams.get(input.piboSessionId);
-	if (streams) {
-		streams.delete(input.streamId);
-		if (streams.size === 0) input.state.activeEventStreams.delete(input.piboSessionId);
-	}
-	if ((input.state.activeEventStreams.get(input.piboSessionId)?.size ?? 0) > 0) return;
-	if (input.state.pendingDisconnectAborts.has(input.piboSessionId)) return;
-
-	const session = input.state.readModel.getSession(input.piboSessionId);
-	if (!session || session.status !== "running") {
-		appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_skipped", {
-			reason: session ? "not_running" : "missing_session",
-		});
-		return;
-	}
-
-	appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_scheduled", {
-		graceMs: EVENT_STREAM_ABORT_GRACE_MS,
-	});
-	const timer = setTimeout(() => {
-		input.state.pendingDisconnectAborts.delete(input.piboSessionId);
-		void abortDisconnectedSession(input);
-	}, EVENT_STREAM_ABORT_GRACE_MS);
-	input.state.pendingDisconnectAborts.set(input.piboSessionId, timer);
-}
-
-async function abortDisconnectedSession(input: {
-	state: ChatWebAppState;
-	context: PiboWebAppContext;
-	piboSessionId: string;
-	streamId: string;
-}): Promise<void> {
-	if ((input.state.activeEventStreams.get(input.piboSessionId)?.size ?? 0) > 0) {
-		appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_skipped", {
-			reason: "reconnected",
-		});
-		return;
-	}
-
-	const session = input.state.readModel.getSession(input.piboSessionId);
-	if (!session || session.status !== "running") {
-		appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_skipped", {
-			reason: session ? "not_running" : "missing_session",
-		});
-		return;
-	}
-
-	appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_fired", {});
-	try {
-		await (input.state.subscribedContext ?? input.context).channelContext.emit({
-			type: "execution",
-			piboSessionId: input.piboSessionId,
-			id: randomUUID(),
-			action: "abort",
-		});
-	} catch (error) {
-		appendDisconnectAbortEvent(input.state, input.piboSessionId, "disconnect_abort_failed", {
-			error: error instanceof Error ? error.message : String(error),
-		});
-	}
 }
 
 function listOwnedSessions(context: PiboWebAppContext, webSession: PiboWebSession): PiboSession[] {
@@ -1090,46 +930,22 @@ function ensureCustomAgentProfiles(state: ChatWebAppState, context: PiboWebAppCo
 	}
 }
 
-function syncUserSkills(state: ChatWebAppState, context: PiboWebAppContext): void {
-	const registerSkill = context.channelContext.registerSkill;
-	const unregisterSkill = context.channelContext.unregisterSkill;
-	if (!registerSkill || !unregisterSkill) return;
-
-	const userSkills = state.userSkillManager.list();
-	const enabledNames = new Set(userSkills.filter((s) => s.enabled).map((s) => s.name));
-	const previouslySyncedNames = state.syncedUserSkillNames ?? new Set<string>();
-
-	// Unregister disabled or removed user skills
-	for (const name of previouslySyncedNames) {
-		if (!enabledNames.has(name)) {
-			unregisterSkill(name);
-		}
-	}
-
-	// Register only newly enabled user skills. Re-registering an already synced
-	// skill would trip the registry duplicate-skill guard and break the web UI.
-	for (const skill of userSkills) {
-		if (skill.enabled && !previouslySyncedNames.has(skill.name)) {
-			registerSkill({ name: skill.name, path: skill.path, enabled: true });
-		}
-	}
-
-	state.syncedUserSkillNames = enabledNames;
+function serializeCustomAgent(agent: CustomAgentDefinition, context: PiboWebAppContext) {
+	return {
+		...agent,
+		brokenContextFiles: listBrokenContextFiles(agent.contextFiles, context),
+	};
 }
 
-function assertUserSkillNameIsAvailable(
-	state: ChatWebAppState,
-	context: PiboWebAppContext,
-	name: string,
-	currentSkillId?: string,
-): void {
-	const currentSkill = currentSkillId ? state.userSkillManager.get(currentSkillId) : undefined;
-	const conflict = (context.channelContext.getCapabilityCatalog?.().skills ?? []).find((skill) => (
-		skill.name === name && (!currentSkill || currentSkill.name !== name)
-	));
-	if (conflict) {
-		throw new PiboWebHttpError(`Skill name "${name}" conflicts with an existing registered skill`, 409);
-	}
+function serializeCustomAgents(agents: readonly CustomAgentDefinition[], context: PiboWebAppContext) {
+	return agents.map((agent) => serializeCustomAgent(agent, context));
+}
+
+function listBrokenContextFiles(keys: readonly string[], context: PiboWebAppContext): string[] {
+	const catalog = context.channelContext.getCapabilityCatalog?.();
+	if (!catalog) return [];
+	const knownKeys = new Set(catalog.contextFiles.map((contextFile) => contextFile.key));
+	return keys.filter((key) => !knownKeys.has(key));
 }
 
 function createAgentInput(ownerScope: string, body: ChatAgentBody) {
@@ -1200,7 +1016,7 @@ function requireOwnedAgent(agent: CustomAgentDefinition | undefined, webSession:
 	return agent;
 }
 
-async function buildAgentCatalog(context: PiboWebAppContext, state: ChatWebAppState) {
+async function buildAgentCatalog(context: PiboWebAppContext) {
 	return {
 		...(context.channelContext.getCapabilityCatalog?.() ?? {
 			nativeTools: [],
@@ -1214,7 +1030,6 @@ async function buildAgentCatalog(context: PiboWebAppContext, state: ChatWebAppSt
 		}),
 		mcpServers: await listMcpServerInfos(),
 		piPackages: listPiPackages(),
-		userSkills: state.userSkillManager.list(),
 	};
 }
 
@@ -1511,10 +1326,8 @@ function createEventStream(input: {
 }): Response {
 	let unsubscribe: (() => void) | undefined;
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
-	const streamId = randomUUID();
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
-			if (input.piboSessionId) markEventStreamConnected(input.state, input.piboSessionId, streamId);
 			const streamState = createChatStreamState();
 			writeSse(controller, "pibo", {
 				type: "ready",
@@ -1543,14 +1356,6 @@ function createEventStream(input: {
 			unsubscribe = undefined;
 			if (heartbeat) clearInterval(heartbeat);
 			heartbeat = undefined;
-			if (input.piboSessionId) {
-				markEventStreamDisconnected({
-					state: input.state,
-					context: input.context,
-					piboSessionId: input.piboSessionId,
-					streamId,
-				});
-			}
 		},
 	});
 
@@ -2564,9 +2369,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		reliabilityStore: createReliabilityStore(options.reliabilityStorePath),
 		traceCache: new Map(),
 		liveListeners: new Set(),
-		activeEventStreams: new Map(),
-		pendingDisconnectAborts: new Map(),
-		userSkillManager: new UserSkillManager(process.cwd()),
 	};
 
 	const requireSession = (request: Request, context: PiboWebAppContext): Promise<PiboWebSession> =>
@@ -2582,7 +2384,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			const url = new URL(request.url);
 			ensureEventIndexing(state, context);
 			ensureCustomAgentProfiles(state, context);
-			syncUserSkills(state, context);
 
 			const builtAsset = responseBuiltChatAsset(request, url.pathname);
 			if (builtAsset) return builtAsset;
@@ -2644,9 +2445,10 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					rooms,
 					sessions,
 					agents: context.channelContext.getProfiles?.() ?? [],
-					customAgents: state.agentStore.list(webSession.ownerScope, { includeArchived: true }),
+					customAgents: serializeCustomAgents(state.agentStore.list(webSession.ownerScope, { includeArchived: true }), context),
 					modelDefaults: loadChatModelDefaults(process.cwd()),
-					agentCatalog: await buildAgentCatalog(context, state),
+					modelCatalog: await loadModelCatalog(process.cwd()),
+					agentCatalog: await buildAgentCatalog(context),
 					capabilities: {
 						actions: context.channelContext.getGatewayActions(),
 					},
@@ -2656,7 +2458,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/agent-catalog` && request.method === "GET") {
 				await requireSession(request, context);
 				return responseJson({
-					catalog: await buildAgentCatalog(context, state),
+					catalog: await buildAgentCatalog(context),
 					profiles: context.channelContext.getProfiles?.() ?? [],
 				});
 			}
@@ -2730,94 +2532,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return responseJson({ removedPackage: removed });
 			}
 
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills` && request.method === "GET") {
-				await requireSession(request, context);
-				return responseJson({ skills: state.userSkillManager.list() });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills` && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<{ name?: unknown; description?: unknown; markdown?: unknown }>(request);
-				const name = normalizeUserSkillName(body.name);
-				assertUserSkillNameIsAvailable(state, context, name);
-				const skill = state.userSkillManager.create({
-					name,
-					description: normalizeUserSkillDescription(body.description ?? ""),
-					markdown: normalizeUserSkillMarkdown(body.markdown ?? ""),
-				});
-				syncUserSkills(state, context);
-				return responseJson({ skill }, { status: 201 });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills/install` && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<{ url?: unknown }>(request);
-				const skill = await state.userSkillManager.installFromUrl(normalizeUserSkillUrl(body.url));
-				try {
-					assertUserSkillNameIsAvailable(state, context, skill.name, skill.id);
-				} catch (error) {
-					state.userSkillManager.remove(skill.id);
-					throw error;
-				}
-				syncUserSkills(state, context);
-				return responseJson({ skill }, { status: 201 });
-			}
-
-			const userSkillId = userSkillResourceId(url.pathname);
-			if (userSkillId && request.method === "GET") {
-				await requireSession(request, context);
-				const skill = state.userSkillManager.get(userSkillId);
-				if (!skill) throw new PiboWebHttpError("Skill not found", 404);
-				const markdown = state.userSkillManager.getSkillMarkdown(skill.id);
-				return responseJson({ skill, markdown });
-			}
-
-			if (userSkillId && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const existing = state.userSkillManager.get(userSkillId);
-				if (!existing) throw new PiboWebHttpError("Skill not found", 404);
-				const body = await readJsonBody<{
-					name?: unknown;
-					description?: unknown;
-					markdown?: unknown;
-					enabled?: unknown;
-				}>(request);
-				const input: {
-					name?: string;
-					description?: string;
-					markdown?: string;
-					enabled?: boolean;
-				} = {};
-				if (body.name !== undefined) input.name = normalizeUserSkillName(body.name);
-				if (body.description !== undefined) input.description = normalizeUserSkillDescription(body.description);
-				if (body.markdown !== undefined) input.markdown = normalizeUserSkillMarkdown(body.markdown);
-				if (body.enabled !== undefined) input.enabled = normalizeUserSkillEnabled(body.enabled);
-				if (Object.keys(input).length === 0) {
-					throw new PiboWebHttpError("No skill update fields provided", 400);
-				}
-				const nextName = input.name ?? existing.name;
-				const nextEnabled = input.enabled ?? existing.enabled;
-				if (nextEnabled) {
-					assertUserSkillNameIsAvailable(state, context, nextName, existing.id);
-				}
-				const skill = state.userSkillManager.update(existing.id, input);
-				syncUserSkills(state, context);
-				return responseJson({ skill });
-			}
-
-			if (userSkillId && request.method === "DELETE") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const existing = state.userSkillManager.get(userSkillId);
-				if (!existing) throw new PiboWebHttpError("Skill not found", 404);
-				state.userSkillManager.remove(existing.id);
-				syncUserSkills(state, context);
-				return responseJson({ removedSkillId: existing.id });
-			}
-
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/base-prompt` && request.method === "GET") {
 				await requireSession(request, context);
 				return responseJson({ basePrompt: await readPiboBasePrompt(process.cwd()) });
@@ -2871,7 +2585,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/agents` && request.method === "GET") {
 				const webSession = await requireSession(request, context);
 				const includeArchived = parseBooleanSearchParam(url, "includeArchived");
-				return responseJson({ agents: state.agentStore.list(webSession.ownerScope, { includeArchived }) });
+				return responseJson({ agents: serializeCustomAgents(state.agentStore.list(webSession.ownerScope, { includeArchived }), context) });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/agents` && request.method === "POST") {
@@ -2882,7 +2596,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				requireAgentProfileNameAvailable(state, context, input.displayName);
 				const agent = state.agentStore.create(input);
 				context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(agent));
-				return responseJson({ agent }, { status: 201 });
+				return responseJson({ agent: serializeCustomAgent(agent, context) }, { status: 201 });
 			}
 
 			const patchAgentId = agentResourceId(url.pathname);
@@ -2904,7 +2618,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				} else {
 					context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(owned));
 				}
-				return responseJson({ agent: owned });
+				return responseJson({ agent: serializeCustomAgent(owned, context) });
 			}
 
 			if (patchAgentId && request.method === "DELETE") {
@@ -3118,43 +2832,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const deletedSessionIds = deleteSessionSubtree(state, context, webSession, selectedSession);
 				return responseJson({ deletedSessionIds });
-			}
-
-			const sessionKillPrefix = `${CHAT_WEB_API_PREFIX}/sessions/`;
-			if (url.pathname.startsWith(sessionKillPrefix) && url.pathname.endsWith("/kill") && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				const webSession = await requireSession(request, context);
-				const encodedId = url.pathname.slice(sessionKillPrefix.length, -5);
-				if (!encodedId || encodedId.includes("/")) {
-					throw new PiboWebHttpError("Invalid session id", 400);
-				}
-				const killSessionId = decodeURIComponent(encodedId);
-				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, killSessionId);
-				const output = await context.channelContext.emit({
-					type: "execution",
-					piboSessionId: selectedSession.id,
-					id: randomUUID(),
-					action: "kill",
-				});
-				return responseJson(output);
-			}
-
-			if (url.pathname.startsWith(sessionKillPrefix) && url.pathname.endsWith("/kill-all") && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				const webSession = await requireSession(request, context);
-				const encodedId = url.pathname.slice(sessionKillPrefix.length, -9);
-				if (!encodedId || encodedId.includes("/")) {
-					throw new PiboWebHttpError("Invalid session id", 400);
-				}
-				const killAllSessionId = decodeURIComponent(encodedId);
-				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, killAllSessionId);
-				const output = await context.channelContext.emit({
-					type: "execution",
-					piboSessionId: selectedSession.id,
-					id: randomUUID(),
-					action: "kill_all",
-				});
-				return responseJson(output);
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace` && request.method === "GET") {
