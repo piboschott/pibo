@@ -1,0 +1,250 @@
+# Gateway Fallback Recovery
+
+Dokumentation des automatischen Failover-Systems für das Pibo Gateway.
+
+## Übersicht
+
+Das Gateway Fallback Recovery System stellt sicher, dass die Pibo Web App (`pibo.neuralnexus.me`) auch dann erreichbar bleibt, wenn das Haupt-Gateway abstürzt oder nicht mehr startet. Ein stabiler Fallback-Prozess springt automatisch ein und wird über denselben DNS-Namen bedient.
+
+## Architektur
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        User Browser                          │
+│              https://pibo.neuralnexus.me                     │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        nginx (Reverse Proxy)                 │
+│  upstream pibo_web_backend {                                 │
+│      server 127.0.0.1:4788 max_fails=1 fail_timeout=5s;     │
+│      server 127.0.0.1:4791 backup;                          │
+│  }                                                           │
+│  proxy_next_upstream error timeout http_500 http_502        │
+│                         http_503 http_504;                  │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+┌─────────────────┐      ┌─────────────────────┐
+│  Main Gateway   │      │  Fallback Gateway   │
+│  pibo-web       │      │  pibo-web-fallback  │
+│  Port 4788/4789 │      │  Port 4790/4791     │
+│                 │      │                     │
+│  ~code/pibo/    │      │  ~/.pibo/stable/    │
+│  (aktiver Code) │      │  (stabiler Backup)  │
+└─────────────────┘      └─────────────────────┘
+```
+
+## Komponenten
+
+### 1. Main Gateway (`pibo-web.service`)
+
+- **Source**: `~/code/pibo` (aktive Entwicklung)
+- **Ports**: TCP 4789 (Gateway), HTTP 4788 (Web App)
+- **PID-File**: `~/.pibo/gateway.pid`
+- **Status**: `systemctl status pibo-web.service`
+
+### 2. Fallback Gateway (`pibo-web-fallback.service`)
+
+- **Source**: `~/.pibo/stable/` (isolierter Backup-Build)
+- **Ports**: TCP 4790 (Gateway), HTTP 4791 (Web App)
+- **PID-File**: `~/.pibo/gateway-fallback.pid`
+- **Status**: `systemctl status pibo-web-fallback.service`
+- **Start-Trigger**: `OnFailure=pibo-web-fallback.service` auf `pibo-web.service`
+
+### 3. nginx Upstream-Backup
+
+```nginx
+upstream pibo_web_backend {
+    server 127.0.0.1:4788 max_fails=1 fail_timeout=5s;
+    server 127.0.0.1:4791 backup;
+}
+
+proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+proxy_next_upstream_tries 2;
+proxy_pass http://pibo_web_backend;
+```
+
+Wenn Port 4788 nicht mehr antwortet, routet nginx automatisch auf 4791.
+
+### 4. Health-Check Endpunkt
+
+Sowohl Main als auch Fallback liefern auf `/health`:
+
+```json
+{"status": "ok", "mode": "main"}
+```
+
+bzw. im Fallback:
+
+```json
+{"status": "ok", "mode": "fallback"}
+```
+
+### 5. Visueller Fallback-Banner
+
+Wenn die Chat-UI über den Fallback bedient wird, zeigt sie oben einen roten Banner:
+
+> ⚠️ Recovery Mode: Main gateway is down. You are connected to a fallback instance.
+
+## CLI-Befehle
+
+### Backup verwalten
+
+```bash
+# Backup aus aktuellem Source erstellen/aktualisieren
+pibo gateway backup install
+
+# Backup aus bestimmtem Pfad erstellen
+pibo gateway backup install /pfad/zum/source
+
+# Backup-Info anzeigen
+pibo gateway backup status
+
+# Backup aktualisieren (auf aktuellen Stand)
+pibo gateway backup update
+
+# Backup löschen
+pibo gateway backup remove
+```
+
+### Fallback manuell steuern
+
+```bash
+# Fallback starten (Ports 4790/4791)
+pibo gateway fallback start
+
+# Fallback stoppen
+pibo gateway fallback stop
+
+# Fallback mit Force-Kill stoppen
+pibo gateway fallback stop --force
+
+# Fallback Status
+pibo gateway fallback status
+
+# Fallback neu starten
+pibo gateway fallback restart
+```
+
+### Main Gateway steuern
+
+```bash
+# Main Gateway starten
+pibo gateway start
+
+# Web-Gateway starten
+pibo gateway:web
+
+# Status prüfen
+pibo gateway status
+
+# Stoppen
+pibo gateway stop
+
+# Graceful Restart
+pibo gateway restart
+```
+
+## systemd Services
+
+| Service | Beschreibung | Command |
+|---------|-------------|---------|
+| `pibo-web.service` | Haupt-Gateway | `systemctl status pibo-web.service` |
+| `pibo-web-fallback.service` | Fallback-Gateway | `systemctl status pibo-web-fallback.service` |
+
+### Automatischer Failover
+
+Wenn `pibo-web.service` mit einem Fehler ausgeht, startet systemd über `OnFailure=pibo-web-fallback.service` automatisch den Fallback.
+
+### Manuelles Recovery
+
+```bash
+# Nach Reparatur des Main-Gateways:
+systemctl start pibo-web.service
+systemctl stop pibo-web-fallback.service
+```
+
+## Erstinstallation / Setup
+
+1. **Backup erstellen** (einmalig oder bei Änderungen):
+   ```bash
+   cd ~/code/pibo
+   npm run build
+   pibo gateway backup install
+   ```
+
+2. **Services aktivieren**:
+   ```bash
+   sudo systemctl enable pibo-web.service
+   sudo systemctl enable pibo-web-fallback.service
+   ```
+
+3. **Main starten**:
+   ```bash
+   sudo systemctl start pibo-web.service
+   ```
+
+## Troubleshooting
+
+### Fallback startet nicht automatisch
+
+Prüfe, ob `OnFailure` im Service-File gesetzt ist:
+```bash
+systemctl cat pibo-web.service | grep OnFailure
+```
+
+### nginx routet nicht zum Fallback
+
+Prüfe die Upstream-Konfiguration:
+```bash
+grep -A 5 "upstream pibo_web_backend" /etc/nginx/sites-available/pibo
+```
+
+### Backup ist veraltet
+
+Aktualisiere das Backup nach jeder größeren Code-Änderung:
+```bash
+pibo gateway backup update
+```
+
+### Ports sind belegt
+
+Prüfe, welcher Prozess auf den Ports lauscht:
+```bash
+ss -tlnp | grep -E "4788|4789|4790|4791"
+```
+
+### Gateway läuft nicht
+
+Prüfe Logs:
+```bash
+journalctl -u pibo-web.service -n 50
+journalctl -u pibo-web-fallback.service -n 50
+```
+
+## Dateien & Pfade
+
+| Datei / Pfad | Zweck |
+|-------------|-------|
+| `~/code/pibo` | Aktiver Sourcecode |
+| `~/.pibo/stable/` | Backup-Source + Build |
+| `~/.pibo/gateway.pid` | PID des Main-Gateways |
+| `~/.pibo/gateway-fallback.pid` | PID des Fallback-Gateways |
+| `/etc/systemd/system/pibo-web.service` | Main Service Definition |
+| `/etc/systemd/system/pibo-web-fallback.service` | Fallback Service Definition |
+| `/etc/nginx/sites-available/pibo` | nginx Upstream-Config |
+| `src/gateway/backup.ts` | Backup-Logik (Code) |
+| `src/gateway/fallback.ts` | Fallback-Logik (Code) |
+| `src/web/channel.ts` | Health-Check Route (Code) |
+| `src/apps/chat-ui/src/App.tsx` | Fallback-Banner UI (Code) |
+
+## Sicherheitshinweise
+
+- Der Fallback-Prozess läuft **nativ auf dem Host** (nicht in Docker), damit er das System zur Reparatur bearbeiten kann.
+- Beide Prozesse (Main und Fallback) greifen auf dasselbe `~/.pibo/`-Verzeichnis zu (Sessions, Auth, Skills, Context-Files).
+- Ein paralleler Betrieb auf denselben SQLite-DBs wird durch die Port-Trennung vermieden — es läuft immer nur einer aktiv.
+- Der Fallback lauscht auf `0.0.0.0:4791`, ist aber nur über den nginx-Reverse-Proxy (mit Auth) öffentlich erreichbar.
