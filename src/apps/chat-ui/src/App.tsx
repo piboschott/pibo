@@ -173,6 +173,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [deleteRoomConfirmName, setDeleteRoomConfirmName] = useState("");
 	const [deletingRoom, setDeletingRoom] = useState(false);
 	const [deleteSessionTarget, setDeleteSessionTarget] = useState<PiboWebSessionNode | null>(null);
+	const [gatewayMode, setGatewayMode] = useState<"main" | "fallback" | null>(null);
 	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
 	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
@@ -184,6 +185,25 @@ export function App({ route }: { route: ChatAppRoute }) {
 	useEffect(() => {
 		showArchivedRef.current = showArchived;
 	}, [showArchived]);
+
+	useEffect(() => {
+		const check = async () => {
+			try {
+				const res = await fetch("/health", { signal: AbortSignal.timeout(3000) });
+				if (res.ok) {
+					const data = await res.json();
+					setGatewayMode(data.mode === "fallback" ? "fallback" : "main");
+				} else {
+					setGatewayMode(null);
+				}
+			} catch {
+				setGatewayMode(null);
+			}
+		};
+		void check();
+		const id = setInterval(check, 5000);
+		return () => clearInterval(id);
+	}, []);
 
 	useEffect(() => {
 		if (area !== "sessions") return;
@@ -734,8 +754,15 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const contextAgentProfiles = [...new Set([...bootstrap.agents.map((agent) => agent.name), ...bootstrap.customAgents.map((agent) => agent.profileName)])];
 
 	return (
-		<div className="h-screen overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[56px_1fr]">
-			<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800">
+		<>
+			{gatewayMode === "fallback" && (
+				<div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center text-sm font-bold py-1.5 px-4 flex items-center justify-center gap-2 shadow-lg">
+					<AlertTriangle size={16} />
+					Recovery Mode: Main gateway is down. You are connected to a fallback instance.
+				</div>
+			)}
+			<div className="h-screen overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[56px_1fr]">
+				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800">
 				<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 				<nav className="flex gap-1">
 					{(["sessions", "agents", "context", "settings"] as const).map((item) => (
@@ -1086,6 +1113,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			</div>
 
 		</div>
+	</>
 	);
 }
 
