@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
 import type { ChatSessionViewProps } from "../types";
 import { TerminalDetails } from "./TerminalDetails";
@@ -27,7 +28,7 @@ export function CompactTerminalSessionView({
 		() => buildCompactTerminalRows(traceView, { showThinking }),
 		[showThinking, traceView],
 	);
-	const scrollRef = useRef<HTMLDivElement>(null);
+	const virtuosoRef = useRef<VirtuosoHandle>(null);
 	const bottomLockedRef = useRef(true);
 	const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -46,19 +47,10 @@ export function CompactTerminalSessionView({
 		});
 	}, [expandThinking, rows]);
 
-	const updateBottomLock = () => {
-		const element = scrollRef.current;
-		if (!element) return;
-		const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-		bottomLockedRef.current = distanceFromBottom < 48;
-		setShowJumpToBottom(distanceFromBottom > 180);
-	};
-
-	const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-		const element = scrollRef.current;
-		if (!element) return;
+	const scrollToBottom = (behavior: "auto" | "smooth" = "smooth") => {
+		if (!rows.length) return;
 		bottomLockedRef.current = true;
-		element.scrollTo({ top: element.scrollHeight, behavior });
+		virtuosoRef.current?.scrollToIndex({ index: rows.length - 1, align: "end", behavior });
 		setShowJumpToBottom(false);
 	};
 
@@ -120,7 +112,7 @@ export function CompactTerminalSessionView({
 				) : null}
 			</div>
 
-			<div ref={scrollRef} onScroll={updateBottomLock} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+			<div className="min-h-0 flex-1 overflow-hidden">
 				{!traceView ? (
 					<EmptyTerminalState
 						isLoading={isLoading}
@@ -129,90 +121,102 @@ export function CompactTerminalSessionView({
 						onSelectAgentProfile={onSessionAgentProfileChange}
 					/>
 				) : rows.length ? (
-					<div className="px-4 py-3 font-mono text-[12px] leading-[1.45]">
-						{rows.map((row) => {
+					<Virtuoso
+						ref={virtuosoRef}
+						data={rows}
+						className="min-h-0 h-full font-mono text-[12px] leading-[1.45]"
+						computeItemKey={(_, row) => row.id}
+						atBottomStateChange={(atBottom) => {
+							bottomLockedRef.current = atBottom;
+							setShowJumpToBottom(!atBottom);
+						}}
+						followOutput={isStreaming ? ((atBottom) => (atBottom ? "auto" : false)) : false}
+						components={{
+							Footer: isStreaming ? TerminalStreamingFooter : undefined,
+						}}
+						itemContent={(_, row) => {
 							const expanded = expandedRows.has(row.id);
 							const rowClassName =
 								row.kind === "message.user"
 									? "group border-b border-[#141414] bg-[#11a4d4]/10 py-2 last:border-b-0 hover:bg-[#11a4d4]/15"
 									: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]";
 							return (
-								<div
-									key={row.id}
-									className={rowClassName}
-									data-pibo-terminal-row="true"
-									data-row-id={row.id}
-									data-row-kind={row.kind}
-									data-row-status={row.status}
-									data-trace-node-id={row.sourceNodeIds.join(" ")}
-									data-event-id={row.eventId}
-									data-run-id={row.runId}
-									data-order-source={row.orderSource}
-									data-order-stream-id={row.orderStreamId}
-									data-order-frame-index={row.orderStreamFrameIndex}
-								>
-									<div className="flex gap-3">
-										<div className="min-w-0 flex-1">
-											{row.kind === "message.assistant" ? (
-												<div className="ml-[1.9rem] min-w-0">
-													<div className="compact-terminal-markdown">
-														<MarkdownRenderer>{typeof row.output === "string" ? row.output : ""}</MarkdownRenderer>
-													</div>
-												</div>
-											) : row.kind === "reasoning" && row.markdown ? (
-												<>
-													{row.lines.map((line, index) => <TerminalLine key={`${row.id}:${index}`} line={line} status={row.status} />)}
+								<div className="px-4">
+									<div
+										className={rowClassName}
+										data-pibo-terminal-row="true"
+										data-row-id={row.id}
+										data-row-kind={row.kind}
+										data-row-status={row.status}
+										data-trace-node-id={row.sourceNodeIds.join(" ")}
+										data-event-id={row.eventId}
+										data-run-id={row.runId}
+										data-order-source={row.orderSource}
+										data-order-stream-id={row.orderStreamId}
+										data-order-frame-index={row.orderStreamFrameIndex}
+									>
+										<div className="flex gap-3">
+											<div className="min-w-0 flex-1">
+												{row.kind === "message.assistant" ? (
 													<div className="ml-[1.9rem] min-w-0">
-														<div className="compact-terminal-markdown compact-terminal-reasoning">
-															<MarkdownRenderer>{row.markdown}</MarkdownRenderer>
+														<div className="compact-terminal-markdown">
+															<MarkdownRenderer>{typeof row.output === "string" ? row.output : ""}</MarkdownRenderer>
 														</div>
 													</div>
-												</>
-											) : row.kind === "tool.status" ? (
-												<div className="min-w-0">
-													<TerminalStatusCard row={row} />
-												</div>
-											) : (
-												row.lines.map((line, index) => <TerminalLine key={`${row.id}:${index}`} line={line} status={row.status} />)
-											)}
+												) : row.kind === "tool.status" ? (
+													<div className="min-w-0">
+														<TerminalStatusCard row={row} />
+													</div>
+												) : row.kind === "reasoning" && row.markdown ? (
+													<>
+														{row.lines.map((line, index) => <TerminalLine key={`${row.id}:${index}`} line={line} status={row.status} />)}
+														<div className="ml-[1.9rem] min-w-0">
+															<div className="compact-terminal-markdown compact-terminal-reasoning">
+																<MarkdownRenderer>{row.markdown}</MarkdownRenderer>
+															</div>
+														</div>
+													</>
+												) : (
+													row.lines.map((line, index) => <TerminalLine key={`${row.id}:${index}`} line={line} status={row.status} />)
+												)}
+											</div>
+											<div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+												{row.linkedPiboSessionId ? (
+													<RowAction
+														label="Open linked session"
+														onClick={() => onOpenSession(row.linkedPiboSessionId!)}
+													>
+														Open
+													</RowAction>
+												) : null}
+												{row.forkEntryId ? (
+													<RowAction label="Fork from this message" onClick={() => onFork(row.forkEntryId!)}>
+														Fork
+													</RowAction>
+												) : null}
+												{row.expandable ? (
+													<RowAction
+														label={expanded ? "Collapse details" : "Expand details"}
+														onClick={() =>
+															setExpandedRows((current) => {
+																const next = new Set(current);
+																if (next.has(row.id)) next.delete(row.id);
+																else next.add(row.id);
+																return next;
+															})
+														}
+													>
+														{expanded ? "Hide" : "Details"}
+													</RowAction>
+												) : null}
+											</div>
 										</div>
-										<div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-											{row.linkedPiboSessionId ? (
-												<RowAction
-													label="Open linked session"
-													onClick={() => onOpenSession(row.linkedPiboSessionId!)}
-												>
-													Open
-												</RowAction>
-											) : null}
-											{row.forkEntryId ? (
-												<RowAction label="Fork from this message" onClick={() => onFork(row.forkEntryId!)}>
-													Fork
-												</RowAction>
-											) : null}
-											{row.expandable ? (
-												<RowAction
-													label={expanded ? "Collapse details" : "Expand details"}
-													onClick={() =>
-														setExpandedRows((current) => {
-															const next = new Set(current);
-															if (next.has(row.id)) next.delete(row.id);
-															else next.add(row.id);
-															return next;
-														})
-													}
-												>
-													{expanded ? "Hide" : "Details"}
-												</RowAction>
-											) : null}
-										</div>
+										{expanded ? <TerminalDetails row={row} onOpenSession={onOpenSession} /> : null}
 									</div>
-									{expanded ? <TerminalDetails row={row} onOpenSession={onOpenSession} /> : null}
 								</div>
 							);
-						})}
-						{isStreaming ? <div className="pt-2 text-[#737373]">• Working</div> : null}
-					</div>
+						}}
+					/>
 				) : (
 					<EmptyTerminalState
 						isLoading={isLoading}
@@ -235,6 +239,10 @@ export function CompactTerminalSessionView({
 			) : null}
 		</section>
 	);
+}
+
+function TerminalStreamingFooter() {
+	return <div className="px-4 py-3 text-[#737373]">• Working</div>;
 }
 
 function TerminalBadge({

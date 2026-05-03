@@ -1,8 +1,9 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, GitBranch, GitFork, ListTree, MessageSquarePlus, RefreshCw, RotateCcw } from "lucide-react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { Span, Trace } from "../types";
 import { countRender } from "../renderMetrics";
-import { SpanNode, type SpanExpansionDepth } from "./SpanNode";
+import { TraceSpanCard, type SpanExpansionDepth } from "./SpanNode";
 import { processSpanTree } from "./traceTree";
 
 type TraceTimelineProps = {
@@ -47,6 +48,14 @@ type BreadcrumbDisplayItem =
 	| { type: "item"; item: SessionBreadcrumbItem; current: boolean }
 	| { type: "ellipsis" };
 
+type VisibleSpanRow = {
+	id: string;
+	span: Span;
+	depth: number;
+	contentExpanded: boolean;
+	childrenExpanded: boolean;
+};
+
 const timelineContentStyle = {
 	"--trace-readable-width": "min(100%, clamp(36rem, 58vw, 64rem))",
 } as CSSProperties;
@@ -69,12 +78,12 @@ export function TraceTimeline({
 	onOpenSession,
 }: TraceTimelineProps) {
 	countRender("TraceTimeline");
-	const scrollRef = useRef<HTMLDivElement>(null);
+	const virtuosoRef = useRef<VirtuosoHandle>(null);
 	const bottomLockedRef = useRef(true);
 	const [expansionDepth, setExpansionDepth] = useState<SpanExpansionDepth>(DEFAULT_EXPANSION_DEPTH);
-	const [expansionSignal, setExpansionSignal] = useState(0);
 	const [levelInput, setLevelInput] = useState(String(DEFAULT_EXPANSION_DEPTH));
 	const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+	const [expansionOverrides, setExpansionOverrides] = useState<Record<string, { contentExpanded: boolean; childrenExpanded: boolean }>>({});
 
 	const spanTree = useMemo(() => {
 		if (!trace?.spans) return [];
@@ -95,37 +104,33 @@ export function TraceTimeline({
 		[allSpans],
 	);
 	const isStreaming = trace?.status === "UNSET";
+	const visibleRows = useMemo(
+		() => flattenVisibleSpans(spanTree, expansionDepth, expandThinking, expansionOverrides),
+		[expandThinking, expansionDepth, expansionOverrides, spanTree],
+	);
 
-	const updateBottomLock = useCallback(() => {
-		const element = scrollRef.current;
-		if (!element) return;
-		const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-		bottomLockedRef.current = distanceFromBottom < 48;
-		setShowJumpToBottom(distanceFromBottom > 180);
-	}, []);
-
-	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-		const element = scrollRef.current;
-		if (!element) return;
+	const scrollToBottom = useCallback((behavior: "auto" | "smooth" = "smooth") => {
+		if (!visibleRows.length) return;
 		bottomLockedRef.current = true;
-		element.scrollTo({ top: element.scrollHeight, behavior });
+		virtuosoRef.current?.scrollToIndex({ index: visibleRows.length - 1, align: "end", behavior });
 		setShowJumpToBottom(false);
-	}, []);
+	}, [visibleRows.length]);
 
-	useLayoutEffect(() => {
+	useEffect(() => {
+		setExpansionOverrides({});
+	}, [expandThinking, trace?.id]);
+
+	useEffect(() => {
 		bottomLockedRef.current = true;
 		const frame = requestAnimationFrame(() => scrollToBottom("auto"));
 		return () => cancelAnimationFrame(frame);
 	}, [scrollToBottom, trace?.id]);
 
-	useLayoutEffect(() => {
+	useEffect(() => {
 		if (!isStreaming || !bottomLockedRef.current) return;
-		const frame = requestAnimationFrame(() => {
-			const element = scrollRef.current;
-			if (element && bottomLockedRef.current) scrollToBottom("auto");
-		});
+		const frame = requestAnimationFrame(() => scrollToBottom("auto"));
 		return () => cancelAnimationFrame(frame);
-	}, [isStreaming, scrollToBottom, trace?.spans]);
+	}, [isStreaming, scrollToBottom, visibleRows.length]);
 
 	if (!trace) {
 		return (
@@ -151,7 +156,7 @@ export function TraceTimeline({
 	const applyExpansionDepth = (depth: SpanExpansionDepth) => {
 		setExpansionDepth(depth);
 		if (typeof depth === "number" && depth > 0) setLevelInput(String(depth));
-		setExpansionSignal((current) => current + 1);
+		setExpansionOverrides({});
 	};
 
 	const applyLevelInput = () => {
@@ -227,23 +232,45 @@ export function TraceTimeline({
 				</div>
 			</div>
 
-			<div ref={scrollRef} onScroll={updateBottomLock} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-				{spanTree.length ? (
-					<div className="relative w-full min-w-0 max-w-full p-6" style={timelineContentStyle}>
-						{spanTree.map((span) => (
-							<SpanNode
-								key={span.id}
-								span={span}
-								startTime={startTime}
-								expansionDepth={expansionDepth}
-								expansionSignal={expansionSignal}
-								expandThinking={expandThinking}
-								onFork={onFork}
-								onOpenSession={onOpenSession}
-							/>
-						))}
-						{isStreaming ? <StreamingIndicator /> : null}
-					</div>
+			<div className="min-w-0 flex-1 overflow-hidden">
+				{visibleRows.length ? (
+					<Virtuoso
+						ref={virtuosoRef}
+						data={visibleRows}
+						className="min-h-0 h-full min-w-0 overflow-x-hidden"
+						style={timelineContentStyle}
+						computeItemKey={(_, row) => row.id}
+						atBottomStateChange={(atBottom) => {
+							bottomLockedRef.current = atBottom;
+							setShowJumpToBottom(!atBottom);
+						}}
+						followOutput={isStreaming ? ((atBottom) => (atBottom ? "auto" : false)) : false}
+						components={{
+							Footer: isStreaming ? StreamingIndicator : undefined,
+						}}
+						itemContent={(_, row) => (
+							<div className="px-6">
+								<TraceSpanCard
+									span={row.span}
+									startTime={startTime}
+									depth={row.depth}
+									contentExpanded={row.contentExpanded}
+									childrenExpanded={row.childrenExpanded}
+									onToggle={() =>
+										setExpansionOverrides((current) => ({
+											...current,
+											[row.id]: {
+												contentExpanded: !row.contentExpanded,
+												childrenExpanded: row.span.children?.length ? !row.childrenExpanded : row.childrenExpanded,
+											},
+										}))
+									}
+									onFork={onFork}
+									onOpenSession={onOpenSession}
+								/>
+							</div>
+						)}
+					/>
 				) : (
 					<EmptyTraceState
 						agentProfiles={agentProfiles}
@@ -569,4 +596,35 @@ function filterThinking(spans: Span[], showThinking: boolean): Span[] {
 
 function flattenSpans(spans: Span[]): Span[] {
 	return spans.flatMap((span) => [span, ...(span.children ? flattenSpans(span.children) : [])]);
+}
+
+function isExpandedAtDepth(depth: number, expansionDepth: SpanExpansionDepth): boolean {
+	return expansionDepth === "all" || depth < expansionDepth;
+}
+
+function flattenVisibleSpans(
+	spans: readonly Span[],
+	expansionDepth: SpanExpansionDepth,
+	expandThinking: boolean,
+	expansionOverrides: Record<string, { contentExpanded: boolean; childrenExpanded: boolean }>,
+	depth = 0,
+): VisibleSpanRow[] {
+	const rows: VisibleSpanRow[] = [];
+	for (const span of spans) {
+		const defaultExpanded = isExpandedAtDepth(depth, expansionDepth);
+		const override = expansionOverrides[span.id];
+		const contentExpanded = override?.contentExpanded ?? (span.spanType === "model.reasoning" ? expandThinking : defaultExpanded);
+		const childrenExpanded = override?.childrenExpanded ?? defaultExpanded;
+		rows.push({
+			id: span.id,
+			span,
+			depth,
+			contentExpanded,
+			childrenExpanded,
+		});
+		if (span.children?.length && contentExpanded && childrenExpanded) {
+			rows.push(...flattenVisibleSpans(span.children, expansionDepth, expandThinking, expansionOverrides, depth + 1));
+		}
+	}
+	return rows;
 }

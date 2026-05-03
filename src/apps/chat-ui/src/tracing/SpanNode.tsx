@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
 import {
 	ArrowDownToLine,
 	Bell,
@@ -33,6 +33,18 @@ type SpanNodeProps = {
 };
 
 export type SpanExpansionDepth = number | "all";
+
+type TraceSpanCardProps = {
+	span: Span;
+	startTime: number;
+	depth?: number;
+	contentExpanded: boolean;
+	childrenExpanded: boolean;
+	onToggle: () => void;
+	onFork?: (entryId: string) => void;
+	onOpenSession?: (piboSessionId: string) => void;
+	childrenContent?: ReactNode;
+};
 
 type SpanTypeConfig = {
 	color: string;
@@ -161,6 +173,61 @@ export const SpanNode = memo(function SpanNode({
 	}, [hasChildren]);
 
 	return (
+		<TraceSpanCard
+			span={span}
+			startTime={startTime}
+			depth={depth}
+			contentExpanded={contentExpanded}
+			childrenExpanded={childrenExpanded}
+			onToggle={handleToggle}
+			onFork={onFork}
+			onOpenSession={onOpenSession}
+			childrenContent={
+				hasChildren
+					? span.children?.map((child) => (
+							<SpanNode
+								key={child.id}
+								span={child}
+								startTime={startTime}
+								depth={depth + 1}
+								expansionDepth={expansionDepth}
+								expansionSignal={expansionSignal}
+								expandThinking={expandThinking}
+								onFork={onFork}
+								onOpenSession={onOpenSession}
+							/>
+						))
+					: undefined
+			}
+		/>
+	);
+});
+
+export const TraceSpanCard = memo(function TraceSpanCard({
+	span,
+	startTime,
+	depth = 0,
+	contentExpanded,
+	childrenExpanded,
+	onToggle,
+	onFork,
+	onOpenSession,
+	childrenContent,
+}: TraceSpanCardProps) {
+	countRender("TraceSpanCard");
+	const config = spanTypeConfigs[span.spanType] || spanTypeConfigs["agent.run"];
+	const isActive = span.status === "UNSET";
+	const statusStyles = getStatusStyles(span.status, isActive);
+	const isUserMessage = span.spanType === "user.prompt" || span.spanType === "user_input";
+	const hasChildren = Boolean(span.children?.length);
+	const relativeTime = formatRelativeTime(span.startTime, startTime);
+	const duration = span.durationUs
+		? `${(span.durationUs / 1000).toFixed(1)}ms`
+		: span.endTime
+			? `${((span.endTime - span.startTime) / 1000).toFixed(1)}ms`
+			: null;
+
+	return (
 		<div
 			className="relative mb-4 group"
 			style={{
@@ -182,7 +249,7 @@ export const SpanNode = memo(function SpanNode({
 					contentExpanded={contentExpanded}
 					duration={duration}
 					relativeTime={relativeTime}
-					onToggle={handleToggle}
+					onToggle={onToggle}
 					onFork={onFork}
 					onOpenSession={onOpenSession}
 				/>
@@ -191,19 +258,7 @@ export const SpanNode = memo(function SpanNode({
 
 				{hasChildren && childrenExpanded && contentExpanded ? (
 					<div className="min-w-0 border-t border-slate-700 bg-slate-900/50 py-4">
-						{span.children?.map((child) => (
-							<SpanNode
-								key={child.id}
-								span={child}
-								startTime={startTime}
-								depth={depth + 1}
-								expansionDepth={expansionDepth}
-								expansionSignal={expansionSignal}
-								expandThinking={expandThinking}
-								onFork={onFork}
-								onOpenSession={onOpenSession}
-							/>
-						))}
+						{childrenContent}
 					</div>
 				) : null}
 			</div>
