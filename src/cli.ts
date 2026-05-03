@@ -83,6 +83,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		return;
 	}
 
+	if (argv[2] === "compute") {
+		const { runComputeCli } = await import("./compute/cli.js");
+		await runComputeCli([argv[0] ?? "node", "pibo compute", ...argv.slice(3)]);
+		return;
+	}
+
 	if (argv[2] === "config" && (argv[3] === "--help" || argv[3] === "-h" || argv.length === 3)) {
 		printConfigDiscovery();
 		return;
@@ -137,6 +143,18 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		.action(async (args: string[]) => {
 			const { runDebugCli } = await import("./debug/index.js");
 			await runDebugCli([argv[0] ?? "node", "pibo debug", ...args]);
+		});
+
+	program
+		.command("compute")
+		.description("Manage Pibo Docker compute workers")
+		.helpOption(false)
+		.allowUnknownOption(true)
+		.allowExcessArguments(true)
+		.argument("[args...]")
+		.action(async (args: string[]) => {
+			const { runComputeCli } = await import("./compute/cli.js");
+			await runComputeCli([argv[0] ?? "node", "pibo compute", ...args]);
 		});
 
 	const config = program.command("config").description(`Manage pibo config at ${DEFAULT_PIBO_CONFIG_PATH}`).helpOption(false);
@@ -271,6 +289,7 @@ Commands:
   tools        Install and inspect curated external CLI tools
   pi-packages  Register Pi Coding Agent packages
   debug        Inspect local Pibo data
+  compute      Manage Pibo Docker compute workers
   profile      Inspect a pibo profile
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI
