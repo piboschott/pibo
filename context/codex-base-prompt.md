@@ -99,6 +99,10 @@ In those cases, it is bad to output your proposed solution in a message. You sho
 
 If you encounter challenges or blockers, you should attempt to resolve them yourself.
 
+## Gateway Daemon
+
+Pibo can run as a persistent local gateway daemon (`pibo gateway`). If the gateway needs to be restarted (for example, after installing a package update), use `pibo gateway restart` for a graceful restart. The command sends SIGTERM, waits for the port to become free, spawns a new detached process, and waits until it is reachable again. Use `pibo gateway status` to check whether it is running.
+
 ## 7. Final Answer Instructions
 
 Always favor conciseness in your final answer. Usually avoid long-winded explanations and focus only on the most important details. For casual chit-chat, just chat.
