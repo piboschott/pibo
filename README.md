@@ -111,6 +111,10 @@ Custom agents can be archived before deletion. Archived custom agents are remove
 
 The designer configures native Pibo agent capabilities only: plugin-registered tools, skills, context files, subagents, automatic local context-file loading, built-in Pi tool visibility, and capability packages such as `pibo-run-control`. Curated external CLI tools from `pibo tools` remain global operator tooling and are not selected per agent.
 
+The Chat Web App also supports User Skills. Operators can create local skills or import them from `skills.sh` or GitHub, and Pibo stores them under `.pibo/user-skills` plus `.pibo/user-skills.json`. Enabled user skills are registered live so they are selectable in the Agent Designer and available to routed sessions without a manual restart.
+
+User Skill names are guarded at two layers: the web app no longer re-registers an already-synced skill on subsequent requests, and create/rename/enable/import flows reject names that would collide with an already registered skill. Imports also refuse to silently overwrite an existing skill name.
+
 The Chat Web App now also has a dedicated Context area at `/apps/chat/context`. It reuses the managed context-file APIs inside the main Chat UI shell so operators can create, edit, relocate, and remove managed context files without leaving the authenticated Chat Web App. Plugin context files are shown there as read-only sources, and both the Context area and Agent Designer can create linked managed copies when a user wants to customize shipped content safely.
 
 The Context area also exposes the Pibo Base Prompt. The library prompt lives at `context/pibo-system-prompt.md`; the Chat Web App can switch between that read-only library prompt and a persisted custom prompt stored under `.pibo/base-prompt.md`. Runtime prompt templates replace `{{availableTools}}` and `{{guidelines}}` from the active Pi/Pibo tool surface before project context and skills are appended.
