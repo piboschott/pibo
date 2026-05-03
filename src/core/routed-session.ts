@@ -1,4 +1,4 @@
-import { SessionManager, type AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type AgentSessionRuntime, shouldCompact } from "@mariozechner/pi-coding-agent";
 import type { PiboPluginRegistry } from "../plugins/registry.js";
 import type {
 	PiboForkCandidate,
@@ -266,9 +266,38 @@ export class RoutedSession {
 		private readonly onSessionOperation?: PiboSessionOperationListener,
 	) {
 		this.bindRuntimeSession();
+		this.patchAgentContinue();
 		this.runtime.setRebindSession(async () => {
 			this.bindRuntimeSession();
+			this.patchAgentContinue();
 		});
+	}
+
+	private patchAgentContinue(): void {
+		const agent = this.runtime.session.agent;
+		const originalContinue = agent.continue.bind(agent);
+		const session = this.runtime.session;
+
+		agent.continue = async () => {
+			const model = session.model;
+			if (!model) return originalContinue();
+
+			const contextWindow = model.contextWindow ?? 0;
+			const settings = session.settingsManager.getCompactionSettings();
+			if (!settings.enabled) return originalContinue();
+
+			// getContextUsage() already handles the stale-usage-after-compaction
+			// check internally. If tokens is null, the last assistant usage predates
+			// the latest compaction and we should skip until the next LLM response.
+			const contextUsage = session.getContextUsage();
+			if (!contextUsage || contextUsage.tokens === null) return originalContinue();
+
+			if (shouldCompact(contextUsage.tokens, contextWindow, settings)) {
+				await session.compact();
+			}
+
+			return originalContinue();
+		};
 	}
 
 	private bindRuntimeSession(): void {
