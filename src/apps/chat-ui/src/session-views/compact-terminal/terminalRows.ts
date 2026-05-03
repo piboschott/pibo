@@ -8,6 +8,7 @@ export type CompactTerminalRowKind =
 	| "message.assistant"
 	| "reasoning"
 	| "tool.call"
+	| "tool.status"
 	| "tool.group.exploring"
 	| "agent.delegation"
 	| "agent.async"
@@ -211,6 +212,10 @@ function createToolRowCandidate(node: PiboTraceNode, turnId?: string): RowCandid
 		const row = createCommandToolRow(node, command);
 		return { row, turnId, exploring: undefined };
 	}
+	if (node.title === "status") {
+		const row = createStatusToolRow(node);
+		return { row, turnId, exploring: undefined };
+	}
 	const preview = previewLines(node.error ?? node.output, 4, node.error ? "red" : "dim");
 	const row: CompactTerminalRow = {
 		id: node.id,
@@ -348,6 +353,20 @@ function createExecutionCommandRow(node: PiboTraceNode): CompactTerminalRow {
 		output: node.output,
 		error: node.error,
 		expandable: node.input !== undefined || node.output !== undefined || Boolean(node.error),
+	};
+}
+
+function createStatusToolRow(node: PiboTraceNode): CompactTerminalRow {
+	return {
+		id: node.id,
+		kind: "tool.status",
+		status: mapStatus(node.status),
+		lines: [],
+		sourceNodeIds: [node.id],
+		input: node.input,
+		output: node.output,
+		error: node.error,
+		expandable: false,
 	};
 }
 

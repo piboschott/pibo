@@ -5,6 +5,7 @@ import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
 import type { ChatSessionViewProps } from "../types";
 import { TerminalDetails } from "./TerminalDetails";
 import { TerminalLine } from "./TerminalLine";
+import { TerminalStatusCard } from "./TerminalStatusCard";
 import { buildCompactTerminalRows } from "./terminalRows";
 
 export function CompactTerminalSessionView({
@@ -167,6 +168,10 @@ export function CompactTerminalSessionView({
 														</div>
 													</div>
 												</>
+											) : row.kind === "tool.status" ? (
+												<div className="min-w-0">
+													<TerminalStatusCard row={row} />
+												</div>
 											) : (
 												row.lines.map((line, index) => <TerminalLine key={`${row.id}:${index}`} line={line} status={row.status} />)
 											)}
