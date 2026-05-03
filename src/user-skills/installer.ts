@@ -240,12 +240,13 @@ export async function installSkillFromUrl(url: string, cwd = process.cwd()): Pro
 
   const { loadUserSkillStore, saveUserSkillStore } = await import("./store.js");
   const store = loadUserSkillStore(cwd);
-  const existingIndex = store.skills.findIndex((s) => s.name === name);
-  if (existingIndex >= 0) {
-    store.skills[existingIndex] = skill;
-  } else {
-    store.skills.push(skill);
+  const existing = store.skills.find((s) => s.name === name);
+  if (existing) {
+    const { rmSync } = await import("node:fs");
+    rmSync(targetDir, { recursive: true, force: true });
+    throw new Error(`A skill named "${name}" already exists. Delete it first or choose a different name.`);
   }
+  store.skills.push(skill);
   store.skills.sort((a, b) => a.name.localeCompare(b.name));
   saveUserSkillStore(store, cwd);
 
