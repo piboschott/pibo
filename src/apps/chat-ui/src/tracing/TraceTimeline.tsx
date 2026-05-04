@@ -60,6 +60,10 @@ const timelineContentStyle = {
 	"--trace-readable-width": "min(100%, clamp(36rem, 58vw, 64rem))",
 } as CSSProperties;
 
+const mobileTimelineContentStyle = {
+	"--trace-readable-width": "100%",
+} as CSSProperties;
+
 const DEFAULT_EXPANSION_DEPTH = 1;
 
 export function TraceTimeline({
@@ -135,7 +139,7 @@ export function TraceTimeline({
 	if (!trace) {
 		return (
 			<section className="flex-1 flex flex-col bg-[#0c1214] relative overflow-hidden">
-				<div className="h-14 px-6 border-b border-slate-800 bg-[#1a262b]/80 flex items-center justify-between">
+				<div className="h-14 px-6 border-b border-slate-800 bg-[#1a262b]/80 flex items-center justify-between max-[980px]:px-3">
 					<div className="flex min-w-0 items-center gap-2">
 						<h2 className="text-sm font-bold uppercase tracking-wide flex items-center gap-2">
 							<GitBranch size={18} className="text-[#11a4d4]" />
@@ -166,7 +170,7 @@ export function TraceTimeline({
 
 	return (
 		<section className="min-w-0 flex-1 flex flex-col bg-[#0c1214] relative overflow-hidden">
-			<div className="min-h-14 px-6 py-1.5 border-b border-slate-800 bg-[#1a262b]/80 flex items-center justify-between gap-3 sticky top-0 z-20">
+			<div className="min-h-14 px-6 py-1.5 border-b border-slate-800 bg-[#1a262b]/80 flex items-center justify-between gap-3 sticky top-0 z-20 max-[980px]:flex-wrap max-[980px]:px-3">
 				<div className="grid min-w-0 grid-cols-[18px_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
 					<GitBranch size={18} className="mt-0.5 text-[#11a4d4]" aria-label="Execution flow" />
 					<div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -249,7 +253,7 @@ export function TraceTimeline({
 							Footer: isStreaming ? StreamingIndicator : undefined,
 						}}
 						itemContent={(_, row) => (
-							<div className="px-6">
+							<div className="px-6 max-[980px]:px-2">
 								<TraceSpanCard
 									span={row.span}
 									startTime={startTime}

@@ -789,8 +789,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 					Recovery Mode: Main gateway is down. You are connected to a fallback instance.
 				</div>
 			)}
-			<div className="h-screen overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[56px_1fr]">
-				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800">
+			<div className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_1fr]">
+				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:flex-wrap max-[980px]:py-2">
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
@@ -804,7 +804,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<img src="/apps/chat/assets/logo.png" alt="Logo" className="h-5 w-auto" />
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
-					<nav className="flex gap-1">
+					<nav className="flex gap-1 flex-wrap">
 					{(["sessions", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
@@ -816,7 +816,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 								}
 								navigateToRoute({ area: item });
 							}}
-							className={`h-8 px-3 border rounded-sm text-xs uppercase tracking-wider ${
+							className={`h-8 px-3 border rounded-sm text-xs uppercase tracking-wider max-[980px]:h-7 max-[980px]:px-2 ${
 								area === item ? "border-[#11a4d4] text-[#11a4d4] bg-[#11a4d4]/10" : "border-slate-700 text-slate-400"
 							}`}
 						>
@@ -826,7 +826,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				</nav>
 				<div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
 					<UserRound size={14} />
-					<span className="truncate">{bootstrap.identity.email || bootstrap.identity.name || bootstrap.identity.userId}</span>
+					<span className="truncate max-[600px]:hidden">{bootstrap.identity.email || bootstrap.identity.name || bootstrap.identity.userId}</span>
 					<button type="button" onClick={() => void signOut().then(() => location.reload())} className="p-1 border border-slate-700 rounded-sm">
 						<LogOut size={14} />
 					</button>
@@ -869,7 +869,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						mobileSidebarOpen ? "max-[980px]:translate-x-0" : "max-[980px]:-translate-x-full"
 					}`}
 				>
-					<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
+					<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider max-[980px]:h-auto max-[980px]:py-2 max-[980px]:flex-wrap">
 						<span>{area}</span>
 						<div className="flex items-center gap-1">
 							{area === "sessions" ? (
@@ -1391,7 +1391,7 @@ function SessionTracePane({
 	return (
 		<>
 			<main className="min-h-0 flex flex-col">
-				<div className="h-14 px-4 bg-[#151f24] border-b border-slate-800 flex items-center justify-between">
+				<div className="h-14 px-4 bg-[#151f24] border-b border-slate-800 flex items-center justify-between max-[980px]:h-auto max-[980px]:flex-wrap max-[980px]:py-2 max-[980px]:gap-2">
 					<div className="min-w-0">
 						<h1 className="text-base font-semibold truncate">
 							{currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
@@ -1410,7 +1410,7 @@ function SessionTracePane({
 									onClick={() => onSelectSessionView(view.id)}
 									title={view.description ?? view.label}
 									aria-label={`Switch to ${view.label} view`}
-									className={`min-w-20 px-2.5 py-1 text-[11px] font-bold tracking-wide ${
+									className={`min-w-20 px-2.5 py-1 text-[11px] font-bold tracking-wide max-[980px]:min-w-0 max-[980px]:px-1.5 ${
 										sessionViewId === view.id
 											? "bg-[#11a4d4]/10 text-[#11a4d4]"
 											: "text-slate-400 hover:text-[#11a4d4]"
@@ -2326,7 +2326,7 @@ function Composer({
 	};
 
 	return (
-		<div className="relative p-3 bg-[#151f24] border-t border-slate-800">
+		<div className="relative p-3 bg-[#151f24] border-t border-slate-800 max-[980px]:p-2">
 			{filteredSkills.length ? (
 				<div className="absolute left-3 bottom-full mb-2 w-[min(520px,calc(100%-24px))] max-h-72 overflow-auto bg-[#0e1116] border border-emerald-500 rounded-sm shadow-xl">
 					{filteredSkills.map((skill, index) => (
