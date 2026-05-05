@@ -5,6 +5,7 @@ import type { Span, Trace } from "../types";
 import { countRender } from "../renderMetrics";
 import { TraceSpanCard, type SpanExpansionDepth } from "./SpanNode";
 import { processSpanTree } from "./traceTree";
+import { collectVisibleRows } from "./snapshotCollector";
 
 type TraceTimelineProps = {
 	trace: Trace | null;
@@ -108,10 +109,18 @@ export function TraceTimeline({
 		[allSpans],
 	);
 	const isStreaming = trace?.status === "UNSET";
-	const visibleRows = useMemo(
-		() => flattenVisibleSpans(spanTree, expansionDepth, expandThinking, expansionOverrides),
-		[expandThinking, expansionDepth, expansionOverrides, spanTree],
-	);
+	const visibleRows = useMemo(() => {
+		const rows = flattenVisibleSpans(spanTree, expansionDepth, expandThinking, expansionOverrides);
+		if (trace?.id) {
+			collectVisibleRows(
+				trace.id,
+				`render:${trace.status ?? "unknown"}`,
+				rows.map((r) => ({ id: r.id, depth: r.depth, span: r.span })),
+				expansionOverrides,
+			);
+		}
+		return rows;
+	}, [expandThinking, expansionDepth, expansionOverrides, spanTree, trace?.id, trace?.status]);
 
 	const scrollToBottom = useCallback((behavior: "auto" | "smooth" = "smooth") => {
 		if (!visibleRows.length) return;
@@ -591,7 +600,7 @@ function StreamingIndicator() {
 	);
 }
 
-function filterThinking(spans: Span[], showThinking: boolean): Span[] {
+export function filterThinking(spans: Span[], showThinking: boolean): Span[] {
 	return spans.flatMap((span) => {
 		if (!showThinking && span.spanType === "model.reasoning") return [];
 		return [{ ...span, children: span.children ? filterThinking(span.children, showThinking) : undefined }];
@@ -602,11 +611,11 @@ function flattenSpans(spans: Span[]): Span[] {
 	return spans.flatMap((span) => [span, ...(span.children ? flattenSpans(span.children) : [])]);
 }
 
-function isExpandedAtDepth(depth: number, expansionDepth: SpanExpansionDepth): boolean {
+export function isExpandedAtDepth(depth: number, expansionDepth: SpanExpansionDepth): boolean {
 	return expansionDepth === "all" || depth < expansionDepth;
 }
 
-function flattenVisibleSpans(
+export function flattenVisibleSpans(
 	spans: readonly Span[],
 	expansionDepth: SpanExpansionDepth,
 	expandThinking: boolean,
