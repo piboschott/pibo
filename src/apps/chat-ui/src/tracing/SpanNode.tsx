@@ -233,7 +233,7 @@ export const TraceSpanCard = memo(function TraceSpanCard({
 			? `${((span.endTime - span.startTime) / 1000).toFixed(1)}ms`
 			: null;
 
-	const handleCardClick = (event: MouseEvent<HTMLDivElement>) => {
+	const handleCardDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
 		if (isInteractiveSpanEventTarget(event)) return;
 		onToggle();
 	};
@@ -255,10 +255,10 @@ export const TraceSpanCard = memo(function TraceSpanCard({
 			}}
 		>
 			<div
-				className={`min-w-0 cursor-pointer ${isUserMessage ? "bg-[#11a4d4]/10" : "bg-white dark:bg-[#1a262b]"} border ${statusStyles.cardClass} rounded-sm shadow-sm transition-all hover:border-opacity-70 focus:outline-none focus:ring-1 focus:ring-[#11a4d4]/50 ${
+				className={`min-w-0 ${isUserMessage ? "bg-[#11a4d4]/10" : "bg-white dark:bg-[#1a262b]"} border ${statusStyles.cardClass} rounded-sm shadow-sm transition-all hover:border-opacity-70 focus:outline-none focus:ring-1 focus:ring-[#11a4d4]/50 ${
 					isActive ? statusStyles.glowClass : ""
 				}`}
-				onClick={handleCardClick}
+				onDoubleClick={handleCardDoubleClick}
 				onKeyDown={handleCardKeyDown}
 				role="button"
 				tabIndex={0}
