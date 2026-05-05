@@ -214,6 +214,7 @@ export async function buildTraceView(input: TraceBuildInput): Promise<PiboSessio
 		includeRawEvents: input.includeRawEvents,
 		rawEventsLimit: input.rawEventsLimit,
 	});
+	annotateForkableUserMessageNodes(view.nodes, allEntries);
 
 	return {
 		...view,
@@ -308,6 +309,62 @@ function readEntries(path: string): SessionEntry[] {
 	if (!existsSync(path)) return [];
 	const content = readFileSync(path, "utf8");
 	return parseSessionEntries(content).filter((entry): entry is SessionEntry => entry.type !== "session");
+}
+
+function annotateForkableUserMessageNodes(nodes: PiboTraceNode[], entries: SessionEntry[]): void {
+	const candidates = userMessageForkCandidates(entries);
+	if (!candidates.length) return;
+	const used = new Set<string>();
+	for (const node of flattenTraceNodesForForkAnnotation(nodes)) {
+		if (node.type !== "user.message" || node.entryId) continue;
+		const text = stringValue(node.output) ?? stringValue(node.summary) ?? "";
+		const candidate = candidates.find((item) => !used.has(item.entryId) && item.text === text);
+		if (!candidate) continue;
+		node.entryId = candidate.entryId;
+		used.add(candidate.entryId);
+	}
+}
+
+function flattenTraceNodesForForkAnnotation(nodes: PiboTraceNode[]): PiboTraceNode[] {
+	const flattened: PiboTraceNode[] = [];
+	const visit = (items: PiboTraceNode[]) => {
+		for (const item of items) {
+			flattened.push(item);
+			visit(item.children);
+		}
+	};
+	visit(nodes);
+	return flattened;
+}
+
+function userMessageForkCandidates(entries: SessionEntry[]): Array<{ entryId: string; text: string }> {
+	const candidates: Array<{ entryId: string; text: string }> = [];
+	for (const entry of entries) {
+		if (entry.type !== "message" || messageRole(entry) !== "user") continue;
+		const text = extractMessageText(messageContent(entry));
+		if (text) candidates.push({ entryId: entry.id, text });
+	}
+	return candidates;
+}
+
+function messageRole(entry: SessionEntry): unknown {
+	return entry.type === "message" ? (entry.message as { role?: unknown }).role : undefined;
+}
+
+function messageContent(entry: SessionEntry): unknown {
+	return entry.type === "message" ? (entry.message as { content?: unknown }).content : undefined;
+}
+
+function extractMessageText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((part) => {
+			if (!part || typeof part !== "object") return "";
+			const typed = part as { type?: unknown; text?: unknown };
+			return typed.type === "text" && typeof typed.text === "string" ? typed.text : "";
+		})
+		.join("");
 }
 
 function stringValue(value: unknown): string | undefined {

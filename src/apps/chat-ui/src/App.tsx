@@ -1330,7 +1330,7 @@ function SessionTracePane({
 			return traceQuery.data?.piboSessionId === selectedPiboSessionId ? traceQuery.data : null;
 		}
 		const sessionStatus = bootstrap.sessions.find((s) => s.piboSessionId === selectedPiboSessionId)?.status ?? "idle";
-		return buildTraceViewFromEvents({
+		const liveTrace = buildTraceViewFromEvents({
 			session: {
 				id: selectedPiboSessionId,
 				piSessionId: traceQuery.data?.piSessionId ?? bootstrap.session.piSessionId,
@@ -1342,6 +1342,8 @@ function SessionTracePane({
 			includeRawEvents: true,
 			rawEventsLimit: 10000,
 		});
+		annotateLiveTraceForkEntryIds(liveTrace.nodes, traceQuery.data?.nodes ?? []);
+		return liveTrace;
 	}, [selectedTraceEvents, selectedPiboSessionId, bootstrap, traceQuery.data]);
 
 	const flushPendingStreamEvents = useCallback((piboSessionId: string) => {
@@ -5301,6 +5303,38 @@ function parseForkActionResponse(value: unknown): ForkActionResponse | null {
 function getResultPiboSessionId(value: unknown): string | undefined {
 	if (!isRecord(value) || !isRecord(value.result)) return undefined;
 	return typeof value.result.piboSessionId === "string" ? value.result.piboSessionId : undefined;
+}
+
+function annotateLiveTraceForkEntryIds(liveNodes: PiboTraceNode[], persistedNodes: readonly PiboTraceNode[]): void {
+	const persistedUserMessages = flattenPiboTraceNodes(persistedNodes)
+		.filter((node) => node.type === "user.message" && node.entryId)
+		.map((node) => ({ entryId: node.entryId!, text: traceNodeText(node) }));
+	if (!persistedUserMessages.length) return;
+	const used = new Set<string>();
+	for (const node of flattenPiboTraceNodes(liveNodes)) {
+		if (node.type !== "user.message" || node.entryId) continue;
+		const text = traceNodeText(node);
+		const match = persistedUserMessages.find((candidate) => !used.has(candidate.entryId) && candidate.text === text);
+		if (!match) continue;
+		node.entryId = match.entryId;
+		used.add(match.entryId);
+	}
+}
+
+function flattenPiboTraceNodes(nodes: readonly PiboTraceNode[]): PiboTraceNode[] {
+	const flattened: PiboTraceNode[] = [];
+	const visit = (items: readonly PiboTraceNode[]) => {
+		for (const item of items) {
+			flattened.push(item);
+			visit(item.children);
+		}
+	};
+	visit(nodes);
+	return flattened;
+}
+
+function traceNodeText(node: PiboTraceNode): string {
+	return typeof node.output === "string" ? node.output : typeof node.summary === "string" ? node.summary : "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
