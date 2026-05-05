@@ -1247,7 +1247,7 @@ function SessionTracePane({
 	const pendingStreamEventsBySession = useRef(new Map<string, ChatStreamEvent[]>());
 	const pendingStreamFrame = useRef<number | undefined>(undefined);
 	const liveEventSeqRef = useRef(0);
-	const [allEvents, setAllEvents] = useState<ChatWebStoredEvent[]>([]);
+	const [selectedTraceEvents, setSelectedTraceEvents] = useState<SelectedTraceEvents | null>(null);
 	const traceQueryKey = useMemo(
 		() =>
 			selectedPiboSessionId
@@ -1270,10 +1270,13 @@ function SessionTracePane({
 		retry: 1,
 	});
 
-	// Reset allEvents when trace query data changes (initial load or refresh)
+	// Reset selected trace events when trace query data changes (initial load or refresh).
 	useEffect(() => {
 		if (traceQuery.data) {
-			setAllEvents(traceQuery.data.rawEvents);
+			setSelectedTraceEvents({
+				piboSessionId: traceQuery.data.piboSessionId,
+				events: traceQuery.data.rawEvents,
+			});
 			const maxSeq = traceQuery.data.rawEvents
 				.map((e) => e.eventSequence ?? 0)
 				.reduce((a, b) => Math.max(a, b), 0);
@@ -1282,12 +1285,17 @@ function SessionTracePane({
 	}, [traceQuery.data]);
 
 	const currentTraceView = useMemo(() => {
-		if (!selectedPiboSessionId || !bootstrap || allEvents.length === 0) return traceQuery.data ?? null;
+		const allEvents = selectedTraceEvents?.piboSessionId === selectedPiboSessionId
+			? selectedTraceEvents.events
+			: undefined;
+		if (!selectedPiboSessionId || !bootstrap || !allEvents?.length) {
+			return traceQuery.data?.piboSessionId === selectedPiboSessionId ? traceQuery.data : null;
+		}
 		const sessionStatus = bootstrap.sessions.find((s) => s.piboSessionId === selectedPiboSessionId)?.status ?? "idle";
 		return buildTraceViewFromEvents({
 			session: {
 				id: selectedPiboSessionId,
-				piSessionId: bootstrap.session.piSessionId,
+				piSessionId: traceQuery.data?.piSessionId ?? bootstrap.session.piSessionId,
 				title: traceQuery.data?.title ?? bootstrap.session.title ?? "Untitled",
 			},
 			events: allEvents,
@@ -1296,7 +1304,7 @@ function SessionTracePane({
 			includeRawEvents: true,
 			rawEventsLimit: 10000,
 		});
-	}, [allEvents, selectedPiboSessionId, bootstrap, traceQuery.data]);
+	}, [selectedTraceEvents, selectedPiboSessionId, bootstrap, traceQuery.data]);
 
 	const flushPendingStreamEvents = useCallback((piboSessionId: string) => {
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId);
@@ -1308,7 +1316,8 @@ function SessionTracePane({
 			pendingStreamEventsBySession.current.delete(piboSessionId);
 			return;
 		}
-		setAllEvents((current) => {
+		setSelectedTraceEvents((current) => {
+			if (current?.piboSessionId !== piboSessionId) return current;
 			const newEvents: ChatWebStoredEvent[] = rawEvents.map((e) => {
 				const streamFrame = e.streamFrameId ? parseTraceStreamFrameId(e.streamFrameId) : undefined;
 				return {
@@ -1322,7 +1331,7 @@ function SessionTracePane({
 					payload: e.event,
 				};
 			});
-			return [...current, ...newEvents];
+			return { piboSessionId, events: [...current.events, ...newEvents] };
 		});
 		pendingStreamEventsBySession.current.delete(piboSessionId);
 	}, []);
@@ -1388,7 +1397,9 @@ function SessionTracePane({
 			if (!event) return;
 			const targetPiboSessionId = event.piboSessionId || selectedPiboSessionId;
 			const flushImmediately = event.type !== "TEXT_MESSAGE_CONTENT" && event.type !== "REASONING_MESSAGE_CONTENT";
-			enqueueStreamEvent(targetPiboSessionId, event, flushImmediately);
+			if (targetPiboSessionId === selectedPiboSessionId) {
+				enqueueStreamEvent(targetPiboSessionId, event, flushImmediately);
+			}
 			const traceRefreshDelay = eventTraceRefreshDelay(event);
 			if (targetPiboSessionId === selectedPiboSessionId && traceRefreshDelay !== undefined) {
 				scheduleTraceRefresh(traceRefreshDelay, true);
@@ -4733,6 +4744,10 @@ function PiPackageManagementCard({
 
 type RawEvent = PiboSessionTraceView["rawEvents"][number];
 type CompactRawEvent = RawEvent & { count: number };
+type SelectedTraceEvents = {
+	piboSessionId: string;
+	events: ChatWebStoredEvent[];
+};
 
 type ChatStreamEventMeta = {
 	piboSessionId?: string;
