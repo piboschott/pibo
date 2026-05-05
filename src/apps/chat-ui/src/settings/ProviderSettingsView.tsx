@@ -34,7 +34,7 @@ type ActionEnvelope = {
 type ProviderRowState =
 	| { type: "collapsed" }
 	| { type: "oauth_starting" }
-	| { type: "oauth_flow"; url: string; state?: string }
+	| { type: "oauth_flow"; url: string; state?: string; userCode?: string; instructions?: string; flow?: string }
 	| { type: "api_key" };
 
 export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string | null }) {
@@ -83,13 +83,23 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				const result = unwrapActionResult(await postAction(piboSessionId, "login.start", { provider })) as {
 					url?: string;
 					state?: string;
+					userCode?: string;
+					instructions?: string;
+					type?: string;
 				};
 				const url = result.url;
 				const state = result.state;
 				if (url) {
 					setRowStates((prev) => ({
 						...prev,
-						[provider]: { type: "oauth_flow", url, state },
+						[provider]: {
+							type: "oauth_flow",
+							url,
+							state,
+							userCode: result.userCode,
+							instructions: result.instructions,
+							flow: result.type,
+						},
 					}));
 				} else {
 					setError("No URL returned from login start.");
@@ -106,11 +116,11 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 	);
 
 	const completeOAuth = useCallback(
-		async (provider: string, code: string, state?: string) => {
+		async (provider: string, code: string | undefined, state?: string) => {
 			if (!piboSessionId) return;
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
 			try {
-				await postAction(piboSessionId, "login.complete", { provider, code, state: state ?? "" });
+				await postAction(piboSessionId, "login.complete", { provider, ...(code ? { code } : {}), state: state ?? "" });
 				setRowStates((prev) => ({ ...prev, [provider]: { type: "collapsed" } }));
 				setCodes((prev) => ({ ...prev, [provider]: "" }));
 				await refreshStatus();
@@ -321,44 +331,69 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 												</a>
 											</div>
 										</div>
-										<div className="grid gap-2">
-											<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-												Step 2: Paste Code
+										{rowState.userCode ? (
+											<div className="grid gap-2">
+												<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+													Step 2: Enter Code
+												</div>
+												<div className="rounded-sm border border-slate-700 bg-[#0e1116] p-3 text-center font-mono text-[20px] font-bold tracking-widest text-[#11a4d4]">
+													{rowState.userCode}
+												</div>
+												{rowState.instructions ? (
+													<div className="text-[11px] leading-relaxed text-slate-500">
+														{rowState.instructions}
+													</div>
+												) : null}
+												<button
+													type="button"
+													disabled={busy}
+													onClick={() => void completeOAuth(provider.id, undefined, rowState.state)}
+													className="inline-flex items-center gap-1 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-1.5 text-[11px] text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+												>
+													{busy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
+													Complete Login
+												</button>
 											</div>
-											<input
-												type="text"
-												value={codes[provider.id] ?? ""}
-												onChange={(e) =>
-													setCodes((prev) => ({ ...prev, [provider.id]: e.target.value }))
-												}
-												onKeyDown={(e) => {
-													if (e.key === "Enter" && (codes[provider.id] ?? "").trim()) {
+										) : (
+											<div className="grid gap-2">
+												<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+													Step 2: Paste Code
+												</div>
+												<input
+													type="text"
+													value={codes[provider.id] ?? ""}
+													onChange={(e) =>
+														setCodes((prev) => ({ ...prev, [provider.id]: e.target.value }))
+													}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" && (codes[provider.id] ?? "").trim()) {
+															void completeOAuth(
+																provider.id,
+																codes[provider.id]!.trim(),
+																rowState.state,
+															);
+														}
+													}}
+													placeholder="Paste authorization code..."
+													className="w-full rounded-sm border border-slate-700 bg-[#0e1116] px-2 py-1.5 font-mono text-[12px] text-slate-300 placeholder-slate-600 outline-none focus:border-[#11a4d4]"
+												/>
+												<button
+													type="button"
+													disabled={busy || !(codes[provider.id] ?? "").trim()}
+													onClick={() =>
 														void completeOAuth(
 															provider.id,
 															codes[provider.id]!.trim(),
 															rowState.state,
-														);
+														)
 													}
-												}}
-												placeholder="Paste authorization code..."
-												className="w-full rounded-sm border border-slate-700 bg-[#0e1116] px-2 py-1.5 font-mono text-[12px] text-slate-300 placeholder-slate-600 outline-none focus:border-[#11a4d4]"
-											/>
-											<button
-												type="button"
-												disabled={busy || !(codes[provider.id] ?? "").trim()}
-												onClick={() =>
-													void completeOAuth(
-														provider.id,
-														codes[provider.id]!.trim(),
-														rowState.state,
-													)
-												}
-												className="inline-flex items-center gap-1 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-1.5 text-[11px] text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
-											>
-												{busy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
-												Complete Login
-											</button>
-										</div>
+													className="inline-flex items-center gap-1 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-1.5 text-[11px] text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+												>
+													{busy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
+													Complete Login
+												</button>
+											</div>
+										)}
 										<button
 											type="button"
 											onClick={() => setRowStates((prev) => ({ ...prev, [provider.id]: { type: "collapsed" } }))}
