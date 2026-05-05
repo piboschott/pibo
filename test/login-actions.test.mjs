@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { completeLogin, startLogin } from "../dist/auth/login-actions.js";
+import { completeLogin, getLoginStatus, startLogin } from "../dist/auth/login-actions.js";
 
 function makeJwt(payload) {
 	const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -61,6 +61,15 @@ test("OpenAI Codex login uses device code flow and stores OAuth credentials", as
 		assert.equal(authJson["openai-codex"].access, accessToken);
 		assert.equal(authJson["openai-codex"].refresh, "refresh-token");
 		assert.equal(authJson["openai-codex"].accountId, "acct-test");
+
+		assert.deepEqual(getLoginStatus("openai-codex"), [
+			{
+				id: "openai-codex",
+				provider: "openai-codex",
+				configured: true,
+				source: "stored",
+			},
+		]);
 	} finally {
 		globalThis.fetch = previousFetch;
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
