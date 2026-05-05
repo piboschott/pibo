@@ -2,12 +2,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { piboHomePath } from "./pibo-home.js";
 import type { InitialSessionContext, ModelProfile } from "./profiles.js";
+import { isPiboThinkingLevel, type PiboThinkingLevel } from "./thinking.js";
 
 export const DEFAULT_PIBO_MODEL_DEFAULTS_PATH = "model-defaults.json";
 
 export type PiboModelDefaults = {
 	main?: ModelProfile;
 	subagent?: ModelProfile;
+	thinking?: PiboThinkingLevel;
 };
 
 export function selectRequestedModelProfile(
@@ -17,6 +19,13 @@ export function selectRequestedModelProfile(
 	if (profile.model) return cloneModelProfile(profile.model);
 	if (profile.parentSessionId) return cloneModelProfile(profile.subagentModel ?? defaults.subagent);
 	return cloneModelProfile(profile.mainModel ?? defaults.main);
+}
+
+export function selectRequestedThinkingLevel(
+	profile: InitialSessionContext,
+	defaults: PiboModelDefaults = {},
+): PiboThinkingLevel | undefined {
+	return profile.thinkingLevel ?? defaults.thinking;
 }
 
 export function loadPiboModelDefaults(
@@ -52,7 +61,13 @@ export function sanitizePiboModelDefaults(value: unknown): PiboModelDefaults {
 	return {
 		main: sanitizeModelProfile(raw.main),
 		subagent: sanitizeModelProfile(raw.subagent),
+		thinking: sanitizeThinkingLevel(raw.thinking),
 	};
+}
+
+export function sanitizeThinkingLevel(value: unknown): PiboThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	return isPiboThinkingLevel(value) ? value : undefined;
 }
 
 export function sanitizeModelProfile(value: unknown): ModelProfile | undefined {

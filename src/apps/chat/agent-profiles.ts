@@ -17,6 +17,7 @@ export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition)
 				.withToolPackages({ runControl: agent.runControl });
 			if (agent.mainModel) builder.withMainModel(agent.mainModel);
 			if (agent.subagentModel) builder.withSubagentModel(agent.subagentModel);
+			if (agent.thinkingLevel) builder.withThinkingLevel(agent.thinkingLevel);
 
 			for (const skillName of agent.skills) {
 				try {

@@ -59,6 +59,7 @@ export type PiboProfileInfo = {
 	model?: ModelProfile;
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;

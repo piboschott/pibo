@@ -224,6 +224,7 @@ export class PiboPluginRegistry {
 				model: sessionContext.model ? { ...sessionContext.model } : undefined,
 				mainModel: sessionContext.mainModel ? { ...sessionContext.mainModel } : undefined,
 				subagentModel: sessionContext.subagentModel ? { ...sessionContext.subagentModel } : undefined,
+				thinkingLevel: sessionContext.thinkingLevel,
 				builtinTools: sessionContext.builtinTools,
 				builtinToolNames: [...sessionContext.builtinToolNames],
 				autoContextFiles: sessionContext.autoContextFiles,

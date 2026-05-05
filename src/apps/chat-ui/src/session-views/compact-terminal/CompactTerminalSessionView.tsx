@@ -7,6 +7,7 @@ import type { ChatSessionViewProps } from "../types";
 import { TerminalDetails } from "./TerminalDetails";
 import { TerminalLine } from "./TerminalLine";
 import { TerminalStatusCard } from "./TerminalStatusCard";
+import { TerminalThinkingCard } from "./TerminalThinkingCard";
 import { buildCompactTerminalRows } from "./terminalRows";
 
 export function CompactTerminalSessionView({
@@ -170,6 +171,10 @@ export function CompactTerminalSessionView({
 												) : row.kind === "tool.status" ? (
 													<div className="min-w-0">
 														<TerminalStatusCard row={row} />
+													</div>
+												) : row.kind === "tool.thinking" ? (
+													<div className="min-w-0">
+														<TerminalThinkingCard row={row} />
 													</div>
 												) : row.kind === "reasoning" && row.markdown ? (
 													<>

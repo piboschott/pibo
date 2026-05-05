@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { PiboThinkingLevel } from "./thinking.js";
 
 export type ToolProfile = {
 	name: string;
@@ -93,6 +94,7 @@ export type InitialSessionContextOptions = {
 	model?: ModelProfile;
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
 	skills?: readonly SkillProfile[];
 	tools?: readonly ToolProfile[];
 	subagents?: readonly SubagentProfile[];
@@ -112,6 +114,7 @@ export class InitialSessionContext {
 	readonly model?: ModelProfile;
 	readonly mainModel?: ModelProfile;
 	readonly subagentModel?: ModelProfile;
+	readonly thinkingLevel?: PiboThinkingLevel;
 	readonly skills: readonly SkillProfile[];
 	readonly tools: readonly ToolProfile[];
 	readonly subagents: readonly SubagentProfile[];
@@ -130,6 +133,7 @@ export class InitialSessionContext {
 		this.model = options.model ? { ...options.model } : undefined;
 		this.mainModel = options.mainModel ? { ...options.mainModel } : undefined;
 		this.subagentModel = options.subagentModel ? { ...options.subagentModel } : undefined;
+		this.thinkingLevel = options.thinkingLevel;
 		this.skills = [...(options.skills ?? [])];
 		this.tools = [...(options.tools ?? [])];
 		this.subagents = [...(options.subagents ?? [])];
@@ -150,6 +154,7 @@ export class InitialSessionContextBuilder {
 	private model?: ModelProfile;
 	private mainModel?: ModelProfile;
 	private subagentModel?: ModelProfile;
+	private thinkingLevel?: PiboThinkingLevel;
 	private skills: SkillProfile[] = [];
 	private tools: ToolProfile[] = [];
 	private subagents: SubagentProfile[] = [];
@@ -187,6 +192,11 @@ export class InitialSessionContextBuilder {
 
 	withSubagentModel(model: ModelProfile): this {
 		this.subagentModel = { ...model };
+		return this;
+	}
+
+	withThinkingLevel(level: PiboThinkingLevel): this {
+		this.thinkingLevel = level;
 		return this;
 	}
 
@@ -278,6 +288,7 @@ export class InitialSessionContextBuilder {
 			model: this.model,
 			mainModel: this.mainModel,
 			subagentModel: this.subagentModel,
+			thinkingLevel: this.thinkingLevel,
 			skills: this.skills,
 			tools: this.tools,
 			subagents: this.subagents,

@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { piboHomePath } from "../../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode, type ModelProfile } from "../../core/profiles.js";
+import { isPiboThinkingLevel, type PiboThinkingLevel } from "../../core/thinking.js";
 import { findPiPackage } from "../../pi-packages/store.js";
 
 export type CustomAgentSubagent = {
@@ -28,6 +29,7 @@ export type CustomAgentDefinition = {
 	piPackages: string[];
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
@@ -51,6 +53,7 @@ export type CreateCustomAgentInput = {
 	piPackages?: string[];
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
 	builtinTools?: BuiltinToolsMode;
 	builtinToolNames?: string[];
 	autoContextFiles?: boolean;
@@ -73,6 +76,7 @@ type AgentRow = {
 	pi_packages_json: string;
 	main_model_json: string | null;
 	subagent_model_json: string | null;
+	thinking_level: string | null;
 	builtin_tools: BuiltinToolsMode;
 	builtin_tool_names_json: string;
 	auto_context_files: 0 | 1;
@@ -106,6 +110,7 @@ export class CustomAgentStore {
 				pi_packages_json TEXT NOT NULL DEFAULT '[]',
 				main_model_json TEXT,
 				subagent_model_json TEXT,
+				thinking_level TEXT,
 				builtin_tools TEXT NOT NULL,
 				builtin_tool_names_json TEXT NOT NULL DEFAULT '["read","bash","edit","write"]',
 				auto_context_files INTEGER NOT NULL DEFAULT 1,
@@ -123,6 +128,7 @@ export class CustomAgentStore {
 		this.migrateMcpServersColumn();
 		this.migratePiPackagesColumn();
 		this.migrateModelColumns();
+		this.migrateThinkingLevelColumn();
 		this.migrateBuiltinToolNamesColumn();
 		this.migrateLegacyProfileNames();
 	}
@@ -162,6 +168,7 @@ export class CustomAgentStore {
 			piPackages: sanitizePiPackages(input.piPackages ?? []),
 			mainModel: sanitizeModelProfile(input.mainModel),
 			subagentModel: sanitizeModelProfile(input.subagentModel),
+			thinkingLevel: sanitizeThinkingLevel(input.thinkingLevel),
 			builtinTools: input.builtinTools ?? "default",
 			builtinToolNames: sanitizeBuiltinToolNames(input.builtinToolNames),
 			autoContextFiles: input.autoContextFiles ?? true,
@@ -194,6 +201,7 @@ export class CustomAgentStore {
 			piPackages: input.piPackages ? sanitizePiPackages(input.piPackages) : existing.piPackages,
 			mainModel: input.mainModel === undefined ? existing.mainModel : sanitizeModelProfile(input.mainModel),
 			subagentModel: input.subagentModel === undefined ? existing.subagentModel : sanitizeModelProfile(input.subagentModel),
+			thinkingLevel: input.thinkingLevel === undefined ? existing.thinkingLevel : sanitizeThinkingLevel(input.thinkingLevel),
 			builtinTools: input.builtinTools ?? existing.builtinTools,
 			builtinToolNames: input.builtinToolNames ? sanitizeBuiltinToolNames(input.builtinToolNames) : existing.builtinToolNames,
 			autoContextFiles: input.autoContextFiles ?? existing.autoContextFiles,
@@ -214,6 +222,7 @@ export class CustomAgentStore {
 					pi_packages_json = ?,
 					main_model_json = ?,
 					subagent_model_json = ?,
+					thinking_level = ?,
 					builtin_tools = ?,
 					builtin_tool_names_json = ?,
 					auto_context_files = ?,
@@ -233,6 +242,7 @@ export class CustomAgentStore {
 				JSON.stringify(updated.piPackages),
 				updated.mainModel ? JSON.stringify(updated.mainModel) : null,
 				updated.subagentModel ? JSON.stringify(updated.subagentModel) : null,
+				updated.thinkingLevel ?? null,
 				updated.builtinTools,
 				JSON.stringify(updated.builtinToolNames),
 				updated.autoContextFiles ? 1 : 0,
@@ -280,6 +290,7 @@ export class CustomAgentStore {
 					pi_packages_json,
 					main_model_json,
 					subagent_model_json,
+					thinking_level,
 					builtin_tools,
 					builtin_tool_names_json,
 					auto_context_files,
@@ -287,7 +298,7 @@ export class CustomAgentStore {
 					created_at,
 					updated_at,
 					archived_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				agent.id,
@@ -303,6 +314,7 @@ export class CustomAgentStore {
 				JSON.stringify(agent.piPackages),
 				agent.mainModel ? JSON.stringify(agent.mainModel) : null,
 				agent.subagentModel ? JSON.stringify(agent.subagentModel) : null,
+				agent.thinkingLevel ?? null,
 				agent.builtinTools,
 				JSON.stringify(agent.builtinToolNames),
 				agent.autoContextFiles ? 1 : 0,
@@ -384,6 +396,15 @@ export class CustomAgentStore {
 		}
 	}
 
+	private migrateThinkingLevelColumn(): void {
+		const columns = new Set(
+			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
+		);
+		if (!columns.has("thinking_level")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN thinking_level TEXT").run();
+		}
+	}
+
 	private migrateBuiltinToolNamesColumn(): void {
 		const columns = new Set(
 			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -413,6 +434,7 @@ function agentFromRow(row: AgentRow): CustomAgentDefinition {
 		piPackages: parseStringArray(row.pi_packages_json),
 		mainModel: parseModelProfile(row.main_model_json),
 		subagentModel: parseModelProfile(row.subagent_model_json),
+		thinkingLevel: sanitizeThinkingLevel(row.thinking_level),
 		builtinTools: row.builtin_tools,
 		builtinToolNames: sanitizeBuiltinToolNames(parseStringArray(row.builtin_tool_names_json)),
 		autoContextFiles: row.auto_context_files !== 0,
@@ -442,6 +464,10 @@ function sanitizePiPackages(value: readonly string[]): string[] {
 		if (!findPiPackage(pkg)) throw new Error(`Unknown Pi package "${pkg}"`);
 	}
 	return packages;
+}
+
+function sanitizeThinkingLevel(value: unknown): PiboThinkingLevel | undefined {
+	return typeof value === "string" && isPiboThinkingLevel(value) ? value : undefined;
 }
 
 function sanitizeBuiltinToolNames(value: readonly string[] | undefined): string[] {

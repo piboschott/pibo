@@ -68,6 +68,7 @@ function profileForSession(
 		model: baseProfile.model,
 		mainModel: baseProfile.mainModel,
 		subagentModel: baseProfile.subagentModel,
+		thinkingLevel: baseProfile.thinkingLevel,
 		skills: baseProfile.skills,
 		tools: baseProfile.tools,
 		subagents: baseProfile.subagents,

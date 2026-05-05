@@ -22,7 +22,7 @@ import {
 	type InitialSessionContext,
 	type ToolProfile,
 } from "./profiles.js";
-import { loadPiboModelDefaults, selectRequestedModelProfile, type PiboModelDefaults } from "./model-defaults.js";
+import { loadPiboModelDefaults, selectRequestedModelProfile, selectRequestedThinkingLevel, type PiboModelDefaults } from "./model-defaults.js";
 import { createDefaultPiboProfile } from "../plugins/builtin.js";
 import {
 	createSubagentToolDefinitions,
@@ -299,13 +299,14 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			options.subagentRunner,
 			options.runToolController,
 		);
+		const modelDefaults = options.modelDefaults ?? loadPiboModelDefaults(runtimeCwd);
 
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager: runtimeSessionManager,
 			sessionStartEvent,
-			model: resolveProfileModel(profile, services, runtimeCwd, options.modelDefaults),
-			thinkingLevel: options.thinkingLevel,
+			model: resolveProfileModel(profile, services, runtimeCwd, modelDefaults),
+			thinkingLevel: options.thinkingLevel ?? selectRequestedThinkingLevel(profile, modelDefaults),
 			customTools,
 			noTools: profile.builtinTools === "disabled" ? "builtin" : undefined,
 			tools: getBuiltinToolAllowlist(profile, customTools),

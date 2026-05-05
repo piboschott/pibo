@@ -89,9 +89,13 @@ export type ModelProfile = {
 	id: string;
 };
 
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
 export type ModelDefaults = {
 	main?: ModelProfile;
 	subagent?: ModelProfile;
+	thinking?: ThinkingLevel;
 };
 
 export type ModelCatalog = {
@@ -126,6 +130,7 @@ export type AgentProfile = {
 	model?: ModelProfile;
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: ThinkingLevel;
 	builtinTools?: "default" | "disabled";
 	builtinToolNames?: string[];
 	autoContextFiles?: boolean;
@@ -220,6 +225,7 @@ export type CustomAgent = {
 	piPackages: string[];
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: ThinkingLevel;
 	builtinTools: "default" | "disabled";
 	builtinToolNames: string[];
 	autoContextFiles: boolean;

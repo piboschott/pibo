@@ -9,6 +9,7 @@ export type CompactTerminalRowKind =
 	| "reasoning"
 	| "tool.call"
 	| "tool.status"
+	| "tool.thinking"
 	| "tool.group.exploring"
 	| "agent.delegation"
 	| "agent.async"
@@ -334,6 +335,9 @@ function createExecutionCommandRow(node: PiboTraceNode): CompactTerminalRow {
 	if (node.title === "status") {
 		return createStatusToolRow(node);
 	}
+	if (node.title === "thinking") {
+		return createThinkingToolRow(node);
+	}
 	const command = shellCommandValue(node.output) ?? shellCommandValue(node.input) ?? node.title;
 	const preview = previewLines(node.error ?? node.output, 4, node.error ? "red" : "dim", 180);
 	return {
@@ -359,6 +363,20 @@ function createStatusToolRow(node: PiboTraceNode): CompactTerminalRow {
 	return {
 		id: node.id,
 		kind: "tool.status",
+		status: mapStatus(node.status),
+		lines: [],
+		sourceNodeIds: [node.id],
+		input: node.input,
+		output: node.output,
+		error: node.error,
+		expandable: false,
+	};
+}
+
+function createThinkingToolRow(node: PiboTraceNode): CompactTerminalRow {
+	return {
+		id: node.id,
+		kind: "tool.thinking",
 		status: mapStatus(node.status),
 		lines: [],
 		sourceNodeIds: [node.id],

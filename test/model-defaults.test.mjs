@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { loadPiboModelDefaults, savePiboModelDefaults, selectRequestedModelProfile } from "../dist/core/model-defaults.js";
+import { loadPiboModelDefaults, savePiboModelDefaults, selectRequestedModelProfile, selectRequestedThinkingLevel } from "../dist/core/model-defaults.js";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 
 test("model defaults persist and roundtrip", () => {
@@ -11,13 +11,15 @@ test("model defaults persist and roundtrip", () => {
 	const saved = savePiboModelDefaults({
 		main: { provider: "openai", id: "gpt-5.4" },
 		subagent: { provider: "kimi-coding", id: "kimi-for-coding" },
-	}, cwd);
+		thinking: "high",
+	}, cwd, "model-defaults.json");
 
 	assert.deepEqual(saved, {
 		main: { provider: "openai", id: "gpt-5.4" },
 		subagent: { provider: "kimi-coding", id: "kimi-for-coding" },
+		thinking: "high",
 	});
-	assert.deepEqual(loadPiboModelDefaults(cwd), saved);
+	assert.deepEqual(loadPiboModelDefaults(cwd, "model-defaults.json"), saved);
 });
 
 test("model selection prefers hard pin, then role override, then defaults", () => {
@@ -47,4 +49,15 @@ test("model selection prefers hard pin, then role override, then defaults", () =
 	assert.deepEqual(selectRequestedModelProfile(overriddenMain, defaults), { provider: "openai", id: "gpt-5.5" });
 	assert.deepEqual(selectRequestedModelProfile(overriddenChild, defaults), { provider: "openai", id: "gpt-5.5-mini" });
 	assert.deepEqual(selectRequestedModelProfile(pinned, defaults), { provider: "moonshotai", id: "kimi-k2.6" });
+});
+
+test("thinking selection prefers profile override, then default", () => {
+	const defaults = { thinking: "medium" };
+	const defaultProfile = new InitialSessionContextBuilder("default-thinking").createSession();
+	const overridden = new InitialSessionContextBuilder("overridden-thinking")
+		.withThinkingLevel("xhigh")
+		.createSession();
+
+	assert.equal(selectRequestedThinkingLevel(defaultProfile, defaults), "medium");
+	assert.equal(selectRequestedThinkingLevel(overridden, defaults), "xhigh");
 });

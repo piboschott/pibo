@@ -41,6 +41,7 @@ import {
 } from "../../core/model-defaults.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import type { ModelProfile } from "../../core/profiles.js";
+import { isPiboThinkingLevel, type PiboThinkingLevel } from "../../core/thinking.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
 import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
@@ -132,6 +133,7 @@ type ChatAgentBody = {
 	piPackages?: unknown;
 	mainModel?: unknown;
 	subagentModel?: unknown;
+	thinkingLevel?: unknown;
 	builtinTools?: unknown;
 	builtinToolNames?: unknown;
 	autoContextFiles?: unknown;
@@ -161,6 +163,7 @@ type ChatPiPackagePatchBody = {
 type ChatModelDefaultsBody = {
 	main?: unknown;
 	subagent?: unknown;
+	thinking?: unknown;
 };
 
 type ChatMessageBody = {
@@ -485,6 +488,14 @@ function normalizeRunControl(value: unknown): boolean {
 	return value;
 }
 
+function normalizeThinkingLevel(value: unknown, fieldName: string): PiboThinkingLevel | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "string" || !isPiboThinkingLevel(value)) {
+		throw new PiboWebHttpError(`${fieldName} must be one of off, minimal, low, medium, high, xhigh`, 400);
+	}
+	return value;
+}
+
 function normalizeModelProfile(value: unknown, fieldName: string): ModelProfile | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -673,6 +684,7 @@ function updateChatModelDefaults(body: ChatModelDefaultsBody, cwd = process.cwd(
 	return savePiboModelDefaults({
 		main: normalizeModelProfile(body.main, "main"),
 		subagent: normalizeModelProfile(body.subagent, "subagent"),
+		thinking: normalizeThinkingLevel(body.thinking, "thinking"),
 	}, cwd);
 }
 
@@ -1165,6 +1177,7 @@ function createAgentInput(ownerScope: string, body: ChatAgentBody) {
 		piPackages: normalizeRegisteredPiPackages(body.piPackages),
 		mainModel: normalizeModelProfile(body.mainModel, "mainModel"),
 		subagentModel: normalizeModelProfile(body.subagentModel, "subagentModel"),
+		thinkingLevel: normalizeThinkingLevel(body.thinkingLevel, "thinkingLevel"),
 		builtinTools: normalizeBuiltinTools(body.builtinTools),
 		builtinToolNames: normalizeBuiltinToolNames(body.builtinToolNames),
 		autoContextFiles: normalizeAutoContextFiles(body.autoContextFiles),
@@ -1184,6 +1197,7 @@ function createAgentUpdate(body: ChatAgentBody): UpdateCustomAgentInput {
 	if (body.piPackages !== undefined) update.piPackages = normalizeRegisteredPiPackages(body.piPackages);
 	if (body.mainModel !== undefined) update.mainModel = normalizeModelProfile(body.mainModel, "mainModel");
 	if (body.subagentModel !== undefined) update.subagentModel = normalizeModelProfile(body.subagentModel, "subagentModel");
+	if (body.thinkingLevel !== undefined) update.thinkingLevel = normalizeThinkingLevel(body.thinkingLevel, "thinkingLevel");
 	if (body.builtinTools !== undefined) update.builtinTools = normalizeBuiltinTools(body.builtinTools);
 	if (body.builtinToolNames !== undefined) update.builtinToolNames = normalizeBuiltinToolNames(body.builtinToolNames);
 	if (body.autoContextFiles !== undefined) update.autoContextFiles = normalizeAutoContextFiles(body.autoContextFiles);

@@ -324,6 +324,7 @@ export type SaveCustomAgentInput = {
 	piPackages: string[];
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
+	thinkingLevel?: CustomAgent["thinkingLevel"] | null;
 	builtinTools: "default" | "disabled";
 	builtinToolNames: string[];
 	autoContextFiles: boolean;

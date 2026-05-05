@@ -39,7 +39,8 @@ import {
 	X,
 } from "lucide-react";
 import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, getBootstrap, getTrace, getUserSkill, installUserSkill, listUserSkills, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, updateUserSkill, type SaveCustomAgentInput } from "./api";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, UserSkill } from "./types";
+import { THINKING_LEVELS } from "./types";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSessionTraceView, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { adaptTrace } from "./tracing/adapt";
 import { collectBackendNodes } from "./tracing/snapshotCollector";
@@ -83,6 +84,13 @@ type ForkActionResponse = {
 		cancelled?: boolean;
 		selectedText?: string;
 	};
+};
+
+type SlashCommand = {
+	slash: string;
+	action: string;
+	description: string;
+	thinkingLevel?: ThinkingLevel;
 };
 
 type LoadBootstrapOptions = {
@@ -500,12 +508,25 @@ export function App({ route }: { route: ChatAppRoute }) {
 		}
 	}, [area, bootstrap, loadBootstrap, navigateToSelectedSession, refreshTrace, selectedPiboSessionId, selectedRoomId, setPreferredNewSessionProfile]);
 
-	const slashCommands = useMemo(() => {
+	const slashCommands = useMemo<SlashCommand[]>(() => {
 		const actions = bootstrap?.capabilities.actions ?? [];
-		const commands = actions.flatMap((action) =>
+		const commands = actions.flatMap((action): SlashCommand[] =>
 			action.slashCommands
 				.filter((command) => command !== "tree")
-				.map((command) => ({ slash: `/${command}`, action: action.name, description: action.description ?? action.name })),
+				.flatMap((command): SlashCommand[] => {
+					if (action.name === "thinking" && command === "thinking") {
+						return [
+							{ slash: "/thinking", action: action.name, description: "Cycle thinking level or use /thinking <level>." },
+							...THINKING_LEVELS.map((thinkingLevel) => ({
+								slash: `/thinking-${thinkingLevel}`,
+								action: action.name,
+								description: `Set thinking level to ${thinkingLevel}.`,
+								thinkingLevel,
+							})),
+						];
+					}
+					return [{ slash: `/${command}`, action: action.name, description: action.description ?? action.name }];
+				}),
 		);
 		commands.push({
 			slash: "/thinking-show",
@@ -725,7 +746,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			localStorage.setItem("pibo.chat.showThinking", String(next));
 			return true;
 		}
-		const level = text.match(/^\/thinking\s+(\S+)/)?.[1];
+		const level = command.thinkingLevel ?? text.match(/^\/thinking\s+(\S+)/)?.[1];
 		const result = await postAction(selectedPiboSessionId, command.action, level ? { level } : undefined);
 		const derivedPiboSessionId = getResultPiboSessionId(result);
 		if ((command.action === "session.clone" || command.action === "session.fork") && derivedPiboSessionId) {
@@ -1232,7 +1253,7 @@ function SessionTracePane({
 	showRawEvents: boolean;
 	showThinking: boolean;
 	expandThinking: boolean;
-	commands: Array<{ slash: string; action: string; description: string }>;
+	commands: SlashCommand[];
 	skills: Array<{ name: string; description?: string; path?: string }>;
 	composerText: string;
 	composerFocusSignal: number;
@@ -2329,7 +2350,7 @@ function Composer({
 	onSend,
 }: {
 	disabled?: boolean;
-	commands: Array<{ slash: string; action: string; description: string }>;
+	commands: SlashCommand[];
 	skills: Array<{ name: string; description?: string; path?: string }>;
 	value: string;
 	focusSignal: number;
@@ -2636,6 +2657,7 @@ function AgentsView({
 				piPackages: draft.piPackages,
 				mainModel: draft.mainModel,
 				subagentModel: draft.subagentModel,
+				thinkingLevel: draft.thinkingLevel ?? null,
 				builtinTools: draft.builtinTools,
 				builtinToolNames: draft.builtinToolNames,
 				autoContextFiles: draft.autoContextFiles,
@@ -2870,6 +2892,13 @@ function AgentsView({
 							emptyProviderLabel="Default"
 							onChange={(subagentModel) => setDraft((current) => ({ ...current, subagentModel }))}
 						/>
+						<ThinkingLevelSelector
+							title="Thinking Level"
+							value={draft.thinkingLevel}
+							readOnly={readOnly}
+							hint="Unset to use the settings default."
+							onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
+						/>
 						<InlineCheckboxToggle disabled={readOnly} checked={draft.autoContextFiles} title="Load AGENTS.md / CLAUDE.md" onToggle={() => setDraft((current) => ({ ...current, autoContextFiles: !current.autoContextFiles }))} />
 						<BuiltinToolsDesigner draft={draft} setDraft={setDraft} readOnly={readOnly} />
 					</DesignerPanel>
@@ -3012,6 +3041,7 @@ type AgentDraft = SaveCustomAgentInput & {
 	profileName?: string;
 	archivedAt?: string;
 	hardPinnedModel?: ModelProfile;
+	thinkingLevel?: ThinkingLevel;
 	brokenContextFiles?: string[];
 	source: "custom" | "profile";
 };
@@ -3028,6 +3058,7 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		piPackages: [],
 		mainModel: undefined,
 		subagentModel: undefined,
+		thinkingLevel: undefined,
 		builtinTools: "default",
 		builtinToolNames: [...DEFAULT_BUILTIN_TOOL_NAMES],
 		autoContextFiles: true,
@@ -3052,6 +3083,7 @@ function agentToDraft(agent: CustomAgent): AgentDraft {
 		piPackages: agent.piPackages ?? [],
 		mainModel: agent.mainModel,
 		subagentModel: agent.subagentModel,
+		thinkingLevel: agent.thinkingLevel,
 		builtinTools: agent.builtinTools,
 		builtinToolNames: normalizeBuiltinToolNames(agent.builtinToolNames, agent.builtinTools),
 		autoContextFiles: agent.autoContextFiles ?? true,
@@ -3075,6 +3107,7 @@ function profileToDraft(profile: BootstrapData["agents"][number], catalog?: Agen
 		piPackages: profile.piPackages ?? [],
 		mainModel: profile.mainModel ?? profile.model,
 		subagentModel: profile.subagentModel ?? profile.model,
+		thinkingLevel: profile.thinkingLevel,
 		builtinTools: profile.builtinTools ?? "default",
 		builtinToolNames: normalizeBuiltinToolNames(profile.builtinToolNames, profile.builtinTools),
 		autoContextFiles: profile.autoContextFiles ?? true,
@@ -4274,7 +4307,56 @@ function ModelDefaultsSettings({
 				configuredProvidersOnly
 				onChange={(subagent) => void save({ ...draft, subagent })}
 			/>
+			<ThinkingLevelSelector
+				title="Default Thinking Level"
+				value={draft.thinking}
+				readOnly={saving}
+				hint="Unset to use the provider/runtime fallback."
+				onChange={(thinking) => void save({ ...draft, thinking })}
+			/>
 			{error ? <div className="text-xs text-amber-100">{error}</div> : null}
+		</div>
+	);
+}
+
+function ThinkingLevelSelector({
+	title,
+	value,
+	readOnly,
+	hint,
+	onChange,
+}: {
+	title: string;
+	value?: ThinkingLevel;
+	readOnly: boolean;
+	hint?: string;
+	onChange: (value: ThinkingLevel | undefined) => void;
+}) {
+	return (
+		<div className="grid gap-2">
+			<div className="flex items-center justify-between gap-3">
+				<div className="text-[11px] uppercase tracking-wider text-slate-500">{title}</div>
+				<button
+					type="button"
+					disabled={readOnly || !value}
+					onClick={() => onChange(undefined)}
+					className="text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300 disabled:opacity-50"
+				>
+					Unset
+				</button>
+			</div>
+			{hint ? <div className="text-xs text-slate-500">{hint}</div> : null}
+			<select
+				value={value ?? ""}
+				disabled={readOnly}
+				onChange={(event) => onChange(event.target.value ? (event.target.value as ThinkingLevel) : undefined)}
+				className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+			>
+				<option value="">Default</option>
+				{THINKING_LEVELS.map((level) => (
+					<option key={level} value={level}>{level}</option>
+				))}
+			</select>
 		</div>
 	);
 }
