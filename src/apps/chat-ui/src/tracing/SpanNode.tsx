@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import {
 	ArrowDownToLine,
 	Bell,
@@ -233,6 +233,18 @@ export const TraceSpanCard = memo(function TraceSpanCard({
 			? `${((span.endTime - span.startTime) / 1000).toFixed(1)}ms`
 			: null;
 
+	const handleCardClick = (event: MouseEvent<HTMLDivElement>) => {
+		if (isInteractiveSpanEventTarget(event)) return;
+		onToggle();
+	};
+	const handleCardKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+		if (isInteractiveSpanEventTarget(event)) return;
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			onToggle();
+		}
+	};
+
 	return (
 		<div
 			className="relative mb-4 group"
@@ -243,9 +255,14 @@ export const TraceSpanCard = memo(function TraceSpanCard({
 			}}
 		>
 			<div
-				className={`min-w-0 ${isUserMessage ? "bg-[#11a4d4]/10" : "bg-white dark:bg-[#1a262b]"} border ${statusStyles.cardClass} rounded-sm shadow-sm transition-all hover:border-opacity-70 ${
+				className={`min-w-0 cursor-pointer ${isUserMessage ? "bg-[#11a4d4]/10" : "bg-white dark:bg-[#1a262b]"} border ${statusStyles.cardClass} rounded-sm shadow-sm transition-all hover:border-opacity-70 focus:outline-none focus:ring-1 focus:ring-[#11a4d4]/50 ${
 					isActive ? statusStyles.glowClass : ""
 				}`}
+				onClick={handleCardClick}
+				onKeyDown={handleCardKeyDown}
+				role="button"
+				tabIndex={0}
+				aria-expanded={contentExpanded}
 			>
 				<SpanHeader
 					span={span}
@@ -271,6 +288,13 @@ export const TraceSpanCard = memo(function TraceSpanCard({
 		</div>
 	);
 });
+
+function isInteractiveSpanEventTarget(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
+	const target = event.target;
+	if (!(target instanceof Element) || target === event.currentTarget) return false;
+	const interactiveTarget = target.closest("button, a, input, textarea, select, summary, [role='button'], [tabindex]:not([tabindex='-1'])");
+	return Boolean(interactiveTarget && interactiveTarget !== event.currentTarget);
+}
 
 function SpanHeader({
 	span,
@@ -301,7 +325,7 @@ function SpanHeader({
 	return (
 		<div className={headerClassName}>
 			<div className="box-border flex w-full min-w-0 items-center" style={{ maxWidth: "100%" }}>
-				<button type="button" className="min-w-0 flex-1 px-4 py-2 cursor-pointer text-left" onClick={onToggle}>
+				<div className="min-w-0 flex-1 px-4 py-2 text-left">
 					<span className={`min-w-0 text-xs font-bold ${config.color} uppercase tracking-wider flex items-center gap-2`}>
 						{contentExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
 						<SpanIconBadge spanType={span.spanType} config={config} isActive={isActive} />
@@ -313,7 +337,7 @@ function SpanHeader({
 						) : null}
 						{isActive ? <span className="w-1.5 h-1.5 rounded-full bg-[#11a4d4] animate-pulse" /> : null}
 					</span>
-				</button>
+				</div>
 				<SpanHeaderActions
 					forkEntryId={span.pibo?.traceNodeType === "user.message" ? span.pibo.entryId : undefined}
 					linkedPiboSessionId={span.pibo?.linkedPiboSessionId}

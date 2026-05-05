@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
@@ -122,12 +122,33 @@ export function CompactTerminalSessionView({
 						}}
 						itemContent={(_, row) => {
 							const expanded = expandedRows.has(row.id);
+							const toggleExpanded = () => {
+								if (!row.expandable) return;
+								setExpandedRows((current) => {
+									const next = new Set(current);
+									if (next.has(row.id)) next.delete(row.id);
+									else next.add(row.id);
+									return next;
+								});
+							};
+							const handleRowClick = (event: MouseEvent<HTMLDivElement>) => {
+								if (isInteractiveEventTarget(event)) return;
+								toggleExpanded();
+							};
+							const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+								if (!row.expandable || isInteractiveEventTarget(event)) return;
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									toggleExpanded();
+								}
+							};
 							const rowClassName =
-								row.kind === "message.user"
+								(row.kind === "message.user"
 									? "group border-b border-[#141414] bg-[#11a4d4]/10 py-2 last:border-b-0 hover:bg-[#11a4d4]/15"
 									: row.kind === "execution.command"
 										? "group border-b border-[#141414] bg-[#f59e0b]/5 py-2 last:border-b-0 hover:bg-[#f59e0b]/10"
-										: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]";
+										: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]") +
+								(row.expandable ? " cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#38bdf8]/50" : "");
 							return (
 								<div className="px-4">
 									<div
@@ -142,6 +163,11 @@ export function CompactTerminalSessionView({
 										data-order-source={row.orderSource}
 										data-order-stream-id={row.orderStreamId}
 										data-order-frame-index={row.orderStreamFrameIndex}
+										onClick={row.expandable ? handleRowClick : undefined}
+										onKeyDown={row.expandable ? handleRowKeyDown : undefined}
+										role={row.expandable ? "button" : undefined}
+										tabIndex={row.expandable ? 0 : undefined}
+										aria-expanded={row.expandable ? expanded : undefined}
 									>
 										<div className="flex gap-3">
 											<div className="min-w-0 flex-1">
@@ -186,21 +212,6 @@ export function CompactTerminalSessionView({
 														Fork
 													</RowAction>
 												) : null}
-												{row.expandable ? (
-													<RowAction
-														label={expanded ? "Collapse details" : "Expand details"}
-														onClick={() =>
-															setExpandedRows((current) => {
-																const next = new Set(current);
-																if (next.has(row.id)) next.delete(row.id);
-																else next.add(row.id);
-																return next;
-															})
-														}
-													>
-														{expanded ? "Hide" : "Details"}
-													</RowAction>
-												) : null}
 											</div>
 										</div>
 										{expanded ? <TerminalDetails row={row} onOpenSession={onOpenSession} /> : null}
@@ -224,13 +235,22 @@ export function CompactTerminalSessionView({
 				<button
 					type="button"
 					onClick={() => stickyView.stickToBottom("auto")}
-					className="absolute right-4 bottom-4 z-30 border border-[#38bdf8] bg-[#111111]/95 px-2 py-1 font-mono text-[11px] text-[#38bdf8] shadow-lg shadow-black/30 hover:bg-[#161616]"
+					title="Scroll to latest"
+					aria-label="Scroll to latest"
+					className="absolute right-4 bottom-4 z-30 inline-flex h-9 w-9 items-center justify-center rounded-sm border border-[#38bdf8] bg-[#111111]/95 text-[#38bdf8] shadow-lg shadow-black/30 hover:bg-[#161616]"
 				>
-					Latest
+					<ChevronDown size={18} />
 				</button>
 			)}
 		</section>
 	);
+}
+
+function isInteractiveEventTarget(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
+	const target = event.target;
+	if (!(target instanceof Element) || target === event.currentTarget) return false;
+	const interactiveTarget = target.closest("button, a, input, textarea, select, summary, [role='button'], [tabindex]:not([tabindex='-1'])");
+	return Boolean(interactiveTarget && interactiveTarget !== event.currentTarget);
 }
 
 function TerminalStreamingFooter() {
