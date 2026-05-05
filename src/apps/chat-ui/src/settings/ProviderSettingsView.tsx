@@ -26,6 +26,11 @@ type ProviderStatus = {
 	configured: boolean;
 };
 
+type ActionEnvelope = {
+	type?: string;
+	result?: unknown;
+};
+
 type ProviderRowState =
 	| { type: "collapsed" }
 	| { type: "oauth_starting" }
@@ -48,7 +53,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 		setLoading(true);
 		setError(null);
 		try {
-			const result = (await postAction(piboSessionId, "login.status", {})) as {
+			const result = unwrapActionResult(await postAction(piboSessionId, "login.status", {})) as {
 				providers?: ProviderStatus[];
 			};
 			const map: Record<string, boolean> = {};
@@ -75,7 +80,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
 			setRowStates((prev) => ({ ...prev, [provider]: { type: "oauth_starting" } }));
 			try {
-				const result = (await postAction(piboSessionId, "login.start", { provider })) as {
+				const result = unwrapActionResult(await postAction(piboSessionId, "login.start", { provider })) as {
 					url?: string;
 					state?: string;
 				};
@@ -421,4 +426,13 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 			})}
 		</div>
 	);
+}
+
+function unwrapActionResult(value: unknown): unknown {
+	if (isActionEnvelope(value)) return value.result;
+	return value;
+}
+
+function isActionEnvelope(value: unknown): value is ActionEnvelope {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value) && (value as ActionEnvelope).type === "execution_result";
 }
