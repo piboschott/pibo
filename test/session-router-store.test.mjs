@@ -108,6 +108,45 @@ test("session router defaults runtimes to the user home workspace", async () => 
 	}
 });
 
+test("session router applies product model defaults instead of workspace-local defaults", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-router-model-defaults-"));
+	await mkdir(join(cwd, ".pibo"), { recursive: true });
+	await writeFile(join(cwd, ".pibo/model-defaults.json"), JSON.stringify({
+		main: { provider: "workspace-provider", id: "workspace-model" },
+	}), "utf-8");
+
+	const store = new InMemoryPiboSessionStore();
+	store.create({
+		id: "ps_model_defaults",
+		piSessionId: "31111111-1111-4111-8111-111111111111",
+		channel: "pibo.test",
+		kind: "chat",
+		profile: "pibo-minimal",
+		ownerScope: "user:test",
+		workspace: cwd,
+	});
+	const router = new PiboSessionRouter({
+		cwd,
+		persistSession: false,
+		sessionStore: store,
+		modelDefaults: () => ({ main: { provider: "product-provider", id: "product-model" } }),
+	});
+
+	try {
+		await assert.rejects(
+			router.emit({
+				type: "execution",
+				piboSessionId: "ps_model_defaults",
+				action: "status",
+			}),
+			/product-provider\/product-model/,
+		);
+	} finally {
+		await router.disposeAll();
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
 test("session router preserves selected Pi packages when creating a runtime", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pibo-router-pi-package-"));
 	const packageDir = join(cwd, "router-package");

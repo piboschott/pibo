@@ -28,6 +28,7 @@ import {
 	type PiboSessionStore,
 } from "../sessions/store.js";
 import { getDefaultPiboWorkspace } from "./workspace.js";
+import { loadPiboModelDefaults, type PiboModelDefaults } from "./model-defaults.js";
 
 export type {
 	PiboEventListener,
@@ -49,6 +50,8 @@ export type PiboSessionRouterOptions = Omit<
 	sessionStore?: PiboSessionStore;
 	forwardPiEvents?: boolean;
 	reliabilityStore?: PiboReliabilityStore;
+	/** Product-level model defaults. Used as Chat Web main/subagent defaults before Pi fallback. */
+	modelDefaults?: PiboModelDefaults | (() => PiboModelDefaults);
 };
 
 const DEFAULT_SUBAGENT_REPLY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -145,7 +148,7 @@ export class PiboSessionRouter {
 		this.pluginRegistry = options.pluginRegistry ?? createDefaultPiboPluginRegistry();
 		this.sessionStore = options.sessionStore ?? new InMemoryPiboSessionStore();
 		this.baseProfile = options.profile ?? this.pluginRegistry.createProfile("pibo-minimal");
-		this.reliabilityStore = options.reliabilityStore ?? (options.persistSession === false ? undefined : createDefaultPiboReliabilityStore(options.cwd));
+		this.reliabilityStore = options.reliabilityStore ?? (options.persistSession === false ? undefined : createDefaultPiboReliabilityStore());
 		this.runRegistry = new PiboRunRegistry({ store: this.reliabilityStore });
 	}
 
@@ -294,6 +297,7 @@ export class PiboSessionRouter {
 			profile: profileForSession(profile, piboSession.piSessionId, parentPiSessionId),
 			subagentRunner: this.createSubagentRunner(piboSession.id),
 			runToolController: this.createRunToolController(piboSession.id),
+			modelDefaults: this.resolveModelDefaults(),
 		});
 		const session = new RoutedSession(
 			piboSession.id,
@@ -306,6 +310,12 @@ export class PiboSessionRouter {
 		);
 		this.sessions.set(piboSession.id, session);
 		return session;
+	}
+
+	private resolveModelDefaults(): PiboModelDefaults {
+		if (typeof this.options.modelDefaults === "function") return this.options.modelDefaults();
+		if (this.options.modelDefaults) return this.options.modelDefaults;
+		return loadPiboModelDefaults(this.options.cwd ?? process.cwd());
 	}
 
 	private async handleSessionOperation(
