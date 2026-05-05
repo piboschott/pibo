@@ -22,7 +22,8 @@ const PROVIDERS: ProviderDef[] = [
 ];
 
 type ProviderStatus = {
-	id: string;
+	id?: string;
+	provider?: string;
 	configured: boolean;
 };
 
@@ -59,7 +60,8 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 			const map: Record<string, boolean> = {};
 			if (Array.isArray(result?.providers)) {
 				for (const p of result.providers) {
-					map[p.id] = p.configured;
+					const id = p.id ?? p.provider;
+					if (id) map[id] = p.configured;
 				}
 			}
 			setStatuses(map);
