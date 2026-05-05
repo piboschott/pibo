@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -39,6 +40,7 @@ export type BrowserUseLeaseAcquireOptions = {
   templateDir?: string;
   profileName?: string;
   json?: boolean;
+  noWarmup?: boolean;
 };
 
 export type BrowserUseLeaseReleaseOptions = {
@@ -100,7 +102,7 @@ function defaultTemplateDir(status: CliToolStatus): string {
   return preferred;
 }
 
-function readRegistry(status: CliToolStatus): LeaseRegistry {
+export function readRegistry(status: CliToolStatus): LeaseRegistry {
   const path = registryPath(status);
   if (!existsSync(path)) return { version: REGISTRY_VERSION, leases: [] };
   const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
@@ -145,7 +147,7 @@ async function withRegistryLock<T>(status: CliToolStatus, action: () => Promise<
   }
 }
 
-function isExpired(lease: BrowserUseLease, now = new Date()): boolean {
+export function isExpired(lease: BrowserUseLease, now = new Date()): boolean {
   return new Date(lease.expiresAt).getTime() <= now.getTime();
 }
 
@@ -314,6 +316,7 @@ export async function acquireBrowserUseLease(
 
   await withRegistryLock(context.status, async () => {
     const registry = readRegistry(context.status);
+    const reapedCount = reapStaleLeasesInRegistry(context.status, registry);
     let lease = selectReusableLease(context.status, registry.leases, app);
     if (lease) {
       await copyTemplateProfile(templateDir, lease.userDataDir);
@@ -344,12 +347,95 @@ export async function acquireBrowserUseLease(
       registry.leases.push(lease);
     }
     await writeRegistry(context.status, registry);
+    if (reapedCount > 0 && !options.json) {
+      console.log(`Reaped ${reapedCount} stale lease${reapedCount === 1 ? '' : 's'}`);
+    }
     if (options.json) printLeaseJson(context.status, lease);
     else printLeaseEnv(context.status, lease);
+
+    if (!options.noWarmup) {
+      const warmup = await warmupBrowserUseLease(context, lease);
+      if (!warmup.success && !options.json) {
+        console.log(`Warning: Browser warm-up failed: ${warmup.error}`);
+      }
+    }
   });
 }
 
+async function warmupBrowserUseLease(
+  context: LeaseCommandContext,
+  lease: BrowserUseLease,
+  timeoutMs = 15000,
+): Promise<{ success: boolean; cdpUrl?: string; error?: string }> {
+  const wrapperPath = join(context.status.homeDir, 'bin', 'browser-use');
+  if (!existsSync(wrapperPath)) {
+    return { success: false, error: 'browser-use wrapper not found' };
+  }
+
+  const env = {
+    ...process.env,
+    BROWSER_USE_HOME: browserUseHome(context.status),
+    PIBO_BROWSER_USE_SESSION: lease.sessionName,
+    PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: lease.userDataDir,
+    PIBO_BROWSER_USE_DEFAULT_PROFILE: lease.profileName,
+  };
+
+  return new Promise((resolve) => {
+    const child = spawn(wrapperPath, ['--session', lease.sessionName, '--pibo-ensure-chrome'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve({ success: false, error: `Warm-up timed out after ${timeoutMs}ms` });
+    }, timeoutMs);
+
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ success: false, error: error.message });
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        const cdpUrl = stdout.trim();
+        resolve({ success: true, cdpUrl: cdpUrl || undefined });
+      } else {
+        resolve({ success: false, error: stderr || `Chrome start exited with code ${code}` });
+      }
+    });
+  });
+}
+
+function reapStaleLeasesInRegistry(status: CliToolStatus, registry: LeaseRegistry): number {
+  let count = 0;
+  for (const lease of registry.leases) {
+    if (lease.status !== 'active' || !isExpired(lease)) continue;
+    if (leaseProcessIsAlive(status, lease)) killLeaseProcess(status, lease);
+    lease.status = 'released';
+    lease.updatedAt = nowIso();
+    count += 1;
+  }
+  return count;
+}
+
 export async function listBrowserUseLeases(context: LeaseCommandContext, json = false): Promise<void> {
+  let reapedCount = 0;
+  // Auto-reap stale leases before listing
+  await withRegistryLock(context.status, async () => {
+    const registry = readRegistry(context.status);
+    reapedCount = reapStaleLeasesInRegistry(context.status, registry);
+    if (reapedCount > 0) {
+      await writeRegistry(context.status, registry);
+    }
+  });
+
   const registry = readRegistry(context.status);
   const rows = registry.leases.map((lease) => ({
     ...lease,
@@ -402,14 +488,7 @@ export async function releaseBrowserUseLease(
 export async function reapStaleBrowserUseLeases(context: LeaseCommandContext): Promise<void> {
   await withRegistryLock(context.status, async () => {
     const registry = readRegistry(context.status);
-    let count = 0;
-    for (const lease of registry.leases) {
-      if (lease.status !== 'active' || !isExpired(lease)) continue;
-      if (leaseProcessIsAlive(context.status, lease)) killLeaseProcess(context.status, lease);
-      lease.status = 'released';
-      lease.updatedAt = nowIso();
-      count += 1;
-    }
+    const count = reapStaleLeasesInRegistry(context.status, registry);
     await writeRegistry(context.status, registry);
     console.log(`Reaped ${count} stale browser-use auth lease${count === 1 ? '' : 's'}`);
   });

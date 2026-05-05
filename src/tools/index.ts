@@ -1,21 +1,27 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { ErrorCode, formatCliError } from '../cli-errors.js';
 import {
   acquireBrowserUseLease,
+  isExpired,
   listBrowserUseLeases,
   printBrowserUseAuthTemplateEnv,
   printBrowserUseAuthTemplatePath,
+  readRegistry,
   reapStaleBrowserUseLeases,
   releaseBrowserUseLease,
 } from './browser-use-leases.js';
 import {
   formatBrowserUseTargets,
   listBrowserUseCdpTargets,
+  normalizeCdpUrlSync,
   printAttachChatExports,
   selectBestChatTarget,
 } from './browser-use-cdp.js';
 import { ensureBrowserUseWrapper } from './browser-use-wrapper.js';
-import { detectDesktopEnv } from './desktop-env.js';
+import { detectDesktopEnv, hasDesktopDisplay } from './desktop-env.js';
 import {
   doctorCliTool,
   findCliToolEntry,
@@ -24,6 +30,7 @@ import {
   installCliTool,
   listCliToolEntries,
   removeCliTool,
+  type CliToolStatus,
 } from './registry.js';
 
 function requireEntry(name: string) {
@@ -73,7 +80,16 @@ function printShow(name: string): void {
   console.log(`  status: ${status.installed ? 'installed' : 'available'}`);
   console.log(`  runtime: ${status.rootDir}`);
   console.log(`  home: ${status.homeDir}`);
-  console.log(`  executable: ${status.executablePath}`);
+  if (entry.name === 'browser-use') {
+    const wrapperPath = ensureBrowserUseWrapper(status);
+    console.log(`  wrapper: ${wrapperPath ?? 'not generated'}`);
+    console.log(`  executable: ${status.executablePath}`);
+    console.log('');
+    console.log('  IMPORTANT: Always use the wrapper path above, not the raw executable.');
+    console.log('  The wrapper manages persistent Chrome profiles and CDP automatically.');
+  } else {
+    console.log(`  executable: ${status.executablePath}`);
+  }
   console.log('');
   console.log('Guides:');
   for (const guide of entry.guides) {
@@ -129,7 +145,15 @@ function printGuide(name: string, guideName?: string): void {
 
 function printPath(name: string): void {
   const entry = requireEntry(name);
-  console.log(getCliToolStatus(entry).executablePath);
+  const status = getCliToolStatus(entry);
+  if (entry.name === 'browser-use') {
+    const wrapperPath = ensureBrowserUseWrapper(status);
+    if (wrapperPath) {
+      console.log(wrapperPath);
+      return;
+    }
+  }
+  console.log(status.executablePath);
 }
 
 function printEnv(name: string): void {
@@ -180,6 +204,7 @@ Commands:
   lease list                  List authenticated browser slots
   lease release <id>          Release one browser slot
   lease reap-stale            Release expired or dead browser slots
+  health                      Check browser-use health and report issues
 
 Next:
   pibo tools show browser-use
@@ -187,6 +212,113 @@ Next:
   pibo tools browser-use targets
   pibo tools browser-use auth-template env
   pibo tools browser-use lease acquire`);
+}
+
+function findChromeBinary(): string | undefined {
+  if (process.env.PIBO_BROWSER_USE_CHROME && existsSync(process.env.PIBO_BROWSER_USE_CHROME)) {
+    return process.env.PIBO_BROWSER_USE_CHROME;
+  }
+  const candidates = ['google-chrome', 'chromium', 'chromium-browser', 'chrome'];
+  for (const name of candidates) {
+    const result = spawnSync('command', ['-v', name], { shell: true, encoding: 'utf-8' });
+    if (result.status === 0 && result.stdout.trim()) {
+      return result.stdout.trim();
+    }
+  }
+  return undefined;
+}
+
+function checkStaleCdpState(homeDir: string): { stalePids: number; stalePorts: number; details: string[] } {
+  const stateDir = join(homeDir, 'pibo-cdp');
+  if (!existsSync(stateDir)) return { stalePids: 0, stalePorts: 0, details: [] };
+
+  let stalePids = 0;
+  let stalePorts = 0;
+  const details: string[] = [];
+
+  for (const file of readdirSync(stateDir)) {
+    if (file.endsWith('.pid')) {
+      const pidPath = join(stateDir, file);
+      const text = readFileSync(pidPath, 'utf-8').trim();
+      const pid = Number.parseInt(text, 10);
+      let isDead = false;
+      if (!Number.isFinite(pid) || pid <= 0) {
+        isDead = true;
+      } else {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          isDead = true;
+        }
+      }
+      if (isDead) {
+        stalePids += 1;
+        details.push(`stale pid file: ${file}`);
+      }
+    } else if (file.endsWith('.port')) {
+      const base = file.slice(0, -5);
+      const pidPath = join(stateDir, `${base}.pid`);
+      if (!existsSync(pidPath)) {
+        stalePorts += 1;
+        details.push(`orphan port file: ${file}`);
+      }
+    }
+  }
+
+  return { stalePids, stalePorts, details };
+}
+
+async function printBrowserUseHealth(status: CliToolStatus, json = false): Promise<void> {
+  const wrapperPath = join(status.homeDir, 'bin', 'browser-use');
+  const wrapperExists = existsSync(wrapperPath);
+  const chromePath = findChromeBinary();
+  const desktop = detectDesktopEnv();
+  const hasDisplay = hasDesktopDisplay(desktop);
+  const staleState = checkStaleCdpState(status.homeDir);
+
+  let expiredLeases = 0;
+  try {
+    const registry = readRegistry(status);
+    for (const lease of registry.leases) {
+      if (lease.status === 'active' && isExpired(lease)) expiredLeases++;
+    }
+  } catch {
+    // ignore registry read errors
+  }
+
+  const overall = !wrapperExists || !chromePath ? 'critical' : staleState.stalePids > 0 || staleState.stalePorts > 0 || expiredLeases > 0 ? 'degraded' : 'ok';
+
+  const result = {
+    overall,
+    wrapper: { exists: wrapperExists, path: wrapperPath },
+    chrome: { found: Boolean(chromePath), path: chromePath },
+    display: { available: hasDisplay, display: desktop.display, waylandDisplay: desktop.waylandDisplay },
+    staleState: { pidFiles: staleState.stalePids, portFiles: staleState.stalePorts, details: staleState.details },
+    leases: { expired: expiredLeases },
+  };
+
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(`browser-use health: ${overall}`);
+  console.log(`  wrapper: ${wrapperExists ? 'ok' : 'MISSING'} (${wrapperPath})`);
+  console.log(`  chrome: ${chromePath ? `ok (${chromePath})` : 'NOT FOUND'}`);
+  console.log(`  display: ${hasDisplay ? 'available' : 'none'} (${desktop.display || 'no DISPLAY'})`);
+  console.log(`  stale state: ${staleState.stalePids} stale pid files, ${staleState.stalePorts} orphan port files`);
+  console.log(`  leases: ${expiredLeases} expired`);
+
+  if (overall !== 'ok') {
+    console.log('');
+    console.log('Suggestions:');
+    if (!wrapperExists) console.log('  Run: pibo tools install browser-use');
+    if (!chromePath) console.log('  Install Chrome/Chromium (e.g. apt install chromium)');
+    if (staleState.stalePids > 0 || staleState.stalePorts > 0) {
+      console.log('  Clean stale state: pibo tools browser-use lease reap-stale');
+    }
+    if (expiredLeases > 0) console.log('  Reap expired leases: pibo tools browser-use lease reap-stale');
+  }
 }
 
 function printToolsDiscovery(): void {
@@ -334,7 +466,16 @@ export async function runToolsCli(argv = process.argv): Promise<void> {
         console.log(JSON.stringify({ target }, null, 2));
         return;
       }
-      printAttachChatExports(target, options.cdpUrl);
+      const cdpUrl = options.cdpUrl ? normalizeCdpUrlSync(options.cdpUrl) : undefined;
+      printAttachChatExports(target, cdpUrl);
+    });
+
+  browserUse
+    .command('health')
+    .description('Check browser-use health and report issues')
+    .option('--json', 'Print machine-readable health data')
+    .action(async (options: { json?: boolean }) => {
+      await printBrowserUseHealth(getCliToolStatus(requireEntry('browser-use')), Boolean(options.json));
     });
 
   const authTemplate = browserUse

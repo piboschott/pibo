@@ -35,7 +35,16 @@ type PageProbe = {
 const DEFAULT_CDP_URL = 'http://127.0.0.1:56663';
 const DEFAULT_TIMEOUT_MS = 2500;
 
-function discoverCdpUrl(): string {
+async function isCdpPortReachable(port: number): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`http://127.0.0.1:${port}/json/version`, 800);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function discoverCdpUrl(): Promise<string> {
   const candidates: string[] = [];
   if (process.env.BROWSER_USE_HOME) {
     candidates.push(join(process.env.BROWSER_USE_HOME, 'pibo-cdp'));
@@ -58,8 +67,10 @@ function discoverCdpUrl(): string {
         })
         .filter((e) => e.valid)
         .sort((a, b) => b.mtime - a.mtime);
-      if (entries.length > 0) {
-        return `http://127.0.0.1:${entries[0].port}`;
+      for (const entry of entries) {
+        if (await isCdpPortReachable(entry.port)) {
+          return `http://127.0.0.1:${entry.port}`;
+        }
       }
     } catch {
       // ignore discovery errors for this candidate
@@ -88,7 +99,7 @@ const CHAT_TARGET_PROBE = `(() => {
 export async function listBrowserUseCdpTargets(
   options: BrowserUseTargetListOptions = {},
 ): Promise<BrowserUseCdpTarget[]> {
-  const cdpUrl = normalizeCdpUrl(options.cdpUrl);
+  const cdpUrl = await normalizeCdpUrl(options.cdpUrl);
   const probe = options.probe !== false;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const targets = await fetchChromeTargets(cdpUrl, timeoutMs);
@@ -125,14 +136,19 @@ export function formatBrowserUseTargets(targets: readonly BrowserUseCdpTarget[])
 }
 
 export function printAttachChatExports(target: BrowserUseCdpTarget, cdpUrl = DEFAULT_CDP_URL): void {
-  console.log(`export PIBO_CDP_URL=${shellQuote(normalizeCdpUrl(cdpUrl))}`);
+  console.log(`export PIBO_CDP_URL=${shellQuote(cdpUrl)}`);
   console.log(`export PIBO_CDP_TARGET_ID=${shellQuote(target.id)}`);
   console.log(`export PIBO_CDP_TARGET_WS=${shellQuote(target.webSocketDebuggerUrl ?? '')}`);
   console.log(`export PIBO_CHAT_URL=${shellQuote(target.url)}`);
 }
 
-function normalizeCdpUrl(value?: string): string {
-  return (value || discoverCdpUrl()).replace(/\/+$/, '');
+export function normalizeCdpUrlSync(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+async function normalizeCdpUrl(value?: string): Promise<string> {
+  if (value) return normalizeCdpUrlSync(value);
+  return (await discoverCdpUrl()).replace(/\/+$/, '');
 }
 
 async function fetchChromeTargets(cdpUrl: string, timeoutMs: number): Promise<ChromeTarget[]> {

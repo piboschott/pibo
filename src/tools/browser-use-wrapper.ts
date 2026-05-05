@@ -27,6 +27,7 @@ fresh_profile=0
 starts_browser=0
 show_help=0
 headed=0
+pibo_ensure_chrome=0
 sanitized_args=
 
 append_arg() {
@@ -183,6 +184,8 @@ persistent_chrome_url_if_alive() {
       printf 'http://127.0.0.1:%s\\n' "$chrome_port"
       return 0
     fi
+    # Clean up stale state files when process is dead or CDP unreachable
+    rm -f "$pid_file" "$port_file" 2>/dev/null || true
   fi
 
   return 1
@@ -335,6 +338,10 @@ while [ "$#" -gt 0 ]; do
     --session=*)
       session=\${arg#--session=}
       ;;
+    --pibo-ensure-chrome)
+      pibo_ensure_chrome=1
+      continue
+      ;;
     -*)
       ;;
     open|click|type|input|scroll|back|screenshot|state|switch|close-tab|keys|select|upload|eval|extract|hover|dblclick|rightclick|cookies|wait|get|python)
@@ -347,11 +354,18 @@ while [ "$#" -gt 0 ]; do
   append_arg "$arg"
 done
 
+if [ "$pibo_ensure_chrome" -eq 1 ]; then
+  cdp_url=$(ensure_persistent_chrome)
+  printf '%s\\n' "$cdp_url"
+  exit 0
+fi
+
 if [ "$show_help" -eq 1 ]; then
   {
     echo "Pibo browser-use wrapper:"
     echo "  New browser-use daemon sessions default to persistent Chrome profile \\"$default_profile\\" via CDP."
     echo "  Use $fresh_flag to start a fresh temporary browser profile."
+    echo "  Use --pibo-ensure-chrome to only start Chrome and print the CDP URL."
     echo ""
   } >&2
 fi
@@ -382,6 +396,9 @@ if [ -s "$session_pid_file" ]; then
   session_pid=$(cat "$session_pid_file" 2>/dev/null || true)
   if [ -n "$session_pid" ] && kill -0 "$session_pid" 2>/dev/null; then
     session_alive=1
+  else
+    # Clean up stale session pid file
+    rm -f "$session_pid_file" 2>/dev/null || true
   fi
 fi
 
