@@ -62,7 +62,7 @@ export function inspectDebugSession(
 	const parsed = parseDebugSessionInput(input);
 	const limit = normalizeLimit(options.limit);
 	if (!stores.sessions.exists) {
-		throw new Error(`Debug store "sessions" not found at ${stores.sessions.defaultPath}`);
+		throw new Error(`Debug store "sessions" not found at ${stores.sessions.path}`);
 	}
 	const sessionsDb = openReadOnlyDebugDatabase(stores.sessions);
 	try {

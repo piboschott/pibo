@@ -80,8 +80,8 @@ export async function inspectDebugTrace(
 	stores: { sessions: ResolvedPiboDebugStore; chat: ResolvedPiboDebugStore },
 	options: { runningOnly?: boolean; check?: boolean } = {},
 ): Promise<DebugTraceResult> {
-	if (!stores.sessions.exists) throw new Error(`Debug store "sessions" not found at ${stores.sessions.defaultPath}`);
-	if (!stores.chat.exists) throw new Error(`Debug store "chat" not found at ${stores.chat.defaultPath}`);
+	if (!stores.sessions.exists) throw new Error(`Debug store "sessions" not found at ${stores.sessions.path}`);
+	if (!stores.chat.exists) throw new Error(`Debug store "chat" not found at ${stores.chat.path}`);
 
 	const sessionsDb = openReadOnlyDebugDatabase(stores.sessions);
 	const chatDb = openReadOnlyDebugDatabase(stores.chat);

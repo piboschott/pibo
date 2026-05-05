@@ -152,6 +152,7 @@ export {
 	DEFAULT_PIBO_CONFIG_PATH,
 	PIBO_CONFIG_KEYS,
 	deletePiboConfigValue,
+	getDefaultPiboConfigPath,
 	getDisplayPiboConfigValue,
 	getPiboConfigValue,
 	isPiboConfigKeySecret,

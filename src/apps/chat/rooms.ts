@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import type { PiboJsonObject } from "../../core/events.js";
 
@@ -333,8 +334,8 @@ export class PiboRoomStore {
 	}
 }
 
-export function createDefaultPiboRoomStore(cwd = process.cwd()): PiboRoomStore {
-	return new PiboRoomStore(resolve(cwd, ".pibo/web-chat.sqlite"));
+export function createDefaultPiboRoomStore(_cwd?: string): PiboRoomStore {
+	return new PiboRoomStore(piboHomePath("web-chat.sqlite"));
 }
 
 export function chatRoomIdFromMetadata(metadata: PiboJsonObject | undefined): string | undefined {

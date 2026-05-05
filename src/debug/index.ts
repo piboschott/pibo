@@ -1,3 +1,4 @@
+import { getPiboHome } from "../core/pibo-home.js";
 import { resolveDebugStore, resolveDebugStores } from "./stores.js";
 
 type ParsedOptions = {
@@ -69,7 +70,7 @@ async function runDebugDb(args: string[]): Promise<void> {
 			console.log(JSON.stringify({ stores }, null, 2));
 			return;
 		}
-		console.log(["store\tpath\texists\tdescription", ...stores.map((store) => `${store.name}\t${store.defaultPath}\t${store.exists}\t${store.description}`)].join("\n"));
+		console.log(["store\tpath\texists\tdescription", ...stores.map((store) => `${store.name}\t${store.path}\t${store.exists}\t${store.description}`)].join("\n"));
 		return;
 	}
 	const storeName = options.positionals[0];
@@ -155,7 +156,7 @@ async function runDebugEvents(args: string[]): Promise<void> {
 		const { formatJson, formatRows } = await import("./sql.js");
 		const { PiboReliabilityStore } = await import("../reliability/store.js");
 		const store = resolveDebugStore("reliability");
-		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 		const reliability = new PiboReliabilityStore(store.path);
 		try {
 			const events = reliability.list({
@@ -175,7 +176,7 @@ async function runDebugEvents(args: string[]): Promise<void> {
 		const { formatJson, formatRows } = await import("./sql.js");
 		const { PiboReliabilityStore } = await import("../reliability/store.js");
 		const store = resolveDebugStore("reliability");
-		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 		const reliability = new PiboReliabilityStore(store.path);
 		try {
 			const counts = reliability.countEvents({
@@ -195,7 +196,7 @@ async function runDebugEvents(args: string[]): Promise<void> {
 		const { formatJson, formatRows } = await import("./sql.js");
 		const { PiboReliabilityStore } = await import("../reliability/store.js");
 		const store = resolveDebugStore("reliability");
-		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 		if (!options.topic || !options.retention || !options.before) {
 			throw new Error("pibo debug events prune requires --topic, --retention, and --before");
 		}
@@ -227,7 +228,7 @@ async function runDebugEvents(args: string[]): Promise<void> {
 		const { formatJson, formatRows } = await import("./sql.js");
 		const { PiboReliabilityStore } = await import("../reliability/store.js");
 		const store = resolveDebugStore("reliability");
-		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+		if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 		const reliability = new PiboReliabilityStore(store.path);
 		try {
 			const consumers = reliability.listConsumers();
@@ -262,7 +263,7 @@ async function runDebugJobs(args: string[]): Promise<void> {
 	const { formatJson, formatRows } = await import("./sql.js");
 	const { PiboReliabilityStore } = await import("../reliability/store.js");
 	const store = resolveDebugStore("reliability");
-	if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+	if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 	const reliability = new PiboReliabilityStore(store.path);
 	try {
 		if (command === "list") {
@@ -301,7 +302,7 @@ async function runDebugRuns(args: string[]): Promise<void> {
 	const { formatJson, formatRows } = await import("./sql.js");
 	const { PiboReliabilityStore } = await import("../reliability/store.js");
 	const store = resolveDebugStore("reliability");
-	if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.defaultPath}`);
+	if (!store.exists) throw new Error(`Debug store "reliability" not found at ${store.path}`);
 	const reliability = new PiboReliabilityStore(store.path);
 	try {
 		if (command === "list") {
@@ -499,12 +500,13 @@ function printDebugDbDiscovery(): void {
 	console.log(`pibo debug db - inspect local SQLite stores
 
 Stores:
-  sessions  .pibo/pibo-sessions.sqlite
-  chat      .pibo/web-chat.sqlite
-  agents    .pibo/chat-agents.sqlite
-  auth      .pibo/auth.sqlite
-  bindings  .pibo/session-bindings.sqlite
-  reliability .pibo/pibo-events.sqlite
+  home        ${getPiboHome()}
+  sessions    pibo-sessions.sqlite
+  chat        web-chat.sqlite
+  agents      chat-agents.sqlite
+  auth        auth.sqlite
+  bindings    session-bindings.sqlite
+  reliability pibo-events.sqlite
 
 Commands:
   stores               List known stores and paths

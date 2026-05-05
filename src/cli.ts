@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import {
-	DEFAULT_PIBO_CONFIG_PATH,
 	PIBO_CONFIG_KEYS,
+	getDefaultPiboConfigPath,
 	deletePiboConfigValue,
 	getDisplayPiboConfigValue,
 	loadPiboConfig,
@@ -175,7 +175,7 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 			await runSkillsCli([argv[0] ?? "node", "pibo skills", ...args]);
 		});
 
-	const config = program.command("config").description(`Manage pibo config at ${DEFAULT_PIBO_CONFIG_PATH}`).helpOption(false);
+	const config = program.command("config").description(`Manage pibo config at ${getDefaultPiboConfigPath()}`).helpOption(false);
 	config.action(() => {
 		printConfigDiscovery();
 	});
@@ -321,7 +321,7 @@ Next:
 }
 
 function printConfigDiscoveryText(): string {
-	return `pibo config - local config at ${DEFAULT_PIBO_CONFIG_PATH}
+	return `pibo config - local config at ${getDefaultPiboConfigPath()}
 
 Commands:
   keys               List supported config keys

@@ -141,7 +141,7 @@ export function formatJson(value: unknown): string {
 
 export function openReadOnlyDebugDatabase(store: ResolvedPiboDebugStore): DatabaseSync {
 	if (!store.exists) {
-		throw new Error(`Debug store "${store.name}" not found at ${store.defaultPath}`);
+		throw new Error(`Debug store "${store.name}" not found at ${store.path}`);
 	}
 	const db = new DatabaseSync(store.path, { readOnly: true });
 	db.exec("PRAGMA busy_timeout = 5000");

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { InMemoryPiboSessionStore, createPiboSession } from "../dist/sessions/store.js";
-import { SqlitePiboSessionStore } from "../dist/sessions/sqlite-store.js";
+import { SqlitePiboSessionStore, createDefaultPiboSessionStore } from "../dist/sessions/sqlite-store.js";
 
 test("pibo session builder creates opaque product and Pi identities", () => {
 	const session = createPiboSession(
@@ -84,6 +84,34 @@ test("in-memory pibo session store rejects duplicate Pi session ownership", () =
 			}),
 		/Pi session "11111111-1111-4111-8111-111111111111" is already attached/,
 	);
+});
+
+test("default sqlite pibo session store uses PIBO_HOME, not cwd", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pibo-session-home-"));
+	const previousPiboHome = process.env.PIBO_HOME;
+	process.env.PIBO_HOME = dir;
+	const store = createDefaultPiboSessionStore();
+
+	try {
+		store.create({
+			id: "ps_home",
+			piSessionId: "44444444-4444-4444-8444-444444444444",
+			channel: "pibo.test",
+			kind: "chat",
+			profile: "pibo-minimal",
+		});
+		const reopened = new SqlitePiboSessionStore(join(dir, "pibo-sessions.sqlite"));
+		try {
+			assert.equal(reopened.get("ps_home")?.id, "ps_home");
+		} finally {
+			reopened.close();
+		}
+	} finally {
+		store.close();
+		if (previousPiboHome === undefined) delete process.env.PIBO_HOME;
+		else process.env.PIBO_HOME = previousPiboHome;
+		await rm(dir, { recursive: true, force: true });
+	}
 });
 
 test("sqlite pibo session store persists structured session fields", async () => {

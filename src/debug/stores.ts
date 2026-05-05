@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { piboHomePath } from "../core/pibo-home.js";
 
 export type PiboDebugStoreName = "sessions" | "chat" | "agents" | "auth" | "bindings" | "reliability";
 
@@ -18,45 +18,45 @@ export const PIBO_DEBUG_STORES: readonly PiboDebugStore[] = [
 	{
 		name: "sessions",
 		description: "canonical Pibo Session metadata",
-		defaultPath: ".pibo/pibo-sessions.sqlite",
+		defaultPath: "pibo-sessions.sqlite",
 	},
 	{
 		name: "chat",
 		description: "Chat Web read model, rooms, and durable chat events",
-		defaultPath: ".pibo/web-chat.sqlite",
+		defaultPath: "web-chat.sqlite",
 	},
 	{
 		name: "agents",
 		description: "custom Agent Designer profiles",
-		defaultPath: ".pibo/chat-agents.sqlite",
+		defaultPath: "chat-agents.sqlite",
 	},
 	{
 		name: "auth",
 		description: "Better Auth local auth data",
-		defaultPath: ".pibo/auth.sqlite",
+		defaultPath: "auth.sqlite",
 	},
 	{
 		name: "bindings",
 		description: "local session binding data",
-		defaultPath: ".pibo/session-bindings.sqlite",
+		defaultPath: "session-bindings.sqlite",
 	},
 	{
 		name: "reliability",
 		description: "Pibo event stream, durable jobs, and yielded runs",
-		defaultPath: ".pibo/pibo-events.sqlite",
+		defaultPath: "pibo-events.sqlite",
 	},
 ];
 
-export function resolveDebugStores(cwd = process.cwd()): ResolvedPiboDebugStore[] {
-	return PIBO_DEBUG_STORES.map((store) => resolveDebugStore(store.name, cwd));
+export function resolveDebugStores(): ResolvedPiboDebugStore[] {
+	return PIBO_DEBUG_STORES.map((store) => resolveDebugStore(store.name));
 }
 
-export function resolveDebugStore(name: string, cwd = process.cwd()): ResolvedPiboDebugStore {
+export function resolveDebugStore(name: string): ResolvedPiboDebugStore {
 	const store = PIBO_DEBUG_STORES.find((item) => item.name === name);
 	if (!store) {
 		throw new Error(`Unknown debug store "${name}". Use one of: ${PIBO_DEBUG_STORES.map((item) => item.name).join(", ")}`);
 	}
-	const path = resolve(cwd, store.defaultPath);
+	const path = piboHomePath(store.defaultPath);
 	return {
 		...store,
 		path,

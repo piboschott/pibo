@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode, type ModelProfile } from "../../core/profiles.js";
 import { findPiPackage } from "../../pi-packages/store.js";
@@ -393,8 +394,8 @@ export class CustomAgentStore {
 	}
 }
 
-export function createDefaultCustomAgentStore(cwd = process.cwd()): CustomAgentStore {
-	return new CustomAgentStore(resolve(cwd, ".pibo/chat-agents.sqlite"));
+export function createDefaultCustomAgentStore(_cwd?: string): CustomAgentStore {
+	return new CustomAgentStore(piboHomePath("chat-agents.sqlite"));
 }
 
 function agentFromRow(row: AgentRow): CustomAgentDefinition {

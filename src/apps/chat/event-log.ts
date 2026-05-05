@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import type { PiboJsonValue, PiboOutputEvent } from "../../core/events.js";
 
@@ -373,8 +374,8 @@ export class ChatEventLog {
 	}
 }
 
-export function createDefaultChatEventLog(cwd = process.cwd()): ChatEventLog {
-	return new ChatEventLog(resolve(cwd, ".pibo/web-chat.sqlite"));
+export function createDefaultChatEventLog(_cwd?: string): ChatEventLog {
+	return new ChatEventLog(piboHomePath("web-chat.sqlite"));
 }
 
 function eventFromRow(row: ChatEventRow): StoredChatEvent {

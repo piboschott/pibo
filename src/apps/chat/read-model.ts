@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import type { PiboOutputEvent } from "../../core/events.js";
 import type { PiboSession } from "../../sessions/store.js";
@@ -266,8 +267,8 @@ export class ChatWebReadModel {
 	}
 }
 
-export function createDefaultChatWebReadModel(cwd = process.cwd()): ChatWebReadModel {
-	return new ChatWebReadModel(resolve(cwd, ".pibo/web-chat.sqlite"));
+export function createDefaultChatWebReadModel(_cwd?: string): ChatWebReadModel {
+	return new ChatWebReadModel(piboHomePath("web-chat.sqlite"));
 }
 
 function statusFromEvent(event: PiboOutputEvent): ChatWebSessionIndexItem["status"] {

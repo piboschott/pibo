@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../core/pibo-home.js";
 import { DatabaseSync } from "node:sqlite";
 import type { PiboJsonValue } from "../core/events.js";
 import type {
@@ -233,7 +234,7 @@ function asDate(value: Date | undefined): Date {
 export class PiboReliabilityStore {
 	private readonly db: DatabaseSync;
 
-	constructor(path = resolve(process.cwd(), ".pibo/pibo-events.sqlite")) {
+	constructor(path = piboHomePath("pibo-events.sqlite")) {
 		const resolvedPath = path === ":memory:" ? path : resolve(path);
 		if (resolvedPath !== ":memory:") mkdirSync(dirname(resolvedPath), { recursive: true });
 
@@ -976,8 +977,8 @@ export class PiboReliabilityStore {
 	}
 }
 
-export function createDefaultPiboReliabilityStore(cwd = process.cwd()): PiboReliabilityStore {
-	return new PiboReliabilityStore(resolve(cwd, ".pibo/pibo-events.sqlite"));
+export function createDefaultPiboReliabilityStore(_cwd?: string): PiboReliabilityStore {
+	return new PiboReliabilityStore(piboHomePath("pibo-events.sqlite"));
 }
 
 function eventFromRow(row: PiboEventRow): StoredPiboEvent {

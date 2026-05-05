@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "./pibo-home.js";
 import type { InitialSessionContext, ModelProfile } from "./profiles.js";
 
-export const DEFAULT_PIBO_MODEL_DEFAULTS_PATH = ".pibo/model-defaults.json";
+export const DEFAULT_PIBO_MODEL_DEFAULTS_PATH = "model-defaults.json";
 
 export type PiboModelDefaults = {
 	main?: ModelProfile;
@@ -20,9 +21,9 @@ export function selectRequestedModelProfile(
 
 export function loadPiboModelDefaults(
 	cwd = process.cwd(),
-	path = DEFAULT_PIBO_MODEL_DEFAULTS_PATH,
+	path?: string,
 ): PiboModelDefaults {
-	const resolvedPath = resolve(cwd, path);
+	const resolvedPath = path ? resolve(cwd, path) : piboHomePath(DEFAULT_PIBO_MODEL_DEFAULTS_PATH);
 	if (!existsSync(resolvedPath)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(resolvedPath, "utf-8")) as unknown;
@@ -35,10 +36,10 @@ export function loadPiboModelDefaults(
 export function savePiboModelDefaults(
 	defaults: PiboModelDefaults,
 	cwd = process.cwd(),
-	path = DEFAULT_PIBO_MODEL_DEFAULTS_PATH,
+	path?: string,
 ): PiboModelDefaults {
 	const sanitized = sanitizePiboModelDefaults(defaults);
-	const resolvedPath = resolve(cwd, path);
+	const resolvedPath = path ? resolve(cwd, path) : piboHomePath(DEFAULT_PIBO_MODEL_DEFAULTS_PATH);
 	mkdirSync(dirname(resolvedPath), { recursive: true });
 	writeFileSync(resolvedPath, `${JSON.stringify(sanitized, null, 2)}\n`);
 	return sanitized;

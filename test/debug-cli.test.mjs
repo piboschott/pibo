@@ -8,8 +8,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PiboReliabilityStore } from "../dist/reliability/store.js";
 
-const execFileAsync = promisify(execFile);
+const execFileAsyncRaw = promisify(execFile);
 const cliPath = resolve("dist/bin/pibo.js");
+
+function execFileAsync(file, args, options = {}) {
+	const piboHome = options.cwd ? join(options.cwd, ".pibo") : undefined;
+	return execFileAsyncRaw(file, args, {
+		...options,
+		env: {
+			...process.env,
+			...options.env,
+			...(piboHome ? { PIBO_HOME: piboHome } : {}),
+		},
+	});
+}
 
 test("pibo debug help stays progressive", async () => {
 	const root = await execFileAsync("node", [cliPath, "debug", "--help"]);
@@ -271,7 +283,7 @@ test("pibo debug reports missing stores with the expected path", async () => {
 	const cwd = await makeEmptyCwd();
 	try {
 		await assert.rejects(execFileAsync("node", [cliPath, "debug", "db", "tables", "sessions"], { cwd }), (error) => {
-			assert.match(error.stderr, /Debug store "sessions" not found at \.pibo\/pibo-sessions\.sqlite/);
+			assert.match(error.stderr, /Debug store "sessions" not found at .*\.pibo\/pibo-sessions\.sqlite/);
 			return true;
 		});
 	} finally {

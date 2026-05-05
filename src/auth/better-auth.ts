@@ -5,6 +5,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { bearer } from "better-auth/plugins";
 import { loadPiboConfig } from "../config/config.js";
+import { piboHomePath } from "../core/pibo-home.js";
 import type { PiboAuthService, PiboAuthSession } from "./types.js";
 import { createForbiddenAuthError, createUnauthenticatedError } from "./types.js";
 
@@ -89,7 +90,7 @@ export function createBetterAuthService(options: BetterAuthServiceOptions = {}):
 	);
 	const secret = requiredSecret(options.secret ?? authConfig?.secret);
 	const allowedEmails = requiredAllowedEmails(options, authConfig?.allowedEmails);
-	const database = createDatabase(options.databasePath ?? authConfig?.databasePath ?? ".pibo/auth.sqlite");
+	const database = createDatabase(options.databasePath ?? authConfig?.databasePath ?? piboHomePath("auth.sqlite"));
 	const trustedOrigins = options.trustedOrigins ?? authConfig?.trustedOrigins;
 	const authOptions: BetterAuthOptions = {
 		appName: "Pibo",

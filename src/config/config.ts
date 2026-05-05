@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { piboHomePath } from "../core/pibo-home.js";
 
-export const DEFAULT_PIBO_CONFIG_PATH = ".pibo/config.json";
+export const DEFAULT_PIBO_CONFIG_PATH = "config.json";
+
+export function getDefaultPiboConfigPath(): string {
+	return piboHomePath(DEFAULT_PIBO_CONFIG_PATH);
+}
 
 export type PiboConfig = {
 	auth?: {
@@ -107,15 +112,15 @@ function assertObject(value: unknown): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
-export function loadPiboConfig(path = DEFAULT_PIBO_CONFIG_PATH): PiboConfig {
-	const resolvedPath = resolve(path);
+export function loadPiboConfig(path?: string): PiboConfig {
+	const resolvedPath = resolve(path ?? getDefaultPiboConfigPath());
 	if (!existsSync(resolvedPath)) return {};
 	const parsed = JSON.parse(readFileSync(resolvedPath, "utf-8")) as unknown;
 	return assertObject(parsed) as PiboConfig;
 }
 
-export function savePiboConfig(config: PiboConfig, path = DEFAULT_PIBO_CONFIG_PATH): void {
-	const resolvedPath = resolve(path);
+export function savePiboConfig(config: PiboConfig, path?: string): void {
+	const resolvedPath = resolve(path ?? getDefaultPiboConfigPath());
 	mkdirSync(dirname(resolvedPath), { recursive: true });
 	writeFileSync(resolvedPath, `${JSON.stringify(config, null, 2)}\n`);
 }

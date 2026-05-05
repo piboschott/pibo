@@ -21,7 +21,7 @@ export function inspectDebugEvents(
 	store: ResolvedPiboDebugStore,
 	options: { type?: string; fields?: string[]; limit?: string | number } = {},
 ): DebugEventResult {
-	if (!store.exists) throw new Error(`Debug store "chat" not found at ${store.defaultPath}`);
+	if (!store.exists) throw new Error(`Debug store "chat" not found at ${store.path}`);
 	const limit = normalizeLimit(options.limit);
 	const db = openReadOnlyDebugDatabase(store);
 	try {
