@@ -111,10 +111,10 @@ export function chatStreamFramesFromOutputEvent(event: PiboOutputEvent, state: C
 			frames.push({ type: "RUN_ERROR", runId: eventId, message: event.error });
 			break;
 		default:
-			frames.push({ type: "RAW_EVENT", event });
 			break;
 	}
 
+	frames.push({ type: "RAW_EVENT", event });
 	return frames;
 }
 

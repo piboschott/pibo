@@ -63,6 +63,10 @@ function flattenTraceNodes(nodes) {
 	return nodes.flatMap((node) => [node, ...flattenTraceNodes(node.children ?? [])]);
 }
 
+function visibleChatStreamFrames(event, state) {
+	return chatStreamFramesFromOutputEvent(event, state).filter((frame) => frame.type !== "RAW_EVENT");
+}
+
 test("chat read model resets interrupted running sessions on open", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pibo-chat-read-"));
 	const dbPath = join(dir, "web-chat.sqlite");
@@ -91,7 +95,7 @@ test("chat stream adapter emits AGUI-style start delta and end frames", () => {
 	const state = createChatStreamState();
 
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", text: "hel" },
 			state,
 		),
@@ -101,14 +105,14 @@ test("chat stream adapter emits AGUI-style start delta and end frames", () => {
 		],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", text: "lo" },
 			state,
 		),
 		[{ type: "TEXT_MESSAGE_CONTENT", messageId: "turn-1", runId: "turn-1", delta: "lo" }],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_message", piboSessionId: "chat:test", eventId: "turn-1", text: "hello" },
 			state,
 		),
@@ -120,7 +124,7 @@ test("chat stream adapter keeps separate assistant text content parts for one tu
 	const state = createChatStreamState();
 
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 1, text: "first" },
 			state,
 		),
@@ -130,7 +134,7 @@ test("chat stream adapter keeps separate assistant text content parts for one tu
 		],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 5, text: "second" },
 			state,
 		),
@@ -145,7 +149,7 @@ test("chat stream adapter prefers assistant message index over reused content in
 	const state = createChatStreamState();
 
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", assistantIndex: 0, contentIndex: 1, text: "plan" },
 			state,
 		),
@@ -155,7 +159,7 @@ test("chat stream adapter prefers assistant message index over reused content in
 		],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "assistant_delta", piboSessionId: "chat:test", eventId: "turn-1", assistantIndex: 1, contentIndex: 1, text: "final" },
 			state,
 		),
@@ -180,7 +184,7 @@ test("chat stream adapter keeps separate reasoning content parts for one turn", 
 	const state = createChatStreamState();
 
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, text: "first" },
 			state,
 		),
@@ -190,7 +194,7 @@ test("chat stream adapter keeps separate reasoning content parts for one turn", 
 		],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 2, text: "second" },
 			state,
 		),
@@ -205,7 +209,7 @@ test("chat stream adapter prefers pibo thinking segments over repeated provider 
 	const state = createChatStreamState();
 
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, thinkingIndex: 0, text: "first" },
 			state,
 		),
@@ -215,7 +219,7 @@ test("chat stream adapter prefers pibo thinking segments over repeated provider 
 		],
 	);
 	assert.deepEqual(
-		chatStreamFramesFromOutputEvent(
+		visibleChatStreamFrames(
 			{ type: "thinking_delta", piboSessionId: "chat:test", eventId: "turn-1", contentIndex: 0, thinkingIndex: 1, text: "second" },
 			state,
 		),

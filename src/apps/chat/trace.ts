@@ -52,6 +52,7 @@ export {
 	flattenTraceNodes,
 	mapTraceNodesById,
 	buildTraceViewFromEvents,
+	traceNodesFromEntries,
 } from "../../shared/trace-engine.js";
 
 type SessionMetadata = {

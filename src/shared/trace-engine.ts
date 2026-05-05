@@ -4,6 +4,7 @@ import {
 	childTraceOrder,
 	compareTraceOrder,
 	eventTraceOrder,
+	liveTraceOrder,
 	transcriptTraceOrder,
 	type TraceOrderKey,
 } from "./trace-order.js";
@@ -117,16 +118,17 @@ type RunNotificationPayload = {
 
 export function buildTraceViewFromEvents(input: TraceBuildInput): PiboSessionTraceView {
 	const sessionStatus = input.status ?? "idle";
+	const events = dedupeTraceEvents(input.events);
 	const allEntries = input.transcriptEntries ?? [];
-	const openTranscriptEventIds = findOpenTranscriptEventIds(input.events, sessionStatus);
+	const openTranscriptEventIds = findOpenTranscriptEventIds(events, sessionStatus);
 	const entries = projectTranscriptEntries(allEntries, sessionStatus, openTranscriptEventIds);
 	const nodes = traceNodesFromEntries(input.session.id, entries);
 	const byId = mapTraceNodesById(nodes);
 	const childByParent = mapChildren(input.sessions ?? []);
-	const linkedChildByToolCallId = mapSubagentSessionLinks(input.events);
+	const linkedChildByToolCallId = mapSubagentSessionLinks(events);
 	const hasPersistedTranscript = entries.some((entry) => entry.type === "message");
 
-	for (const storedEvent of input.events) {
+	for (const storedEvent of events) {
 		applySingleEventToNodes(
 			nodes,
 			byId,
@@ -148,12 +150,12 @@ export function buildTraceViewFromEvents(input: TraceBuildInput): PiboSessionTra
 		piSessionId: input.session.piSessionId,
 		title: input.session.title ?? "Untitled Session",
 		version: "",
-		latestStreamId: input.latestStreamId,
+		latestStreamId: latestTraceStreamId(events, input.latestStreamId),
 		nodes: nestedNodes,
 		rawEvents:
 			input.includeRawEvents === false
 				? []
-				: input.events.slice(-(input.rawEventsLimit ?? input.events.length)),
+				: events.slice(-(input.rawEventsLimit ?? events.length)),
 	};
 }
 
@@ -272,7 +274,7 @@ export function patchTraceViewWithEvent(
 	event: ChatWebStoredEvent,
 	sessionStatus: PiboWebSessionStatus,
 ): PiboSessionTraceView {
-	if (view.rawEvents.some((re) => re.id === event.id)) {
+	if (view.rawEvents.some((re) => traceEventDedupeKey(re) === traceEventDedupeKey(event))) {
 		return view;
 	}
 
@@ -298,8 +300,44 @@ export function patchTraceViewWithEvent(
 		...view,
 		rawEvents: [...view.rawEvents, event],
 		nodes: nestedNodes,
-		latestStreamId: event.streamId ?? view.latestStreamId,
+		latestStreamId: latestTraceStreamId([event], view.latestStreamId),
 	};
+}
+
+export function dedupeTraceEvents<T extends ChatWebStoredEvent>(events: readonly T[]): T[] {
+	const seen = new Set<string>();
+	const deduped: T[] = [];
+	for (const event of events) {
+		const key = traceEventDedupeKey(event);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(event);
+	}
+	return deduped;
+}
+
+export function traceEventDedupeKey(event: ChatWebStoredEvent): string {
+	if (event.streamId !== undefined) {
+		const payload = event.payload as PiboOutputEvent;
+		if (event.streamFrameIndex !== undefined) {
+			return `stream:${event.streamId}:${event.streamFrameIndex}:${payload.type}`;
+		}
+		return `stream:${event.streamId}:${payload.type}`;
+	}
+	if (event.eventSequence !== undefined) return `sequence:${event.piboSessionId ?? ""}:${event.eventSequence}`;
+	return `id:${event.id}`;
+}
+
+export function latestTraceStreamId(
+	events: readonly ChatWebStoredEvent[],
+	initial?: number,
+): number | undefined {
+	let latest = initial;
+	for (const event of events) {
+		if (event.streamId === undefined) continue;
+		latest = latest === undefined ? event.streamId : Math.max(latest, event.streamId);
+	}
+	return latest;
 }
 
 function projectTranscriptEntries(
@@ -977,7 +1015,10 @@ function eventTraceNodeOrder(
 	streamId?: number,
 	streamFrameIndex?: number,
 ): TraceOrderKey {
-	return eventTraceOrder(eventSequence, eventNodeKind(type), streamId, streamFrameIndex);
+	if (eventSequence === undefined && (streamId !== undefined || streamFrameIndex !== undefined)) {
+		return liveTraceOrder(streamId, streamFrameIndex, eventNodeKind(type));
+	}
+	return eventTraceOrder(eventSequence, eventNodeKind(type));
 }
 
 function eventNodeKind(type: PiboOutputEvent["type"]): PiboTraceNode["type"] {

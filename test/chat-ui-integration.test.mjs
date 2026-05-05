@@ -179,6 +179,23 @@ test("query refresh with partial overlap keeps unpersisted live events", () => {
 	assert.equal(assistant.output, "Hello world");
 });
 
+test("trace projection ignores replayed stream frames", () => {
+	const events = [
+		createEvent({ seq: 1, streamId: 10, streamFrameIndex: 0, type: "message_started", payload: { type: "message_started", eventId: "turn-1", text: "Hello", source: "user" } }),
+		createEvent({ seq: 2, streamId: 11, streamFrameIndex: 1, type: "assistant_delta", payload: { type: "assistant_delta", eventId: "turn-1", text: "Hello" } }),
+		createEvent({ seq: 3, streamId: 11, streamFrameIndex: 1, type: "assistant_delta", payload: { type: "assistant_delta", eventId: "turn-1", text: "Hello" }, id: "replayed-stream-frame" }),
+		createEvent({ seq: 4, streamId: 12, streamFrameIndex: 0, type: "assistant_delta", payload: { type: "assistant_delta", eventId: "turn-1", text: " world" } }),
+	];
+
+	const view = createBaseView(events, "running");
+	const assistant = flatNodes(view).find((n) => n.type === "assistant.message");
+
+	assert.ok(assistant);
+	assert.equal(assistant.output, "Hello world");
+	assert.equal(view.latestStreamId, 12);
+	assert.equal(view.rawEvents.length, 3);
+});
+
 test("patchTraceViewWithEvent performance stays under 16ms per event", () => {
 	const baseView = createBaseView([]);
 

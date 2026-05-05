@@ -47,7 +47,7 @@ import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOri
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
 import { parseTraceStreamFrameId } from "../../../shared/trace-order.js";
-import { buildTraceViewFromEvents } from "../../../shared/trace-engine.js";
+import { buildTraceViewFromEvents, dedupeTraceEvents, latestTraceStreamId } from "../../../shared/trace-engine.js";
 import { ContextFilesView } from "./context/ContextFilesView";
 import { BasePromptView } from "./context/BasePromptView";
 import { CompactionPromptView } from "./context/CompactionPromptView";
@@ -1292,7 +1292,7 @@ function SessionTracePane({
 			},
 			events: allEvents,
 			status: sessionStatus,
-			latestStreamId: traceQuery.data?.latestStreamId,
+			latestStreamId: latestTraceStreamId(allEvents, traceQuery.data?.latestStreamId),
 			includeRawEvents: true,
 			rawEventsLimit: 10000,
 		});
@@ -1312,17 +1312,21 @@ function SessionTracePane({
 			const newEvents: ChatWebStoredEvent[] = rawEvents.map((e) => {
 				const streamFrame = e.streamFrameId ? parseTraceStreamFrameId(e.streamFrameId) : undefined;
 				return {
-					id: e.streamFrameId ? `stream:${e.streamFrameId}` : `live:${Date.now()}:${Math.random()}`,
+					id: e.streamId !== undefined
+						? `stream:${e.streamId}:raw:${e.event.type}`
+						: e.streamFrameId
+							? `stream:${e.streamFrameId}`
+							: `live:${Date.now()}:${Math.random()}`,
 					piboSessionId: e.piboSessionId ?? piboSessionId,
 					eventSequence: liveEventSeqRef.current++,
 					streamId: streamFrame?.streamId,
-					streamFrameIndex: streamFrame?.frameIndex,
+					streamFrameIndex: undefined,
 					type: e.event.type,
 					createdAt: new Date().toISOString(),
 					payload: e.event,
 				};
 			});
-			return [...current, ...newEvents];
+			return dedupeTraceEvents([...current, ...newEvents]);
 		});
 		pendingStreamEventsBySession.current.delete(piboSessionId);
 	}, []);
@@ -1392,7 +1396,7 @@ function SessionTracePane({
 			const traceRefreshDelay = eventTraceRefreshDelay(event);
 			if (targetPiboSessionId === selectedPiboSessionId && traceRefreshDelay !== undefined) {
 				scheduleTraceRefresh(traceRefreshDelay, true);
-			} else if (targetPiboSessionId === selectedPiboSessionId && event.type !== "ready") {
+			} else if (targetPiboSessionId === selectedPiboSessionId && event.type !== "ready" && event.type !== "RAW_EVENT") {
 				scheduleTraceRefresh(1500, true);
 			}
 			if (eventShouldRefreshNavigation(event)) {

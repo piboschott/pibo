@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { buildTraceView, type PiboTraceNode, type PiboSessionTraceView } from "../apps/chat/trace.js";
 import type { PiboJsonObject, PiboOutputEvent } from "../core/events.js";
 import type { PiboSession } from "../sessions/store.js";
-import type { ChatWebStoredEvent } from "../apps/chat/read-model.js";
+import type { ChatWebStoredPiboEvent } from "../apps/chat/read-model.js";
 import { compareTraceOrder } from "../shared/trace-order.js";
 import type { ResolvedPiboDebugStore } from "./stores.js";
 import { openReadOnlyDebugDatabase, withStorePath } from "./sql.js";
@@ -301,7 +301,7 @@ function sessionFromRow(row: SessionRow): PiboSession {
 	};
 }
 
-function eventFromRow(row: EventRow): ChatWebStoredEvent {
+function eventFromRow(row: EventRow): ChatWebStoredPiboEvent {
 	return {
 		id: row.id,
 		piboSessionId: row.pibo_session_id,
