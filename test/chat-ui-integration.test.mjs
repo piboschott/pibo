@@ -179,6 +179,23 @@ test("query refresh with partial overlap keeps unpersisted live events", () => {
 	assert.equal(assistant.output, "Hello world");
 });
 
+test("trace projection handles Unicode events without browser Buffer", () => {
+	const view = createBaseView([
+		createEvent({
+			seq: 1,
+			type: "tool_execution_updated",
+			payload: {
+				type: "tool_execution_updated",
+				toolCallId: "tc-1",
+				toolName: "bash",
+				partialResult: { content: [{ type: "text", text: "This site can’t be reached – ä" }] },
+			},
+		}),
+	]);
+
+	assert.ok(flatNodes(view).some((node) => node.type === "tool.call"));
+});
+
 test("trace projection ignores replayed stream frames", () => {
 	const events = [
 		createEvent({ seq: 1, streamId: 10, streamFrameIndex: 0, type: "message_started", payload: { type: "message_started", eventId: "turn-1", text: "Hello", source: "user" } }),

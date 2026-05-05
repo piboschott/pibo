@@ -1430,5 +1430,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function cryptoSafeId(value: unknown): string {
-	return Buffer.from(JSON.stringify(value)).toString("base64url").slice(0, 48);
+	return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value))).slice(0, 48);
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	let output = "";
+	let index = 0;
+	for (; index + 2 < bytes.length; index += 3) {
+		const value = (bytes[index] << 16) | (bytes[index + 1] << 8) | bytes[index + 2];
+		output += alphabet[(value >> 18) & 63] + alphabet[(value >> 12) & 63] + alphabet[(value >> 6) & 63] + alphabet[value & 63];
+	}
+	if (index < bytes.length) {
+		const first = bytes[index];
+		const second = index + 1 < bytes.length ? bytes[index + 1] : 0;
+		const value = (first << 16) | (second << 8);
+		output += alphabet[(value >> 18) & 63] + alphabet[(value >> 12) & 63];
+		if (index + 1 < bytes.length) output += alphabet[(value >> 6) & 63];
+	}
+	return output;
 }
