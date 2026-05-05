@@ -1430,5 +1430,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function cryptoSafeId(value: unknown): string {
-	return btoa(JSON.stringify(value)).slice(0, 48);
+	return Buffer.from(JSON.stringify(value)).toString("base64url").slice(0, 48);
 }
