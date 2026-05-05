@@ -10,6 +10,7 @@ export type CompactTerminalRowKind =
 	| "tool.call"
 	| "tool.status"
 	| "tool.thinking"
+	| "tool.login"
 	| "tool.group.exploring"
 	| "agent.delegation"
 	| "agent.async"
@@ -340,6 +341,9 @@ function createExecutionCommandRow(node: PiboTraceNode): CompactTerminalRow {
 	if (node.title === "thinking") {
 		return createThinkingToolRow(node);
 	}
+	if (node.title === "login" && isLoginMenuOutput(node.output)) {
+		return createLoginToolRow(node);
+	}
 	const command = shellCommandValue(node.output) ?? shellCommandValue(node.input) ?? node.title;
 	const preview = previewLines(node.error ?? node.output, TOOL_OUTPUT_PREVIEW_LINES, node.error ? "red" : "dim", 180);
 	return {
@@ -387,6 +391,26 @@ function createThinkingToolRow(node: PiboTraceNode): CompactTerminalRow {
 		error: node.error,
 		expandable: false,
 	};
+}
+
+function createLoginToolRow(node: PiboTraceNode): CompactTerminalRow {
+	return {
+		id: node.id,
+		kind: "tool.login",
+		status: mapStatus(node.status),
+		lines: [],
+		sourceNodeIds: [node.id],
+		input: node.input,
+		output: node.output,
+		error: node.error,
+		expandable: false,
+	};
+}
+
+function isLoginMenuOutput(value: unknown): boolean {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	return record.action === "show_login_menu" && Array.isArray(record.providers);
 }
 
 function createCommandToolRow(node: PiboTraceNode, command: string): CompactTerminalRow {

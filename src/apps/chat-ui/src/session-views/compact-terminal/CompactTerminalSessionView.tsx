@@ -7,6 +7,7 @@ import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
 import type { ChatSessionViewProps } from "../types";
 import { TerminalDetails } from "./TerminalDetails";
 import { TerminalLine } from "./TerminalLine";
+import { TerminalLoginCard } from "./TerminalLoginCard";
 import { TerminalStatusCard } from "./TerminalStatusCard";
 import { TerminalThinkingCard } from "./TerminalThinkingCard";
 import { buildCompactTerminalRows, type CompactTerminalLine } from "./terminalRows";
@@ -186,6 +187,10 @@ export function CompactTerminalSessionView({
 												) : row.kind === "tool.thinking" ? (
 													<div className="min-w-0">
 														<TerminalThinkingCard row={row} onLevelSelect={onThinkingLevelChange} />
+													</div>
+												) : row.kind === "tool.login" ? (
+													<div className="min-w-0">
+														<TerminalLoginCard row={row} piboSessionId={traceView?.piboSessionId} />
 													</div>
 												) : row.kind === "reasoning" && row.markdown ? (
 													<>

@@ -18,6 +18,16 @@ import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 const GATEWAY_PROFILE_TOOLS = ["pibo_gateway_send"] as const;
 const RUN_YIELD_QA_SUBAGENTS = ["qa-researcher", "qa-reviewer"] as const;
 
+const LOGIN_PROVIDERS = [
+	{ id: "openai-codex", name: "OpenAI (ChatGPT Plus/Pro)", authMethods: ["device_code"] },
+	{ id: "openai", name: "OpenAI API", authMethods: ["api_key"] },
+	{ id: "anthropic", name: "Anthropic", authMethods: ["api_key"] },
+	{ id: "kimi-coding", name: "Kimi for Coding", authMethods: ["api_key"] },
+	{ id: "google", name: "Google Gemini", authMethods: ["api_key"] },
+	{ id: "groq", name: "Groq", authMethods: ["api_key"] },
+	{ id: "ollama", name: "Ollama", authMethods: ["api_key"] },
+] as const;
+
 function getObjectParams(event: PiboExecutionEvent): PiboJsonObject | undefined {
 	const params = "params" in event ? event.params : undefined;
 	if (!params || typeof params !== "object" || Array.isArray(params)) return undefined;
@@ -304,6 +314,22 @@ export const piboCorePlugin = definePiboPlugin({
 			description: "Switch the active Pi session to a persisted session file.",
 			async execute(context, event) {
 				return await context.switchSession(requireSwitchParams(event));
+			},
+		});
+		api.registerGatewayAction({
+			name: "login",
+			description: "Open the interactive provider login menu.",
+			slashCommands: ["login"],
+			execute() {
+				const statuses = new Map(getLoginStatus().map((status) => [status.id, status.configured]));
+				return {
+					action: "show_login_menu",
+					providers: LOGIN_PROVIDERS.map((provider) => ({
+						...provider,
+						authMethods: [...provider.authMethods],
+						configured: statuses.get(provider.id) ?? false,
+					})),
+				};
 			},
 		});
 		api.registerGatewayAction({

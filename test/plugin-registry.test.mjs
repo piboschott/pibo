@@ -133,6 +133,11 @@ test("default plugin registry builds profiles from registered resources", () => 
 			slashCommands: [],
 		},
 		{
+			name: "login",
+			description: "Open the interactive provider login menu.",
+			slashCommands: ["login"],
+		},
+		{
 			name: "login.start",
 			description: "Start an OAuth login flow for a provider. Returns a URL to open in a browser.",
 			slashCommands: [],
