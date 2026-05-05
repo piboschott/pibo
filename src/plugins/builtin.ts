@@ -72,13 +72,13 @@ function requireLoginStartParams(event: PiboExecutionEvent): { provider: string 
 	return { provider: params.provider };
 }
 
-function requireLoginCompleteParams(event: PiboExecutionEvent): { provider: string; code: string; state: string } {
+function requireLoginCompleteParams(event: PiboExecutionEvent): { provider: string; code?: string; state: string } {
 	const params = getObjectParams(event);
 	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
 		throw new Error("login.complete requires params.provider");
 	}
-	if (typeof params.code !== "string" || params.code.length === 0) {
-		throw new Error("login.complete requires params.code");
+	if (params.code !== undefined && typeof params.code !== "string") {
+		throw new Error("login.complete params.code must be a string when provided");
 	}
 	if (typeof params.state !== "string" || params.state.length === 0) {
 		throw new Error("login.complete requires params.state");
