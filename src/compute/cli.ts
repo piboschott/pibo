@@ -28,13 +28,41 @@ function printJson(value: unknown): void {
 
 export async function runComputeCli(argv: string[]): Promise<void> {
 	const program = new Command();
-	program.name("pibo compute").description("Manage Pibo Docker compute workers").helpOption(false);
+	program
+		.name("pibo compute")
+		.description("Manage isolated Docker workers for Pibo development and testing")
+		.helpOption("-h, --help", "Show help")
+		.showHelpAfterError()
+		.helpCommand("help [command]", "Show help for command")
+		.addHelpText(
+			"after",
+			`
+Examples:
+  $ pibo compute spawn
+  $ pibo compute dev spawn --worktree my-fix
+  $ pibo compute list
+  $ pibo compute release pibo-worker-abc123
+
+Next:
+  $ pibo compute spawn --help
+  $ pibo compute dev --help
+`,
+		);
 
 	program
 		.command("spawn")
-		.description("Spawn a new Pibo worker container")
-		.option("--name <name>", "Custom container name")
-		.option("--owner <owner>", "Owner tag for the container")
+		.description("Create a one-time worker from the current Docker image")
+		.option("--name <name>", "Set the container name")
+		.option("--owner <owner>", "Tag the container owner")
+		.addHelpText(
+			"after",
+			`
+Creates a worker container and starts the gateway. Prints JSON with the container id and mapped ports.
+
+Use this for quick isolated checks. For code changes, prefer:
+  $ pibo compute dev spawn --worktree my-fix
+`,
+		)
 		.action(async (options: { name?: string; owner?: string }) => {
 			await mkdir(path.dirname(HASH_FILE), { recursive: true });
 
@@ -55,14 +83,35 @@ export async function runComputeCli(argv: string[]): Promise<void> {
 			printJson(worker);
 		});
 
-	const devCmd = program.command("dev").description("Development environment commands");
+	const devCmd = program
+		.command("dev")
+		.description("Manage development workers with Git worktrees")
+		.helpCommand("help [command]", "Show help for command")
+		.addHelpText(
+			"after",
+			`
+Use dev workers for Pibo code changes. Each worker gets its own Git worktree and port block.
+
+Next:
+  $ pibo compute dev spawn --help
+`,
+		);
 
 	devCmd
 		.command("spawn")
-		.description("Spawn a development container with a Git worktree")
-		.requiredOption("--worktree <name>", "Git worktree / branch name")
-		.option("--repo <path>", "Repository directory", WORKSPACE_DIR)
-		.option("--owner <owner>", "Owner tag for the container")
+		.description("Create a development worker with a Git worktree")
+		.requiredOption("--worktree <name>", "Name the Git worktree and branch")
+		.option("--repo <path>", "Use this repository", WORKSPACE_DIR)
+		.option("--owner <owner>", "Tag the container owner")
+		.addHelpText(
+			"after",
+			`
+Creates .worktrees/<name>, starts a worker, and prints JSON with ports and the worktree path.
+
+Example:
+  $ pibo compute dev spawn --worktree my-fix
+`,
+		)
 		.action(async (options: { worktree: string; repo: string; owner?: string }) => {
 			await mkdir(path.dirname(DEP_HASH_FILE), { recursive: true });
 
@@ -94,7 +143,13 @@ export async function runComputeCli(argv: string[]): Promise<void> {
 
 	program
 		.command("rebuild")
-		.description("Force rebuild the pibo:latest image")
+		.description("Rebuild the pibo:latest Docker image")
+		.addHelpText(
+			"after",
+			`
+Rebuilds from the current workspace and refreshes compute image hashes.
+`,
+		)
 		.action(async () => {
 			console.error(`Rebuilding ${IMAGE_NAME} from ${WORKSPACE_DIR}...`);
 			await dockerBuild(WORKSPACE_DIR);
@@ -106,6 +161,12 @@ export async function runComputeCli(argv: string[]): Promise<void> {
 	program
 		.command("list")
 		.description("List running Pibo worker containers")
+		.addHelpText(
+			"after",
+			`
+Shows each worker's name, status, mapped ports, and creation time.
+`,
+		)
 		.action(async () => {
 			const workers = await listWorkers();
 			if (workers.length === 0) {
@@ -122,6 +183,13 @@ export async function runComputeCli(argv: string[]): Promise<void> {
 		.command("release")
 		.description("Stop and remove a worker container")
 		.argument("<id>", "Container name or ID")
+		.addHelpText(
+			"after",
+			`
+Use the name or id shown by:
+  $ pibo compute list
+`,
+		)
 		.action(async (id: string) => {
 			await releaseWorker(id);
 			console.log(`Released ${id}`);
@@ -129,8 +197,14 @@ export async function runComputeCli(argv: string[]): Promise<void> {
 
 	program
 		.command("reap")
-		.description("Remove worker containers older than N minutes")
-		.option("--max-age-minutes <n>", "Maximum age in minutes", "60")
+		.description("Remove old worker containers")
+		.option("--max-age-minutes <n>", "Remove workers older than this many minutes", "60")
+		.addHelpText(
+			"after",
+			`
+Defaults to 60 minutes.
+`,
+		)
 		.action(async (options: { maxAgeMinutes: string }) => {
 			const maxAge = Number(options.maxAgeMinutes);
 			const removed = await reapWorkers(maxAge);
