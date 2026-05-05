@@ -2828,6 +2828,7 @@ function AgentsView({
 							allowUnset
 							readOnly={readOnly}
 							hint="Unset to use the settings default."
+							emptyProviderLabel="Default"
 							onChange={(mainModel) => setDraft((current) => ({ ...current, mainModel }))}
 						/>
 						<ModelSelector
@@ -2837,6 +2838,7 @@ function AgentsView({
 							allowUnset
 							readOnly={readOnly}
 							hint="Unset to use the settings default."
+							emptyProviderLabel="Default"
 							onChange={(subagentModel) => setDraft((current) => ({ ...current, subagentModel }))}
 						/>
 						<InlineCheckboxToggle disabled={readOnly} checked={draft.autoContextFiles} title="Load AGENTS.md / CLAUDE.md" onToggle={() => setDraft((current) => ({ ...current, autoContextFiles: !current.autoContextFiles }))} />
@@ -4230,6 +4232,7 @@ function ModelDefaultsSettings({
 				allowUnset
 				readOnly={saving}
 				hint="Unset to use provider fallback."
+				configuredProvidersOnly
 				onChange={(main) => void save({ ...draft, main })}
 			/>
 			<ModelSelector
@@ -4239,6 +4242,7 @@ function ModelDefaultsSettings({
 				allowUnset
 				readOnly={saving}
 				hint="Unset to use provider fallback."
+				configuredProvidersOnly
 				onChange={(subagent) => void save({ ...draft, subagent })}
 			/>
 			{error ? <div className="text-xs text-amber-100">{error}</div> : null}
@@ -4253,6 +4257,8 @@ function ModelSelector({
 	allowUnset,
 	readOnly,
 	hint,
+	emptyProviderLabel = "Select provider",
+	configuredProvidersOnly = false,
 	onChange,
 }: {
 	title: string;
@@ -4261,14 +4267,24 @@ function ModelSelector({
 	allowUnset: boolean;
 	readOnly: boolean;
 	hint?: string;
+	emptyProviderLabel?: string;
+	configuredProvidersOnly?: boolean;
 	onChange: (value: ModelProfile | undefined) => void;
 }) {
 	const [providerId, setProviderId] = useState(value?.provider ?? "");
 	const [modelId, setModelId] = useState(value?.id ?? "");
-	const providers = catalog?.providers ?? [];
+	const catalogProviders = catalog?.providers ?? [];
+	const providers = catalogProviders.filter((provider) => !configuredProvidersOnly || provider.authConfigured);
 	const selectedProvider = providers.find((provider) => provider.id === providerId);
+	const unconfiguredSelectedProvider = configuredProvidersOnly
+		? catalogProviders.find((provider) => provider.id === providerId && !provider.authConfigured)
+		: undefined;
 	const hasStaleProvider = Boolean(providerId) && !selectedProvider;
-	const staleProviderLabel = hasStaleProvider ? `${providerId} (unknown provider)` : "";
+	const staleProviderLabel = hasStaleProvider
+		? unconfiguredSelectedProvider
+			? `${unconfiguredSelectedProvider.label} (not configured)`
+			: `${providerId} (unknown provider)`
+		: "";
 	const selectedModel = selectedProvider?.models.find((model) => model.id === modelId);
 	const hasStaleModel = Boolean(providerId && modelId && selectedProvider && !selectedModel);
 	const providerModels = selectedProvider?.models ?? [];
@@ -4301,7 +4317,9 @@ function ModelSelector({
 			{hint ? <div className="text-xs text-slate-500">{hint}</div> : null}
 			{providers.length === 0 ? (
 				<div className="text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm p-3">
-					Model catalog unavailable.
+					{catalogProviders.length === 0
+						? "Model catalog unavailable."
+						: "No configured providers. Configure a provider under Settings > Providers."}
 				</div>
 			) : null}
 			<div className="grid grid-cols-2 max-[1100px]:grid-cols-1 gap-2">
@@ -4315,7 +4333,7 @@ function ModelSelector({
 					}}
 					className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
 				>
-					<option value="">Select provider</option>
+					<option value="">{emptyProviderLabel}</option>
 					{providers.map((provider) => (
 						<option key={provider.id} value={provider.id}>
 							{provider.label}
@@ -4345,7 +4363,9 @@ function ModelSelector({
 			{providerId ? (
 				<div className="text-xs text-slate-500">
 					{hasStaleProvider
-						? "Stored provider is no longer present in the catalog."
+						? unconfiguredSelectedProvider
+							? "Stored provider is no longer configured."
+							: "Stored provider is no longer present in the catalog."
 						: providerAuthConfigured
 							? "Provider auth configured."
 							: "Provider auth missing."}

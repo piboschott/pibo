@@ -16,6 +16,12 @@ Do not use the host `pibo-web` gateway as an experimental target. Do not restart
 
 Dev-auth belongs only to Docker workers. Never start the host gateway with dev-auth flags or fake-auth infrastructure. The normal host gateway must use Better Auth.
 
+## Host Gateway Service
+The `pibo-web` gateway on this machine is a live service. Do not stop or restart it unless the user explicitly allows or requests it.
+
+## Deployment
+Deploy the web service with `./scripts/deploy-web.sh`. This restarts the gateway, so run it only when the user requests or approves it.
+
 ## Browser/App Debugging
 For Chat Web browser debugging while changing Pibo, start from a Docker compute worker when one is available. Use the worker's returned web/CDP ports for app checks so browser automation and gateway restarts stay isolated from the host service.
 
