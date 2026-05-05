@@ -129,7 +129,7 @@ export async function buildSessionNodes(
 			subtitle: session.id,
 			archived: isChatWebSessionArchived(session),
 			status: sessionNodeStatus(indexed?.status, runtimeStatus),
-			lastActivityAt: indexed?.lastActivityAt ?? metadata.modified ?? session.updatedAt,
+			lastActivityAt: indexed?.lastActivityAt ?? indexed?.createdAt ?? session.createdAt,
 			unreadCount: unreadCounts.get(session.id) || undefined,
 			derivedSessions: [],
 			children: [],
@@ -175,10 +175,10 @@ function sessionNodeStatus(
 	indexedStatus: PiboWebSessionStatus | undefined,
 	runtimeStatus: PiboSessionStatus | undefined,
 ): PiboWebSessionStatus {
+	if (indexedStatus === "error") return "error";
 	if (runtimeStatus && !runtimeStatus.disposed) {
 		if (
 			runtimeStatus.processing ||
-			runtimeStatus.streaming ||
 			runtimeStatus.queuedMessages > 0 ||
 			runtimeStatus.activeTools.length > 0
 		) {

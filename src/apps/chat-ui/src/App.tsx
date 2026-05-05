@@ -104,6 +104,7 @@ const COMPOSER_DRAFT_STORAGE_PREFIX = "pibo.chat.composerDraft.";
 const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
 const COMPOSER_HISTORY_LIMIT = 100;
 const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
+const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
 
 type StoredSelection = {
 	roomId?: string;
@@ -191,6 +192,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [deletingRoom, setDeletingRoom] = useState(false);
 	const [deleteSessionTarget, setDeleteSessionTarget] = useState<PiboWebSessionNode | null>(null);
 	const [gatewayMode, setGatewayMode] = useState<"main" | "fallback" | null>(null);
+	const [signalNow, setSignalNow] = useState(() => Date.now());
 	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
 	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
@@ -202,6 +204,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 	useEffect(() => {
 		showArchivedRef.current = showArchived;
 	}, [showArchived]);
+
+	useEffect(() => {
+		setSignalNow(Date.now());
+	}, [bootstrap]);
+
+	useEffect(() => {
+		const nextExpiryMs = bootstrap ? nextRecentSessionSignalExpiryMs(bootstrap.sessions, signalNow) : undefined;
+		if (nextExpiryMs === undefined) return;
+		const timer = setTimeout(() => setSignalNow(Date.now()), Math.max(50, nextExpiryMs));
+		return () => clearTimeout(timer);
+	}, [bootstrap, signalNow]);
 
 	useEffect(() => {
 		const check = async () => {
@@ -1056,6 +1069,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 									<SessionNode
 										key={session.piboSessionId}
 										node={session}
+										signalNow={signalNow}
 										selectedPiboSessionId={selectedPiboSessionId}
 										onSelect={(piboSessionId) => void selectSession(piboSessionId)}
 										onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)}
@@ -1072,6 +1086,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 										<SessionNode
 											key={session.piboSessionId}
 											node={session}
+											signalNow={signalNow}
 											selectedPiboSessionId={selectedPiboSessionId}
 											onSelect={(piboSessionId) => void selectSession(piboSessionId)}
 											onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)}
@@ -1421,6 +1436,7 @@ function SessionTracePane({
 		const events = new EventSource(`/api/chat/events?${params.toString()}`);
 		let traceTimer: ReturnType<typeof setTimeout> | undefined;
 		let bootstrapTimer: ReturnType<typeof setTimeout> | undefined;
+		let settledBootstrapTimer: ReturnType<typeof setTimeout> | undefined;
 		const scheduleTraceRefresh = (delayMs: number, reset = false) => {
 			if (traceTimer) {
 				if (!reset) return;
@@ -1431,6 +1447,9 @@ function SessionTracePane({
 				onRefreshTrace().catch((caught) => onError(errorMessage(caught)));
 			}, delayMs);
 		};
+		const refreshBootstrap = () => {
+			onRefreshBootstrap().catch((caught) => onError(errorMessage(caught)));
+		};
 		const scheduleBootstrapRefresh = (delayMs: number, reset = false) => {
 			if (bootstrapTimer) {
 				if (!reset) return;
@@ -1438,8 +1457,16 @@ function SessionTracePane({
 			}
 			bootstrapTimer = setTimeout(() => {
 				bootstrapTimer = undefined;
-				onRefreshBootstrap().catch((caught) => onError(errorMessage(caught)));
+				refreshBootstrap();
 			}, delayMs);
+		};
+		const scheduleTerminalBootstrapRefresh = () => {
+			scheduleBootstrapRefresh(650, true);
+			if (settledBootstrapTimer) clearTimeout(settledBootstrapTimer);
+			settledBootstrapTimer = setTimeout(() => {
+				settledBootstrapTimer = undefined;
+				refreshBootstrap();
+			}, 2500);
 		};
 		events.addEventListener("pibo", (message) => {
 			const event = chatStreamEvent(message);
@@ -1457,12 +1484,17 @@ function SessionTracePane({
 			}
 			if (eventShouldRefreshNavigation(event)) {
 				const terminal = event.type === "RUN_FINISHED" || event.type === "RUN_ERROR" || event.type === "TEXT_MESSAGE_END";
-				scheduleBootstrapRefresh(terminal ? 650 : targetPiboSessionId === selectedPiboSessionId ? 0 : 150, terminal);
+				if (terminal) {
+					scheduleTerminalBootstrapRefresh();
+				} else {
+					scheduleBootstrapRefresh(targetPiboSessionId === selectedPiboSessionId ? 0 : 150);
+				}
 			}
 		});
 		return () => {
 			if (traceTimer) clearTimeout(traceTimer);
 			if (bootstrapTimer) clearTimeout(bootstrapTimer);
+			if (settledBootstrapTimer) clearTimeout(settledBootstrapTimer);
 			events.close();
 		};
 	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, selectedRoomId, traceQueryKey]);
@@ -2025,6 +2057,7 @@ function RoomNode({
 
 function SessionNode({
 	node,
+	signalNow,
 	selectedPiboSessionId,
 	onSelect,
 	onRename,
@@ -2033,6 +2066,7 @@ function SessionNode({
 	depth = 0,
 }: {
 	node: PiboWebSessionNode;
+	signalNow: number;
 	selectedPiboSessionId: string | null;
 	onSelect: (piboSessionId: string) => void;
 	onRename: (piboSessionId: string, title: string | null) => void;
@@ -2059,7 +2093,7 @@ function SessionNode({
 		onRename(node.piboSessionId, title ? title : null);
 		setEditing(false);
 	};
-	const signal = sessionNodeSignal(node);
+	const signal = sessionNodeSignal(node, signalNow);
 
 	return (
 		<div>
@@ -2190,6 +2224,7 @@ function SessionNode({
 				<SessionNode
 					key={child.piboSessionId}
 					node={child}
+					signalNow={signalNow}
 					selectedPiboSessionId={selectedPiboSessionId}
 					onSelect={onSelect}
 					onRename={onRename}
@@ -2202,7 +2237,7 @@ function SessionNode({
 	);
 }
 
-function sessionNodeSignal(node: PiboWebSessionNode): { className: string; title: string } {
+function sessionNodeSignal(node: PiboWebSessionNode, now: number): { className: string; title: string } {
 	const base = "session-signal h-2 w-2 rounded-full";
 	if (node.status === "error") {
 		return { className: `${base} session-signal-error`, title: "Run failed" };
@@ -2210,16 +2245,32 @@ function sessionNodeSignal(node: PiboWebSessionNode): { className: string; title
 	if (node.status === "running") {
 		return { className: `${base} session-signal-running`, title: "Runtime is working" };
 	}
-	if ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node)) {
+	if ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node, now)) {
 		return { className: `${base} session-signal-unread`, title: "New completed assistant message" };
 	}
 	return { className: `${base} session-signal-idle`, title: "Idle" };
 }
 
-function sessionWasRecentlyActive(node: PiboWebSessionNode): boolean {
+function sessionWasRecentlyActive(node: PiboWebSessionNode, now: number): boolean {
 	if (!node.lastActivityAt) return false;
 	const timestamp = Date.parse(node.lastActivityAt);
-	return Number.isFinite(timestamp) && Date.now() - timestamp < 30_000;
+	return Number.isFinite(timestamp) && now - timestamp < RECENT_SESSION_ACTIVITY_SIGNAL_MS;
+}
+
+function nextRecentSessionSignalExpiryMs(nodes: readonly PiboWebSessionNode[], now: number): number | undefined {
+	let nextMs: number | undefined;
+	const visit = (node: PiboWebSessionNode) => {
+		if (node.status !== "running" && node.status !== "error" && (node.unreadCount ?? 0) === 0 && node.lastActivityAt) {
+			const timestamp = Date.parse(node.lastActivityAt);
+			if (Number.isFinite(timestamp)) {
+				const remainingMs = RECENT_SESSION_ACTIVITY_SIGNAL_MS - (now - timestamp);
+				if (remainingMs > 0) nextMs = nextMs === undefined ? remainingMs : Math.min(nextMs, remainingMs);
+			}
+		}
+		for (const child of node.children) visit(child);
+	};
+	for (const node of nodes) visit(node);
+	return nextMs === undefined ? undefined : nextMs + 50;
 }
 
 function sessionTreeHasSession(nodes: PiboWebSessionNode[], piboSessionId: string): boolean {

@@ -298,7 +298,19 @@ export class ChatEventLog {
 	countUnreadMessages(input: ChatUnreadCountInput): number {
 		const clauses: string[] = [
 			"retention_class = 'chat_message'",
-			"event_type IN ('user.message.accepted', 'assistant_message')",
+			`(
+				event_type = 'user.message.accepted'
+				OR (
+					event_type = 'assistant_message'
+					AND event_id IS NOT NULL
+					AND EXISTS (
+						SELECT 1 FROM chat_events done
+						WHERE done.pibo_session_id = chat_events.pibo_session_id
+							AND done.event_id = chat_events.event_id
+							AND done.event_type = 'message_finished'
+					)
+				)
+			)`,
 			"(actor_type IS NULL OR actor_type != 'user' OR actor_id IS NULL OR actor_id != ?)",
 		];
 		const values: Array<string | number> = [input.principalId];

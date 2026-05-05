@@ -102,7 +102,7 @@ export class ChatWebReadModel {
 		this.resetInterruptedSessions();
 	}
 
-	upsertSession(session: PiboSession, status: ChatWebSessionIndexItem["status"] = "idle"): void {
+	upsertSession(session: PiboSession, status?: ChatWebSessionIndexItem["status"]): void {
 		this.db
 			.prepare(`
 				INSERT INTO web_chat_sessions (
@@ -124,7 +124,7 @@ export class ChatWebReadModel {
 					channel = excluded.channel,
 					kind = excluded.kind,
 					updated_at = excluded.updated_at,
-					status = excluded.status
+					status = COALESCE(?, web_chat_sessions.status)
 			`)
 			.run(
 				session.id,
@@ -135,7 +135,8 @@ export class ChatWebReadModel {
 				session.kind,
 				session.createdAt,
 				session.updatedAt,
-				status,
+				status ?? "idle",
+				status ?? null,
 			);
 	}
 
@@ -176,7 +177,7 @@ export class ChatWebReadModel {
 	}
 
 	listSessions(): ChatWebSessionIndexItem[] {
-		return (this.db.prepare("SELECT * FROM web_chat_sessions ORDER BY updated_at DESC").all() as SessionRow[]).map(
+		return (this.db.prepare("SELECT * FROM web_chat_sessions ORDER BY COALESCE(last_activity_at, created_at) DESC, created_at DESC").all() as SessionRow[]).map(
 			sessionFromRow,
 		);
 	}
@@ -339,7 +340,7 @@ export function createDefaultChatWebReadModel(_cwd?: string): ChatWebReadModel {
 }
 
 function isSessionNavigationActivityEvent(event: PiboOutputEvent): boolean {
-	return event.type === "message_queued" || event.type === "message_started" || event.type === "assistant_message";
+	return event.type === "message_queued" || event.type === "assistant_message";
 }
 
 function statusFromEvent(
