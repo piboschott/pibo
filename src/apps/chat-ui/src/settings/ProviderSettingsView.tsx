@@ -22,7 +22,8 @@ const PROVIDERS: ProviderDef[] = [
 ];
 
 type ProviderStatus = {
-	id: string;
+	id?: string;
+	provider?: string;
 	configured: boolean;
 };
 
@@ -41,6 +42,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 	const [statuses, setStatuses] = useState<Record<string, boolean>>({});
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [success, setSuccess] = useState<string | null>(null);
 	const [rowStates, setRowStates] = useState<Record<string, ProviderRowState>>({});
 	const [codes, setCodes] = useState<Record<string, string>>({});
 	const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -59,7 +61,8 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 			const map: Record<string, boolean> = {};
 			if (Array.isArray(result?.providers)) {
 				for (const p of result.providers) {
-					map[p.id] = p.configured;
+					const id = p.id ?? p.provider;
+					if (id) map[id] = p.configured;
 				}
 			}
 			setStatuses(map);
@@ -78,6 +81,8 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 		async (provider: string) => {
 			if (!piboSessionId) return;
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
+			setError(null);
+			setSuccess(null);
 			setRowStates((prev) => ({ ...prev, [provider]: { type: "oauth_starting" } }));
 			try {
 				const result = unwrapActionResult(await postAction(piboSessionId, "login.start", { provider })) as {
@@ -119,11 +124,17 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 		async (provider: string, code: string | undefined, state?: string) => {
 			if (!piboSessionId) return;
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
+			setError(null);
+			setSuccess(null);
 			try {
 				await postAction(piboSessionId, "login.complete", { provider, ...(code ? { code } : {}), state: state ?? "" });
+				const name = getProviderName(provider);
+				setSuccess(`${name} login completed.`);
+				setStatuses((prev) => ({ ...prev, [provider]: true }));
 				setRowStates((prev) => ({ ...prev, [provider]: { type: "collapsed" } }));
 				setCodes((prev) => ({ ...prev, [provider]: "" }));
 				await refreshStatus();
+				window.setTimeout(() => setSuccess((current) => (current === `${name} login completed.` ? null : current)), 5000);
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
 			} finally {
@@ -137,11 +148,17 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 		async (provider: string, key: string) => {
 			if (!piboSessionId) return;
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
+			setError(null);
+			setSuccess(null);
 			try {
 				await postAction(piboSessionId, "login.apikey", { provider, apiKey: key });
+				const name = getProviderName(provider);
+				setSuccess(`${name} API key saved.`);
+				setStatuses((prev) => ({ ...prev, [provider]: true }));
 				setRowStates((prev) => ({ ...prev, [provider]: { type: "collapsed" } }));
 				setApiKeys((prev) => ({ ...prev, [provider]: "" }));
 				await refreshStatus();
+				window.setTimeout(() => setSuccess((current) => (current === `${name} API key saved.` ? null : current)), 5000);
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
 			} finally {
@@ -155,8 +172,11 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 		async (provider: string) => {
 			if (!piboSessionId) return;
 			setActionLoading((prev) => ({ ...prev, [provider]: true }));
+			setError(null);
+			setSuccess(null);
 			try {
 				await postAction(piboSessionId, "logout", { provider });
+				setStatuses((prev) => ({ ...prev, [provider]: false }));
 				await refreshStatus();
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
@@ -191,6 +211,12 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				<div className="flex items-center gap-2 rounded-sm border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
 					<AlertCircle size={14} />
 					{error}
+				</div>
+			) : null}
+			{success ? (
+				<div className="flex items-center gap-2 rounded-sm border border-[#0bda57]/30 bg-[#0bda57]/10 px-3 py-2 text-xs text-[#7cf2a2]">
+					<CheckCircle size={14} />
+					{success}
 				</div>
 			) : null}
 			{loading ? (
@@ -470,4 +496,8 @@ function unwrapActionResult(value: unknown): unknown {
 
 function isActionEnvelope(value: unknown): value is ActionEnvelope {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value) && (value as ActionEnvelope).type === "execution_result";
+}
+
+function getProviderName(providerId: string): string {
+	return PROVIDERS.find((provider) => provider.id === providerId)?.name ?? providerId;
 }

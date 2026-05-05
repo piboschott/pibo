@@ -333,12 +333,20 @@ export function setApiKey(provider: string, apiKey: string): { success: true; pr
 	return { success: true, provider };
 }
 
-export function getLoginStatus(provider?: string): { provider: string; configured: boolean; source?: string; label?: string }[] {
+export type LoginStatus = {
+	id: string;
+	provider: string;
+	configured: boolean;
+	source?: string;
+	label?: string;
+};
+
+export function getLoginStatus(provider?: string): LoginStatus[] {
 	const authStorage = createAuthStorage();
 	if (provider) {
-		return [{ provider, ...authStorage.getAuthStatus(provider) }];
+		return [{ id: provider, provider, ...authStorage.getAuthStatus(provider) }];
 	}
-	return authStorage.list().map((p) => ({ provider: p, ...authStorage.getAuthStatus(p) }));
+	return authStorage.list().map((p) => ({ id: p, provider: p, ...authStorage.getAuthStatus(p) }));
 }
 
 export function removeLogin(provider: string): { success: true; provider: string } {
