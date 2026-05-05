@@ -223,7 +223,7 @@ export async function installSkillFromUrl(url: string, cwd = process.cwd()): Pro
   const name = parsed.name || targetName;
   const description = parsed.description || "";
 
-  // Store the skill metadata
+  // Store the skill metadata (description lives in SKILL.md only, not JSON)
   const { randomUUID } = await import("node:crypto");
   const now = new Date().toISOString();
   const skill: UserSkill = {
@@ -246,7 +246,10 @@ export async function installSkillFromUrl(url: string, cwd = process.cwd()): Pro
     rmSync(targetDir, { recursive: true, force: true });
     throw new Error(`A skill named "${name}" already exists. Delete it first or choose a different name.`);
   }
-  store.skills.push(skill);
+  // Strip description before persisting to JSON store.
+  const storedSkill = { ...skill };
+  delete (storedSkill as Partial<UserSkill>).description;
+  store.skills.push(storedSkill as UserSkill);
   store.skills.sort((a, b) => a.name.localeCompare(b.name));
   saveUserSkillStore(store, cwd);
 

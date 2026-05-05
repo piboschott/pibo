@@ -42,13 +42,27 @@ export function saveUserSkillStore(data: UserSkillStoreData, cwd = process.cwd()
 	writeFileSync(path, `${JSON.stringify({ version: STORE_VERSION, skills: data.skills }, null, 2)}\n`, "utf-8");
 }
 
+function readUserSkillDescription(skill: UserSkill, cwd = process.cwd()): string {
+	const markdown = readSkillMarkdown(skill, cwd);
+	const parsed = parseSkillMd(markdown);
+	return parsed.description;
+}
+
 export function listUserSkills(cwd = process.cwd()): UserSkill[] {
-	return loadUserSkillStore(cwd).skills;
+	const skills = loadUserSkillStore(cwd).skills;
+	for (const skill of skills) {
+		skill.description = readUserSkillDescription(skill, cwd);
+	}
+	return skills;
 }
 
 export function findUserSkill(idOrName: string, cwd = process.cwd()): UserSkill | undefined {
 	const lookup = idOrName.trim();
-	return listUserSkills(cwd).find((skill) => skill.id === lookup || skill.name === lookup);
+	const store = loadUserSkillStore(cwd);
+	const stored = store.skills.find((skill) => skill.id === lookup || skill.name === lookup);
+	if (!stored) return undefined;
+	stored.description = readUserSkillDescription(stored, cwd);
+	return stored;
 }
 
 function validateSkillName(name: string, existingId?: string, cwd = process.cwd()): string {
@@ -78,21 +92,28 @@ export function createUserSkill(input: CreateUserSkillInput, cwd = process.cwd()
 	const skillDir = join(defaultUserSkillDir(cwd), name);
 	mkdirSync(skillDir, { recursive: true });
 	const skillPath = join(skillDir, "SKILL.md");
-	const markdown = buildSkillMd(name, description, input.markdown ?? "");
+	const incoming = input.markdown ?? "";
+	const parsedIncoming = parseSkillMd(incoming);
+	const body = parsedIncoming.body || incoming;
+	const effectiveDescription = description || parsedIncoming.description;
+	const markdown = buildSkillMd(name, effectiveDescription, body);
 	writeFileSync(skillPath, markdown, "utf-8");
 	const now = new Date().toISOString();
 	const skill: UserSkill = {
 		id,
 		name,
-		description,
+		description: effectiveDescription,
 		path: skillPath,
 		enabled: true,
 		source: "user-created",
 		createdAt: now,
 		updatedAt: now,
 	};
+	// Do not persist description in JSON store; it lives in SKILL.md frontmatter only.
+	const storedSkill: Omit<UserSkill, "description"> & { description?: string } = { ...skill };
+	delete (storedSkill as Partial<UserSkill>).description;
 	const store = loadUserSkillStore(cwd);
-	store.skills.push(skill);
+	store.skills.push(storedSkill as UserSkill);
 	store.skills.sort((a, b) => a.name.localeCompare(b.name));
 	saveUserSkillStore(store, cwd);
 	return skill;
@@ -104,10 +125,12 @@ export function updateUserSkill(id: string, input: UpdateUserSkillInput, cwd = p
 	if (index < 0) throw new Error(`Skill "${id}" not found`);
 	const existing = store.skills[index];
 	let name = existing.name;
-	let description = existing.description;
 	if (input.name !== undefined) {
 		name = validateSkillName(input.name, existing.id, cwd);
 	}
+	const currentMarkdown = existsSync(existing.path) ? readFileSync(existing.path, "utf-8") : "";
+	const parsed = parseSkillMd(currentMarkdown);
+	let description = parsed.description;
 	if (input.description !== undefined) {
 		description = input.description.trim();
 	}
@@ -124,9 +147,13 @@ export function updateUserSkill(id: string, input: UpdateUserSkillInput, cwd = p
 		}
 	}
 	if (input.markdown !== undefined) {
-		const markdown = buildSkillMd(name, description, input.markdown);
+		const parsedIncoming = parseSkillMd(input.markdown);
+		const body = parsedIncoming.body || input.markdown;
+		const effectiveDescription = input.description !== undefined ? description : description || parsedIncoming.description;
+		description = effectiveDescription;
+		const markdown = buildSkillMd(name, effectiveDescription, body);
 		writeFileSync(skillPath, markdown, "utf-8");
-	} else if (name !== existing.name || description !== existing.description) {
+	} else if (name !== existing.name || description !== parsed.description) {
 		const currentMarkdown = existsSync(existing.path) ? readFileSync(existing.path, "utf-8") : "";
 		const { body } = parseSkillMd(currentMarkdown);
 		writeFileSync(skillPath, buildSkillMd(name, description, body), "utf-8");
@@ -139,7 +166,10 @@ export function updateUserSkill(id: string, input: UpdateUserSkillInput, cwd = p
 		...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
 		updatedAt: new Date().toISOString(),
 	};
-	store.skills[index] = updated;
+	// Strip description before persisting to JSON store.
+	const storedUpdated: Omit<UserSkill, "description"> & { description?: string } = { ...updated };
+	delete (storedUpdated as Partial<UserSkill>).description;
+	store.skills[index] = storedUpdated as UserSkill;
 	store.skills.sort((a, b) => a.name.localeCompare(b.name));
 	saveUserSkillStore(store, cwd);
 	return updated;
@@ -171,7 +201,7 @@ function sanitizeStoredSkill(value: unknown): UserSkill {
 	return {
 		id: candidate.id,
 		name: candidate.name.trim(),
-		description: typeof candidate.description === "string" ? candidate.description.trim() : "",
+		description: "",
 		path: candidate.path.trim(),
 		enabled: candidate.enabled !== false,
 		source: isValidSource(candidate.source) ? candidate.source : "user-created",
