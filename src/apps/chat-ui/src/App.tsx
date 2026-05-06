@@ -24,6 +24,7 @@ import {
 	LogOut,
 	Menu,
 	MessageSquarePlus,
+	MoreVertical,
 	Plus,
 	Power,
 	PowerOff,
@@ -38,7 +39,7 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, getBootstrap, getTrace, getUserSkill, installUserSkill, listUserSkills, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, getBootstrap, getTrace, getUserSkill, installUserSkill, listUserSkills, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
 import { THINKING_LEVELS } from "./types";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSession, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
@@ -225,7 +226,18 @@ export function App({ route }: { route: ChatAppRoute }) {
 				setBootstrap((current) => current ? applySignalSnapshotToBootstrap(current, snapshot) : current);
 			},
 			onPatch: (patch) => {
-				setSessionSignals((current) => applySignalPatch(current, patch));
+				setSessionSignals((current) => {
+					const next = applySignalPatch(current, patch);
+					if (current && next === current) {
+						fetchSignalTree(selectedPiboSessionId)
+							.then((snapshot) => {
+								setSessionSignals(snapshot);
+								setBootstrap((latest) => latest ? applySignalSnapshotToBootstrap(latest, snapshot) : latest);
+							})
+							.catch(() => undefined);
+					}
+					return next;
+				});
 				setBootstrap((current) => current ? applySignalPatchToBootstrap(current, patch) : current);
 			},
 			onError: () => undefined,
@@ -966,6 +978,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const sessionGroups = splitSessionNodesByArchive(bootstrap.sessions);
 	const newSessionProfileOptions = bootstrap.agents;
 	const selectedSessionNode = selectedPiboSessionId ? findSessionNode(bootstrap.sessions, selectedPiboSessionId) : undefined;
+	const selectedSessionSignal = selectedPiboSessionId ? sessionSignals?.sessions[selectedPiboSessionId] : undefined;
+	const selectedRootSignal = sessionSignals?.rootPiboSessionId ? sessionSignals.sessions[sessionSignals.rootPiboSessionId] : undefined;
 	const selectedSessionActiveModel = resolveSessionActiveModelLabel(bootstrap, selectedSessionNode ?? {
 		profile: bootstrap.session.profile,
 		parentId: bootstrap.session.parentId,
@@ -1122,9 +1136,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 													disabled={creatingRoom}
 													title="New Room"
 													aria-label="New Room"
-													className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+													className="h-6 w-6 max-[980px]:h-8 max-[980px]:w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
 												>
-													<Plus size={12} />
+													<Plus size={14} />
 												</button>
 												<button
 													type="button"
@@ -1135,9 +1149,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 													}}
 													title={showArchivedRooms ? "Hide Archived Rooms" : "Show Archived Rooms"}
 													aria-label={showArchivedRooms ? "Hide Archived Rooms" : "Show Archived Rooms"}
-													className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedRooms ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}
+													className={`h-6 w-6 max-[980px]:h-8 max-[980px]:w-8 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedRooms ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}
 												>
-													{showArchivedRooms ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+													{showArchivedRooms ? <ArchiveRestore size={14} /> : <Archive size={12} />}
 												</button>
 											</div>
 										</div>
@@ -1182,7 +1196,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 											disabled={!newSessionProfileOptions.length || selectedRoomArchived}
 											title="Agent for new sessions"
 											aria-label="Agent for new sessions"
-											className="h-6 w-28 rounded-sm border border-slate-700 bg-[#101d22] px-1.5 text-[11px] font-medium normal-case tracking-normal text-slate-300 outline-none hover:border-[#11a4d4] focus:border-[#11a4d4] disabled:opacity-50"
+											className="h-6 w-28 max-[980px]:h-8 max-[980px]:w-36 max-[980px]:text-sm rounded-sm border border-slate-700 bg-[#101d22] px-1.5 text-[11px] font-medium normal-case tracking-normal text-slate-300 outline-none hover:border-[#11a4d4] focus:border-[#11a4d4] disabled:opacity-50"
 										>
 											{newSessionProfileOptions.map((profile) => (
 												<option key={profile.name} value={profile.name} title={profile.description ?? profile.name}>
@@ -1196,9 +1210,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 											disabled={creatingSession || selectedRoomArchived}
 											title="New Session"
 											aria-label="New Session"
-											className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
+											className="h-6 w-6 max-[980px]:h-8 max-[980px]:w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"
 										>
-											<Plus size={12} />
+											<Plus size={14} />
 										</button>
 										<button
 											type="button"
@@ -1209,7 +1223,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 												showArchived ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"
 											}`}
 										>
-											{showArchived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+											{showArchived ? <ArchiveRestore size={14} /> : <Archive size={12} />}
 										</button>
 									</div>
 								</div>
@@ -1271,7 +1285,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 						selectedRoomArchived={selectedRoomArchived}
 						selectedSessionProfile={selectedSessionNode?.profile ?? bootstrap.session.profile}
 						selectedSessionActiveModel={selectedSessionActiveModel}
-						selectedSessionStatus={selectedSessionNode?.status}
+						selectedSessionStatus={signalLegacyStatus(selectedSessionSignal ?? selectedRootSignal) ?? selectedSessionNode?.status}
+						selectedSessionSignal={selectedSessionSignal}
 						sessionViewId={sessionViewId}
 						sessionViews={sessionViews}
 						currentSessionView={currentSessionView}
@@ -1408,6 +1423,7 @@ function SessionTracePane({
 	selectedSessionProfile,
 	selectedSessionActiveModel,
 	selectedSessionStatus,
+	selectedSessionSignal,
 	sessionViewId,
 	sessionViews,
 	currentSessionView,
@@ -1441,6 +1457,7 @@ function SessionTracePane({
 	selectedSessionProfile: string;
 	selectedSessionActiveModel?: string;
 	selectedSessionStatus?: PiboWebSessionStatus;
+	selectedSessionSignal?: PiboSignalSnapshot["sessions"][string];
 	sessionViewId: ChatSessionViewId;
 	sessionViews: ReturnType<typeof listChatSessionViews>;
 	currentSessionView: ReturnType<typeof getChatSessionView>;
@@ -1751,6 +1768,7 @@ function SessionTracePane({
 						sessionAgentProfile: selectedSessionProfile,
 						sessionActiveModel: selectedSessionActiveModel,
 						selectedSessionStatus,
+						selectedSessionSignal,
 						sessionBreadcrumbs,
 						originSession,
 						derivedSessions,
@@ -2411,6 +2429,17 @@ function RoomNode({
 	const [draftWorkspace, setDraftWorkspace] = useState(room.workspace ?? "");
 	const personal = isPersonalRoom(room);
 	const archived = isArchivedRoom(room);
+	const [menuOpen, setMenuOpen] = useState(false);
+	const menuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const handle = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+		};
+		document.addEventListener("mousedown", handle);
+		return () => document.removeEventListener("mousedown", handle);
+	}, [menuOpen]);
 
 	useEffect(() => {
 		if (!editing) {
@@ -2499,52 +2528,108 @@ function RoomNode({
 							</span>
 							<UnreadBadge count={room.unreadCount} />
 						</button>
-						<div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+						<div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100">
 							{personal ? (
-								<span title="Personal Chat is locked" aria-label="Personal Chat is locked" className="h-7 w-7 inline-flex items-center justify-center border border-[#0bda57]/50 rounded-sm text-[#0bda57]">
-									<Lock size={13} />
+								<span title="Personal Chat is locked" aria-label="Personal Chat is locked" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-[#0bda57]/50 rounded-sm text-[#0bda57]">
+									<Lock size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
 								</span>
-							) : archived ? (
-								<>
-									<button
-										type="button"
-										onClick={() => onArchive(room.id, false)}
-										title="Restore Room"
-										aria-label="Restore Room"
-										className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-									>
-										<ArchiveRestore size={13} />
-									</button>
-									<button
-										type="button"
-										onClick={() => onDelete(room)}
-										title="Delete Room"
-										aria-label="Delete Room"
-										className="h-7 w-7 inline-flex items-center justify-center border border-red-500/70 rounded-sm text-red-300 hover:bg-red-500/10"
-									>
-										<Trash2 size={13} />
-									</button>
-								</>
 							) : (
 								<>
-									<button
-										type="button"
-										onClick={() => setEditing(true)}
-										title="Edit Room"
-										aria-label="Edit Room"
-										className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-									>
-										<Edit3 size={13} />
-									</button>
-									<button
-										type="button"
-										onClick={() => onArchive(room.id, true)}
-										title="Archive Room"
-										aria-label="Archive Room"
-										className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-									>
-										<Archive size={13} />
-									</button>
+									<div className="hidden min-[981px]:flex items-center gap-1">
+										{archived ? (
+											<>
+												<button
+													type="button"
+													onClick={() => onArchive(room.id, false)}
+													title="Restore Room"
+													aria-label="Restore Room"
+													className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													<ArchiveRestore size={13} />
+												</button>
+												<button
+													type="button"
+													onClick={() => onDelete(room)}
+													title="Delete Room"
+													aria-label="Delete Room"
+													className="h-7 w-7 inline-flex items-center justify-center border border-red-500/70 rounded-sm text-red-300 hover:bg-red-500/10"
+												>
+													<Trash2 size={13} />
+												</button>
+											</>
+										) : (
+											<>
+												<button
+													type="button"
+													onClick={() => setEditing(true)}
+													title="Edit Room"
+													aria-label="Edit Room"
+													className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													<Edit3 size={13} />
+												</button>
+												<button
+													type="button"
+													onClick={() => onArchive(room.id, true)}
+													title="Archive Room"
+													aria-label="Archive Room"
+													className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													<Archive size={13} />
+												</button>
+											</>
+										)}
+									</div>
+									<div className="min-[981px]:hidden relative" ref={menuRef}>
+										<button
+											type="button"
+											onClick={() => setMenuOpen((v) => !v)}
+											title="Room actions"
+											aria-label="Room actions"
+											className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+										>
+											<MoreVertical size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+										</button>
+										{menuOpen && (
+											<div className="absolute right-0 top-full z-50 mt-1 w-48 bg-[#1a262b] border border-slate-700 rounded-sm shadow-lg py-1">
+												{archived ? (
+													<>
+														<button
+															type="button"
+															onClick={() => { setMenuOpen(false); onArchive(room.id, false); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+														>
+															<ArchiveRestore size={16} /> Restore Room
+														</button>
+														<button
+															type="button"
+															onClick={() => { setMenuOpen(false); onDelete(room); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"
+														>
+															<Trash2 size={16} /> Delete Room
+														</button>
+													</>
+												) : (
+													<>
+														<button
+															type="button"
+															onClick={() => { setMenuOpen(false); setEditing(true); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+														>
+															<Edit3 size={16} /> Edit Room
+														</button>
+														<button
+															type="button"
+															onClick={() => { setMenuOpen(false); onArchive(room.id, true); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+														>
+															<Archive size={16} /> Archive Room
+														</button>
+													</>
+												)}
+											</div>
+										)}
+									</div>
 								</>
 							)}
 						</div>
@@ -2591,6 +2676,17 @@ function SessionNode({
 	const hasChildren = node.children.length > 0;
 	const hasSelectedDescendant = selectedPiboSessionId ? sessionTreeHasSession(node.children, selectedPiboSessionId) : false;
 	const [expanded, setExpanded] = useState(hasSelectedDescendant);
+	const [menuOpen, setMenuOpen] = useState(false);
+	const menuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const handle = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+		};
+		document.addEventListener("mousedown", handle);
+		return () => document.removeEventListener("mousedown", handle);
+	}, [menuOpen]);
 
 	useEffect(() => {
 		if (!editing) setDraftTitle(node.title);
@@ -2698,36 +2794,88 @@ function SessionNode({
 					</div>
 				)}
 				{editing ? null : (
-					<div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-						<button
-							type="button"
-							onClick={() => setEditing(true)}
-							title="Rename Session"
-							aria-label="Rename Session"
-							className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-						>
-							<Edit3 size={13} />
-						</button>
-						<button
-							type="button"
-							onClick={() => onArchive(node.piboSessionId, !node.archived)}
-							title={node.archived ? "Restore Session" : "Archive Session"}
-							aria-label={node.archived ? "Restore Session" : "Archive Session"}
-							className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-						>
-							{node.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-						</button>
-						{node.archived ? (
+					<div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100">
+						<div className="hidden min-[981px]:flex items-center gap-1">
 							<button
 								type="button"
-								onClick={() => onDelete(node)}
-								title="Delete Session"
-								aria-label="Delete Session"
-								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-300"
+								onClick={() => setEditing(true)}
+								title="Rename Session"
+								aria-label="Rename Session"
+								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
 							>
-								<Trash2 size={13} />
+								<Edit3 size={13} />
 							</button>
-						) : null}
+							<button
+								type="button"
+								onClick={() => onArchive(node.piboSessionId, !node.archived)}
+								title={node.archived ? "Restore Session" : "Archive Session"}
+								aria-label={node.archived ? "Restore Session" : "Archive Session"}
+								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+							>
+								{node.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+							</button>
+							{node.archived ? (
+								<button
+									type="button"
+									onClick={() => onDelete(node)}
+									title="Delete Session"
+									aria-label="Delete Session"
+									className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-300"
+								>
+									<Trash2 size={13} />
+								</button>
+							) : null}
+						</div>
+						<div className="min-[981px]:hidden relative" ref={menuRef}>
+							<button
+								type="button"
+								onClick={() => setMenuOpen((v) => !v)}
+								title="Session actions"
+								aria-label="Session actions"
+								className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+							>
+								<MoreVertical size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+							</button>
+							{menuOpen && (
+								<div className="absolute right-0 top-full z-50 mt-1 w-48 bg-[#1a262b] border border-slate-700 rounded-sm shadow-lg py-1">
+									{node.archived ? (
+										<>
+											<button
+												type="button"
+												onClick={() => { setMenuOpen(false); onArchive(node.piboSessionId, false); }}
+												className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+											>
+												<ArchiveRestore size={16} /> Restore Session
+											</button>
+											<button
+												type="button"
+												onClick={() => { setMenuOpen(false); onDelete(node); }}
+												className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"
+											>
+												<Trash2 size={16} /> Delete Session
+											</button>
+										</>
+									) : (
+										<>
+											<button
+												type="button"
+												onClick={() => { setMenuOpen(false); setEditing(true); }}
+												className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+											>
+												<Edit3 size={16} /> Rename Session
+											</button>
+											<button
+												type="button"
+												onClick={() => { setMenuOpen(false); onArchive(node.piboSessionId, true); }}
+												className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+											>
+												<Archive size={16} /> Archive Session
+											</button>
+										</>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 				)}
 			</div>
