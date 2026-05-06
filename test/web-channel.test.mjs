@@ -1627,6 +1627,80 @@ test("chat web app canonicalizes legacy custom agent session profile aliases", a
 	}
 });
 
+test("chat web app archives sessions as read and excludes them from room unread counts", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const payload = await sessionResponse.json();
+
+		emitOutput({
+			type: "assistant_message",
+			piboSessionId: payload.session.id,
+			eventId: "archive-unread-turn",
+			text: "archive me",
+		});
+		emitOutput({
+			type: "message_finished",
+			piboSessionId: payload.session.id,
+			eventId: "archive-unread-turn",
+		});
+
+		let bootstrap = await fetch(`${baseURL}/api/chat/bootstrap?markRead=false&piboSessionId=${encodeURIComponent(payload.session.id)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrap.status, 200);
+		let bootstrapPayload = await bootstrap.json();
+		assert.equal(bootstrapPayload.rooms[0].unreadCount, 1);
+		assert.equal(bootstrapPayload.sessions[0].unreadCount, 1);
+
+		const archived = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ archived: true }),
+		});
+		assert.equal(archived.status, 200);
+
+		bootstrap = await fetch(`${baseURL}/api/chat/bootstrap?markRead=false&includeArchived=true&piboSessionId=${encodeURIComponent(payload.session.id)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrap.status, 200);
+		bootstrapPayload = await bootstrap.json();
+		assert.equal(bootstrapPayload.rooms[0].unreadCount, undefined);
+		assert.equal(bootstrapPayload.sessions[0].unreadCount, undefined);
+
+		const restored = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(payload.session.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ archived: false }),
+		});
+		assert.equal(restored.status, 200);
+
+		bootstrap = await fetch(`${baseURL}/api/chat/bootstrap?markRead=false&piboSessionId=${encodeURIComponent(payload.session.id)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrap.status, 200);
+		bootstrapPayload = await bootstrap.json();
+		assert.equal(bootstrapPayload.rooms[0].unreadCount, undefined);
+		assert.equal(bootstrapPayload.sessions[0].unreadCount, undefined);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app renames and archives owned sessions", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

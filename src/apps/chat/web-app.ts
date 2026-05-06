@@ -1481,13 +1481,32 @@ function markSessionsRead(state: ChatWebAppState, sessions: PiboSession[], princ
 	}
 }
 
+function sessionSubtree(sessions: readonly PiboSession[], rootSessionId: string): PiboSession[] {
+	const subtree = new Map<string, PiboSession>();
+	const root = sessions.find((session) => session.id === rootSessionId);
+	if (root) subtree.set(root.id, root);
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const session of sessions) {
+			if (session.parentId && subtree.has(session.parentId) && !subtree.has(session.id)) {
+				subtree.set(session.id, session);
+				changed = true;
+			}
+		}
+	}
+	return [...subtree.values()];
+}
+
 function buildSessionUnreadCounts(
 	state: ChatWebAppState,
 	sessions: PiboSession[],
 	principalId: string,
 ): Map<string, number> {
 	const counts = new Map<string, number>();
+	const sessionsById = new Map(sessions.map((session) => [session.id, session]));
 	for (const session of sessions) {
+		if (hasArchivedSessionInPath(session, sessionsById)) continue;
 		const lastReadStreamId = state.eventLog.getSessionReadCursor(session.id, principalId) ?? 0;
 		const unreadCount = state.eventLog.countUnreadMessages({
 			piboSessionId: session.id,
@@ -1505,7 +1524,9 @@ function buildRoomUnreadCounts(
 	defaultRoomId: string,
 ): Map<string, number> {
 	const counts = new Map<string, number>();
+	const sessionsById = new Map(sessions.map((session) => [session.id, session]));
 	for (const session of sessions) {
+		if (hasArchivedSessionInPath(session, sessionsById)) continue;
 		const unreadCount = sessionUnreadCounts.get(session.id) ?? 0;
 		if (unreadCount <= 0) continue;
 		const roomId = chatRoomIdFromMetadata(session.metadata) ?? defaultRoomId;
@@ -3207,6 +3228,9 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const updated = updateSession(selectedSession.id, createSessionUpdate(context, selectedSession, body));
 				if (!updated) throw new PiboWebHttpError("Session not found", 404);
+				if (body.archived === true) {
+					markSessionsRead(state, sessionSubtree(listOwnedSessions(context, webSession), selectedSession.id), principalIdFor(webSession));
+				}
 				state.readModel.upsertSession(updated);
 				return responseJson({ session: updated });
 			}
