@@ -465,7 +465,8 @@ function useWorkingScramble(target: string) {
 
 	useEffect(() => {
 		let index = 0;
-		let rotationsRemaining = randomRotationCount();
+		let rotationFrame = 0;
+		let rotationsForChar = randomRotationCount();
 		let pauseTicks = 0;
 		setChars(randomAsciiChars(targetChars));
 
@@ -477,7 +478,8 @@ function useWorkingScramble(target: string) {
 
 			if (index >= targetChars.length) {
 				index = 0;
-				rotationsRemaining = randomRotationCount();
+				rotationFrame = 0;
+				rotationsForChar = randomRotationCount();
 				setChars(randomAsciiChars(targetChars));
 				setActiveIndex(0);
 				return;
@@ -486,15 +488,16 @@ function useWorkingScramble(target: string) {
 			const currentIndex = index;
 			const targetChar = targetChars[currentIndex] ?? " ";
 			setActiveIndex(currentIndex);
-			if (rotationsRemaining > 1) {
+			rotationFrame++;
+			if (rotationFrame < rotationsForChar) {
 				setChars((current) => replaceChar(current, currentIndex, randomAsciiChar(targetChar)));
-				rotationsRemaining--;
 				return;
 			}
 
 			setChars((current) => replaceChar(current, currentIndex, targetChar));
 			index++;
-			rotationsRemaining = randomRotationCount();
+			rotationFrame = 0;
+			rotationsForChar = randomRotationCount();
 			if (index >= targetChars.length) {
 				setChars(targetChars);
 				setActiveIndex(-1);
