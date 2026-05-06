@@ -531,7 +531,7 @@ function randomAsciiChar(exclude?: string): string {
 }
 
 function randomRotationCount(): number {
-	return 3 + Math.floor(Math.random() * 8);
+	return 2 + Math.floor(Math.random() * 11);
 }
 
 function TerminalCompactionLine() {
