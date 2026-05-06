@@ -167,7 +167,7 @@ type GatewayEventFrame = {
 - **AC-006**: Given a Pi thinking delta, When normalized, Then it is emitted as `thinking_delta` and not as assistant visible text.
 - **AC-007**: Given Pi emits `thinking_finished` followed by visible text deltas for the same message, When normalized, Then the router emits `thinking_finished` followed by `assistant_delta` events and does not emit `message_finished` until Pi prompt completion.
 - **AC-008**: Given a generated subagent tool is called with a tool call id, When the child Pibo Session is resolved, Then a `subagent_session` event is emitted with the same tool call id and the child Pibo Session ID before the parent awaits the child reply.
-- **AC-009**: Given `pibo_run_start` starts `pibo_subagent_qa_researcher`, When the tool result is stored, Then the payload retains `toolName: "pibo_subagent_qa_researcher"` and enough arguments to reconstruct the async subagent trace node.
+- **AC-009**: Given `pibo_run_start` starts `pibo_subagent_explorer`, When the tool result is stored, Then the payload retains `toolName: "pibo_subagent_explorer"` and enough arguments to reconstruct the async subagent trace node.
 - **AC-010**: Given Pi emits two separate visible assistant text segments with the same provider `contentIndex` during one routed turn, When normalized, Then the first segment's `assistant_delta` and `assistant_message` share one `assistantIndex`, and the second segment's `assistant_delta` and `assistant_message` share a different `assistantIndex`.
 - **AC-011**: Given Pi emits two separate thinking segments with the same provider `contentIndex` during one routed turn, When normalized, Then the segments are distinguishable by `thinkingIndex`.
 

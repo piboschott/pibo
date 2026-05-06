@@ -229,7 +229,7 @@ JSON output:
   "rows": [
     {
       "id": "ps_...",
-      "profile": "pibo-run-yield-qa"
+      "profile": "codex-compat-openai-web"
     }
   ],
   "limited": false

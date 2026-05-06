@@ -110,7 +110,7 @@ function createFakeClient() {
 			piSessionId: "local-session-1",
 			channel: "local-tui",
 			kind: "local",
-			profile: "pibo-run-yield-qa",
+			profile: "codex-compat-openai-web",
 			title: "default",
 			createdAt: "2026-04-27T00:00:00.000Z",
 			updatedAt: "2026-04-27T00:00:00.000Z",
@@ -515,13 +515,13 @@ test("local routed TUI renderer delegates messages to Pi components", async () =
 });
 
 test("local routed TUI client creates a profile-scoped local Pibo session", async () => {
-	const client = createLocalRoutedTuiClient({ profile: "run-yield-qa", persistSession: false, thinkingLevel: "high" });
+	const client = createLocalRoutedTuiClient({ profile: "codex", persistSession: false, thinkingLevel: "high" });
 
 	try {
 		assert.match(client.piboSession.id, /^ps_[0-9a-f-]{36}$/);
 		assert.equal(client.piboSession.channel, "local-tui");
 		assert.equal(client.piboSession.kind, "local");
-		assert.equal(client.piboSession.profile, "pibo-run-yield-qa");
+		assert.equal(client.piboSession.profile, "codex-compat-openai-web");
 		assert.equal(client.piboSession.title, "default");
 		assert.equal(client.router.options.thinkingLevel, "high");
 		assert.ok(client.capabilities.actions.some((action) => action.name === "status"));

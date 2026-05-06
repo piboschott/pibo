@@ -17,7 +17,7 @@ async function createCliProfile(profileName?: string) {
 	if (profileName === "gateway-producer" || profileName === "pibo-gateway-producer") {
 		return createGatewayProducerPiboProfile();
 	}
-	return createDefaultPiboPluginRegistry().createProfile(profileName ?? "pibo-minimal");
+	return createDefaultPiboPluginRegistry().createProfile(profileName ?? "codex-compat-openai-web");
 }
 
 function printJson(value: unknown): void {

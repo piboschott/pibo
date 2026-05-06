@@ -39,7 +39,7 @@ The current Chat Web build includes two session views over the same routed trace
 - `npm run dev` runs the TypeScript entrypoint with `tsx`.
 - `npm run profile` prints the selected profile with loaded skills, tools, and context files.
 - `npm run profile -- gateway-producer` prints the parked gateway producer profile.
-- `npm run profile -- run-yield-qa` prints the yielded-run QA profile with subagents.
+- `npm run profile -- codex` prints the Codex-compatible profile with subagents.
 - `npm run tui` starts the Pi TUI through the pibo wrapper.
 - `npm run tui:gateway` starts the Pi TUI with the gateway producer profile.
 - `npm run gateway` starts the local pibo gateway daemon.
@@ -133,7 +133,7 @@ Profiles can opt into registered subagents. Pibo exposes enabled subagents to Pi
 
 Subagent sessions use `parentId` for hierarchy and inherit the parent session's `metadata.chatRoomId` when the parent belongs to a Chat Web room, so room-scoped session views and room deletion include subagent work.
 
-The `run-yield-qa` profile adds two simple QA subagents. Profiles with yieldable tools can expose generated run-control tools through the `pibo-run-control` capability package:
+The `codex` profile includes delegated subagents. Profiles with yieldable tools can expose generated run-control tools through the `pibo-run-control` capability package:
 
 ```text
 pibo_run_start
@@ -145,14 +145,14 @@ pibo_run_cancel
 pibo_run_ack
 ```
 
-Try the QA profile through the routed runtime:
+Try the Codex-compatible profile through the routed runtime:
 
 ```bash
-npm run profile -- run-yield-qa
-npm run tui:routed -- run-yield-qa
+npm run profile -- codex
+npm run tui:routed -- codex
 ```
 
-Subagent profiles require the routed runtime. Do not use direct `npm run tui -- run-yield-qa` for this profile.
+Subagent profiles require the routed runtime. Do not use direct `npm run tui -- codex` for this profile.
 
 ## Gateway
 

@@ -269,7 +269,7 @@ Create session response:
     "piSessionId": "...",
     "channel": "pibo.chat-web",
     "kind": "chat",
-    "profile": "pibo-minimal",
+    "profile": "codex-compat-openai-web",
     "ownerScope": "user:bIibEngJFSvdfQAlDbk43djVBG6Zr2Qc",
     "parentId": null,
     "originId": null,
@@ -415,7 +415,7 @@ The new fork behavior is intentionally product-centric: forking creates a new vi
   "piSessionId": "4d0449c6-b931-4db6-b797-b89f3630442a",
   "channel": "pibo.chat-web",
   "kind": "chat",
-  "profile": "pibo-minimal",
+  "profile": "codex-compat-openai-web",
   "ownerScope": "user:bIibEngJFSvdfQAlDbk43djVBG6Zr2Qc",
   "metadata": {
     "chatRoomId": "room_2a3c"
@@ -431,7 +431,7 @@ The new fork behavior is intentionally product-centric: forking creates a new vi
   "piSessionId": "c8cbfdfa-7fed-409b-b85d-4f980bf0d07e",
   "channel": "pibo.chat-web",
   "kind": "branch",
-  "profile": "pibo-minimal",
+  "profile": "codex-compat-openai-web",
   "ownerScope": "user:bIibEngJFSvdfQAlDbk43djVBG6Zr2Qc",
   "originId": "ps_7e7d5a0f-2d65-4538-b876-8a12e89f58f1",
   "parentId": null

@@ -165,8 +165,8 @@ type PiboChannelContext = {
 
 | Profile | Aliases | Capabilities |
 | --- | --- | --- |
-| `pibo-minimal` | `minimal` | Harness skill plus Pi built-in tools |
-| `pibo-run-yield-qa` | `run-yield-qa`, `yield-qa` | Harness skill, QA subagents, and run-control-yieldable Pi `bash` |
+| `codex-compat-openai-web` | `minimal` | Harness skill plus Pi built-in tools |
+| `codex-compat-openai-web` | `codex`, `codex` | Harness skill, QA subagents, and run-control-yieldable Pi `bash` |
 | `pibo-gateway-producer` | `gateway-producer` | Parked opt-in profile with `pibo_gateway_send` |
 
 ## 5. Acceptance Criteria
@@ -225,10 +225,10 @@ The current code keeps Pi Coding Agent as the inner engine and gives Pibo a smal
   "channel": "pibo.subagents",
   "kind": "subagent",
   "parentId": "ps_parent",
-  "profile": "qa-reviewer",
+  "profile": "worker",
   "metadata": {
-    "subagentName": "qa-reviewer",
-    "subagentToolName": "pibo_subagent_qa_reviewer",
+    "subagentName": "worker",
+    "subagentToolName": "pibo_subagent_worker",
     "threadKey": "review-thread"
   }
 }
@@ -243,8 +243,8 @@ If `threadKey` is omitted, the router generates a fresh UUID thread key. Reuse i
   "type": "subagent_session",
   "piboSessionId": "ps_parent",
   "toolCallId": "tool-call-1",
-  "toolName": "pibo_subagent_qa_reviewer",
-  "subagentName": "qa-reviewer",
+  "toolName": "pibo_subagent_worker",
+  "subagentName": "worker",
   "childPiboSessionId": "ps_child",
   "threadKey": "review-thread"
 }

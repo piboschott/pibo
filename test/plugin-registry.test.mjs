@@ -34,18 +34,16 @@ async function withCwd(cwd, run) {
 test("default plugin registry builds profiles from registered resources", () => {
 	const registry = createDefaultPiboPluginRegistry();
 
-	const minimal = registry.createProfile("minimal");
-	const runYieldQa = registry.createProfile("run-yield-qa");
+	const codex = registry.createProfile("codex");
 
-	assert.equal(minimal.profileName, "pibo-minimal");
+	assert.equal(codex.profileName, "codex-compat-openai-web");
 	assert.deepEqual(
-		minimal.tools.map((tool) => tool.name),
-		[],
+		codex.tools.map((tool) => tool.name),
+		["apply_patch", "web_search", "view_image"],
 	);
-	assert.equal(runYieldQa.profileName, "pibo-run-yield-qa");
 	assert.deepEqual(
-		runYieldQa.subagents.map((subagent) => subagent.name),
-		["qa-researcher", "qa-reviewer"],
+		codex.subagents.map((subagent) => subagent.name),
+		["default", "explorer", "worker"],
 	);
 	assert.ok(registry.getCapabilityCatalog().nativeTools.some((tool) => (
 		tool.name === "web_search" && tool.pluginId === "pibo.core" && tool.hasDefinition === false
@@ -138,6 +136,11 @@ test("default plugin registry builds profiles from registered resources", () => 
 			slashCommands: ["login"],
 		},
 		{
+			name: "model",
+			description: "Open the interactive model selector for authenticated providers.",
+			slashCommands: ["model"],
+		},
+		{
 			name: "login.start",
 			description: "Start an OAuth login flow for a provider. Returns a URL to open in a browser.",
 			slashCommands: [],
@@ -213,10 +216,10 @@ test("capability catalog exposes registered Pi packages without activating them"
 		});
 		const registry = createDefaultPiboPluginRegistry();
 		const catalog = registry.getCapabilityCatalog();
-		const minimal = registry.createProfile("minimal");
+		const codex = registry.createProfile("codex");
 
 		assert.equal(catalog.piPackages.find((pkg) => pkg.id === "catalog-package")?.installStatus, "registered");
-		assert.deepEqual(minimal.piPackages, []);
+		assert.deepEqual(codex.piPackages, []);
 	});
 });
 

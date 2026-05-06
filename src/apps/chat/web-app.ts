@@ -2677,7 +2677,7 @@ function createChatHtml(): string {
 }
 
 export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
-	const defaultProfile = options.defaultProfile ?? "pibo-minimal";
+	const defaultProfile = options.defaultProfile ?? "codex-compat-openai-web";
 	const storagePath = options.readModelPath;
 	const state: ChatWebAppState = {
 		readModel: createReadModel(storagePath),

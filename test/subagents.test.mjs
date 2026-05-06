@@ -243,7 +243,7 @@ test("subagent runner emits a parent link event before waiting for the child rep
 		piSessionId: "parent-session",
 		channel: "pibo.test",
 		kind: "chat",
-		profile: "pibo-run-yield-qa",
+		profile: "codex-compat-openai-web",
 		ownerScope: "user:test",
 		metadata: { chatRoomId: "room_parent" },
 	});
@@ -260,19 +260,19 @@ test("subagent runner emits a parent link event before waiting for the child rep
 	try {
 		const runner = router.createSubagentRunner("ps_parent");
 		const result = await runner.runSubagent({
-			subagent: { name: "qa-researcher", targetProfile: "pibo-minimal" },
+			subagent: { name: "explorer", targetProfile: "codex-compat-openai-web" },
 			message: "check this",
-			threadKey: "qa",
+			threadKey: "inspect",
 			toolCallId: "tool-1",
 		});
 		const linkEvent = events.find((event) => event.type === "subagent_session");
 
 		assert.equal(linkEvent.piboSessionId, "ps_parent");
 		assert.equal(linkEvent.toolCallId, "tool-1");
-		assert.equal(linkEvent.toolName, "pibo_subagent_qa_researcher");
-		assert.equal(linkEvent.subagentName, "qa-researcher");
+		assert.equal(linkEvent.toolName, "pibo_subagent_explorer");
+		assert.equal(linkEvent.subagentName, "explorer");
 		assert.equal(linkEvent.childPiboSessionId, result.piboSessionId);
-		assert.equal(linkEvent.threadKey, "qa");
+		assert.equal(linkEvent.threadKey, "inspect");
 		assert.equal(store.get(result.piboSessionId).parentId, "ps_parent");
 		assert.equal(store.get(result.piboSessionId).metadata.chatRoomId, "room_parent");
 	} finally {
@@ -280,18 +280,19 @@ test("subagent runner emits a parent link event before waiting for the child rep
 	}
 });
 
-test("default run-yield QA profile exposes run control tools", async () => {
+test("default Codex-compatible profile exposes run control tools", async () => {
 	const registry = createDefaultPiboPluginRegistry();
-	const profile = registry.createProfile("run-yield-qa");
+	const profile = registry.createProfile("codex");
 	const inspection = await inspectPiboProfile({ profile, persistSession: false });
 	const activeTools = new Set(inspection.tools.map((tool) => tool.name));
 
 	assert.deepEqual(
 		inspection.subagents.map((subagent) => subagent.name),
-		["qa-researcher", "qa-reviewer"],
+		["default", "explorer", "worker"],
 	);
-	assert.equal(activeTools.has("pibo_subagent_qa_researcher"), true);
-	assert.equal(activeTools.has("pibo_subagent_qa_reviewer"), true);
+	assert.equal(activeTools.has("pibo_subagent_default"), true);
+	assert.equal(activeTools.has("pibo_subagent_explorer"), true);
+	assert.equal(activeTools.has("pibo_subagent_worker"), true);
 	assert.equal(activeTools.has("pibo_run_start"), true);
 	assert.equal(activeTools.has("pibo_run_list"), true);
 	assert.equal(activeTools.has("pibo_run_wait"), true);
@@ -304,7 +305,7 @@ test("default run-yield QA profile exposes run control tools", async () => {
 
 test("run-control package exposes Pi bash as a yieldable tool", async () => {
 	const registry = createDefaultPiboPluginRegistry();
-	const profile = registry.createProfile("run-yield-qa");
+	const profile = registry.createProfile("codex");
 	const runtime = await createPiboRuntime({
 		profile,
 		persistSession: false,

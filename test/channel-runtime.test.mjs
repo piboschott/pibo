@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PiboGatewayServer } from "../dist/gateway/server.js";
 import { piboCorePlugin } from "../dist/plugins/builtin.js";
+import { piboCodexCompatPlugin } from "../dist/plugins/codex-compat.js";
 import { definePiboPlugin, PiboPluginRegistry } from "../dist/plugins/registry.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
 
 test("gateway starts plugin channels with router and session session context", async () => {
-	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin, piboCodexCompatPlugin] });
 	const store = new InMemoryPiboSessionStore();
 	let startedSession;
 	let stopped = false;
@@ -33,7 +34,7 @@ test("gateway starts plugin channels with router and session session context", a
 							id: "ps_web_user_1",
 							channel: "web",
 							kind: "chat",
-							profile: "minimal",
+							profile: "codex",
 							ownerScope: "user:user-1",
 						});
 					},
@@ -56,7 +57,7 @@ test("gateway starts plugin channels with router and session session context", a
 	await server.stop();
 
 	assert.equal(startedSession.id, "ps_web_user_1");
-	assert.equal(startedSession.profile, "pibo-minimal");
+	assert.equal(startedSession.profile, "codex-compat-openai-web");
 	assert.equal(store.get("ps_web_user_1"), startedSession);
 	assert.equal(stopped, true);
 });

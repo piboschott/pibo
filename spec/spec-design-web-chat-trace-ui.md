@@ -566,7 +566,7 @@ Composer, New Session, slash command execution, and fork actions stay disabled w
 
 ```text
 Assistant calls pibo_run_start
-  toolName = pibo_subagent_qa_researcher
+  toolName = pibo_subagent_explorer
   arguments.message = inspect auth
 Trace shows pibo_run_start as the parent execution context
 Trace shows an agent.async child with target qa_researcher

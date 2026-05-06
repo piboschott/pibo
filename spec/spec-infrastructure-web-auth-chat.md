@@ -64,7 +64,7 @@ This specification does not define non-web local gateway behavior except where w
 - **REQ-020B**: Built Chat Web assets under `/apps/chat/assets/*` MUST send immutable cache headers and SHOULD use negotiated Brotli or gzip compression for compressible asset types.
 - **REQ-020C**: The integrated Chat Web shell MUST expose a Context area at `GET /apps/chat/context`.
 - **REQ-021**: `GET /api/chat/bootstrap` MUST require an auth session and return identity, selected Pibo Room, selected Pibo Session, room-scoped session tree, room tree, agent inventory, and available gateway actions.
-- **REQ-022**: Chat session ownership MUST use `ownerScope=user:<authenticated user id>` and default profile `pibo-minimal` unless overridden.
+- **REQ-022**: Chat session ownership MUST use `ownerScope=user:<authenticated user id>` and default profile `codex-compat-openai-web` unless overridden.
 - **REQ-023**: `POST /api/chat/sessions` MUST require same-origin JSON and create a new top-level personal Pibo Session.
 - **REQ-024**: `PATCH /api/chat/sessions/:piboSessionId` MUST require same-origin JSON and update only mutable Chat Web session metadata such as `title` and `archived`.
 - **REQ-025**: `POST /api/chat/message` MUST require same-origin JSON, an authenticated session, non-empty string `text`, and MUST emit a `message` input event with source `"user"`.
@@ -231,7 +231,7 @@ type CustomAgent = {
     "piSessionId": "uuid",
     "channel": "pibo.chat-web",
     "kind": "chat",
-    "profile": "pibo-minimal",
+    "profile": "codex-compat-openai-web",
     "ownerScope": "user:user-id",
     "createdAt": "2026-04-28T00:00:00.000Z",
     "updatedAt": "2026-04-28T00:00:00.000Z"

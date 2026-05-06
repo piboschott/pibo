@@ -16,7 +16,7 @@ function createTestSession(overrides = {}) {
 		piSessionId: "missing-session-id",
 		channel: "pibo.chat-web",
 		kind: "chat",
-		profile: "pibo-minimal",
+		profile: "codex-compat-openai-web",
 		createdAt: "2026-04-29T08:00:00.000Z",
 		updatedAt: "2026-04-29T08:00:00.000Z",
 		...overrides,
@@ -274,25 +274,68 @@ test("chat read model ignores live-only deltas when limiting session event histo
 
 test("chat read model only promotes sessions on user input and final assistant output", () => {
 	const readModel = new ChatWebReadModel(":memory:");
-	const session = createTestSession();
-	readModel.upsertSession(session);
+	const older = createTestSession({ id: "chat:older", createdAt: "2026-04-29T08:00:00.000Z", updatedAt: "2026-04-29T08:00:00.000Z" });
+	const newer = createTestSession({ id: "chat:newer", createdAt: "2026-04-29T09:00:00.000Z", updatedAt: "2026-04-29T09:00:00.000Z" });
+	readModel.upsertSession(older);
+	readModel.upsertSession(newer);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:newer", "chat:older"]);
 
-	readModel.recordEvent({ type: "assistant_delta", piboSessionId: session.id, eventId: "turn-1", text: "streaming" }, session);
-	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === session.id)?.lastActivityAt, undefined);
+	readModel.recordEvent({ type: "assistant_delta", piboSessionId: older.id, eventId: "turn-1", text: "streaming" }, older);
+	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === older.id)?.lastActivityAt, undefined);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:newer", "chat:older"]);
 
-	readModel.recordEvent({ type: "message_queued", piboSessionId: session.id, eventId: "turn-1", queuedMessages: 1, text: "hello" }, session);
-	const userActivityAt = readModel.listSessions().find((item) => item.piboSessionId === session.id)?.lastActivityAt;
+	readModel.recordEvent({ type: "message_queued", piboSessionId: older.id, eventId: "turn-1", queuedMessages: 1, text: "hello" }, older);
+	const userActivityAt = readModel.listSessions().find((item) => item.piboSessionId === older.id)?.lastActivityAt;
 	assert.ok(userActivityAt);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:older", "chat:newer"]);
 
-	readModel.recordEvent({ type: "tool_execution_updated", piboSessionId: session.id, eventId: "turn-1", toolCallId: "tool-1", toolName: "read", args: {}, partialResult: "chunk" }, session);
-	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === session.id)?.lastActivityAt, userActivityAt);
+	readModel.recordEvent({ type: "message_started", piboSessionId: newer.id, eventId: "turn-2", messageId: "message-2" }, newer);
+	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === newer.id)?.lastActivityAt, undefined);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:older", "chat:newer"]);
+
+	readModel.recordEvent({ type: "tool_execution_updated", piboSessionId: newer.id, eventId: "turn-2", toolCallId: "tool-1", toolName: "read", args: {}, partialResult: "chunk" }, newer);
+	assert.equal(readModel.listSessions().find((item) => item.piboSessionId === newer.id)?.lastActivityAt, undefined);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:older", "chat:newer"]);
 
 	sleepSync(2);
-	readModel.recordEvent({ type: "assistant_message", piboSessionId: session.id, eventId: "turn-1", text: "final" }, session);
-	const assistantActivityAt = readModel.listSessions().find((item) => item.piboSessionId === session.id)?.lastActivityAt;
+	readModel.recordEvent({ type: "assistant_message", piboSessionId: newer.id, eventId: "turn-2", text: "final" }, newer);
+	const assistantActivityAt = readModel.listSessions().find((item) => item.piboSessionId === newer.id)?.lastActivityAt;
 	assert.ok(assistantActivityAt);
-	assert.notEqual(assistantActivityAt, userActivityAt);
+	assert.deepEqual(readModel.listSessions().map((item) => item.piboSessionId), ["chat:newer", "chat:older"]);
 	readModel.close();
+});
+
+test("session nodes order by navigation activity instead of transcript metadata", async () => {
+	const readModel = new ChatWebReadModel(":memory:");
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-chat-order-"));
+	try {
+		const older = createTestSession({
+			id: "chat:older",
+			createdAt: "2026-04-29T08:00:00.000Z",
+			updatedAt: "2026-04-29T12:00:00.000Z",
+		});
+		const newer = createTestSession({
+			id: "chat:newer",
+			createdAt: "2026-04-29T09:00:00.000Z",
+			updatedAt: "2026-04-29T09:00:00.000Z",
+		});
+		readModel.upsertSession(older);
+		readModel.upsertSession(newer);
+
+		let nodes = await buildSessionNodes([older, newer], readModel.listSessions(), cwd);
+		assert.deepEqual(nodes.map((node) => node.piboSessionId), ["chat:newer", "chat:older"]);
+
+		readModel.recordEvent({ type: "message_started", piboSessionId: older.id, eventId: "turn-1", messageId: "message-1" }, older);
+		nodes = await buildSessionNodes([older, newer], readModel.listSessions(), cwd);
+		assert.deepEqual(nodes.map((node) => node.piboSessionId), ["chat:newer", "chat:older"]);
+
+		readModel.recordEvent({ type: "message_queued", piboSessionId: older.id, eventId: "turn-1", queuedMessages: 1, text: "hello" }, older);
+		nodes = await buildSessionNodes([older, newer], readModel.listSessions(), cwd);
+		assert.deepEqual(nodes.map((node) => node.piboSessionId), ["chat:older", "chat:newer"]);
+	} finally {
+		readModel.close();
+		rmSync(cwd, { recursive: true, force: true });
+	}
 });
 
 test("chat read model assigns stable per-session event sequence for durable events", () => {
@@ -396,8 +439,8 @@ test("chat read model keeps parent sessions running after subagent link events",
 			type: "subagent_session",
 			piboSessionId: session.id,
 			toolCallId: "tool-1",
-			toolName: "pibo_subagent_qa_researcher",
-			subagentName: "qa-researcher",
+			toolName: "pibo_subagent_explorer",
+			subagentName: "explorer",
 			childPiboSessionId: "ps_child",
 			threadKey: "qa",
 		},
@@ -1264,8 +1307,8 @@ test("chat trace renders run notifications as yielded run nodes", async () => {
 									runId: "run_1",
 									kind: "tool",
 									status: "failed",
-									toolName: "pibo_subagent_qa_researcher",
-									summary: "pibo_subagent_qa_researcher run failed.",
+									toolName: "pibo_subagent_explorer",
+									summary: "pibo_subagent_explorer run failed.",
 								},
 							],
 							cancelled: [],
@@ -1314,7 +1357,7 @@ test("chat trace shows async subagent runs under pibo_run_start tool calls", () 
 						id: "tool-1",
 						name: "pibo_run_start",
 						arguments: {
-							toolName: "pibo_subagent_qa_researcher",
+							toolName: "pibo_subagent_explorer",
 							arguments: { message: "inspect auth", threadKey: "qa" },
 							completionPolicy: "tracked",
 						},
@@ -1340,7 +1383,7 @@ test("chat trace shows async subagent runs under pibo_run_start tool calls", () 
 					status: "running",
 					completionPolicy: "tracked",
 					consumed: false,
-					toolName: "pibo_subagent_qa_researcher",
+					toolName: "pibo_subagent_explorer",
 					createdAt: "2026-04-29T08:00:02.000Z",
 					updatedAt: "2026-04-29T08:00:02.000Z",
 				},
@@ -1374,7 +1417,7 @@ test("chat trace updates async subagent runs from later run-control snapshots", 
 						id: "tool-start",
 						name: "pibo_run_start",
 						arguments: {
-							toolName: "pibo_subagent_qa_researcher",
+							toolName: "pibo_subagent_explorer",
 							arguments: { message: "inspect auth" },
 							completionPolicy: "tracked",
 						},
@@ -1397,7 +1440,7 @@ test("chat trace updates async subagent runs from later run-control snapshots", 
 					runId: "run_1",
 					kind: "tool",
 					status: "running",
-					toolName: "pibo_subagent_qa_researcher",
+					toolName: "pibo_subagent_explorer",
 					updatedAt: "2026-04-29T08:00:02.000Z",
 				},
 				isError: false,
@@ -1435,7 +1478,7 @@ test("chat trace updates async subagent runs from later run-control snapshots", 
 					runId: "run_1",
 					kind: "tool",
 					status: "completed",
-					toolName: "pibo_subagent_qa_researcher",
+					toolName: "pibo_subagent_explorer",
 					updatedAt: "2026-04-29T08:00:04.000Z",
 					completedAt: "2026-04-29T08:00:04.000Z",
 				},

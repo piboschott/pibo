@@ -17,7 +17,6 @@ import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 
 const GATEWAY_PROFILE_TOOLS = ["pibo_gateway_send"] as const;
-const RUN_YIELD_QA_SUBAGENTS = ["qa-researcher", "qa-reviewer"] as const;
 
 const LOGIN_PROVIDERS = [
 	{ id: "openai-codex", name: "OpenAI (ChatGPT Plus/Pro)", authMethods: ["device_code"] },
@@ -134,40 +133,6 @@ export const piboCorePlugin = definePiboPlugin({
 			kind: "builtin",
 		});
 		api.registerTool(createWebSearchToolProfile());
-		api.registerSubagents([
-			{
-				name: "qa-researcher",
-				description:
-					"QA helper subagent for run-yield testing. Use it for small research or inspection tasks.",
-				targetProfile: "pibo-minimal",
-			},
-			{
-				name: "qa-reviewer",
-				description:
-					"QA reviewer subagent for run-yield testing. Use it for independent review or validation tasks.",
-				targetProfile: "pibo-minimal",
-			},
-		]);
-		api.registerProfile({
-			name: "pibo-minimal",
-			aliases: ["minimal"],
-			description: "Minimal pibo profile with the harness skill.",
-			create(context) {
-				return createBaseProfileBuilder("pibo-minimal", context)
-					.createSession();
-			},
-		});
-		api.registerProfile({
-			name: "pibo-run-yield-qa",
-			aliases: ["run-yield-qa", "yield-qa"],
-			description: "QA profile with two simple subagents for testing yielded run control.",
-			create(context) {
-				return createBaseProfileBuilder("pibo-run-yield-qa", context)
-					.withToolPackages({ runControl: true })
-					.addSubagents(context.getSubagents(RUN_YIELD_QA_SUBAGENTS))
-					.createSession();
-			},
-		});
 		api.registerProfile({
 			name: "pibo-kimi-coding",
 			aliases: ["kimi", "kimi-coding"],
@@ -432,7 +397,7 @@ export function createDefaultPiboPluginRegistry(): PiboPluginRegistry {
 }
 
 export function createDefaultPiboProfile(): InitialSessionContext {
-	return createDefaultPiboPluginRegistry().createProfile("pibo-minimal");
+	return createDefaultPiboPluginRegistry().createProfile("codex-compat-openai-web");
 }
 
 export function createGatewayProducerPiboProfile(): InitialSessionContext {

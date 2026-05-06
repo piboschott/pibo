@@ -150,7 +150,10 @@ export class PiboSessionRouter {
 	constructor(private readonly options: PiboSessionRouterOptions = {}) {
 		this.pluginRegistry = options.pluginRegistry ?? createDefaultPiboPluginRegistry();
 		this.sessionStore = options.sessionStore ?? new InMemoryPiboSessionStore();
-		this.baseProfile = options.profile ?? this.pluginRegistry.createProfile("pibo-minimal");
+		const defaultProfileName = this.pluginRegistry.getProfileNames().includes("codex-compat-openai-web")
+			? "codex-compat-openai-web"
+			: this.pluginRegistry.getProfileNames()[0];
+		this.baseProfile = options.profile ?? this.pluginRegistry.createProfile(defaultProfileName ?? "codex-compat-openai-web");
 		this.reliabilityStore = options.reliabilityStore ?? (options.persistSession === false ? undefined : createDefaultPiboReliabilityStore());
 		this.runRegistry = new PiboRunRegistry({ store: this.reliabilityStore });
 	}

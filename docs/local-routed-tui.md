@@ -53,10 +53,10 @@ title: <sessionName>
 The default session name is `default`, so:
 
 ```text
-npm run tui:routed -- run-yield-qa
+npm run tui:routed -- codex
 ```
 
-routes through a local Pibo Session with `profile: "pibo-run-yield-qa"` and `title: "default"`.
+routes through a local Pibo Session with `profile: "codex-compat-openai-web"` and `title: "default"`.
 
 Pi session persistence still follows the normal routed runtime option. The controller shell runtime is non-persistent and exists only to host the terminal UI.
 
@@ -112,11 +112,11 @@ Run:
 npm run typecheck
 npm test
 node dist/bin/pibo.js --help
-node dist/bin/pibo.js profile run-yield-qa
+node dist/bin/pibo.js profile codex
 ```
 
 Manual interactive smoke test:
 
 ```bash
-npm run tui:routed -- run-yield-qa
+npm run tui:routed -- codex
 ```

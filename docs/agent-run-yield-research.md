@@ -213,7 +213,7 @@ Example:
 
 ```xml
 <pibo_run_notification>
-{"runId":"run_123","kind":"tool","toolName":"pibo_subagent_qa_researcher","status":"completed","summary":"Yielded tool run completed. Use pibo_run_wait or pibo_run_read for details."}
+{"runId":"run_123","kind":"tool","toolName":"pibo_subagent_explorer","status":"completed","summary":"Yielded tool run completed. Use pibo_run_wait or pibo_run_read for details."}
 </pibo_run_notification>
 ```
 
@@ -240,7 +240,7 @@ Example completion:
 
 ```xml
 <pibo_run_notification>
-{"runId":"run_123","kind":"tool","toolName":"pibo_subagent_qa_researcher","status":"completed","summary":"A yielded tool run completed. Use pibo_run_read for the result or pibo_run_wait to consume the terminal result."}
+{"runId":"run_123","kind":"tool","toolName":"pibo_subagent_explorer","status":"completed","summary":"A yielded tool run completed. Use pibo_run_read for the result or pibo_run_wait to consume the terminal result."}
 </pibo_run_notification>
 ```
 

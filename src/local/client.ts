@@ -98,7 +98,7 @@ export class LocalRoutedTuiClient implements LocalRoutedTuiClientLike {
 
 export function createLocalRoutedTuiClient(options: LocalRoutedTuiOptions = {}): LocalRoutedTuiClient {
 	const registry = options.pluginRegistry ?? createDefaultPiboPluginRegistry();
-	const profileName = registry.resolveProfileName(options.profile ?? "pibo-minimal");
+	const profileName = registry.resolveProfileName(options.profile ?? "codex-compat-openai-web");
 	const profile = registry.createProfile(profileName);
 	const sessionName = options.sessionName ?? "default";
 	const workspace = options.cwd ?? getDefaultPiboWorkspace();

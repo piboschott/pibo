@@ -197,8 +197,8 @@ Cleaner follow-up:
 
 ## Acceptance Criteria
 
-- `pibo tui pibo-minimal` still works.
-- `pibo tui:routed run-yield-qa` starts without requiring `pibo gateway`.
+- `pibo tui codex-compat-openai-web` still works.
+- `pibo tui:routed codex` starts without requiring `pibo gateway`.
 - The agent sees generated subagent and run-control tools for routed profiles.
 - A tracked yielded subagent run can complete after the parent turn and notify the parent.
 - `pibo_run_read` returns the completed result.

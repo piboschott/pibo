@@ -16,7 +16,7 @@ Pibo is a minimal TypeScript wrapper around Pi Coding Agent. This file is a shor
 - Gateway transport exists in `src/gateway/` and can be started with `npm run gateway`.
 - A console gateway client exists through `npm run client -- <piboSessionId>`.
 - A parked gateway producer profile exists through `npm run tui:gateway`; it is not part of the default plugin registry.
-- A `run-yield-qa` profile exists for manual QA of yielded runs through the routed runtime.
+- A `codex` profile exists for manual QA of yielded runs through the routed runtime.
 - Core event contracts live in `src/core/events.ts`.
 - Execution events now include typed Pi session controls for current session metadata, session listing, fork candidates, fork, clone, tree navigation, and session switching.
 - Gateway transport examples live in `examples/gateway/`.

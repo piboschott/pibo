@@ -9,7 +9,7 @@ Debug the remaining live-rendering bug in Chat Web:
 - After the run finishes and the trace reloads/reprojects, the final order becomes correct.
 - Thinking spans and tool calls are currently much more stable; focus on assistant/model response ordering.
 
-Use this prompt with `pibo-minimal` in a new session:
+Use this prompt with `codex-compat-openai-web` in a new session:
 
 ```text
 Lese fünf Dateien deiner Wahl. Denke gut darüber nach, welche du liest, um dein Wissen zu maximieren über dieses Projekt. Denke. sinnvoll guck dir erst mal den Ordner an was für Dateien gibt es welche sind gute Kandidaten bewerte sie und dann fang an zu lesen
@@ -109,7 +109,7 @@ If the existing debug tab is on `4790` but the server is down, restart a fake-au
 
 ## Debug Plan
 
-1. In the existing authenticated Chat tab, create a new session with profile `pibo-minimal`.
+1. In the existing authenticated Chat tab, create a new session with profile `codex-compat-openai-web`.
 2. Send the prompt above through the UI.
 3. While it streams, record:
    - SSE `lastEventId` / frame ids for `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END`.

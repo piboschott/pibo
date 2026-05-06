@@ -344,7 +344,7 @@ test("chat web app maps authenticated users to chat sessions", async () => {
 		assert.match(session.session.id, /^ps_[0-9a-f-]{36}$/);
 		assert.equal(session.session.channel, "pibo.chat-web");
 		assert.equal(session.session.kind, "chat");
-		assert.equal(session.session.profile, "pibo-minimal");
+		assert.equal(session.session.profile, "codex-compat-openai-web");
 		assert.equal(session.session.ownerScope, "user:user-1");
 
 		const message = await fetch(`${baseURL}/api/chat/message`, {
@@ -993,8 +993,8 @@ test("chat web app creates sessions with selected agent profiles", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
 		profiles: [
-			{ name: "pibo-minimal", aliases: ["minimal"] },
-			{ name: "pibo-run-yield-qa", aliases: ["yield-qa"] },
+			{ name: "codex-compat-openai-web", aliases: ["codex"] },
+			{ name: "pibo-kimi-coding", aliases: ["kimi"] },
 		],
 	});
 
@@ -1006,11 +1006,11 @@ test("chat web app creates sessions with selected agent profiles", async () => {
 				origin: baseURL,
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "yield-qa" }),
+			body: JSON.stringify({ profile: "codex" }),
 		});
 		assert.equal(created.status, 201);
 		const payload = await created.json();
-		assert.equal(payload.session.profile, "pibo-run-yield-qa");
+		assert.equal(payload.session.profile, "codex-compat-openai-web");
 
 		const rejected = await fetch(`${baseURL}/api/chat/sessions`, {
 			method: "POST",
@@ -1031,7 +1031,7 @@ test("chat web app creates sessions with selected agent profiles", async () => {
 test("chat web app creates custom agents from the native capability catalog", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 	});
 
 	try {
@@ -1057,7 +1057,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 				builtinToolNames: ["read", "bash"],
 				autoContextFiles: false,
 				runControl: true,
-				subagents: [{ name: "helper", targetProfile: "pibo-minimal" }],
+				subagents: [{ name: "helper", targetProfile: "codex-compat-openai-web" }],
 			}),
 		});
 		assert.equal(createdAgent.status, 201);
@@ -1097,7 +1097,7 @@ test("chat web app creates custom agents from the native capability catalog", as
 test("chat web app surfaces broken custom agent context files and allows cleanup", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 		capabilityCatalog: {
 			nativeTools: [],
 			skills: [{ name: "pi-agent-harness", path: "skills/builtin/pi-agent-harness/SKILL.md", kind: "builtin" }],
@@ -1184,7 +1184,7 @@ test("chat web app manages Pi package registrations and custom agent selections"
 		}, cwd);
 		const { channel, baseURL } = await startWebHostChannel({
 			auth: createFakeAuthService(),
-			profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+			profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 		});
 
 		try {
@@ -1245,7 +1245,7 @@ test("chat web app manages Pi package registrations and custom agent selections"
 test("chat web app rejects non-pi.dev package sources from browser adds", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 	});
 
 	try {
@@ -1283,7 +1283,7 @@ test("chat web app exposes and updates MCP server descriptions", async () => {
 
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 	});
 
 	try {
@@ -1352,7 +1352,7 @@ test("chat web app exposes and updates MCP server descriptions", async () => {
 test("chat web app archives and permanently deletes custom agents with their sessions", async () => {
 	const { channel, baseURL, sessions } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 	});
 
 	try {
@@ -1382,7 +1382,7 @@ test("chat web app archives and permanently deletes custom agents with their ses
 		const childSession = sessions.create({
 			channel: "pibo.chat-web",
 			kind: "chat",
-			profile: "pibo-minimal",
+			profile: "codex-compat-openai-web",
 			ownerScope: "user:user-1",
 			parentId: sessionPayload.session.id,
 		});
@@ -1469,7 +1469,7 @@ test("chat web app archives and permanently deletes custom agents with their ses
 test("chat web app validates custom agent profile names", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
-		profiles: [{ name: "pibo-minimal", aliases: ["minimal"] }],
+		profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
 	});
 
 	try {
@@ -1492,10 +1492,10 @@ test("chat web app validates custom agent profile names", async () => {
 				origin: baseURL,
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ displayName: "pibo-minimal" }),
+			body: JSON.stringify({ displayName: "codex-compat-openai-web" }),
 		});
 		assert.equal(conflicting.status, 400);
-		assert.deepEqual(await conflicting.json(), { error: 'Agent name "pibo-minimal" conflicts with an existing profile' });
+		assert.deepEqual(await conflicting.json(), { error: 'Agent name "codex-compat-openai-web" conflicts with an existing profile' });
 	} finally {
 		await channel.stop?.();
 	}
@@ -1610,8 +1610,8 @@ test("chat web app changes session profiles only before the first trace event", 
 	const { channel, baseURL, emitOutput } = await startWebHostChannel({
 		auth: createFakeAuthService(),
 		profiles: [
-			{ name: "pibo-minimal", aliases: ["minimal"] },
-			{ name: "pibo-run-yield-qa", aliases: ["yield-qa"] },
+			{ name: "codex-compat-openai-web", aliases: ["codex"] },
+			{ name: "pibo-kimi-coding", aliases: ["kimi"] },
 		],
 	});
 
@@ -1623,7 +1623,7 @@ test("chat web app changes session profiles only before the first trace event", 
 				origin: baseURL,
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "minimal" }),
+			body: JSON.stringify({ profile: "codex" }),
 		});
 		assert.equal(created.status, 201);
 		const payload = await created.json();
@@ -1635,11 +1635,11 @@ test("chat web app changes session profiles only before the first trace event", 
 				origin: baseURL,
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "yield-qa" }),
+			body: JSON.stringify({ profile: "kimi" }),
 		});
 		assert.equal(changed.status, 200);
 		const changedPayload = await changed.json();
-		assert.equal(changedPayload.session.profile, "pibo-run-yield-qa");
+		assert.equal(changedPayload.session.profile, "pibo-kimi-coding");
 
 		emitOutput({
 			type: "assistant_message",
@@ -1655,7 +1655,7 @@ test("chat web app changes session profiles only before the first trace event", 
 				origin: baseURL,
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "minimal" }),
+			body: JSON.stringify({ profile: "codex" }),
 		});
 		assert.equal(rejected.status, 400);
 		assert.deepEqual(await rejected.json(), {
@@ -1686,7 +1686,7 @@ test("chat web app permanently deletes archived sessions with their child sessio
 		const childSession = sessions.create({
 			channel: "pibo.chat-web",
 			kind: "subagent",
-			profile: "pibo-minimal",
+			profile: "codex-compat-openai-web",
 			ownerScope: "user:user-1",
 			parentId: payload.session.id,
 		});
@@ -1762,7 +1762,7 @@ test("chat web app renders origin sessions as top-level sessions", async () => {
 		const origin = sessions.create({
 			channel: "pibo.chat-web",
 			kind: "branch",
-			profile: "pibo-minimal",
+			profile: "codex-compat-openai-web",
 			ownerScope: "user:user-1",
 			originId: rootPayload.session.id,
 		});
@@ -1845,7 +1845,7 @@ test("chat web app accepts same-origin mutations behind a local reverse proxy", 
 				"x-forwarded-proto": "http",
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "pibo-minimal" }),
+			body: JSON.stringify({ profile: "codex-compat-openai-web" }),
 		});
 		assert.equal(response.status, 201);
 		const payload = await response.json();

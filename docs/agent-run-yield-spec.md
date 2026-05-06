@@ -267,8 +267,8 @@ Example:
 
 ```text
 run_1 bash running
-run_2 pibo_subagent_qa_researcher completed
-run_3 pibo_subagent_qa_reviewer running
+run_2 pibo_subagent_explorer completed
+run_3 pibo_subagent_worker running
 ```
 
 The next automatic follow-up should provide a compact snapshot:
