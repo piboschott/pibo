@@ -460,14 +460,14 @@ function TerminalStreamingFooter() {
 
 function useWorkingScramble(target: string) {
 	const targetChars = useMemo(() => Array.from(target), [target]);
-	const [chars, setChars] = useState(() => targetChars);
+	const [chars, setChars] = useState(() => randomAsciiChars(targetChars.length));
 	const [activeIndex, setActiveIndex] = useState(0);
 
 	useEffect(() => {
 		let index = 0;
 		let rotationsRemaining = randomRotationCount();
 		let pauseTicks = 0;
-		setChars(targetChars);
+		setChars(randomAsciiChars(targetChars.length));
 
 		const interval = window.setInterval(() => {
 			if (pauseTicks > 0) {
@@ -478,7 +478,7 @@ function useWorkingScramble(target: string) {
 			if (index >= targetChars.length) {
 				index = 0;
 				rotationsRemaining = randomRotationCount();
-				setChars(targetChars);
+				setChars(randomAsciiChars(targetChars.length));
 				setActiveIndex(0);
 				return;
 			}
@@ -496,7 +496,7 @@ function useWorkingScramble(target: string) {
 			if (index >= targetChars.length) {
 				setChars(targetChars);
 				setActiveIndex(-1);
-				pauseTicks = 12;
+				pauseTicks = 18;
 			}
 		}, 55);
 
@@ -510,6 +510,10 @@ function replaceChar(chars: string[], index: number, char: string): string[] {
 	const next = [...chars];
 	next[index] = char;
 	return next;
+}
+
+function randomAsciiChars(length: number): string[] {
+	return Array.from({ length }, randomAsciiChar);
 }
 
 function randomAsciiChar(): string {
