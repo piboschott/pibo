@@ -20,11 +20,11 @@ Dev-auth belongs only to Docker workers. Never start the host gateway with dev-a
 The `pibo-web` gateway on this machine is a live service. Do not stop or restart it unless the user explicitly allows or requests it.
 
 ## Deployment
-Deploy host-level web changes to the dev gateway first with `./scripts/deploy-web-dev.sh`. This restarts only `pibo-web-dev.service` and targets `https://dev.pibo.neuralnexus.me` with real Better Auth/Google OAuth and isolated state under `/root/.pibo-dev`.
+Deploy host-level web changes to dev first: `./scripts/deploy-web-dev.sh` (`pibo-web-dev.service`, `https://dev.pibo.neuralnexus.me`, real Better Auth, isolated `/root/.pibo-dev`).
 
-Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh`. This restarts the main `pibo-web.service`, refreshes the stable fallback backup, and targets `https://pibo.neuralnexus.me`.
+Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh` (`pibo-web.service`, `https://pibo.neuralnexus.me`).
 
-Do not use production as the first host-level test target. Normal flow: Docker compute worker -> dev web gateway -> production web gateway.
+Normal flow: Docker compute worker -> dev web gateway -> production web gateway.
 
 ## Browser/App Debugging
 For Chat Web browser debugging while changing Pibo, start from a Docker compute worker when one is available. Use the worker's returned web/CDP ports for app checks so browser automation and gateway restarts stay isolated from the host service.

@@ -14,10 +14,10 @@ If you are unsure which workers are running, use `pibo compute list`.
 
 If you have recently changed code and need a fresh build, run `pibo compute rebuild` before `spawn`.
 
-After worker validation, use the dev web gateway for host-level Chat Web testing before production:
+After worker validation, deploy host-level Chat Web changes to dev first:
 
 ```bash
 ./scripts/deploy-web-dev.sh
 ```
 
-The dev gateway is `pibo-web-dev.service` at `https://dev.pibo.neuralnexus.me`, uses real Better Auth/Google OAuth, and stores state in `/root/.pibo-dev`. Use `./scripts/deploy-web.sh` only after dev testing succeeds and production deployment is approved.
+Use `./scripts/deploy-web.sh` only after dev testing succeeds and production deployment is approved.
