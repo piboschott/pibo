@@ -51,9 +51,10 @@ Das Gateway Fallback Recovery System stellt sicher, dass die Pibo Web App (`pibo
 
 - **Source**: `~/code/pibo` (aktiver Code)
 - **Ports**: TCP 4809 (Gateway), HTTP 4808 (Web App)
-- **PIBO_HOME**: `/root/.pibo-dev`
-- **Public Origin**: `https://dev.pibo.neuralnexus.me`
+- **PIBO_HOME**: `~/.pibo-dev`
+- **Public Origin**: `https://dev.pibo.neuralnexus.me` (`www.dev.pibo.neuralnexus.me` leitet dorthin weiter)
 - **Auth**: echte Better Auth/Google OAuth Konfiguration, kein Docker Dev Auth
+- **TLS**: Let's Encrypt Zertifikat für `dev.pibo.neuralnexus.me` und `www.dev.pibo.neuralnexus.me`
 - **Status**: `systemctl status pibo-web-dev.service`
 
 Nutze den Dev Gateway für Host-Level-Tests vor Production: `./scripts/deploy-web-dev.sh`.
@@ -213,7 +214,7 @@ systemctl cat pibo-web.service | grep OnFailure
 
 Prüfe die Upstream-Konfiguration:
 ```bash
-grep -A 5 "upstream pibo_web_backend" /etc/nginx/sites-available/pibo
+grep -A 5 "upstream pibo_web_backend" <nginx-config>/pibo
 ```
 
 ### Backup ist veraltet
@@ -246,9 +247,9 @@ journalctl -u pibo-web-fallback.service -n 50
 | `~/.pibo/stable/` | Backup-Source + Build |
 | `~/.pibo/gateway.pid` | PID des Main-Gateways |
 | `~/.pibo/gateway-fallback.pid` | PID des Fallback-Gateways |
-| `/etc/systemd/system/pibo-web.service` | Main Service Definition |
-| `/etc/systemd/system/pibo-web-fallback.service` | Fallback Service Definition |
-| `/etc/nginx/sites-available/pibo` | nginx Upstream-Config |
+| `<systemd-dir>/pibo-web.service` | Main Service Definition |
+| `<systemd-dir>/pibo-web-fallback.service` | Fallback Service Definition |
+| `<nginx-config>/pibo` | nginx Upstream-Config |
 | `src/gateway/backup.ts` | Backup-Logik (Code) |
 | `src/gateway/fallback.ts` | Fallback-Logik (Code) |
 | `src/web/channel.ts` | Health-Check Route (Code) |
