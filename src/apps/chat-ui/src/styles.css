@@ -73,49 +73,39 @@ pre {
 }
 
 .compact-terminal-working-binary {
-	display: inline-flex;
-	align-items: baseline;
-	gap: 0;
-	color: #737373;
+	display: inline-block;
+	width: 16ch;
+	color: transparent;
 	font-size: 0.92em;
 	letter-spacing: -0.04em;
 	vertical-align: baseline;
+	background: linear-gradient(
+		90deg,
+		#737373 0%,
+		#737373 20%,
+		#22c55e 36%,
+		#d4d4d4 50%,
+		#22c55e 64%,
+		#737373 80%,
+		#737373 100%
+	);
+	background-size: 24ch 100%;
+	background-position: -12ch 0;
+	-webkit-background-clip: text;
+	background-clip: text;
+	text-shadow: 0 0 5px rgba(34, 197, 94, 0.12);
+	animation: compact-terminal-working-binary 1.65s linear infinite;
 }
-
-.compact-terminal-working-binary > span {
-	display: inline-block;
-	opacity: 0.24;
-	animation: compact-terminal-working-binary 1.6s steps(1, end) infinite;
-}
-
-.compact-terminal-working-binary > span:nth-child(2) { animation-delay: 0.08s; }
-.compact-terminal-working-binary > span:nth-child(3) { animation-delay: 0.16s; }
-.compact-terminal-working-binary > span:nth-child(4) { animation-delay: 0.24s; }
-.compact-terminal-working-binary > span:nth-child(5) { animation-delay: 0.32s; }
-.compact-terminal-working-binary > span:nth-child(6) { animation-delay: 0.40s; }
-.compact-terminal-working-binary > span:nth-child(7) { animation-delay: 0.48s; }
-.compact-terminal-working-binary > span:nth-child(8) { animation-delay: 0.56s; }
-.compact-terminal-working-binary > span:nth-child(9) { animation-delay: 0.64s; }
-.compact-terminal-working-binary > span:nth-child(10) { animation-delay: 0.72s; }
-.compact-terminal-working-binary > span:nth-child(11) { animation-delay: 0.80s; }
-.compact-terminal-working-binary > span:nth-child(12) { animation-delay: 0.88s; }
-.compact-terminal-working-binary > span:nth-child(13) { animation-delay: 0.96s; }
-.compact-terminal-working-binary > span:nth-child(14) { animation-delay: 1.04s; }
-.compact-terminal-working-binary > span:nth-child(15) { animation-delay: 1.12s; }
-.compact-terminal-working-binary > span:nth-child(16) { animation-delay: 1.20s; }
 
 @keyframes compact-terminal-working-binary {
-	0%, 100% { opacity: 0.22; color: #737373; text-shadow: none; }
-	20% { opacity: 1; color: #d4d4d4; text-shadow: 0 0 5px rgba(212, 212, 212, 0.22); }
-	40% { opacity: 0.58; color: #22c55e; text-shadow: 0 0 4px rgba(34, 197, 94, 0.18); }
-	60% { opacity: 0.28; color: #737373; text-shadow: none; }
+	to { background-position: 12ch 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.compact-terminal-working-binary > span {
+	.compact-terminal-working-binary {
 		animation: none;
-		opacity: 0.7;
 		color: #d4d4d4;
+		background: none;
 		text-shadow: none;
 	}
 }
