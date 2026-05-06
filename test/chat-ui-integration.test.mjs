@@ -39,6 +39,39 @@ function nodeLabels(nodes) {
 	return nodes.flatMap((node) => [node.title, ...nodeLabels(node.children ?? [])]);
 }
 
+test("live event patching preserves transcript history", () => {
+	const baseView = buildTraceViewFromEvents({
+		session: { id: "chat:test", piSessionId: "pi-test" },
+		status: "running",
+		transcriptEntries: [
+			{
+				id: "entry-user-1",
+				type: "message",
+				timestamp: "2026-04-29T08:00:00.000Z",
+				message: { role: "user", content: [{ type: "text", text: "first" }] },
+			},
+			{
+				id: "entry-assistant-1",
+				type: "message",
+				timestamp: "2026-04-29T08:00:02.000Z",
+				message: { role: "assistant", content: [{ type: "text", text: "answer" }], stopReason: "stop" },
+			},
+		],
+		events: [],
+		includeRawEvents: true,
+	});
+
+	const patched = applyLiveEvents(baseView, [
+		createEvent({ seq: 1, type: "message_started", payload: { type: "message_started", eventId: "turn-2", text: "second", source: "user" } }),
+		createEvent({ seq: 2, type: "assistant_delta", streamFrameIndex: 1, payload: { type: "assistant_delta", eventId: "turn-2", text: "live" } }),
+	]);
+
+	const nodes = flatNodes(patched);
+	assert.ok(nodes.some((node) => node.type === "user.message" && node.output === "first"));
+	assert.ok(nodes.some((node) => node.type === "assistant.message" && node.output === "answer"));
+	assert.ok(nodes.some((node) => node.type === "assistant.message" && node.output === "live"));
+});
+
 test("execution commands are sorted by wall-clock time among persisted transcript nodes", () => {
 	const view = buildTraceViewFromEvents({
 		session: { id: "chat:test", piSessionId: "pi-test" },

@@ -48,7 +48,7 @@ import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOri
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
 import { parseTraceStreamFrameId } from "../../../shared/trace-order.js";
-import { buildTraceViewFromEvents, latestTraceStreamId } from "../../../shared/trace-engine.js";
+import { patchTraceViewWithEvent } from "../../../shared/trace-engine.js";
 import { applyTraceLiveEvents } from "./traceLiveReducer";
 import { ContextFilesView } from "./context/ContextFilesView";
 import { BasePromptView } from "./context/BasePromptView";
@@ -1307,7 +1307,7 @@ function SessionTracePane({
 	const pendingStreamEventsBySession = useRef(new Map<string, ChatStreamEvent[]>());
 	const pendingStreamFrame = useRef<number | undefined>(undefined);
 	const liveEventSeqRef = useRef(0);
-	const [selectedTraceEvents, setSelectedTraceEvents] = useState<SelectedTraceEvents | null>(null);
+	const [liveTraceOverlay, setLiveTraceOverlay] = useState<LiveTraceOverlay | null>(null);
 	const traceQueryKey = useMemo(
 		() =>
 			selectedPiboSessionId
@@ -1330,56 +1330,39 @@ function SessionTracePane({
 		retry: 1,
 	});
 
-	// Reset selected trace events when trace query data changes (initial load or refresh).
+	// Keep the complete server-built trace as the canonical base. Raw events are only a
+	// bounded debug/live tail, so using them as the full render source truncates history.
 	useEffect(() => {
-		if (traceQuery.data) {
-			setSelectedTraceEvents({
-				piboSessionId: traceQuery.data.piboSessionId,
-				events: traceQuery.data.rawEvents,
-			});
-			const maxSeq = traceQuery.data.rawEvents
-				.map((e) => e.eventSequence ?? 0)
-				.reduce((a, b) => Math.max(a, b), 0);
-			liveEventSeqRef.current = Math.max(liveEventSeqRef.current, maxSeq + 1);
-		}
+		if (!traceQuery.data) return;
+		const maxSeq = traceQuery.data.rawEvents
+			.map((e) => e.eventSequence ?? 0)
+			.reduce((a, b) => Math.max(a, b), 0);
+		liveEventSeqRef.current = Math.max(liveEventSeqRef.current, maxSeq + 1);
+		setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, traceQuery.data));
 	}, [traceQuery.data]);
 
 	const currentTraceView = useMemo(() => {
-		const queriedEvents = traceQuery.data?.piboSessionId === selectedPiboSessionId
-			? traceQuery.data.rawEvents
-			: undefined;
-		const allEvents = selectedTraceEvents?.piboSessionId === selectedPiboSessionId
-			? selectedTraceEvents.events
-			: queriedEvents;
-		if (!selectedPiboSessionId || !bootstrap || !allEvents?.length) {
-			return traceQuery.data?.piboSessionId === selectedPiboSessionId ? traceQuery.data : null;
-		}
+		if (!selectedPiboSessionId || !bootstrap) return null;
+		if (traceQuery.data?.piboSessionId !== selectedPiboSessionId) return null;
 		const sessionStatus = bootstrap.sessions.find((s) => s.piboSessionId === selectedPiboSessionId)?.status ?? "idle";
-		const liveTrace = buildTraceViewFromEvents({
-			session: {
-				id: selectedPiboSessionId,
-				piSessionId: traceQuery.data?.piSessionId ?? bootstrap.session.piSessionId,
-				title: traceQuery.data?.title ?? bootstrap.session.title ?? "Untitled",
-			},
-			events: allEvents,
-			status: sessionStatus,
-			latestStreamId: latestTraceStreamId(allEvents, traceQuery.data?.latestStreamId),
-			includeRawEvents: true,
-			rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT,
-		});
-		annotateLiveTraceForkEntryIds(liveTrace.nodes, traceQuery.data?.nodes ?? []);
+		const overlayEvents = liveTraceOverlay?.piboSessionId === selectedPiboSessionId
+			? liveTraceOverlay.events
+			: [];
+		if (!overlayEvents.length) return traceQuery.data;
+		const liveTrace = patchTraceViewWithEvents(traceQuery.data, overlayEvents, sessionStatus);
+		annotateLiveTraceForkEntryIds(liveTrace.nodes, traceQuery.data.nodes);
 		return liveTrace;
-	}, [selectedTraceEvents, selectedPiboSessionId, bootstrap, traceQuery.data]);
+	}, [liveTraceOverlay, selectedPiboSessionId, bootstrap, traceQuery.data]);
 
 	const flushPendingStreamEvents = useCallback((piboSessionId: string) => {
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId);
 		if (!pending?.length) return;
-		setSelectedTraceEvents((current) => {
-			if (current?.piboSessionId !== piboSessionId) return current;
+		setLiveTraceOverlay((current) => {
+			const currentEvents = current?.piboSessionId === piboSessionId ? current.events : [];
 			return {
 				piboSessionId,
 				events: applyTraceLiveEvents({
-					currentEvents: current.events,
+					currentEvents,
 					streamEvents: pending,
 					piboSessionId,
 					nextSequence: () => liveEventSeqRef.current++,
@@ -1649,6 +1632,23 @@ function SessionTracePane({
 			) : null}
 		</>
 	);
+}
+
+function patchTraceViewWithEvents(
+	view: PiboSessionTraceView,
+	events: ChatWebStoredEvent[],
+	sessionStatus: PiboWebSessionNode["status"],
+): PiboSessionTraceView {
+	return events.reduce((current, event) => patchTraceViewWithEvent(current, event, sessionStatus), view);
+}
+
+function trimLiveOverlayForBaseTrace(overlay: LiveTraceOverlay | null, baseTrace: PiboSessionTraceView): LiveTraceOverlay | null {
+	if (!overlay || overlay.piboSessionId !== baseTrace.piboSessionId) return overlay;
+	const latestStreamId = baseTrace.latestStreamId;
+	const events = latestStreamId === undefined
+		? overlay.events
+		: overlay.events.filter((event) => event.streamId === undefined || event.streamId > latestStreamId);
+	return events.length ? { ...overlay, events } : null;
 }
 
 function errorMessage(caught: unknown): string {
@@ -5111,7 +5111,7 @@ function PiPackageManagementCard({
 
 type RawEvent = PiboSessionTraceView["rawEvents"][number];
 type CompactRawEvent = RawEvent & { count: number };
-type SelectedTraceEvents = {
+type LiveTraceOverlay = {
 	piboSessionId: string;
 	events: ChatWebStoredEvent[];
 };
