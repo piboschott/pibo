@@ -62,6 +62,7 @@ test("chat event log counts only completed assistant messages as unread", () => 
 			0,
 		);
 
+		log.appendOutputEvent({ type: "assistant_message", piboSessionId: "ps_1", eventId: "turn-1", text: "final duplicate" }, { roomId: "room_1", actorId: "assistant" });
 		log.appendOutputEvent({ type: "message_finished", piboSessionId: "ps_1", eventId: "turn-1" }, { roomId: "room_1", actorId: "assistant" });
 		assert.equal(
 			log.countUnreadMessages({
@@ -82,6 +83,43 @@ test("chat event log counts only completed assistant messages as unread", () => 
 				afterStreamId: log.getSessionReadCursor("ps_1", "user:1") ?? 0,
 			}),
 			0,
+		);
+	} finally {
+		log.close();
+	}
+});
+
+test("chat event log correlates legacy typed turn ids for unread counts", () => {
+	const log = new ChatEventLog(":memory:");
+	try {
+		log.appendEvent({
+			roomId: "room_1",
+			piboSessionId: "ps_1",
+			eventId: "pibo:ps_1:turn-legacy:assistant_message",
+			eventType: "assistant_message",
+			actorType: "assistant",
+			actorId: "assistant",
+			retentionClass: "chat_message",
+			payload: { type: "assistant_message", piboSessionId: "ps_1", eventId: "turn-legacy", text: "done" },
+		});
+		log.appendEvent({
+			roomId: "room_1",
+			piboSessionId: "ps_1",
+			eventId: "pibo:ps_1:turn-legacy:message_finished",
+			eventType: "message_finished",
+			actorType: "assistant",
+			actorId: "assistant",
+			retentionClass: "trace_event",
+			payload: { type: "message_finished", piboSessionId: "ps_1", eventId: "turn-legacy" },
+		});
+
+		assert.equal(
+			log.countUnreadMessages({
+				piboSessionId: "ps_1",
+				principalId: "user:1",
+				afterStreamId: 0,
+			}),
+			1,
 		);
 	} finally {
 		log.close();

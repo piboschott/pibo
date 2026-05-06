@@ -296,6 +296,13 @@ export class ChatEventLog {
 	}
 
 	countUnreadMessages(input: ChatUnreadCountInput): number {
+		const assistantTurnId = `
+			CASE
+				WHEN event_id LIKE '%:assistant_message'
+					THEN substr(event_id, 1, length(event_id) - length(':assistant_message'))
+				ELSE event_id
+			END
+		`;
 		const clauses: string[] = [
 			"retention_class = 'chat_message'",
 			`(
@@ -306,8 +313,11 @@ export class ChatEventLog {
 					AND EXISTS (
 						SELECT 1 FROM chat_events done
 						WHERE done.pibo_session_id = chat_events.pibo_session_id
-							AND done.event_id = chat_events.event_id
 							AND done.event_type = 'message_finished'
+							AND (
+								done.event_id = ${assistantTurnId}
+								OR done.event_id = ${assistantTurnId} || ':message_finished'
+							)
 					)
 				)
 			)`,
@@ -327,7 +337,14 @@ export class ChatEventLog {
 			values.push(input.afterStreamId);
 		}
 		const row = this.db
-			.prepare(`SELECT COUNT(*) AS count FROM chat_events WHERE ${clauses.join(" AND ")}`)
+			.prepare(`
+				SELECT COUNT(DISTINCT CASE
+					WHEN event_type = 'assistant_message' THEN pibo_session_id || ':' || ${assistantTurnId}
+					ELSE 'stream:' || stream_id
+				END) AS count
+				FROM chat_events
+				WHERE ${clauses.join(" AND ")}
+			`)
 			.get(...values) as { count: number } | undefined;
 		return Number(row?.count ?? 0);
 	}
