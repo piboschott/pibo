@@ -148,5 +148,5 @@ const expandedText = expandInlineSkills(
 
 1. **Frontend:** `App.tsx` Composer-Logik anpassen.
 2. **Backend:** `skill-expansion.ts` erstellen und in `routed-session.ts` integrieren.
-3. **Testen:** Typecheck (`npm run chat-ui:typecheck`), Build (`npm run build`), Deploy (`scripts/deploy-web.sh`).
+3. **Testen:** Typecheck (`npm run chat-ui:typecheck`), Build (`npm run build`), Dev-Deploy (`scripts/deploy-web-dev.sh`). Production-Deploy (`scripts/deploy-web.sh`) erst nach Freigabe.
 4. **Validierung:** Im Browser testen, dass `$` überall im Text funktioniert und mehrere Skills expandiert werden.

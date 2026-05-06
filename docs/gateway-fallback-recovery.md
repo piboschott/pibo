@@ -47,7 +47,18 @@ Das Gateway Fallback Recovery System stellt sicher, dass die Pibo Web App (`pibo
 - **PID-File**: `~/.pibo/gateway.pid`
 - **Status**: `systemctl status pibo-web.service`
 
-### 2. Fallback Gateway (`pibo-web-fallback.service`)
+### 2. Dev Gateway (`pibo-web-dev.service`)
+
+- **Source**: `~/code/pibo` (aktiver Code)
+- **Ports**: TCP 4809 (Gateway), HTTP 4808 (Web App)
+- **PIBO_HOME**: `/root/.pibo-dev`
+- **Public Origin**: `https://dev.pibo.neuralnexus.me`
+- **Auth**: echte Better Auth/Google OAuth Konfiguration, kein Docker Dev Auth
+- **Status**: `systemctl status pibo-web-dev.service`
+
+Nutze den Dev Gateway für Host-Level-Tests vor Production: `./scripts/deploy-web-dev.sh`.
+
+### 3. Fallback Gateway (`pibo-web-fallback.service`)
 
 - **Source**: `~/.pibo/stable/` (isolierter Backup-Build)
 - **Ports**: TCP 4790 (Gateway), HTTP 4791 (Web App)
@@ -55,7 +66,7 @@ Das Gateway Fallback Recovery System stellt sicher, dass die Pibo Web App (`pibo
 - **Status**: `systemctl status pibo-web-fallback.service`
 - **Start-Trigger**: `OnFailure=pibo-web-fallback.service` auf `pibo-web.service`
 
-### 3. nginx Upstream-Backup
+### 4. nginx Upstream-Backup
 
 ```nginx
 upstream pibo_web_backend {
@@ -70,7 +81,7 @@ proxy_pass http://pibo_web_backend;
 
 Wenn Port 4788 nicht mehr antwortet, routet nginx automatisch auf 4791.
 
-### 4. Health-Check Endpunkt
+### 5. Health-Check Endpunkt
 
 Sowohl Main als auch Fallback liefern auf `/health`:
 
@@ -153,6 +164,7 @@ pibo gateway restart
 
 | Service | Beschreibung | Command |
 |---------|-------------|---------|
+| `pibo-web-dev.service` | Dev-Gateway | `systemctl status pibo-web-dev.service` |
 | `pibo-web.service` | Haupt-Gateway | `systemctl status pibo-web.service` |
 | `pibo-web-fallback.service` | Fallback-Gateway | `systemctl status pibo-web-fallback.service` |
 

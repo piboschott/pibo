@@ -75,6 +75,7 @@ Noch **nicht** durchgeführt. Sollte folgendes abdecken:
 3. **Cleanup**
    - `git diff` reviewen
    - Commit erstellen
-   - `deploy-web.sh` final ausführen (Service braucht manchmal >30s bis Port 4788 erreichbar ist)
+   - zuerst `deploy-web-dev.sh` ausführen und auf dem Dev Gateway validieren
+   - `deploy-web.sh` final erst nach Freigabe ausführen (Service braucht manchmal >30s bis Port 4788 erreichbar ist)
 
 ---

@@ -186,7 +186,7 @@ Da `postAction` eine `piboSessionId` braucht, nutzt das Settings-Panel die **akt
 ### Phase 3: Integration & Deploy (30 min)
 1. `SettingsView` um `providers`-Panel erweitern
 2. Build + Typecheck
-3. Deploy via `scripts/deploy-web.sh`
+3. Deploy to dev via `scripts/deploy-web-dev.sh`; deploy production via `scripts/deploy-web.sh` only after dev validation and approval
 
 ---
 

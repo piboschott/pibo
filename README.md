@@ -272,6 +272,8 @@ http://4788.192.168.0.204.sslip.io/api/auth/callback/google
 
 Google OAuth redirect URIs are exact per instance. Wildcard or "all deployments" redirects are not supported for this web-server flow, so each self-hosted deployment needs its own Google OAuth client or an explicitly configured redirect URI.
 
+The hosted Pibo server has a dev web gateway for staging changes before production. It runs real Better Auth/Google OAuth at `https://dev.pibo.neuralnexus.me`, with isolated state under `/root/.pibo-dev`. Use `./scripts/deploy-web-dev.sh` for this gateway. Use `./scripts/deploy-web.sh` only after dev testing succeeds and production deployment is approved. See [Dev Web Gateway](./docs/dev-web-gateway.md).
+
 Required config values:
 
 ```bash
