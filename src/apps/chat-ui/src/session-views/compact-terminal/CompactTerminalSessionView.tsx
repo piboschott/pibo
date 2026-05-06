@@ -432,15 +432,94 @@ function isInteractiveEventTarget(event: MouseEvent<HTMLElement> | KeyboardEvent
 	return Boolean(interactiveTarget && interactiveTarget !== event.currentTarget);
 }
 
+const WORKING_SCRAMBLE_TARGET = "Working...";
+const WORKING_SCRAMBLE_ASCII_START = 33;
+const WORKING_SCRAMBLE_ASCII_END = 126;
+
 function TerminalStreamingFooter() {
+	const { chars, activeIndex } = useWorkingScramble(WORKING_SCRAMBLE_TARGET);
+
 	return (
 		<div className="border-t border-[#141414] px-4 py-2" role="status" aria-live="polite" aria-label="Working">
 			<div className="grid grid-cols-[1.9rem_minmax(0,1fr)] gap-2 whitespace-pre-wrap break-words">
-				<span className="whitespace-pre text-[#0bda57]">•</span>
-				<span className="compact-terminal-working-binary" aria-hidden="true">0101101001101011</span>
+				<span className="whitespace-pre text-[#737373]">•</span>
+				<span className="compact-terminal-working-scramble" aria-hidden="true">
+					{chars.map((char, index) => (
+						<span
+							key={index}
+							className={index === activeIndex ? "compact-terminal-working-scramble-active" : undefined}
+						>
+							{char}
+						</span>
+					))}
+				</span>
 			</div>
 		</div>
 	);
+}
+
+function useWorkingScramble(target: string) {
+	const [chars, setChars] = useState(() => randomAsciiChars(target.length));
+	const [activeIndex, setActiveIndex] = useState(0);
+
+	useEffect(() => {
+		let index = 0;
+		let rotationsRemaining = randomRotationCount();
+		let pauseTicks = 0;
+
+		const interval = window.setInterval(() => {
+			if (pauseTicks > 0) {
+				pauseTicks--;
+				return;
+			}
+
+			if (index >= target.length) {
+				index = 0;
+				rotationsRemaining = randomRotationCount();
+				setChars(randomAsciiChars(target.length));
+				setActiveIndex(0);
+				return;
+			}
+
+			setActiveIndex(index);
+			if (rotationsRemaining > 0) {
+				setChars((current) => replaceChar(current, index, randomAsciiChar()));
+				rotationsRemaining--;
+				return;
+			}
+
+			setChars((current) => replaceChar(current, index, target[index] ?? " "));
+			index++;
+			rotationsRemaining = randomRotationCount();
+			if (index >= target.length) {
+				setActiveIndex(-1);
+				pauseTicks = 12;
+			}
+		}, 55);
+
+		return () => window.clearInterval(interval);
+	}, [target]);
+
+	return { chars, activeIndex };
+}
+
+function replaceChar(chars: string[], index: number, char: string): string[] {
+	const next = [...chars];
+	next[index] = char;
+	return next;
+}
+
+function randomAsciiChars(length: number): string[] {
+	return Array.from({ length }, randomAsciiChar);
+}
+
+function randomAsciiChar(): string {
+	const code = WORKING_SCRAMBLE_ASCII_START + Math.floor(Math.random() * (WORKING_SCRAMBLE_ASCII_END - WORKING_SCRAMBLE_ASCII_START + 1));
+	return String.fromCharCode(code);
+}
+
+function randomRotationCount(): number {
+	return 3 + Math.floor(Math.random() * 8);
 }
 
 function TerminalCompactionLine() {
