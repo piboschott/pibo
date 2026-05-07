@@ -1473,7 +1473,7 @@ function resolveCreateSessionProfile(
 }
 
 function indexOwnedSessions(readModel: ChatWebReadModel, sessions: PiboSession[]): void {
-	for (const session of sessions) readModel.upsertSession(session);
+	readModel.upsertSessionsIfChanged(sessions);
 }
 
 function markSessionsRead(state: ChatWebAppState, sessions: PiboSession[], principalId: string): void {
