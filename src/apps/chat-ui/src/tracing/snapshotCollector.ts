@@ -46,7 +46,7 @@ function getBuffer(piboSessionId: string): SessionSnapshotBuffer {
 	return buffer;
 }
 
-function isEnabled(): boolean {
+export function isTraceSnapshotCollectionEnabled(): boolean {
 	try {
 		return localStorage.getItem("pibo.chat.traceDebug") === "true";
 	} catch {
@@ -97,7 +97,7 @@ export function collectSnapshot(partial: {
 	latestStreamId?: number;
 	lastRawEventId?: string;
 }): void {
-	if (!isEnabled()) return;
+	if (!isTraceSnapshotCollectionEnabled()) return;
 	const buffer = getBuffer(partial.piboSessionId);
 	if (buffer.pendingTimer) {
 		clearTimeout(buffer.pendingTimer);

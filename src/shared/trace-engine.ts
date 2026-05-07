@@ -161,9 +161,9 @@ export function buildTraceViewFromEvents(input: TraceBuildInput): PiboSessionTra
 		latestStreamId: latestTraceStreamId(events, input.latestStreamId),
 		nodes: nestedNodes,
 		rawEvents:
-			input.includeRawEvents === false
-				? []
-				: events.slice(-(input.rawEventsLimit ?? events.length)),
+			input.includeRawEvents === true
+				? events.slice(-(input.rawEventsLimit ?? events.length))
+				: [],
 	};
 }
 
@@ -346,13 +346,72 @@ export function patchTraceViewWithEvent(
 
 	const nestedNodes = nestTraceNodes(allNodes);
 	reconcileAsyncAgentRunStatuses(nestedNodes);
+	const sharedNodes = shareUnchangedTraceNodes(view.nodes, nestedNodes);
 
 	return {
 		...view,
 		rawEvents: [...view.rawEvents, event],
-		nodes: nestedNodes,
+		nodes: sharedNodes,
 		latestStreamId: latestTraceStreamId([event], view.latestStreamId),
 	};
+}
+
+function shareUnchangedTraceNodes(
+	previousNodes: readonly PiboTraceNode[],
+	nextNodes: readonly PiboTraceNode[],
+): PiboTraceNode[] {
+	const previousById = mapTraceNodesById(previousNodes as PiboTraceNode[]);
+	return nextNodes.map((node) => shareUnchangedTraceNode(previousById, node));
+}
+
+function shareUnchangedTraceNode(
+	previousById: ReadonlyMap<string, PiboTraceNode>,
+	nextNode: PiboTraceNode,
+): PiboTraceNode {
+	const previousNode = previousById.get(nextNode.id);
+	const sharedChildren = nextNode.children.map((child) => shareUnchangedTraceNode(previousById, child));
+	const childrenUnchanged =
+		previousNode !== undefined &&
+		previousNode.children.length === sharedChildren.length &&
+		previousNode.children.every((child, index) => child === sharedChildren[index]);
+
+	if (previousNode && childrenUnchanged && traceNodeShallowEqual(previousNode, nextNode)) {
+		return previousNode;
+	}
+
+	return childrenUnchanged ? { ...nextNode, children: previousNode?.children ?? sharedChildren } : { ...nextNode, children: sharedChildren };
+}
+
+function traceNodeShallowEqual(left: PiboTraceNode, right: PiboTraceNode): boolean {
+	return (
+		left.id === right.id &&
+		left.parentId === right.parentId &&
+		left.entryId === right.entryId &&
+		left.piboSessionId === right.piboSessionId &&
+		left.eventId === right.eventId &&
+		left.toolCallId === right.toolCallId &&
+		left.runId === right.runId &&
+		left.type === right.type &&
+		left.title === right.title &&
+		left.status === right.status &&
+		left.startedAt === right.startedAt &&
+		left.completedAt === right.completedAt &&
+		left.durationMs === right.durationMs &&
+		left.summary === right.summary &&
+		left.input === right.input &&
+		left.output === right.output &&
+		left.error === right.error &&
+		left.linkedPiboSessionId === right.linkedPiboSessionId &&
+		left.source === right.source &&
+		left.stableKey === right.stableKey &&
+		traceOrderKeyEqual(left.orderKey, right.orderKey)
+	);
+}
+
+function traceOrderKeyEqual(left: PiboTraceNode["orderKey"], right: PiboTraceNode["orderKey"]): boolean {
+	if (left === right) return true;
+	if (!left || !right) return false;
+	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function dedupeTraceEvents<T extends ChatWebStoredEvent>(events: readonly T[]): T[] {

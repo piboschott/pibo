@@ -44,7 +44,7 @@ import { THINKING_LEVELS } from "./types";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, PiboRoom, PiboSession, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { adaptTrace } from "./tracing/adapt";
-import { collectBackendNodes } from "./tracing/snapshotCollector";
+import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { countRender } from "./renderMetrics";
@@ -1725,7 +1725,7 @@ function SessionTracePane({
 
 	useEffect(() => {
 		const handleVisibilityChange = () => {
-			if (!currentTraceView?.piboSessionId) return;
+			if (!currentTraceView?.piboSessionId || !isTraceSnapshotCollectionEnabled()) return;
 			collectBackendNodes(currentTraceView.piboSessionId, `tab:${document.visibilityState}`, currentTraceView.nodes, {
 				traceVersion: currentTraceView.version,
 				latestStreamId: currentTraceView.latestStreamId,

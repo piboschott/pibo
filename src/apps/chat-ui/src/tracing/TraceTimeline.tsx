@@ -6,7 +6,7 @@ import type { Span, Trace } from "../types";
 import { countRender } from "../renderMetrics";
 import { TraceSpanCard, type SpanExpansionDepth } from "./SpanNode";
 import { processSpanTree } from "./traceTree";
-import { collectVisibleRows } from "./snapshotCollector";
+import { collectVisibleRows, isTraceSnapshotCollectionEnabled } from "./snapshotCollector";
 
 type TraceTimelineProps = {
 	trace: Trace | null;
@@ -115,7 +115,7 @@ export function TraceTimeline({
 	const isStreaming = trace?.status === "UNSET";
 	const visibleRows = useMemo(() => {
 		const rows = flattenVisibleSpans(spanTree, expansionDepth, expandThinking, expansionOverrides);
-		if (trace?.id) {
+		if (trace?.id && isTraceSnapshotCollectionEnabled()) {
 			collectVisibleRows(
 				trace.id,
 				`render:${trace.status ?? "unknown"}`,
