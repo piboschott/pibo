@@ -62,6 +62,8 @@ export {
 
 type SessionMetadata = {
 	sessionPath?: string;
+	sessionSize?: number;
+	sessionMtimeMs?: number;
 	name?: string;
 	firstMessage?: string;
 	modified?: string;
@@ -89,8 +91,19 @@ export async function loadPiSessionMetadata(
 
 function metadataFromPiSession(piSession: PiboSessionListItem | undefined): SessionMetadata {
 	if (!piSession) return {};
+	let sessionSize: number | undefined;
+	let sessionMtimeMs: number | undefined;
+	try {
+		const stats = statSync(piSession.path);
+		sessionSize = stats.size;
+		sessionMtimeMs = stats.mtimeMs;
+	} catch {
+		// The session list can contain a file that was removed before trace rendering.
+	}
 	return {
 		sessionPath: piSession.path,
+		sessionSize,
+		sessionMtimeMs,
 		name: piSession.name,
 		firstMessage: piSession.firstMessage,
 		modified: piSession.modified,
@@ -246,6 +259,9 @@ export function createTraceViewVersion(input: {
 					updatedAt: input.session.updatedAt,
 				},
 				metadata: {
+					sessionPath: input.metadata?.sessionPath ?? null,
+					sessionSize: input.metadata?.sessionSize ?? null,
+					sessionMtimeMs: input.metadata?.sessionMtimeMs ?? null,
 					name: input.metadata?.name ?? null,
 					firstMessage: input.metadata?.firstMessage ?? null,
 					modified: input.metadata?.modified ?? null,
