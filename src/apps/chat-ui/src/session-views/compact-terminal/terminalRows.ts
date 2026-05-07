@@ -51,6 +51,7 @@ export type CompactTerminalRow = {
 	id: string;
 	kind: CompactTerminalRowKind;
 	status: CompactTerminalRowStatus;
+	errorKind?: "tool" | "system";
 	lines: CompactTerminalLine[];
 	sourceNodeIds: string[];
 	eventId?: string;
@@ -228,6 +229,7 @@ function createToolRowCandidate(node: PiboTraceNode, turnId?: string): RowCandid
 		id: node.id,
 		kind: "tool.call",
 		status: mapStatus(node.status),
+		errorKind: node.status === "error" ? "tool" : undefined,
 		lines: [
 			{
 				prefix: "bullet",
@@ -255,6 +257,7 @@ function createToolResultRow(node: PiboTraceNode): CompactTerminalRow {
 		id: node.id,
 		kind: "tool.call",
 		status: mapStatus(node.status),
+		errorKind: node.status === "error" ? "tool" : undefined,
 		lines: [
 			{
 				prefix: "bullet",
@@ -473,6 +476,7 @@ function createCommandToolRow(node: PiboTraceNode, command: string): CompactTerm
 		id: node.id,
 		kind: "execution.command",
 		status: mapStatus(node.status),
+		errorKind: node.status === "error" ? "tool" : undefined,
 		lines: [
 			{
 				prefix: "bullet",
@@ -493,6 +497,7 @@ function createErrorRow(node: PiboTraceNode): CompactTerminalRow {
 		id: node.id,
 		kind: "error",
 		status: "error",
+		errorKind: "system",
 		lines: [
 			{
 				prefix: "bullet",
@@ -552,6 +557,7 @@ function createExploringGroup(candidates: readonly RowCandidate[]): CompactTermi
 		id: `group:exploring:${firstId}:${lastId}`,
 		kind: "tool.group.exploring",
 		status,
+		errorKind: status === "error" ? "tool" : undefined,
 		lines: [
 			{
 				prefix: "bullet",

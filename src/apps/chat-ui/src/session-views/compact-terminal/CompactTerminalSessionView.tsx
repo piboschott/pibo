@@ -47,7 +47,8 @@ export function CompactTerminalSessionView({
 	const runningCount = rows.filter((row) => row.status === "running").length;
 	const signalActiveDescendantCount = (selectedSessionSignal?.activeChildren.length ?? 0) + (selectedSessionSignal?.activeRuns.length ?? 0);
 	const workingPhase = selectedSessionSignal?.phase;
-	const errorCount = rows.filter((row) => row.status === "error").length;
+	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
+	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
 	const signalWorking = selectedSessionSignal?.isTreeActive ?? false;
 	const isStreaming = signalWorking || selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
 
@@ -97,6 +98,7 @@ export function CompactTerminalSessionView({
 				isLoading={isLoading}
 				runningCount={runningCount}
 				errorCount={errorCount}
+				toolErrorCount={toolErrorCount}
 				workingPhase={workingPhase}
 				activeDescendantCount={signalActiveDescendantCount}
 				sessionAgentProfile={sessionAgentProfile}
@@ -164,6 +166,7 @@ function TerminalHeader({
 	isLoading,
 	runningCount,
 	errorCount,
+	toolErrorCount,
 	workingPhase,
 	activeDescendantCount,
 	sessionAgentProfile,
@@ -176,6 +179,7 @@ function TerminalHeader({
 	isLoading: boolean;
 	runningCount: number;
 	errorCount: number;
+	toolErrorCount: number;
 	workingPhase?: string;
 	activeDescendantCount: number;
 	sessionAgentProfile?: string;
@@ -193,6 +197,7 @@ function TerminalHeader({
 				{runningCount > 0 ? <TerminalBadge tone="cyan">{runningCount} running</TerminalBadge> : null}
 				{activeDescendantCount > 0 ? <TerminalBadge tone="cyan">{activeDescendantCount} active descendants/runs</TerminalBadge> : null}
 				{errorCount > 0 ? <TerminalBadge tone="red">{errorCount} errors</TerminalBadge> : null}
+				{toolErrorCount > 0 ? <TerminalBadge tone="amber">{toolErrorCount} tool errors</TerminalBadge> : null}
 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
 				{originSession ? (
@@ -559,7 +564,7 @@ function TerminalBadge({
 	tone,
 	children,
 }: {
-	tone: "cyan" | "red" | "purple" | "neutral";
+	tone: "cyan" | "red" | "amber" | "purple" | "neutral";
 	children: ReactNode;
 }) {
 	const className =
@@ -567,9 +572,11 @@ function TerminalBadge({
 			? "border-[#1f4960] text-[#38bdf8]"
 			: tone === "red"
 				? "border-[#5f2222] text-[#ef4444]"
-				: tone === "purple"
-					? "border-purple-500/40 text-purple-300"
-					: "border-[#3a3a3a] text-[#d4d4d4]";
+				: tone === "amber"
+					? "border-[#6b4e16] text-[#f59e0b]"
+					: tone === "purple"
+						? "border-purple-500/40 text-purple-300"
+						: "border-[#3a3a3a] text-[#d4d4d4]";
 	return <span className={`border px-2 py-0.5 ${className}`}>{children}</span>;
 }
 

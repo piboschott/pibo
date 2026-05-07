@@ -156,6 +156,21 @@ test("patch versions are monotonic per root", () => {
 	assert.equal(second?.toVersion, 2);
 });
 
+test("tool call errors do not mark the session signal as failed", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "pibo_output", event: { type: "tool_execution_started", piboSessionId: "root", eventId: "m1", toolCallId: "tc1", toolName: "bash" } });
+	registry.project({ type: "pibo_output", event: { type: "tool_execution_finished", piboSessionId: "root", eventId: "m1", toolCallId: "tc1", toolName: "bash", isError: true } });
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
+
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.nodes["tool:root:tc1"].status, "error");
+	assert.equal(snapshot.sessions.root.hasError, false);
+	assert.equal(snapshot.sessions.root.aggregateStatus, "idle");
+});
+
 test("queued message signal settles after a provider error", () => {
 	const registry = createPiboSignalRegistry();
 	registry.project({ type: "session_created", session: session("root") });
