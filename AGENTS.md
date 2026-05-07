@@ -10,9 +10,11 @@ Always read `GLOSSARY.md`. It contains a shared vocabulary for our project.
 When reading Pibo Sessions, use the debug CLI first: `npm run dev -- debug session --help`.
 
 ## Pibo Development Style
-When changing or testing Pibo itself, use the Docker compute system when it is available. Spawn an isolated worker with `pibo compute spawn`, do gateway restarts, web app experiments, browser automation, and end-to-end checks inside that worker, then release it with `pibo compute release <id>`.
+Develop Pibo only inside a Docker compute worker. Before changing code, run `pibo compute spawn`. The Docker system creates an isolated worker and worktree; edit, build, restart gateways, run browser checks, and perform end-to-end tests in that worktree.
 
-Do not use the host `pibo-web` gateway as an experimental target. Do not restart, replace, or run ad hoc host gateways for development unless the user explicitly asks for host operations or the Docker system is unavailable. The host gateway is for observing the current service state, not for trying changes.
+Use the worker's returned web and CDP ports for app and browser testing. Keep the tested changes in the worker worktree. Release the container with `pibo compute release <id>`; this does not remove the worktree. Merge, push, or discard that worktree only after review or explicit user approval.
+
+Do not edit the host checkout as the experimental workspace. Do not use the host `pibo-web` gateway for development. Do not restart, replace, or run ad hoc host gateways unless the user explicitly requests host operations or Docker is unavailable. The host gateway is for observing the live service only.
 
 Dev-auth belongs only to Docker workers. Never start the host gateway with dev-auth flags or fake-auth infrastructure. The normal host gateway must use Better Auth.
 
