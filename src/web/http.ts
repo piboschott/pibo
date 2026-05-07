@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { brotliCompressSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
 export const MAX_WEB_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
 const MIN_COMPRESS_RESPONSE_BYTES = 1024;
@@ -84,7 +84,7 @@ export async function sendWebResponse(response: ServerResponse, webResponse: Res
 	if (compressEncoding && webResponse.body) {
 		const body = await readResponseBody(webResponse);
 		if (body.length >= MIN_COMPRESS_RESPONSE_BYTES) {
-			const compressed = compressEncoding === "br" ? brotliCompressSync(body) : gzipSync(body, { level: 1 });
+			const compressed = gzipSync(body, { level: 1 });
 			headers["content-encoding"] = compressEncoding;
 			headers["content-length"] = String(compressed.length);
 			headers.vary = appendVary(headers.vary, "accept-encoding");
@@ -140,14 +140,12 @@ function responseHeaders(webResponse: Response): Record<string, string | string[
 function preferredResponseEncoding(
 	acceptEncoding: string | string[] | undefined,
 	webResponse: Response,
-): "br" | "gzip" | undefined {
+): "gzip" | undefined {
 	if (!responseCanBeCompressed(webResponse)) return undefined;
-	if (acceptsEncoding(acceptEncoding, "gzip")) return "gzip";
-	if (acceptsEncoding(acceptEncoding, "br")) return "br";
-	return undefined;
+	return acceptsEncoding(acceptEncoding, "gzip") ? "gzip" : undefined;
 }
 
-function acceptsEncoding(acceptEncoding: string | string[] | undefined, encoding: "br" | "gzip"): boolean {
+function acceptsEncoding(acceptEncoding: string | string[] | undefined, encoding: "gzip"): boolean {
 	const accepted = Array.isArray(acceptEncoding) ? acceptEncoding.join(",") : acceptEncoding ?? "";
 	return accepted.split(",").some((entry) => {
 		const [name, ...parameters] = entry.trim().split(";").map((part) => part.trim());
