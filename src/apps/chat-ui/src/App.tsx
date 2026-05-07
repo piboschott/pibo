@@ -1625,7 +1625,8 @@ function SessionTracePane({
 		const events = new EventSource(`/api/chat/events?${params.toString()}`);
 		let traceTimer: ReturnType<typeof setTimeout> | undefined;
 		let bootstrapTimer: ReturnType<typeof setTimeout> | undefined;
-		let settledBootstrapTimer: ReturnType<typeof setTimeout> | undefined;
+		let bootstrapRefreshInFlight = false;
+		let bootstrapRefreshPending = false;
 		const scheduleTraceRefresh = (delayMs: number, reset = false) => {
 			if (traceTimer) {
 				if (!reset) return;
@@ -1637,7 +1638,19 @@ function SessionTracePane({
 			}, delayMs);
 		};
 		const refreshBootstrap = () => {
-			onRefreshBootstrap().catch((caught) => onError(errorMessage(caught)));
+			if (bootstrapRefreshInFlight) {
+				bootstrapRefreshPending = true;
+				return;
+			}
+			bootstrapRefreshInFlight = true;
+			onRefreshBootstrap()
+				.catch((caught) => onError(errorMessage(caught)))
+				.finally(() => {
+					bootstrapRefreshInFlight = false;
+					if (!bootstrapRefreshPending) return;
+					bootstrapRefreshPending = false;
+					scheduleBootstrapRefresh(250, true);
+				});
 		};
 		const scheduleBootstrapRefresh = (delayMs: number, reset = false) => {
 			if (bootstrapTimer) {
@@ -1650,12 +1663,7 @@ function SessionTracePane({
 			}, delayMs);
 		};
 		const scheduleTerminalBootstrapRefresh = () => {
-			scheduleBootstrapRefresh(650, true);
-			if (settledBootstrapTimer) clearTimeout(settledBootstrapTimer);
-			settledBootstrapTimer = setTimeout(() => {
-				settledBootstrapTimer = undefined;
-				refreshBootstrap();
-			}, 2500);
+			scheduleBootstrapRefresh(900, true);
 		};
 		events.addEventListener("pibo", (message) => {
 			const event = chatStreamEvent(message);
@@ -1683,7 +1691,6 @@ function SessionTracePane({
 		return () => {
 			if (traceTimer) clearTimeout(traceTimer);
 			if (bootstrapTimer) clearTimeout(bootstrapTimer);
-			if (settledBootstrapTimer) clearTimeout(settledBootstrapTimer);
 			events.close();
 		};
 	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, selectedRoomId, traceQueryKey]);

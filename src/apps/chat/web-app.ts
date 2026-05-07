@@ -86,6 +86,7 @@ type ChatWebAppState = {
 	agentStore: CustomAgentStore;
 	reliabilityStore: PiboReliabilityStore;
 	traceCache: Map<string, PiboSessionTraceView>;
+	bootstrapCatalogCache?: { expiresAt: number; value: Promise<ChatBootstrapCatalog> };
 	outputCompactor: OutputCompactor;
 	subscribedContext?: PiboWebAppContext;
 	unsubscribe?: () => void;
@@ -95,6 +96,48 @@ type ChatWebAppState = {
 	userSkillManager: UserSkillManager;
 	syncedUserSkillNames?: Set<string>;
 };
+
+type ChatBootstrapCatalog = {
+	agents: ReturnType<NonNullable<PiboWebAppContext["channelContext"]["getProfiles"]>>;
+	customAgents: ReturnType<typeof serializeCustomAgents>;
+	modelDefaults: PiboModelDefaults;
+	modelCatalog: Awaited<ReturnType<typeof loadModelCatalog>>;
+	agentCatalog: Awaited<ReturnType<typeof buildAgentCatalog>>;
+	capabilities: { actions: ReturnType<PiboWebAppContext["channelContext"]["getGatewayActions"]> };
+};
+
+const BOOTSTRAP_CATALOG_CACHE_TTL_MS = 30_000;
+
+function invalidateBootstrapCatalogCache(state: ChatWebAppState): void {
+	state.bootstrapCatalogCache = undefined;
+}
+
+function loadBootstrapCatalog(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+): Promise<ChatBootstrapCatalog> {
+	const now = Date.now();
+	if (state.bootstrapCatalogCache && state.bootstrapCatalogCache.expiresAt > now) return state.bootstrapCatalogCache.value;
+	const value = Promise.all([
+		loadModelCatalog(process.cwd()),
+		buildAgentCatalog(context, state),
+	]).then(([modelCatalog, agentCatalog]) => ({
+		agents: context.channelContext.getProfiles?.() ?? [],
+		customAgents: serializeCustomAgents(state.agentStore.list(webSession.ownerScope, { includeArchived: true }), context),
+		modelDefaults: loadChatModelDefaults(process.cwd()),
+		modelCatalog,
+		agentCatalog,
+		capabilities: {
+			actions: context.channelContext.getGatewayActions(),
+		},
+	}));
+	state.bootstrapCatalogCache = { expiresAt: now + BOOTSTRAP_CATALOG_CACHE_TTL_MS, value };
+	value.catch(() => {
+		if (state.bootstrapCatalogCache?.value === value) state.bootstrapCatalogCache = undefined;
+	});
+	return value;
+}
 
 type ChatSessionCreateBody = {
 	profile?: unknown;
@@ -2715,12 +2758,15 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				indexOwnedSessions(state.readModel, roomSessions);
 				const sessionUnreadCounts = buildSessionUnreadCounts(state, ownedSessions, principalId);
-				const sessions = await buildSessionNodes(
-					roomSessions,
-					state.readModel.listSessions(),
-					process.cwd(),
-					sessionUnreadCounts,
-				);
+				const [sessions, catalog] = await Promise.all([
+					buildSessionNodes(
+						roomSessions,
+						state.readModel.listSessions(),
+						process.cwd(),
+						sessionUnreadCounts,
+					),
+					loadBootstrapCatalog(state, context, webSession),
+				]);
 				const roomTree = state.roomStore.listRoomTree(webSession.ownerScope);
 				const roomUnreadCounts = buildRoomUnreadCounts(ownedSessions, sessionUnreadCounts, defaultRoom.id);
 				const rooms = roomsWithUnreadCounts(roomTree, roomUnreadCounts);
@@ -2732,14 +2778,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					selectedPiboSessionId: selectedSession.id,
 					rooms,
 					sessions,
-					agents: context.channelContext.getProfiles?.() ?? [],
-					customAgents: serializeCustomAgents(state.agentStore.list(webSession.ownerScope, { includeArchived: true }), context),
-					modelDefaults: loadChatModelDefaults(process.cwd()),
-					modelCatalog: await loadModelCatalog(process.cwd()),
-					agentCatalog: await buildAgentCatalog(context, state),
-					capabilities: {
-						actions: context.channelContext.getGatewayActions(),
-					},
+					...catalog,
 				});
 			}
 
@@ -2793,7 +2832,9 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				requireSameOriginJsonRequest(request);
 				await requireSession(request, context);
 				const body = await readJsonBody<ChatModelDefaultsBody>(request);
-				return responseJson({ modelDefaults: updateChatModelDefaults(body, process.cwd()) });
+				const modelDefaults = updateChatModelDefaults(body, process.cwd());
+				invalidateBootstrapCatalogCache(state);
+				return responseJson({ modelDefaults });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/pi-packages` && request.method === "GET") {
@@ -2807,6 +2848,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const body = await readJsonBody<ChatPiPackageBody>(request);
 				const source = normalizePiPackageWebSource(body.source);
 				const pkg = upsertPiPackage(await inspectPiPackageSource(source, process.cwd()), process.cwd());
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ package: pkg }, { status: 201 });
 			}
 
@@ -2839,6 +2881,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					changed = true;
 				}
 				if (!changed) throw new PiboWebHttpError("No Pi package update fields provided", 400);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ package: pkg });
 			}
 
@@ -2855,6 +2898,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					);
 				}
 				const removed = removePiPackage(piPackageId);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ removedPackage: removed });
 			}
 
@@ -2875,6 +2919,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					markdown: normalizeUserSkillMarkdown(body.markdown ?? ""),
 				});
 				syncUserSkills(state, context);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ skill }, { status: 201 });
 			}
 
@@ -2890,6 +2935,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					throw error;
 				}
 				syncUserSkills(state, context);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ skill }, { status: 201 });
 			}
 
@@ -2933,6 +2979,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const skill = state.userSkillManager.update(existing.id, input);
 				syncUserSkills(state, context);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ skill });
 			}
 
@@ -2943,6 +2990,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				if (!existing) throw new PiboWebHttpError("Skill not found", 404);
 				state.userSkillManager.remove(existing.id);
 				syncUserSkills(state, context);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ removedSkillId: existing.id });
 			}
 
@@ -2993,6 +3041,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					mcpServerName,
 					normalizeMcpServerDescriptionBody(body.description),
 				);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ server });
 			}
 
@@ -3010,6 +3059,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				requireAgentProfileNameAvailable(state, context, input.displayName);
 				const agent = state.agentStore.create(input);
 				context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(agent));
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ agent: serializeCustomAgent(agent, context) }, { status: 201 });
 			}
 
@@ -3032,6 +3082,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				} else {
 					context.channelContext.upsertProfile?.(createCustomAgentProfileDefinition(owned));
 				}
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ agent: serializeCustomAgent(owned, context) });
 			}
 
@@ -3048,6 +3099,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const deletedSessionIds = deleteSessionsForAgentProfile(state, context, webSession, agent.profileName);
 				state.agentStore.delete(agent.id);
 				context.channelContext.removeProfile?.(agent.profileName);
+				invalidateBootstrapCatalogCache(state);
 				return responseJson({ deletedAgentId: agent.id, deletedSessionIds });
 			}
 

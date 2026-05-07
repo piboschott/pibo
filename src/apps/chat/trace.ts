@@ -262,9 +262,14 @@ export function createTraceViewVersion(input: {
 		.digest("hex");
 }
 
+const PI_SESSION_LIST_CACHE_TTL_MS = 5_000;
+const piSessionListCache = new Map<string, { expiresAt: number; promise: Promise<PiboSessionListItem[]> }>();
+
 export async function listPiSessions(cwd = process.cwd()): Promise<PiboSessionListItem[]> {
-	const sessions = await SessionManager.list(cwd);
-	return sessions.map((session) => ({
+	const now = Date.now();
+	const cached = piSessionListCache.get(cwd);
+	if (cached && cached.expiresAt > now) return cached.promise;
+	const promise = SessionManager.list(cwd).then((sessions) => sessions.map((session) => ({
 		path: session.path,
 		id: session.id,
 		cwd: session.cwd,
@@ -274,7 +279,12 @@ export async function listPiSessions(cwd = process.cwd()): Promise<PiboSessionLi
 		modified: session.modified.toISOString(),
 		messageCount: session.messageCount,
 		firstMessage: session.firstMessage,
-	}));
+	})));
+	piSessionListCache.set(cwd, { expiresAt: now + PI_SESSION_LIST_CACHE_TTL_MS, promise });
+	promise.catch(() => {
+		if (piSessionListCache.get(cwd)?.promise === promise) piSessionListCache.delete(cwd);
+	});
+	return promise;
 }
 
 function createSessionTitle(session: PiboSession, metadata: SessionMetadata): string {
