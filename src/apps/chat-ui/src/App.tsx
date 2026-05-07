@@ -574,13 +574,23 @@ export function App({ route }: { route: ChatAppRoute }) {
 		onMutate: async ({ profile }) => {
 			await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
 			const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
+			const previousSelectedPiboSessionId = selectedPiboSessionId;
 			const tempId = `optimistic-session-${createClientTxnId()}`;
-			setBootstrap((current) => current ? addSessionNodeToBootstrap(current, createOptimisticSessionNode(tempId, profile || current.session.profile)) : current);
-			return { snapshot, tempId };
+			setSelectedPiboSessionId(tempId);
+			updateBootstrapCache((current) => {
+				const optimisticNode = createOptimisticSessionNode(tempId, profile || current.session.profile);
+				const next = addSessionNodeToBootstrap(current, optimisticNode);
+				return { ...next, selectedPiboSessionId: tempId };
+			});
+			return { snapshot, tempId, previousSelectedPiboSessionId };
 		},
-		onError: (_error, _variables, context) => restoreBootstrapSnapshot(context?.snapshot),
+		onError: (_error, _variables, context) => {
+			restoreBootstrapSnapshot(context?.snapshot);
+			setSelectedPiboSessionId(context?.previousSelectedPiboSessionId ?? null);
+		},
 		onSuccess: (created, _variables, context) => {
-			setBootstrap((current) => current ? replaceOptimisticSessionNode(current, context?.tempId, sessionNodeFromSession(created.session)) : current);
+			setSelectedPiboSessionId(created.session.id);
+			updateBootstrapCache((current) => replaceOptimisticSessionNode(current, context?.tempId, sessionNodeFromSession(created.session)));
 		},
 	});
 
@@ -997,7 +1007,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 					Recovery Mode: Main gateway is down. You are connected to a fallback instance.
 				</div>
 			)}
-			<div className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_1fr]">
+			<div className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_auto_1fr]">
 				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:flex-wrap max-[980px]:py-2">
 					<div className="flex items-center gap-2">
 						<button
@@ -1043,6 +1053,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 					</button>
 				</div>
 			</header>
+
+			{error ? <AppErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
 			<div
 				className={`min-h-0 ${
@@ -1412,6 +1424,27 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 		</div>
 	</>
+	);
+}
+
+function AppErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+	return (
+		<div className="border-b border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-100 flex items-start justify-between gap-3">
+			<div className="min-w-0 flex items-start gap-2">
+				<AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" />
+				<div className="min-w-0">
+					<div className="text-[11px] font-bold uppercase tracking-wider text-red-300">Session Error</div>
+					<div className="break-words">{message}</div>
+				</div>
+			</div>
+			<button
+				type="button"
+				onClick={onDismiss}
+				className="shrink-0 rounded-sm border border-red-500/40 px-2 py-1 text-[11px] uppercase tracking-wider text-red-200 hover:border-red-300 hover:text-red-100"
+			>
+				Dismiss
+			</button>
+		</div>
 	);
 }
 
