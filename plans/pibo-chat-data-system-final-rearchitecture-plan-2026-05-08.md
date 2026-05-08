@@ -10,6 +10,65 @@ Inputs:
 
 Dieser Plan ersetzt die Einzelpläne nicht als Historie, ist aber die empfohlene Zielrichtung für die Umsetzung.
 
+## Implementierungsstatus — Checkpoint 2026-05-08 nach erster Umsetzung
+
+Branch: `chat-data-v2-rearchitecture-2026-05-08`  
+Commit: `9b52c05 Add chat data V2 store foundation`  
+Handover: `handoffs/pibo-chat-data-v2-rearchitecture-handover-2026-05-08.md`  
+Dev: `https://dev.pibo.neuralnexus.me/apps/chat`
+
+Dieser Checkpoint ist der aktuelle Ausgangspunkt für Follow-up-Sessions. Die Zielarchitektur bleibt unverändert, aber die Umsetzung ist jetzt gestaffelt:
+
+### Erledigt
+
+- V2-Store-Fundament unter `src/data/`:
+  - `schema.ts` mit idempotentem V2-Schema.
+  - `pibo-store.ts` als `DatabaseSync`-Wrapper.
+  - `payload-store.ts` mit gzip-Dateien, sha256-Dedupe und read helpers.
+  - `event-log.ts` mit idempotentem Append über `idempotency_key`.
+  - `message-store.ts`, `observation-store.ts`, `navigation-store.ts`.
+- `pibo data inventory` als read-only Inventar-CLI.
+- Additive schnelle APIs:
+  - `GET /api/chat/navigation` ohne Catalog, ohne historische Unread-Aggregation, ohne Pi-JSONL-Fallback.
+  - `GET /api/chat/catalog` als aus Bootstrap herauslösbarer Catalog-Pfad.
+- `buildSessionNodes()` kann Pi-Metadata-/JSONL-Fallback überspringen.
+- Room-Unread-Rollup für Child Sessions korrigiert.
+- `bootstrap?markRead=true` markiert nur noch die ausgewählte Session, nicht den gesamten Child-Subtree.
+- Tests ergänzt:
+  - `test/data-v2-store.test.mjs`
+  - `test/data-cli.test.mjs`
+
+### Validiert
+
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- `npm test` komplett: 311 Tests ✅
+- Docker Compute Build/Worker ✅
+- Browser-Use Smoke gegen Docker Worker: Chat UI lädt, Dev User aktiv, Composer sichtbar ✅
+- MCP CLI Smoke: `pibo mcp config help`, `pibo mcp --no-setup` ✅
+- Dev Deploy mit `./scripts/deploy-web-dev.sh` ✅
+
+### Noch nicht erledigt
+
+- V2 ist noch nicht live-ingested und noch nicht primary.
+- Legacy Stores bleiben normale Quelle für Bootstrap, Trace und Chat Web.
+- Frontend nutzt `/api/chat/navigation` noch nicht primär.
+- Kein Legacy Backfill, kein Shadow Compare, kein V2 Trace Primary, kein Legacy Cleanup.
+- `pibo data inventory` hat noch keine Payload-Histogramme, Missing-Title-Counts, Sessions-ohne-Room-Auswertung oder Duplicate-Candidate-Auswertung.
+
+### Aktualisierte nächste Priorität
+
+Die nächste Session soll nicht direkt Phase 4+ starten. Empfohlene Reihenfolge:
+
+1. `/api/chat/navigation` vertraglich testen und Frontend-Room-Switch darauf umstellen.
+2. `src/data/ingest-service.ts` einführen.
+3. User-Message-Shadow-Writes aus `sendChatMessage()` in V2 schreiben.
+4. Assistant-/Tool-/Run-Output-Shadow-Writes aus `ensureEventIndexing()`/`OutputCompactor` in V2 schreiben.
+5. Shadow Compare / Debug CLI hinzufügen.
+6. Erst danach Legacy Backfill und V2 Primary Reads.
+
+---
+
 ## Executive decision
 
 Baue das Chat Data System um eine einfache Regel herum:
