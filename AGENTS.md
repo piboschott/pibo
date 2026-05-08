@@ -16,28 +16,46 @@ Documentation-only edits do not require a Docker compute worker unless they are 
 
 Use the worker's returned web and CDP ports for app and browser testing. Keep the tested changes in the worker worktree. Release the container with `pibo compute release <id>`; this does not remove the worktree. Merge, push, or discard that worktree only after review or explicit user approval.
 
-Do not edit the host checkout as the experimental workspace. Do not use the host `pibo-web` gateway for development. Do not restart, replace, or run ad hoc host gateways unless the user explicitly requests host operations or Docker is unavailable. The host gateway is for observing the live service only.
+Do not edit the host checkout as the experimental workspace. Do not use the host production gateway for development. Do not restart, replace, or run ad hoc host gateways unless the user explicitly requests host operations or Docker is unavailable. The host gateway is for observation only.
 
 Dev-auth belongs only to Docker workers. Never start the host gateway with dev-auth flags or fake-auth infrastructure. The normal host gateway must use Better Auth.
 
-## Host Gateway Service
-The `pibo-web` gateway on this machine is a live service. Do not stop or restart it unless the user explicitly allows or requests it.
+## Host Gateway
+Pibo has host gateways. They are managed only through the Pibo CLI.
+
+Production gateway:
+
+  pibo gateway web status
+  pibo gateway web start
+  pibo gateway web restart
+
+Dev gateway:
+
+  pibo gateway dev status
+  pibo gateway dev start
+  pibo gateway dev restart
+
+The production gateway is stateful and may contain active agent runtimes. It may need to be restarted when it is stuck, after a deployment, or after gateway configuration changes. The CLI checks for active production work and blocks unsafe restarts.
+
+The dev gateway may be restarted at any time, but it must still be restarted through the CLI for consistency.
+
+Do not use any other restart mechanism. If the CLI blocks a production restart, ask the user before interrupting active sessions.
 
 ## Deployment
-Deploy host-level web changes to dev first: `./scripts/deploy-web-dev.sh` (`pibo-web-dev.service`, `https://dev.pibo.neuralnexus.me`, real Better Auth, isolated `~/.pibo-dev`).
+Deploy host-level web changes to dev first: `./scripts/deploy-web-dev.sh`.
 
-Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh` (`pibo-web.service`, `https://pibo.neuralnexus.me`).
+Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh`.
 
 Normal flow: Docker compute worker -> dev web gateway -> production web gateway.
 
 ## Browser/App Debugging
-For Chat Web browser debugging while changing Pibo, start from a Docker compute worker when one is available. Use the worker's returned web/CDP ports for app checks so browser automation and gateway restarts stay isolated from the host service.
+For Chat Web browser debugging while changing Pibo, start from a Docker compute worker when one is available. Use the worker's returned web/CDP ports for app checks so browser automation and gateway restarts stay isolated from the host gateway.
 
 For debugging an already-running Chat Web instance, start from the browser that already exists. First list CDP targets with `npm run dev -- tools browser-use targets`, then inspect Chat Web targets until you find one that is authenticated and has a composer textarea. Do not assume the first tab is the usable tab. If the helper is unavailable, fall back to `curl -s http://127.0.0.1:56663/json/list`.
 
 If no usable browser exists, create one through the Browser Use auth flow instead of starting ad hoc fake-auth infrastructure. First try to acquire an isolated authenticated slot with `eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat --owner "$USER")"`, then open the current Chat Web URL in that shell. If lease acquisition says no authenticated template exists, prepare it with `eval "$(npm run --silent dev -- tools browser-use auth-template env)"`, open the Chat Web App there, sign in once, close it, then acquire the lease again.
 
-If MCP DevTools resources are unavailable, use direct CDP against the authenticated target as the fallback. Only restart the matching web/gateway ports after confirming the existing tab is usable but its backend is down.
+If MCP DevTools resources are unavailable, use direct CDP against the authenticated target as the fallback. Use the Pibo CLI restart commands only after confirming the existing tab is usable but its backend is down.
 
 ## Server Access
 Server access details are configured in the operator environment. Do not hard-code addresses in documentation or code.

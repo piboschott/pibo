@@ -312,8 +312,8 @@ Commands:
   profile      Inspect a pibo profile
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI
-  gateway      Manage the local gateway daemon (start, status, stop, restart)
-  gateway:web  Start the authenticated web gateway
+  gateway      Inspect and restart host gateways through safe CLI commands
+  gateway:web  Start a web gateway runtime
 
 Next:
   pibo <command> --help
