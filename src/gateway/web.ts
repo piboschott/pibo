@@ -71,6 +71,21 @@ export function resolveWebGatewayServerOptions(options: WebGatewayServerOptions 
 	};
 }
 
+
+function webGatewayMode(options: WebGatewayServerOptions, useDevAuth: boolean): "dev" | "prod" {
+	if (useDevAuth) return "dev";
+	if (options.web?.port === 4808) return "dev";
+	const baseURL = authBaseURL(options);
+	if (baseURL) {
+		try {
+			if (new URL(baseURL).hostname.startsWith("dev.")) return "dev";
+		} catch {
+			// Fall through to production mode.
+		}
+	}
+	return "prod";
+}
+
 export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {}): PiboPluginRegistry {
 	const resolvedOptions = resolveWebGatewayServerOptions(options);
 	const useDevAuth = resolveWebGatewayAuthMode(resolvedOptions) === "dev-auth";
@@ -78,7 +93,7 @@ export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {
 		plugins: [
 			...createDefaultPiboPlugins(),
 			useDevAuth ? createPiboDevAuthPlugin() : createPiboBetterAuthPlugin(resolvedOptions.auth),
-			createPiboWebHostPlugin({ announce: false, canonicalBaseURL: useDevAuth ? undefined : authBaseURL(resolvedOptions), ...resolvedOptions.web }),
+			createPiboWebHostPlugin({ announce: false, canonicalBaseURL: useDevAuth ? undefined : authBaseURL(resolvedOptions), gatewayMode: webGatewayMode(resolvedOptions, useDevAuth), ...resolvedOptions.web }),
 			createPiboContextFilesPlugin(resolvedOptions.contextFiles),
 			createPiboChatWebPlugin(resolvedOptions.chat),
 		],
