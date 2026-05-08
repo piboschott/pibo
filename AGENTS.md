@@ -10,7 +10,9 @@ Always read `GLOSSARY.md`. It contains a shared vocabulary for our project.
 When reading Pibo Sessions, use the debug CLI first: `npm run dev -- debug session --help`.
 
 ## Pibo Development Style
-Develop Pibo only inside a Docker compute worker. Before changing code, run `pibo compute spawn`. The Docker system creates an isolated worker and worktree; edit, build, restart gateways, run browser checks, and perform end-to-end tests in that worktree.
+Develop Pibo code and features only inside a Docker compute worker. Before changing code or implementing features, run `pibo compute spawn`. The Docker system creates an isolated worker and worktree; edit, build, restart gateways, run browser checks, and perform end-to-end tests in that worktree.
+
+Documentation-only edits do not require a Docker compute worker unless they are coupled to code, build, gateway, or browser testing work.
 
 Use the worker's returned web and CDP ports for app and browser testing. Keep the tested changes in the worker worktree. Release the container with `pibo compute release <id>`; this does not remove the worktree. Merge, push, or discard that worktree only after review or explicit user approval.
 
