@@ -922,7 +922,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
 		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
 		const tempId = `optimistic-room-${createClientTxnId()}`;
-		const optimisticRoom = createOptimisticRoom(tempId, bootstrap?.identity.userId ?? "user", "New Chat");
+		const optimisticRoom = createOptimisticRoom(tempId, identityFromBootstrap(bootstrap).userId, "New Chat");
 		setSelectedRoomId(tempId);
 		setSelectedPiboSessionId(null);
 		updateBootstrapCache((data) => addRoomToBootstrap(data, optimisticRoom));
@@ -1121,6 +1121,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const roomGroups = splitRoomNodes(bootstrap.rooms);
 	const totalRoomUnreadCount = countUnreadRooms(bootstrap.rooms);
 	const contextAgentProfiles = [...new Set([...bootstrap.agents.map((agent) => agent.name), ...bootstrap.customAgents.map((agent) => agent.profileName)])];
+	const identity = identityFromBootstrap(bootstrap);
 
 	return (
 		<>
@@ -1170,7 +1171,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				</nav>
 				<div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
 					<UserRound size={14} />
-					<span className="truncate max-[600px]:hidden">{bootstrap.identity.email || bootstrap.identity.name || bootstrap.identity.userId}</span>
+					<span className="truncate max-[600px]:hidden">{identity.email || identity.name || identity.userId}</span>
 					<button type="button" onClick={() => void signOut().then(() => location.reload())} className="p-1 border border-slate-700 rounded-sm">
 						<LogOut size={14} />
 					</button>
@@ -3242,6 +3243,10 @@ function createSessionBreadcrumbs(nodes: PiboWebSessionNode[], piboSessionId: st
 
 function defaultProfileFromBootstrap(bootstrap: BootstrapData): string {
 	return bootstrap.session?.profile ?? bootstrap.agents[0]?.name ?? bootstrap.customAgents[0]?.profileName ?? "";
+}
+
+function identityFromBootstrap(bootstrap: BootstrapData | null | undefined): BootstrapData["identity"] {
+	return bootstrap?.identity ?? { userId: "user" };
 }
 
 function resolveSessionActiveModelLabel(
