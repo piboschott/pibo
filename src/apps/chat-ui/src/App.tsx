@@ -718,20 +718,20 @@ export function App({ route }: { route: ChatAppRoute }) {
 		}
 	}, [bootstrap?.selectedRoomId, loadBootstrap, navigateToSelectedSession, selectedRoomId]);
 
-	const selectRoom = useCallback(async (roomId: string) => {
-		setMobileSidebarOpen(false);
+	const selectRoom = useCallback(async (roomId: string, options: NavigationOptions = {}) => {
+		if (options.closeMobileSidebar !== false) setMobileSidebarOpen(false);
 		const storedPiboSessionId = readStoredSelection().sessionsByRoom?.[roomId];
 		setSelectedRoomId(roomId);
 		setSelectedPiboSessionId(storedPiboSessionId ?? null);
 		try {
 			const data = await loadBootstrap(storedPiboSessionId, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
 		} catch (caught) {
 			if (!storedPiboSessionId) throw caught;
 			removeStoredRoomSelection(roomId);
 			setSelectedPiboSessionId(null);
 			const data = await loadBootstrap(undefined, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
 		}
 	}, [loadBootstrap, navigateToSelectedSession]);
 
@@ -743,7 +743,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			setSelectedPiboSessionId(created.session.id);
 			setAutoRenameSessionId(created.session.id);
 			const data = await loadBootstrap(created.session.id, showArchivedRef.current, selectedRoomId ?? undefined, { force: true });
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, { closeMobileSidebar: false });
 			setError(null);
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : String(caught));
@@ -759,7 +759,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		localStorage.setItem("pibo.chat.showArchived", String(next));
 		try {
 			const data = await loadBootstrap(selectedPiboSessionId ?? undefined, next, selectedRoomId ?? undefined);
-			if (area === "sessions") navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId);
+			if (area === "sessions") navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, { closeMobileSidebar: false });
 			setError(null);
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : String(caught));
@@ -851,7 +851,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		try {
 			const created = await postRoom({ name: "New Chat" });
 			updateBootstrapCache((data) => replaceRoomInBootstrap(data, tempId, created.room));
-			await selectRoom(created.room.id);
+			await selectRoom(created.room.id, { closeMobileSidebar: false });
 			setError(null);
 		} catch (caught) {
 			restoreBootstrapSnapshot(snapshot);
