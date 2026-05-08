@@ -83,7 +83,7 @@ The `-L` flag follows redirects. The flow is:
 - Sessions do not persist across worker restarts. Each new `pibo compute spawn`
   generates a random session token, so cookies from one worker do not work on
   another.
-- Host gateways use Better Auth: production via `pibo-web.service`, dev via `pibo-web-dev.service` (`./scripts/deploy-web-dev.sh`).
+- Host gateways use Better Auth and are managed only through `pibo gateway web ...` and `pibo gateway dev ...`.
 - The dev-auth plugin only runs when the Docker worker entrypoint passes the internal `devAuth: true` option and the process detects a Docker/container runtime. `PIBO_DEV_AUTH` is intentionally ignored by normal host gateways and causes startup to fail closed if set there.
 - Dev auth only accepts loopback browser requests. Requests forwarded from a
   public host, for example through nginx with `X-Forwarded-Host`, receive `403`

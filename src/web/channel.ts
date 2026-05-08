@@ -14,6 +14,7 @@ export type WebHostChannelOptions = {
 	port?: number;
 	announce?: boolean;
 	canonicalBaseURL?: string;
+	gatewayMode?: "dev" | "prod" | "fallback" | "unknown";
 };
 
 export type WebHostChannel = PiboChannel & {
@@ -62,6 +63,54 @@ function createRequestBaseURL(nodeRequest: IncomingMessage, host: string, port: 
 		}
 	}
 	return `http://${nodeRequest.headers.host ?? `${host}:${port}`}`;
+}
+
+function isActiveRunStatus(status: unknown): boolean {
+	return typeof status === "string" && ["queued", "starting", "running", "streaming", "waiting", "blocked", "retrying", "compacting", "pausing"].includes(status);
+}
+
+function gatewayMode(options: WebHostChannelOptions): "dev" | "prod" | "fallback" | "unknown" {
+	if (process.env.PIBO_FALLBACK_MODE === "1") return "fallback";
+	return options.gatewayMode ?? "unknown";
+}
+
+function collectActiveRuns(channelContext: PiboChannelContext): unknown[] {
+	const sessions = channelContext.listSessions?.() ?? [];
+	const runs: unknown[] = [];
+	const seen = new Set<string>();
+	for (const session of sessions) {
+		const snapshot = channelContext.snapshotSignalTree?.(session.id) as unknown;
+		const snapshotObject = snapshot && typeof snapshot === "object" ? snapshot as { sessions?: unknown[] | Record<string, unknown> } : undefined;
+		const rawSessions = snapshotObject?.sessions;
+		const sessionSnapshots = Array.isArray(rawSessions) ? rawSessions : rawSessions && typeof rawSessions === "object" ? Object.values(rawSessions) : [];
+		for (const item of sessionSnapshots) {
+			if (!item || typeof item !== "object") continue;
+			const activeRuns = (item as { activeRuns?: unknown[] }).activeRuns;
+			if (!Array.isArray(activeRuns)) continue;
+			for (const run of activeRuns) {
+				if (!run || typeof run !== "object") continue;
+				const runId = String((run as { runId?: unknown }).runId ?? "");
+				const status = (run as { status?: unknown }).status;
+				if (!isActiveRunStatus(status)) continue;
+				const key = runId || JSON.stringify(run);
+				if (seen.has(key)) continue;
+				seen.add(key);
+				runs.push(run);
+			}
+		}
+	}
+	return runs;
+}
+
+function createGatewayStatusResponse(channelContext: PiboChannelContext, options: WebHostChannelOptions): Response {
+	const mode = gatewayMode(options);
+	return responseJson({
+		status: "ok",
+		mode,
+		health: { status: "ok", mode },
+		runtimeStatuses: channelContext.listSessionRuntimeStatuses?.() ?? [],
+		activeRuns: collectActiveRuns(channelContext),
+	});
 }
 
 function createCanonicalRedirect(request: Request, canonicalBaseURL: string | undefined): Response | undefined {
@@ -113,6 +162,11 @@ export function createWebHostChannel(options: WebHostChannelOptions = {}): WebHo
 						mode: process.env.PIBO_FALLBACK_MODE === "1" ? "fallback" : "main",
 					}),
 				);
+				return;
+			}
+
+			if (url.pathname === "/gateway/status") {
+				await sendWebResponse(nodeResponse, createGatewayStatusResponse(requireContext(), options));
 				return;
 			}
 
