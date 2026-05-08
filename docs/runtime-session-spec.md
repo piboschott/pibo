@@ -69,13 +69,14 @@ The same applies to Node.js:
 1. Provide one native tool, recommended name `runtime`, for both Python and Node.js sessions.
 2. Support `start`, `exec`, `inspect`, `vars`, `interrupt`, `close`, and `list` actions.
 3. Preserve runtime state across `exec` calls.
-4. Return structured results: stdout, stderr, result/repr, errors, traceback/stack, duration.
-5. Support Python first and Node.js second under the same tool shape.
-6. Be extensible to future runtimes without redesigning the tool API.
-7. Scope sessions to the owning Pibo Session by default.
-8. Provide cleanup controls so memory does not remain loaded indefinitely.
-9. Avoid PTY prompt heuristics for normal runtime execution.
-10. Give agents clear instructions on when to use `runtime` instead of one-shot Bash or `terminal`.
+4. Support per-execution auto-close-on-success behavior for one-shot work with recovery after failure.
+5. Return structured results: stdout, stderr, result/repr, errors, traceback/stack, duration.
+6. Support Python first and Node.js second under the same tool shape.
+7. Be extensible to future runtimes without redesigning the tool API.
+8. Scope sessions to the owning Pibo Session by default.
+9. Provide cleanup controls so memory does not remain loaded indefinitely.
+10. Avoid PTY prompt heuristics for normal runtime execution.
+11. Give agents clear instructions on when to use `runtime` instead of one-shot Bash or `terminal`.
 
 ### 3.2 Should-have goals
 
@@ -203,6 +204,7 @@ type RuntimeExecInput = {
   code: string;
   timeoutMs?: number;
   mode?: "exec" | "eval" | "auto";
+  closeOnSuccess?: boolean;
 };
 ```
 
@@ -219,6 +221,7 @@ type RuntimeExecResult = {
   error?: RuntimeErrorSummary;
   durationMs: number;
   executionCount?: number;
+  autoClosed?: boolean;
 };
 ```
 
@@ -227,6 +230,14 @@ type RuntimeExecResult = {
 - `exec`: run as statements, return no expression result unless backend extracts one.
 - `eval`: evaluate as expression and return result.
 - `auto`: try expression if code looks expression-like; otherwise execute as statements. MVP can default to `exec` for predictability and add `auto` later.
+
+`closeOnSuccess` behavior:
+
+- `closeOnSuccess` is an execution-level flag, not a session-level mode.
+- If `closeOnSuccess: true` and the execution returns `status: "ok"`, the runtime closes immediately after captured output and result data are returned. The result should set `autoClosed: true`.
+- If the execution returns `status: "error"`, `"timeout"`, or `"interrupted"`, the runtime remains available when the worker process is still healthy. State created before the failure remains available according to the runtime language's normal semantics.
+- Agents can set `closeOnSuccess: true` on any `exec`, including an intentionally persistent session or a session that previously failed while using `closeOnSuccess`.
+- This flag is intended for one-shot exploratory code: successful runs clean up automatically; failed runs become resumable debugging sessions instead of forcing the agent to rerun the whole script through Bash.
 
 ### 5.3 `inspect`
 
@@ -368,12 +379,14 @@ For Node:
 type RuntimeErrorSummary = {
   name: string;
   message: string;
+  line?: number;
+  column?: number;
   traceback?: string;
   stack?: string;
 };
 ```
 
-Python returns `traceback`; Node returns `stack`.
+Python returns `traceback`; Node returns `stack`. When possible, both runtimes should also return the failing line and column in `line` and `column` so the agent can continue from the failure point.
 
 ## 7. Backend architecture
 
@@ -711,6 +724,7 @@ Use `runtime` when:
 - debugging after partial success
 - inspecting objects/functions/modules
 - needing persistent variables
+- running one-shot exploratory code with `closeOnSuccess: true`, so success cleans up and failure keeps useful state for repair
 
 Use normal Bash when:
 
@@ -760,8 +774,10 @@ Default lifecycle:
 2. Session becomes `idle`.
 3. `exec` transitions to `busy`, then back to `idle` or `failed` depending on process health.
 4. Code-level exceptions do not close the session.
-5. Worker protocol/process errors may mark session `failed`.
-6. `close` terminates worker and marks `closed`.
+5. If `exec` uses `closeOnSuccess: true` and returns `status: "ok"`, the runtime closes automatically and marks `closed` after returning stdout, stderr, result data, and metadata.
+6. If `exec` uses `closeOnSuccess: true` and returns an error, timeout, or interrupt, the runtime remains open when possible so the agent can inspect state and continue from the failure.
+7. Worker protocol/process errors may mark session `failed`.
+8. `close` terminates worker and marks `closed`.
 
 Recommended defaults:
 
@@ -843,6 +859,7 @@ Mitigations:
 - interrupt.
 - force close.
 - visible busy status.
+- `closeOnSuccess` must not close on timeout; it should leave the session available if the worker can recover.
 
 ### 16.5 Huge output
 
@@ -876,64 +893,516 @@ Mitigation:
 
 ## 17. Implementation plan
 
-### Phase 0: Specs and naming
+Treat `runtime` as a built-in Pibo tool: Pibo owns the catalog entry, execution policy, session registry, worker processes, lifecycle cleanup, and profile exposure. Pi Coding Agent should only see a normal `ToolDefinition`. Do not implement this as an external MCP server, provider-hosted tool, or raw Pi built-in.
 
-- Land this spec and the terminal PTY spec.
-- Confirm tool names: recommended `runtime` and `terminal`.
+### Phase 0: Development setup and scope lock
 
-### Phase 1: Python MVP
+1. Work inside a Docker compute worker before changing code:
+   - run `pibo compute spawn`
+   - use the returned worker worktree for edits and tests
+   - release with `pibo compute release <id>` after validation
+2. Keep the MVP local-only:
+   - Python runtime: implement now
+   - Node runtime: keep interfaces ready, implement in Phase 3
+   - Docker/SSH targets: type-shape only, no behavior yet
+3. Define the built-in Pibo tool contract:
+   - tool name: `runtime`
+   - catalog owner: `pibo.core`
+   - profile selection: through normal Pibo profile/native-tool selection
+   - runtime binding: created per Pibo runtime/session so owner scope is known
+   - yieldable: yes, unless later policy says otherwise
 
-- Implement `RuntimeSessionRegistry`.
-- Implement Python worker script.
-- Implement local Python backend.
-- Implement native `runtime` tool actions:
-  - `start`
-  - `exec`
-  - `inspect`
-  - `vars`
-  - `close`
-  - `list`
-- Add tests:
-  - variable persists across exec calls
-  - exception does not clear previous variables
-  - stdout/stderr captured
-  - inspect signature works for a function
-  - close releases session
+### Phase 1: Core type model
 
-### Phase 2: Node MVP
+Create `src/tools/runtime/types.ts`.
 
-- Implement Node worker script.
-- Add Node backend under same tool.
-- Add tests:
-  - variable persists
-  - async/await if supported
-  - console output captured
-  - error stack returned
-  - inspect object keys/function source preview
+Define exported types matching this spec:
 
-### Phase 3: Agent guidance and traces
+- `RuntimeKind = "python" | "node"`
+- `RuntimeAction = "start" | "exec" | "inspect" | "vars" | "interrupt" | "close" | "list"`
+- `RuntimeTarget`
+- action input types:
+  - `RuntimeStartInput`
+  - `RuntimeExecInput` with `closeOnSuccess?: boolean`
+  - `RuntimeInspectInput`
+  - `RuntimeVarsInput`
+  - `RuntimeInterruptInput`
+  - `RuntimeCloseInput`
+  - `RuntimeListInput`
+- result types:
+  - `RuntimeStartResult`
+  - `RuntimeExecResult` with `autoClosed?: boolean`
+  - `RuntimeInspectResult`
+  - `RuntimeVarsResult`
+  - close/list/interrupt result types
+- shared summaries:
+  - `RuntimeValueSummary`
+  - `RuntimeErrorSummary` with `line?: number` and `column?: number`
+  - `RuntimeHistoryEntry`
+  - `RuntimeSessionRecord`
+  - `RuntimeBackend`
 
-- Add context/guide documentation for the tool.
-- Add trace visibility for runtime starts, execs, and closes.
-- Add list/status surfaces in Chat Web if appropriate.
+Add narrow runtime status strings:
 
-### Phase 4: Targets and environments
+```ts
+type RuntimeSessionStatus = "starting" | "idle" | "busy" | "closed" | "failed";
+```
 
-- Add explicit Python executable selection and venv examples.
-- Add Docker target for Python runtime.
-- Add Node target later.
-- Explore SSH target if worth the complexity.
+Implementation notes:
 
-### Phase 5: Advanced features
+- Keep input/result types JSON-serializable.
+- Do not expose process handles in public result types.
+- Keep backend-private process state in a separate internal handle type.
 
-- `reset`
-- `history`
-- `export`
-- completions
-- package/environment helpers
-- memory reporting
-- better cancellation
-- richer DataFrame summaries
+### Phase 2: Built-in Pibo tool registration and runtime binding
+
+Touch these files:
+
+- `src/core/profiles.ts`
+- `src/plugins/builtin.ts`
+- `src/core/runtime.ts`
+- `src/plugins/registry.ts` if catalog metadata needs a built-in marker
+- `src/index.ts` for public exports if needed
+
+Steps:
+
+1. Extend `ToolProfile` only as much as needed. Recommended shape:
+
+```ts
+type ToolProfile = {
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  yieldable?: boolean;
+  pluginId?: string;
+  definition?: ToolDefinition;
+  providerTool?: ProviderToolProfile;
+  builtInPiboTool?: "runtime";
+};
+```
+
+2. Add `createRuntimeToolProfile()` in `src/tools/runtime/tool.ts` or `src/tools/runtime/index.ts`:
+
+```ts
+export function createRuntimeToolProfile(): ToolProfile {
+  return {
+    name: "runtime",
+    description: "Start and use persistent Python/Node runtime sessions with structured exec, inspect, vars, interrupt, close, and list actions.",
+    yieldable: true,
+    builtInPiboTool: "runtime",
+  };
+}
+```
+
+3. Register the tool from `piboCorePlugin` in `src/plugins/builtin.ts`:
+
+```ts
+api.registerTool(createRuntimeToolProfile());
+```
+
+4. Add `runtime` to the default Codex-compatible profile in `src/plugins/codex-compat.ts`:
+
+```ts
+const CODEX_COMPAT_TOOL_NAMES = [
+  "apply_patch",
+  "web_search",
+  "view_image",
+  "runtime",
+] as const;
+```
+
+5. Do not store a static `ToolDefinition` on the catalog entry. The executable definition must be generated when a Pibo runtime is created because it needs the owning Pibo Session ID.
+
+6. In `src/core/runtime.ts`, add a generated tool path like subagents and run-control:
+
+- import `createRuntimeToolDefinition`
+- add `runtimeToolController?: PiboRuntimeToolController` to `PiboRuntimeOptions`
+- update `getEnabledToolDefinitions(...)` to:
+  - detect an enabled profile tool with `builtInPiboTool === "runtime"` or `name === "runtime"`
+  - exclude that profile entry from static `profileTools`
+  - append `createRuntimeToolDefinition(controller)` when enabled
+  - include it in `yieldableTools` when `yieldable !== false`
+
+7. For non-routed runtimes, create a local runtime registry inside `createPiboRuntime()` when the profile enables `runtime` and no controller was provided. Use owner id `profile.sessionId ?? "local"`. Wrap `runtime.dispose()` so it closes this local owner’s sessions.
+
+8. For routed sessions, create and pass a controller from `PiboSessionRouter`:
+
+- add a private `RuntimeSessionRegistry` field
+- add `createRuntimeToolController(parentPiboSessionId: string)`
+- pass `runtimeToolController: this.createRuntimeToolController(piboSession.id)` to `createPiboRuntime(...)`
+- on `resetCachedSession`, router `dispose`, and session disposal/kill paths, call `runtimeRegistry.closeOwnerSessions(piboSessionId, { force: true })`
+
+9. Update profile inspection:
+
+- generated `runtime` should show as registered and active when selected
+- `hasDefinition` should be true for `builtInPiboTool: "runtime"`, even though the catalog entry has no static `definition`
+
+### Phase 3: Runtime registry
+
+Create `src/tools/runtime/registry.ts`.
+
+Responsibilities:
+
+1. Own an in-memory map of runtime sessions by `sessionId`.
+2. Scope every operation by `ownerPiboSessionId`.
+3. Generate ids such as `rt_python_<shortid>` or `rt_<randomUUID>`.
+4. Dispatch operations to backend by `runtime`.
+5. Enforce state transitions:
+   - `start`: `starting` -> `idle` or `failed`
+   - `exec`: `idle` -> `busy` -> `idle`/`closed`/`failed`
+   - code-level errors return `status: "error"` but keep session `idle`
+   - worker/process errors mark `failed`
+   - `close` marks `closed`
+6. Keep bounded history, default `maxHistoryEntries = 100`.
+7. Enforce owner access:
+   - wrong owner gets `status: "not_found"` for agent-facing actions
+   - never leak another Pibo Session’s variables, output, or errors
+8. Implement cleanup:
+   - `close(sessionId, force)`
+   - `closeOwnerSessions(ownerPiboSessionId, force)`
+   - `pruneIdle(now)` for idle timeout
+9. Implement `closeOnSuccess` centrally:
+   - after backend `exec` returns `status: "ok"`, close the session
+   - return `autoClosed: true`
+   - after `error`, `timeout`, or `interrupted`, do not auto-close unless the backend process is dead
+10. Prevent concurrent exec against one runtime in MVP:
+   - if session is `busy`, return a clear error status/message or throw a tool error
+   - do not queue multiple execs inside the same runtime until a later phase
+
+### Phase 4: Tool definition and validation
+
+Create `src/tools/runtime/tool.ts`.
+
+Use `defineTool` from `@mariozechner/pi-coding-agent` and `Type`/`StringEnum` from `@mariozechner/pi-ai`.
+
+Define:
+
+```ts
+export type PiboRuntimeToolController = {
+  start(input: RuntimeStartInput): Promise<RuntimeStartResult>;
+  exec(input: RuntimeExecInput): Promise<RuntimeExecResult>;
+  inspect(input: RuntimeInspectInput): Promise<RuntimeInspectResult>;
+  vars(input: RuntimeVarsInput): Promise<RuntimeVarsResult>;
+  interrupt(input: RuntimeInterruptInput): Promise<RuntimeInterruptResult>;
+  close(input: RuntimeCloseInput): Promise<RuntimeCloseResult>;
+  list(input: RuntimeListInput): Promise<RuntimeListResult>;
+};
+```
+
+Then implement:
+
+```ts
+export function createRuntimeToolDefinition(controller: PiboRuntimeToolController): ToolDefinition
+```
+
+Tool schema:
+
+- one object with `action` enum
+- optional fields for all actions
+- runtime validation in TypeScript after schema parse, because action-discriminated schemas may be cumbersome with current tool schema helpers
+
+Execution behavior:
+
+1. Normalize and validate by `action`.
+2. Call the matching controller method.
+3. Return a text summary plus structured `details`.
+4. Set `isError: true` when:
+   - result status is `"error"`, `"timeout"`, `"interrupted"`, `"not_found"`, or `"failed"`
+   - validation fails
+5. Keep stdout/stderr visible in the text result. Recommended text format:
+
+```text
+status: ok
+sessionId: rt_python_abc
+runtime: python
+autoClosed: false
+
+stdout:
+...
+
+stderr:
+...
+
+result:
+...
+```
+
+6. Keep full structured data in `details` for Chat Web traces and future UI.
+7. Prompt snippet must teach the one-shot flag:
+
+```text
+Use runtime for stateful Python/Node exploration. Set closeOnSuccess on exec for one-shot code: success closes the runtime; failure keeps prior state for inspection and repair.
+```
+
+### Phase 5: Python worker source
+
+Create `src/tools/runtime/python-worker-source.ts` with an exported string constant.
+
+Do not ship a loose `.py` file unless package/build scripts are updated to copy it. An embedded string survives TypeScript compilation into `dist`.
+
+Worker protocol:
+
+- stdin: JSON Lines requests
+- stdout: JSON Lines responses only
+- user stdout/stderr: captured and returned in JSON
+- request fields:
+  - `id`
+  - `type`: `exec` | `inspect` | `vars` | `shutdown`
+  - action-specific fields
+- response fields:
+  - `id`
+  - `status`
+  - `stdout`
+  - `stderr`
+  - `result`
+  - `error`
+
+Python implementation details:
+
+1. Maintain:
+
+```python
+user_globals = {"__name__": "__pibo_runtime__"}
+```
+
+2. For `exec` mode:
+   - compile with `compile(code, "<pibo-runtime>", "exec")`
+   - execute with `exec(compiled, user_globals, user_globals)`
+   - statement mutations before an exception remain available
+3. For `eval` mode:
+   - compile with `eval`
+   - evaluate and summarize the returned value
+4. For `auto` mode in MVP:
+   - either treat as `exec`, or compile as `eval` only when no side effects are possible to infer safely
+   - document the chosen behavior in tests
+5. Capture output with `contextlib.redirect_stdout` and `redirect_stderr`.
+6. Summarize values safely:
+   - bound `repr`
+   - catch broken `__repr__`
+   - detect pandas `DataFrame`/`Series` by type/module without importing pandas eagerly
+   - include `shape`, `columns`, and bounded preview for DataFrames
+   - include keys for dict-like values
+   - include length for sequences
+7. Errors:
+   - return `name`, `message`, `traceback`
+   - parse the traceback for the best failing `line`
+   - include `column` only when available
+8. `vars`:
+   - hide private names by default
+   - skip modules and helper internals unless `includePrivate` is true
+9. `inspect`:
+   - evaluate the expression in `user_globals`
+   - support `summary`, `signature`, `members`, `source`, `doc`, `all`
+   - bound every returned string by `maxBytes`
+
+### Phase 6: Local Python backend
+
+Create `src/tools/runtime/python-backend.ts`.
+
+Responsibilities:
+
+1. Start a worker process:
+   - executable: input `executable` or default `python3`
+   - args: `input.args ?? []`, plus `-u -c <workerSource>`
+   - cwd: resolved against runtime cwd
+   - env: `process.env` plus allowed overrides
+   - stdio: pipes, no PTY
+2. Wait for a ready handshake before returning `RuntimeStartResult`.
+3. Maintain request ids and a pending map.
+4. Read stdout line-by-line and parse JSON responses.
+5. Treat stderr from the worker process as worker diagnostics, not user stderr. User stderr should come from JSON responses.
+6. Implement per-request timeout:
+   - reject/return timeout when elapsed
+   - leave session open if worker still responds later only if protocol can resync safely
+   - for MVP, prefer marking session failed on protocol uncertainty
+7. Implement `interrupt`:
+   - send `SIGINT` to the process on Unix
+   - return best-effort result
+8. Implement `close`:
+   - send shutdown request first
+   - after grace period, `SIGTERM`
+   - with `force`, kill immediately or escalate to `SIGKILL`
+9. Implement crash handling:
+   - reject all pending requests
+   - mark backend session dead
+
+### Phase 7: MVP action behavior
+
+Wire registry + backend + tool action behavior.
+
+`start`:
+
+- validate `runtime === "python"` for MVP
+- reject `target.type !== "local"` with a clear message
+- create registry record with owner Pibo Session ID
+- return pid, cwd, executable, startedAt
+
+`exec`:
+
+- require existing session and owner match
+- run backend exec
+- append history entry
+- apply `closeOnSuccess`
+- return stdout, stderr, result, error, duration, executionCount, autoClosed
+
+`inspect`:
+
+- require existing session and owner match
+- call backend inspect
+- return bounded fields
+
+`vars`:
+
+- require existing session and owner match
+- return bounded variable list
+
+`interrupt`:
+
+- require existing session and owner match
+- best-effort signal
+
+`close`:
+
+- require existing session and owner match
+- close process
+- mark closed
+
+`list`:
+
+- return only records owned by current Pibo Session
+- include `sessionId`, runtime, name, cwd, status, startedAt, updatedAt, lastExecAt, executionCount
+- hide backend-private state
+
+### Phase 8: Tests for Python MVP
+
+Add `test/runtime-tool.test.mjs`.
+
+Test through built `dist` exports. Extend `src/index.ts` exports only if tests need direct access to registry/tool helpers.
+
+Required tests:
+
+1. Core registry/backend:
+   - start Python runtime
+   - `exec x = 1`
+   - later `eval x + 1` returns `2`
+2. Failure preserves state:
+   - execute `x = 1\nraise Exception("boom")`
+   - result status is `error`
+   - line information exists when available
+   - later `eval x` returns `1`
+3. `closeOnSuccess` success path:
+   - start runtime
+   - exec with `closeOnSuccess: true`
+   - result `status: "ok"`, `autoClosed: true`
+   - later exec returns `not_found` or closed-session error
+4. `closeOnSuccess` failure path:
+   - exec with `closeOnSuccess: true` and failing later line
+   - runtime remains listed as open/idle
+   - variables created before failure remain inspectable
+   - second exec with `closeOnSuccess: true` can finish and auto-close
+5. stdout/stderr separation:
+   - `print("out")`
+   - `print("err", file=sys.stderr)`
+6. `vars` hides private names by default.
+7. `inspect` function signature:
+   - define `def f(a, b=1): ...`
+   - inspect signature returns `(a, b=1)` or equivalent
+8. owner isolation:
+   - owner A starts runtime
+   - owner B cannot list/exec/inspect it
+9. profile/catalog:
+   - default plugin registry lists `runtime` as a built-in Pibo/native tool
+   - `codex-compat-openai-web` includes `runtime`
+   - profile inspection marks it active
+10. cleanup:
+   - closing owner sessions terminates processes
+
+Run:
+
+```bash
+npm run typecheck
+npm test
+```
+
+### Phase 9: Agent guidance and trace visibility
+
+Touch these files as needed:
+
+- `src/tools/runtime/tool.ts`
+- `skills/builtin/pi-agent-harness/SKILL.md` only if product guidance belongs there
+- `src/shared/trace-engine.ts`
+- `src/apps/chat-ui/src/tracing/*`
+- `src/apps/chat-ui/src/session-views/*`
+
+MVP guidance requirements:
+
+1. Tool description and prompt snippet must explain:
+   - persistent state
+   - `inspect` and `vars`
+   - when to use Bash instead
+   - `closeOnSuccess` one-shot recovery behavior
+2. Generic tool traces are acceptable for MVP if `details` contain structured runtime data.
+3. Add custom trace rendering only if generic tool rendering hides stdout/stderr or `autoClosed`.
+
+### Phase 10: Node backend
+
+Create:
+
+- `src/tools/runtime/node-worker-source.ts`
+- `src/tools/runtime/node-backend.ts`
+
+Implement under the same registry and tool shape.
+
+Minimum Node acceptance:
+
+1. start Node runtime
+2. define variable and reuse it later
+3. capture `console.log` / `console.error`
+4. `eval` returns value summary
+5. thrown exceptions return stack and line when available
+6. inspect object keys and function source preview
+7. support top-level `await` if feasible; otherwise document the limitation and add a skipped/failing TODO test
+8. support `closeOnSuccess` success and failure behavior
+
+### Phase 11: Packaging and exports
+
+1. Confirm `npm run build` emits all runtime modules into `dist/tools/runtime/*`.
+2. If worker code is embedded as TypeScript strings, no package `files` change is needed.
+3. If any non-TS worker asset is introduced, update `package.json` `files` and build/copy scripts. Prefer not to do this for MVP.
+4. Export only stable product APIs from `src/index.ts`:
+   - `createRuntimeToolProfile` if useful to plugin authors
+   - runtime types if tests or downstream code need them
+   - avoid exporting backend internals
+
+### Phase 12: Later target support
+
+Do not implement in MVP, but keep type seams ready.
+
+Future files likely touched:
+
+- `src/tools/runtime/docker-python-backend.ts`
+- `src/tools/runtime/ssh-python-backend.ts`
+- policy/config modules for allowed targets
+
+Rules:
+
+- Docker uses `docker exec -i`, never `-t`, for runtime workers.
+- SSH starts a structured worker over stdin/stdout.
+- Target support must be separately policy-gated.
+
+### Phase 13: Done criteria
+
+Implementation is complete when:
+
+1. `runtime` appears in the capability catalog as a Pibo-owned built-in tool.
+2. The Codex-compatible default profile exposes `runtime` to agents.
+3. Python runtime sessions work through the actual agent tool path, not only direct unit calls.
+4. Runtime sessions are scoped to the owning Pibo Session.
+5. `closeOnSuccess` matches the specified behavior.
+6. Runtime processes close on explicit `close`, owner disposal, and router disposal.
+7. `npm run typecheck` passes.
+8. `npm test` passes.
+9. Any Chat Web smoke check uses the Docker worker gateway, not the host production gateway.
 
 ## 18. Acceptance criteria for Python MVP
 
@@ -947,6 +1416,8 @@ Mitigation:
 8. Session can be closed and no longer accepts exec calls.
 9. Sessions are scoped to the owning Pibo Session.
 10. Large outputs are truncated safely.
+11. `closeOnSuccess: true` automatically closes after a successful execution.
+12. `closeOnSuccess: true` keeps the runtime available after an execution error, with previous state intact and line-specific error information when available.
 
 ## 19. Acceptance criteria for Node MVP
 
@@ -958,6 +1429,8 @@ Mitigation:
 6. Error stack is returned on thrown exceptions.
 7. Session can be closed.
 8. Sessions are scoped to the owning Pibo Session.
+9. `closeOnSuccess: true` automatically closes after a successful execution.
+10. `closeOnSuccess: true` keeps the runtime available after an execution error, with previous state intact and line-specific error information when available.
 
 ## 20. Open questions
 
