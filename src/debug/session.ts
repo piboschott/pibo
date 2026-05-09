@@ -30,13 +30,17 @@ type SessionRow = {
 	kind: string;
 	profile: string;
 	owner_scope: string | null;
+	room_id: string | null;
+	root_session_id: string | null;
 	parent_id: string | null;
 	origin_id: string | null;
 	workspace: string | null;
 	title: string | null;
+	status: string;
 	metadata_json: string | null;
 	created_at: string;
 	updated_at: string;
+	last_activity_at: string;
 };
 
 export function parseDebugSessionInput(input: string): ParsedDebugSessionInput {
@@ -66,12 +70,12 @@ export function inspectDebugSession(
 	}
 	const sessionsDb = openReadOnlyDebugDatabase(stores.sessions);
 	try {
-		const session = sessionsDb.prepare("SELECT * FROM pibo_sessions WHERE id = ?").get(parsed.piboSessionId) as
+		const session = sessionsDb.prepare("SELECT * FROM sessions WHERE id = ?").get(parsed.piboSessionId) as
 			| SessionRow
 			| undefined;
 		if (!session) throw new Error(`Pibo session "${parsed.piboSessionId}" not found`);
 		const metadata = parseObject(session.metadata_json);
-		const sessionRoomId = stringValue(metadata.chatRoomId);
+		const sessionRoomId = session.room_id ?? stringValue(metadata.chatRoomId);
 		const warnings = parsed.roomId && sessionRoomId && parsed.roomId !== sessionRoomId
 			? [`URL roomId "${parsed.roomId}" does not match session metadata chatRoomId "${sessionRoomId}".`]
 			: [];
@@ -88,14 +92,14 @@ export function inspectDebugSession(
 			children: listChildSessions(sessionsDb, parsed.piboSessionId, limit),
 		};
 		if (stores.chat.exists) {
-			const chatDb = openReadOnlyDebugDatabase(stores.chat);
+			const chatDb = stores.chat.path === stores.sessions.path ? sessionsDb : openReadOnlyDebugDatabase(stores.chat);
 			try {
 				summary.chat = readChatSession(chatDb, parsed.piboSessionId);
 				if (options.events) summary.events = readEventSummaries(chatDb, parsed.piboSessionId, limit);
 			} catch (error) {
 				throw withStorePath(error, stores.chat);
 			} finally {
-				chatDb.close();
+				if (chatDb !== sessionsDb) chatDb.close();
 			}
 		}
 		return summary;
@@ -153,8 +157,8 @@ function listChildSessions(db: DatabaseSync, piboSessionId: string, limit: numbe
 	const rows = db
 		.prepare(
 			`
-				SELECT id, pi_session_id, channel, kind, profile, parent_id, metadata_json, created_at, updated_at
-				FROM pibo_sessions
+				SELECT id, pi_session_id, channel, kind, profile, owner_scope, room_id, root_session_id, parent_id, origin_id, workspace, title, status, metadata_json, created_at, updated_at, last_activity_at
+				FROM sessions
 				WHERE parent_id = ?
 				ORDER BY created_at
 				LIMIT ?
@@ -181,21 +185,36 @@ function listChildSessions(db: DatabaseSync, piboSessionId: string, limit: numbe
 }
 
 function readChatSession(db: DatabaseSync, piboSessionId: string): Record<string, unknown> | undefined {
-	if (!tableExists(db, "web_chat_sessions")) return undefined;
-	return db.prepare("SELECT * FROM web_chat_sessions WHERE pibo_session_id = ?").get(piboSessionId) as
-		| Record<string, unknown>
-		| undefined;
+	if (!tableExists(db, "sessions")) return undefined;
+	return db.prepare(`
+		SELECT
+			s.id AS pibo_session_id,
+			s.room_id,
+			s.root_session_id,
+			s.status,
+			s.last_activity_at,
+			stats.message_count,
+			stats.tool_call_count,
+			stats.error_count,
+			stats.last_event_stream_id,
+			nav.child_count,
+			nav.sort_key
+		FROM sessions s
+		LEFT JOIN session_stats stats ON stats.session_id = s.id
+		LEFT JOIN session_navigation nav ON nav.session_id = s.id
+		WHERE s.id = ?
+	`).get(piboSessionId) as Record<string, unknown> | undefined;
 }
 
 function readEventSummaries(db: DatabaseSync, piboSessionId: string, limit: number): Array<Record<string, unknown>> {
-	if (!tableExists(db, "web_chat_events")) return [];
+	if (!tableExists(db, "event_log")) return [];
 	return db
 		.prepare(
 			`
-				SELECT type, event_id, created_at
-				FROM web_chat_events
-				WHERE pibo_session_id = ?
-				ORDER BY rowid DESC
+				SELECT type, event_id, created_at, stream_id
+				FROM event_log
+				WHERE session_id = ?
+				ORDER BY stream_id DESC
 				LIMIT ?
 			`,
 		)
@@ -219,8 +238,12 @@ function compactSessionRow(row: SessionRow): Record<string, unknown> {
 		origin_id: row.origin_id,
 		workspace: row.workspace,
 		title: row.title,
+		status: row.status,
+		room_id: row.room_id,
+		root_session_id: row.root_session_id,
 		created_at: row.created_at,
 		updated_at: row.updated_at,
+		last_activity_at: row.last_activity_at,
 	};
 }
 

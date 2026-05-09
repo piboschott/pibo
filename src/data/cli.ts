@@ -20,8 +20,8 @@ type StoreInventory = {
 const INVENTORY_STORES = [
 	{ name: "v2", file: "pibo.sqlite", tables: ["sessions", "rooms", "chat_messages", "event_log", "observations", "payloads", "session_navigation"] },
 	{ name: "v2-shadow", file: "pibo-chat-v2.sqlite", tables: ["sessions", "rooms", "chat_messages", "event_log", "observations", "payloads", "session_navigation"] },
-	{ name: "sessions", file: "pibo-sessions.sqlite", tables: ["pibo_sessions"] },
-	{ name: "chat", file: "web-chat.sqlite", tables: ["chat_events", "web_chat_events", "web_chat_sessions", "pibo_rooms", "chat_session_reads"] },
+	{ name: "legacy-sessions", file: "pibo-sessions.sqlite", tables: ["pibo_sessions"] },
+	{ name: "legacy-chat", file: "web-chat.sqlite", tables: ["chat_events", "web_chat_events", "web_chat_sessions", "pibo_rooms", "chat_session_reads"] },
 	{ name: "reliability", file: "pibo-events.sqlite", tables: ["pibo_event_stream", "pibo_jobs", "pibo_runs"] },
 	{ name: "auth", file: "auth.sqlite", tables: [] },
 ];
@@ -383,8 +383,8 @@ function printDataHelp(): void {
 	console.log(`pibo data - inspect and maintain Pibo data stores
 
 Commands:
-  inventory           Read-only row counts, sizes, WAL sizes, and integrity checks
-  migrate sessions-to-v2  Import pibo-sessions.sqlite rows into pibo.sqlite idempotently
+  inventory           Read-only row counts, sizes, WAL sizes, and integrity checks; legacy-* rows are archived stores
+  migrate sessions-to-v2  Import an explicit legacy pibo-sessions.sqlite into pibo.sqlite idempotently
   repair unread-baseline  Seed read cursors for historical imported chat events
 
 Options:
@@ -397,7 +397,7 @@ Options:
 
 Next:
   pibo data inventory --json
-  pibo data migrate sessions-to-v2 --json
+  pibo data migrate sessions-to-v2 --from /path/to/pibo-sessions.sqlite --json
   pibo data repair unread-baseline --owner-scope <ownerScope> --before <isoTimestamp> --dry-run --json
 `);
 }

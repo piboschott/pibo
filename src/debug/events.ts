@@ -3,11 +3,12 @@ import type { ResolvedPiboDebugStore } from "./stores.js";
 import { normalizeLimit, openReadOnlyDebugDatabase, withStorePath } from "./sql.js";
 
 type EventRow = {
-	id: string;
+	stream_id: number;
 	event_id: string | null;
 	type: string;
 	created_at: string;
-	payload_json: string;
+	preview_text: string | null;
+	attributes_json: string;
 };
 
 export type DebugEventResult = {
@@ -25,8 +26,8 @@ export function inspectDebugEvents(
 	const limit = normalizeLimit(options.limit);
 	const db = openReadOnlyDebugDatabase(store);
 	try {
-		if (!tableExists(db, "web_chat_events")) return { piboSessionId, events: [], limited: false };
-		const clauses = ["pibo_session_id = ?"];
+		if (!tableExists(db, "event_log")) return { piboSessionId, events: [], limited: false };
+		const clauses = ["session_id = ?"];
 		const values: Array<string | number> = [piboSessionId];
 		if (options.type) {
 			clauses.push("type = ?");
@@ -35,10 +36,10 @@ export function inspectDebugEvents(
 		const rows = db
 			.prepare(
 				`
-					SELECT id, event_id, type, created_at, payload_json
-					FROM web_chat_events
+					SELECT stream_id, event_id, type, created_at, preview_text, attributes_json
+					FROM event_log
 					WHERE ${clauses.join(" AND ")}
-					ORDER BY rowid DESC
+					ORDER BY stream_id DESC
 					LIMIT ?
 				`,
 			)
@@ -68,11 +69,12 @@ export function formatDebugEvents(result: DebugEventResult): string {
 }
 
 function formatEventRow(row: EventRow, fields: string[]): Record<string, unknown> {
-	const payload = parseObject(row.payload_json);
+	const payload = eventPayload(row);
 	const result: Record<string, unknown> = {
 		created_at: row.created_at,
 		type: row.type,
 		event_id: row.event_id,
+		stream_id: row.stream_id,
 	};
 	for (const field of fields) {
 		result[field] = getPath(payload, field);
@@ -92,6 +94,13 @@ function getPath(value: unknown, path: string): unknown {
 function tableExists(db: DatabaseSync, table: string): boolean {
 	const row = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table);
 	return row !== undefined;
+}
+
+function eventPayload(row: EventRow): Record<string, unknown> {
+	const attributes = parseObject(row.attributes_json);
+	const inlinePayload = attributes.inlinePayload;
+	if (inlinePayload && typeof inlinePayload === "object" && !Array.isArray(inlinePayload)) return inlinePayload as Record<string, unknown>;
+	return { ...attributes, previewText: row.preview_text };
 }
 
 function parseObject(value: string): Record<string, unknown> {

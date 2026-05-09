@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { piboHomePath } from "../core/pibo-home.js";
 
-export type PiboDebugStoreName = "sessions" | "chat" | "agents" | "auth" | "bindings" | "reliability";
+export type PiboDebugStoreName = "pibo-data" | "sessions" | "chat" | "agents" | "auth" | "bindings" | "reliability";
 
 export type PiboDebugStore = {
 	name: PiboDebugStoreName;
@@ -16,14 +16,19 @@ export type ResolvedPiboDebugStore = PiboDebugStore & {
 
 export const PIBO_DEBUG_STORES: readonly PiboDebugStore[] = [
 	{
+		name: "pibo-data",
+		description: "current unified Chat Web and Pibo Session data",
+		defaultPath: "pibo.sqlite",
+	},
+	{
 		name: "sessions",
-		description: "canonical Pibo Session metadata",
-		defaultPath: "pibo-sessions.sqlite",
+		description: "V2 alias for Pibo Session metadata in pibo.sqlite",
+		defaultPath: "pibo.sqlite",
 	},
 	{
 		name: "chat",
-		description: "Chat Web read model, rooms, and durable chat events",
-		defaultPath: "web-chat.sqlite",
+		description: "V2 alias for Chat Web rooms, messages, events, observations, and stats in pibo.sqlite",
+		defaultPath: "pibo.sqlite",
 	},
 	{
 		name: "agents",

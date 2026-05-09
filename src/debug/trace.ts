@@ -18,23 +18,22 @@ type SessionRow = {
 	origin_id: string | null;
 	workspace: string | null;
 	title: string | null;
+	status: string;
 	metadata_json: string | null;
 	created_at: string;
 	updated_at: string;
-};
-
-type ChatSessionRow = {
-	status: string;
+	last_activity_at: string;
 };
 
 type EventRow = {
-	id: string;
-	pibo_session_id: string;
-	event_sequence?: number | null;
+	stream_id: number;
+	session_id: string | null;
+	session_sequence?: number | null;
 	event_id: string | null;
 	type: string;
 	created_at: string;
-	payload_json: string;
+	preview_text: string | null;
+	attributes_json: string;
 };
 
 export type DebugTraceResult = {
@@ -84,30 +83,25 @@ export async function inspectDebugTrace(
 	if (!stores.chat.exists) throw new Error(`Debug store "chat" not found at ${stores.chat.path}`);
 
 	const sessionsDb = openReadOnlyDebugDatabase(stores.sessions);
-	const chatDb = openReadOnlyDebugDatabase(stores.chat);
+	const chatDb = stores.chat.path === stores.sessions.path ? sessionsDb : openReadOnlyDebugDatabase(stores.chat);
 	try {
-		const sessionRow = sessionsDb.prepare("SELECT * FROM pibo_sessions WHERE id = ?").get(piboSessionId) as
+		const sessionRow = sessionsDb.prepare("SELECT * FROM sessions WHERE id = ?").get(piboSessionId) as
 			| SessionRow
 			| undefined;
 		if (!sessionRow) throw new Error(`Pibo session "${piboSessionId}" not found`);
 
 		const session = sessionFromRow(sessionRow);
-		const sessions = (sessionsDb.prepare("SELECT * FROM pibo_sessions").all() as SessionRow[]).map(sessionFromRow);
-		const chatRow = tableExists(chatDb, "web_chat_sessions")
-			? (chatDb.prepare("SELECT status FROM web_chat_sessions WHERE pibo_session_id = ?").get(piboSessionId) as
-					| ChatSessionRow
-					| undefined)
-			: undefined;
-		const events = tableExists(chatDb, "web_chat_events")
+		const sessions = (sessionsDb.prepare("SELECT * FROM sessions").all() as SessionRow[]).map(sessionFromRow);
+		const events = tableExists(chatDb, "event_log")
 			? (chatDb
-					.prepare("SELECT * FROM web_chat_events WHERE pibo_session_id = ? ORDER BY rowid ASC")
-					.all(piboSessionId) as EventRow[]).map(eventFromRow)
+					.prepare("SELECT stream_id, session_id, session_sequence, event_id, type, created_at, preview_text, attributes_json FROM event_log WHERE session_id = ? ORDER BY stream_id ASC")
+					.all(piboSessionId) as EventRow[]).map(eventFromRow).filter((event): event is ChatWebStoredPiboEvent => event !== undefined)
 			: [];
 		const view = await buildTraceView({
 			session,
 			sessions,
 			events,
-			status: chatRow?.status === "running" || chatRow?.status === "error" ? chatRow.status : "idle",
+			status: sessionRow.status === "running" || sessionRow.status === "error" ? sessionRow.status : "idle",
 		});
 		const rows = flattenTraceNodes(view.nodes);
 		const filtered = options.runningOnly ? rows.filter((node) => node.status === "running") : rows;
@@ -124,7 +118,7 @@ export async function inspectDebugTrace(
 		throw withStorePath(withStorePath(error, stores.chat), stores.sessions);
 	} finally {
 		sessionsDb.close();
-		chatDb.close();
+		if (chatDb !== sessionsDb) chatDb.close();
 	}
 }
 
@@ -301,16 +295,54 @@ function sessionFromRow(row: SessionRow): PiboSession {
 	};
 }
 
-function eventFromRow(row: EventRow): ChatWebStoredPiboEvent {
+function eventFromRow(row: EventRow): ChatWebStoredPiboEvent | undefined {
+	const payload = outputPayloadFromV2Row(row);
+	if (!payload) return undefined;
 	return {
-		id: row.id,
-		piboSessionId: row.pibo_session_id,
-		eventSequence: row.event_sequence ?? undefined,
+		id: String(row.stream_id),
+		piboSessionId: row.session_id ?? undefined,
+		eventSequence: row.session_sequence ?? undefined,
 		eventId: row.event_id ?? undefined,
+		streamId: row.stream_id,
 		type: row.type,
 		createdAt: row.created_at,
-		payload: JSON.parse(row.payload_json) as PiboOutputEvent,
+		payload,
 	};
+}
+
+function outputPayloadFromV2Row(row: EventRow): PiboOutputEvent | undefined {
+	const attributes = parseObject(row.attributes_json);
+	const inlinePayload = attributes.inlinePayload;
+	if (inlinePayload && typeof inlinePayload === "object" && !Array.isArray(inlinePayload) && typeof (inlinePayload as { type?: unknown }).type === "string") {
+		return inlinePayload as PiboOutputEvent;
+	}
+	const piboSessionId = row.session_id;
+	if (!piboSessionId) return undefined;
+	const base = { piboSessionId, eventId: row.event_id ?? undefined };
+	if (row.type === "assistant_message") return compactObject({ ...base, type: "assistant_message", text: row.preview_text ?? "" }) as PiboOutputEvent;
+	if (row.type === "message_started") return compactObject({ ...base, type: "message_started", text: row.preview_text ?? "" }) as PiboOutputEvent;
+	if (row.type === "message_finished") return compactObject({ ...base, type: "message_finished" }) as PiboOutputEvent;
+	if (row.type === "thinking_started") return compactObject({ ...base, type: "thinking_started" }) as PiboOutputEvent;
+	if (row.type === "thinking_finished") return compactObject({ ...base, type: "thinking_finished", text: row.preview_text ?? "" }) as PiboOutputEvent;
+	if (row.type === "tool_call") return compactObject({ ...base, type: "tool_call", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: inlinePayload ?? null, argsComplete: booleanAttribute(attributes, "argsComplete") ?? true }) as PiboOutputEvent;
+	if (row.type === "tool_execution_started") return compactObject({ ...base, type: "tool_execution_started", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: inlinePayload ?? null }) as PiboOutputEvent;
+	if (row.type === "tool_execution_updated") return compactObject({ ...base, type: "tool_execution_updated", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: null, partialResult: inlinePayload ?? null }) as PiboOutputEvent;
+	if (row.type === "tool_execution_finished") return compactObject({ ...base, type: "tool_execution_finished", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", result: inlinePayload ?? null, isError: booleanAttribute(attributes, "isError") ?? false }) as PiboOutputEvent;
+	return compactObject({ ...base, type: row.type }) as PiboOutputEvent;
+}
+
+function stringAttribute(attributes: PiboJsonObject, key: string): string | undefined {
+	const value = attributes[key];
+	return typeof value === "string" ? value : undefined;
+}
+
+function booleanAttribute(attributes: PiboJsonObject, key: string): boolean | undefined {
+	const value = attributes[key];
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function compactObject(value: Record<string, unknown>): PiboJsonObject {
+	return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as PiboJsonObject;
 }
 
 function tableExists(db: DatabaseSync, table: string): boolean {

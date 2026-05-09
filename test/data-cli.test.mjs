@@ -17,7 +17,7 @@ test("pibo data inventory is read-only and reports missing stores", async () => 
 		const parsed = JSON.parse(result.stdout);
 		assert.ok(Array.isArray(parsed.stores));
 		assert.ok(parsed.stores.some((store) => store.name === "v2" && store.exists === false));
-		assert.ok(parsed.stores.some((store) => store.name === "chat" && store.exists === false));
+		assert.ok(parsed.stores.some((store) => store.name === "legacy-chat" && store.exists === false));
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
