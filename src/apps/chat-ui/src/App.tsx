@@ -1317,7 +1317,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						>
 							<Menu size={16} />
 						</button>
-						<img src="/apps/chat/assets/logo.png" alt="Logo" className="h-5 w-auto" />
+						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto" />
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
 					<nav className="flex gap-1 flex-wrap">
