@@ -3049,15 +3049,17 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					principalId,
 				});
 				indexOwnedSessions(state.sessionQuery, roomSessions);
+				const sessionUnreadCounts = buildSessionUnreadCounts(state, ownedSessions, principalId);
 				const sessions = await buildSessionNodes(
 					roomSessions,
 					sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions()),
 					process.cwd(),
-					new Map(),
+					sessionUnreadCounts,
 					{ skipPiMetadataFallback: true },
 				);
 				const roomTree = state.roomService.listRoomTree(webSession.ownerScope);
-				const rooms = roomsWithUnreadCounts(roomTree, new Map());
+				const roomUnreadCounts = buildRoomUnreadCounts(ownedSessions, sessionUnreadCounts, defaultRoom.id);
+				const rooms = roomsWithUnreadCounts(roomTree, roomUnreadCounts);
 				return responseJson({
 					identity: webSession.authSession.identity,
 					session: selectedSession,
@@ -3068,7 +3070,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					latestRoomStreamId: state.timelineQuery.getLatestStreamId({ roomId: selectedRoomId }),
 					rooms,
 					sessions,
-				}, { headers: { "server-timing": "navigation;desc=\"no_catalog_no_unread_no_jsonl\"" } });
+				}, { headers: { "server-timing": "navigation;desc=\"no_catalog_no_jsonl\"" } });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/bootstrap` && request.method === "GET") {

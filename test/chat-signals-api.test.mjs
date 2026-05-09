@@ -68,8 +68,17 @@ async function startSignalWebHost() {
 	};
 }
 
-function createSession(store, id, ownerScope = "user:user-1", parentId) {
-	return store.create({ id, channel: "test", kind: parentId ? "subagent" : "runtime", profile: "test-profile", ownerScope, parentId });
+function createSession(store, id, ownerScope = "user:user-1", parentId, metadata) {
+	return store.create({ id, channel: "test", kind: parentId ? "subagent" : "runtime", profile: "test-profile", ownerScope, parentId, metadata });
+}
+
+function findSessionNode(nodes, piboSessionId) {
+	for (const node of nodes) {
+		if (node.piboSessionId === piboSessionId) return node;
+		const child = findSessionNode(node.children ?? [], piboSessionId);
+		if (child) return child;
+	}
+	return undefined;
 }
 
 async function readSseEvents(response, count) {
@@ -179,7 +188,31 @@ test("chat navigation clears stale indexed running status from settled signal st
 		const response = await fetch(`${baseURL}/api/chat/navigation?piboSessionId=${session.id}`, { headers: { "x-test-user": "user-1" } });
 		assert.equal(response.status, 200);
 		const body = await response.json();
-		assert.equal(body.sessions.find((node) => node.piboSessionId === session.id)?.status, "idle");
+		assert.equal(findSessionNode(body.sessions, session.id)?.status, "idle");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat navigation includes unread counts for completed messages in other sessions", async () => {
+	const { channel, baseURL, sessions, signals, emitOutput } = await startSignalWebHost();
+	try {
+		const selected = createSession(sessions, "ps_navigation_selected");
+		const other = createSession(sessions, "ps_navigation_unread_other");
+		for (const session of [selected, other]) signals.project({ type: "session_created", session });
+
+		const initial = await fetch(`${baseURL}/api/chat/bootstrap?piboSessionId=${selected.id}&markRead=true`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(initial.status, 200);
+
+		emitOutput({ type: "message_started", piboSessionId: other.id, eventId: "m2", text: "hi" });
+		emitOutput({ type: "assistant_message", piboSessionId: other.id, eventId: "m2", text: "answer" });
+		emitOutput({ type: "message_finished", piboSessionId: other.id, eventId: "m2" });
+		signals.project({ type: "session_processing_changed", piboSessionId: other.id, processing: false, queuedMessages: 0 });
+
+		const response = await fetch(`${baseURL}/api/chat/navigation?piboSessionId=${selected.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(response.status, 200);
+		const body = await response.json();
+		assert.equal(findSessionNode(body.sessions, other.id)?.unreadCount, 1);
 	} finally {
 		await channel.stop?.();
 	}

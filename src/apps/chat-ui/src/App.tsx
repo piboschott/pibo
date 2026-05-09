@@ -6662,6 +6662,19 @@ function traceNodeText(node: PiboTraceNode): string {
 
 type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string };
 
+function latestIsoTimestamp(...values: Array<string | undefined>): string | undefined {
+	let latest: string | undefined;
+	let latestMs = -Infinity;
+	for (const value of values) {
+		if (!value) continue;
+		const ms = Date.parse(value);
+		if (!Number.isFinite(ms) || ms < latestMs) continue;
+		latest = value;
+		latestMs = ms;
+	}
+	return latest;
+}
+
 function applySignalSnapshotToBootstrap(bootstrap: BootstrapData, snapshot: PiboSignalSnapshot): BootstrapData {
 	return updateBootstrapSessionStatuses(bootstrap, (piboSessionId) => signalSessionUpdate(snapshot.sessions[piboSessionId]));
 }
@@ -6687,7 +6700,10 @@ function updateSignalStatusInSessionNode(
 ): PiboWebSessionNode {
 	const update = updateFor(node.piboSessionId);
 	const status = update?.status;
-	const lastActivityAt = update?.updatedAt ?? (status && status !== node.status ? new Date().toISOString() : node.lastActivityAt);
+	const statusChanged = Boolean(status && status !== node.status);
+	const lastActivityAt = statusChanged
+		? latestIsoTimestamp(node.lastActivityAt, update?.updatedAt, new Date().toISOString())
+		: latestIsoTimestamp(node.lastActivityAt, update?.updatedAt);
 	return {
 		...node,
 		status: status ?? node.status,
@@ -6695,10 +6711,13 @@ function updateSignalStatusInSessionNode(
 		children: node.children.map((child) => updateSignalStatusInSessionNode(child, updateFor)),
 		derivedSessions: node.derivedSessions.map((derived) => {
 			const derivedUpdate = updateFor(derived.piboSessionId);
+			const derivedStatusChanged = Boolean(derivedUpdate?.status && derivedUpdate.status !== derived.status);
 			return {
 				...derived,
 				status: derivedUpdate?.status ?? derived.status,
-				lastActivityAt: derivedUpdate?.updatedAt ?? derived.lastActivityAt,
+				lastActivityAt: derivedStatusChanged
+					? latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt, new Date().toISOString())
+					: latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt),
 			};
 		}),
 	};
