@@ -28,6 +28,7 @@ import {
 } from "./rooms.js";
 import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStreamEvent } from "./stream.js";
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView } from "./trace.js";
+import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
 import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadata.js";
 import {
 	CustomAgentStore,
@@ -3558,6 +3559,57 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					action: "kill_all",
 				});
 				return responseJson(output);
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace/summary` && request.method === "GET") {
+				const startedAt = performance.now();
+				const webSession = await requireSession(request, context);
+				const selectedSession = resolveRequestedSession(
+					state,
+					context,
+					webSession,
+					defaultProfile,
+					url.searchParams.get("piboSessionId") || undefined,
+				);
+				state.readModel.upsertSession(selectedSession);
+				const indexedSession = state.readModel.getSession(selectedSession.id);
+				const metadataStartedAt = performance.now();
+				const metadata = await loadPiSessionMetadata(selectedSession, selectedSession.workspace ?? process.cwd());
+				const metadataMs = performance.now() - metadataStartedAt;
+				const lastEventSequence = state.readModel.getLatestEventSequence(selectedSession.id);
+				const latestStreamId = state.eventLog.getLatestStreamId({ piboSessionId: selectedSession.id });
+				const version = createTraceViewVersion({
+					session: selectedSession,
+					sessions: listOwnedSessions(context, webSession),
+					events: lastEventSequence > 0
+						? [{ id: `seq:${lastEventSequence}`, eventSequence: lastEventSequence, createdAt: indexedSession?.lastActivityAt ?? "" }]
+						: [],
+					status: indexedSession?.status,
+					metadata,
+					latestStreamId,
+				});
+				const headers = {
+					etag: etagForVersion(version),
+					"x-pibo-trace-version": version,
+					"server-timing": [
+						`trace_summary;dur=${(performance.now() - startedAt).toFixed(1)}`,
+						`trace_metadata;dur=${metadataMs.toFixed(1)}`,
+						`trace_events;desc="${lastEventSequence}"`,
+					].join(", "),
+				};
+				if (requestMatchesVersion(request, version)) {
+					return new Response(null, { status: 304, headers });
+				}
+				const summary: PiboSessionTraceSummary = {
+					piboSessionId: selectedSession.id,
+					piSessionId: selectedSession.piSessionId,
+					title: selectedSession.title ?? "Untitled Session",
+					version,
+					latestStreamId,
+					eventCount: lastEventSequence,
+					status: indexedSession?.status,
+				};
+				return responseJson(summary, { headers });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/trace` && request.method === "GET") {

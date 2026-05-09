@@ -41,9 +41,9 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getTrace, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getTrace, getTraceSummary, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
 import { THINKING_LEVELS } from "./types";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
@@ -64,9 +64,12 @@ import {
 	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
 	chatBootstrapQueryKey,
 	chatSessionNavigationQueryKey,
-	chatTraceQueryKey,
-	isTraceView,
-	traceQueriesForSession,
+	TRACE_GC_TIME_MS,
+	TRACE_STALE_TIME_MS,
+	chatTracePageQueryKey,
+	chatTraceSummaryQueryKey,
+	tracePageQueriesForSession,
+	traceSummaryQueriesForSession,
 } from "./cache";
 
 type Area = "sessions" | "agents" | "context" | "settings";
@@ -160,20 +163,6 @@ function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: Naviga
 		rooms: navigation.rooms,
 		sessions: navigation.sessions,
 	};
-}
-
-async function loadTraceQueryData(
-	piboSessionId: string,
-	options: { includeRawEvents?: boolean; rawEventsLimit?: number; eventLimit?: number } = {},
-): Promise<PiboSessionTraceView> {
-	const response = await getTrace(piboSessionId, {
-		includeRawEvents: options.includeRawEvents,
-		rawEventsLimit: options.rawEventsLimit,
-		eventLimit: options.eventLimit,
-	});
-	if (response.notModified) throw new Error("Trace response unexpectedly returned not modified without a cache.");
-	if (!response.trace) throw new Error("Trace response missing payload.");
-	return response.trace;
 }
 
 export function App({ route }: { route: ChatAppRoute }) {
@@ -611,8 +600,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, []);
 
 	const refreshTrace = useCallback(async (piboSessionId: string) => {
-		await queryClient.invalidateQueries({ queryKey: ["chat", "trace", piboSessionId], refetchType: "none" });
-		await queryClient.refetchQueries({ queryKey: ["chat", "trace", piboSessionId], type: "active" });
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), refetchType: "none" }),
+			queryClient.invalidateQueries({ queryKey: tracePageQueriesForSession(piboSessionId), refetchType: "none" }),
+		]);
+		await Promise.all([
+			queryClient.refetchQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), type: "active" }),
+			queryClient.refetchQueries({ queryKey: tracePageQueriesForSession(piboSessionId), type: "active" }),
+		]);
 	}, [queryClient]);
 	const refreshSelectedTrace = useCallback(
 		() => selectedPiboSessionId ? refreshTrace(selectedPiboSessionId) : Promise.resolve(),
@@ -686,17 +681,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const sendMessageMutation = useMutation({
 		mutationFn: ({ piboSessionId, text, clientTxnId, roomId }: { piboSessionId: string; text: string; clientTxnId: string; roomId?: string }) =>
 			postMessage(piboSessionId, text, clientTxnId, roomId),
-		onMutate: async ({ piboSessionId, text, clientTxnId }) => {
-			await queryClient.cancelQueries({ queryKey: traceQueriesForSession(piboSessionId) });
-			const queryData = queryClient.getQueriesData<PiboSessionTraceView>({ queryKey: traceQueriesForSession(piboSessionId) });
-			queryClient.setQueriesData<PiboSessionTraceView>({ queryKey: traceQueriesForSession(piboSessionId) }, (current) =>
-				current ? appendOptimisticUserMessageToTrace(current, piboSessionId, text, clientTxnId) : current,
-			);
+		onMutate: async ({ piboSessionId }) => {
+			await queryClient.cancelQueries({ queryKey: tracePageQueriesForSession(piboSessionId) });
 			updateBootstrapCache((data) => updateSessionNodeInBootstrap(data, piboSessionId, (node) => ({ ...node, status: "running", lastActivityAt: new Date().toISOString() })));
-			return { queryData };
 		},
-		onError: (_error, variables, context) => {
-			for (const [queryKey, data] of context?.queryData ?? []) queryClient.setQueryData(queryKey, data);
+		onError: (_error, variables) => {
 			updateBootstrapCache((data) => updateSessionNodeInBootstrap(data, variables.piboSessionId, (node) => ({ ...node, status: "error" })));
 		},
 	});
@@ -1684,27 +1673,52 @@ function SessionTracePane({
 	const [liveTraceOverlay, setLiveTraceOverlay] = useState<LiveTraceOverlay | null>(null);
 	const [traceEventLimit, setTraceEventLimit] = useState(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
 	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
-	const traceQueryKey = useMemo(
+	const [baseTraceView, setBaseTraceView] = useState<PiboSessionTraceView | null>(null);
+	const traceSummaryQueryKey = useMemo(
+		() => selectedPiboSessionId ? chatTraceSummaryQueryKey(selectedPiboSessionId) : null,
+		[selectedPiboSessionId],
+	);
+	const tracePageQueryKey = useMemo(
 		() =>
 			selectedPiboSessionId
-				? chatTraceQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: rawEventLimit, eventLimit: traceEventLimit })
+				? chatTracePageQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: rawEventLimit, eventLimit: traceEventLimit })
 				: null,
 		[rawEventLimit, selectedPiboSessionId, showRawEvents, traceEventLimit],
 	);
-	const traceQuery = useQuery({
-		queryKey: traceQueryKey ?? ["chat", "trace", "idle", "compact", rawEventLimit, DEFAULT_TRACE_EVENTS_PAGE_SIZE],
-		queryFn: () => {
-			if (!selectedPiboSessionId) throw new Error("Session is required");
-			return loadTraceQueryData(selectedPiboSessionId, {
+	const traceSummaryQuery = useQuery({
+		queryKey: traceSummaryQueryKey ?? ["chat", "trace-summary", "idle"],
+		queryFn: async () => {
+			if (!selectedPiboSessionId || !traceSummaryQueryKey) throw new Error("Session is required");
+			const cached = queryClient.getQueryData<PiboSessionTraceSummary>(traceSummaryQueryKey);
+			const response = await getTraceSummary(selectedPiboSessionId, cached?.version);
+			if (response.notModified && cached) return cached;
+			if (!response.summary) throw new Error("Trace summary response missing payload.");
+			return response.summary;
+		},
+		enabled: Boolean(selectedPiboSessionId),
+		staleTime: TRACE_STALE_TIME_MS,
+		gcTime: TRACE_GC_TIME_MS,
+		refetchOnWindowFocus: false,
+		retry: 1,
+	});
+	const tracePageQuery = useQuery({
+		queryKey: tracePageQueryKey ?? ["chat", "trace-page", "idle", "compact", rawEventLimit, DEFAULT_TRACE_EVENTS_PAGE_SIZE],
+		queryFn: async () => {
+			if (!selectedPiboSessionId || !tracePageQueryKey) throw new Error("Session is required");
+			const cached = queryClient.getQueryData<PiboSessionTraceView>(tracePageQueryKey);
+			const response = await getTrace(selectedPiboSessionId, {
 				includeRawEvents: showRawEvents,
 				rawEventsLimit: rawEventLimit,
 				eventLimit: traceEventLimit,
+				knownVersion: cached?.version,
 			});
+			if (response.notModified && cached) return cached;
+			if (!response.trace) throw new Error("Trace page response missing payload.");
+			return response.trace;
 		},
 		enabled: Boolean(selectedPiboSessionId),
-		staleTime: 0,
-		gcTime: 0,
-		refetchOnMount: "always",
+		staleTime: TRACE_STALE_TIME_MS,
+		gcTime: TRACE_GC_TIME_MS,
 		refetchOnWindowFocus: false,
 		retry: 1,
 	});
@@ -1712,31 +1726,38 @@ function SessionTracePane({
 	useEffect(() => {
 		setTraceEventLimit(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
 		setRawEventLimit(DEFAULT_RAW_EVENTS_LIMIT);
+		setBaseTraceView(null);
+		setLiveTraceOverlay(null);
 	}, [selectedPiboSessionId]);
 
-	// Keep the server-built trace as the canonical base. Larger history is loaded by
-	// increasing traceEventLimit; cached traces stay page-sized by default.
+	// TanStack Query caches only bounded trace pages and summaries. The render path
+	// reads from local state so a synchronous cache hit cannot rehydrate a trace in
+	// the same click task that switched sessions.
 	useEffect(() => {
-		if (!traceQuery.data) return;
-		const maxSeq = traceQuery.data.rawEvents
+		const trace = tracePageQuery.data;
+		if (!trace || trace.piboSessionId !== selectedPiboSessionId) return;
+		const maxSeq = trace.rawEvents
 			.map((e) => e.eventSequence ?? 0)
 			.reduce((a, b) => Math.max(a, b), 0);
 		liveEventSeqRef.current = Math.max(liveEventSeqRef.current, maxSeq + 1);
-		startTransition(() => setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, traceQuery.data)));
-	}, [traceQuery.data]);
+		startTransition(() => {
+			setBaseTraceView(trace);
+			setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, trace));
+		});
+	}, [selectedPiboSessionId, tracePageQuery.data]);
 
 	const currentTraceView = useMemo(() => {
 		if (!selectedPiboSessionId || !bootstrap) return null;
-		if (traceQuery.data?.piboSessionId !== selectedPiboSessionId) return null;
+		if (baseTraceView?.piboSessionId !== selectedPiboSessionId) return null;
 		const sessionStatus = findSessionNode(bootstrap.sessions, selectedPiboSessionId)?.status ?? "idle";
 		const overlayEvents = liveTraceOverlay?.piboSessionId === selectedPiboSessionId
 			? liveTraceOverlay.events
 			: [];
-		if (!overlayEvents.length) return reconcileOptimisticUserMessages(traceQuery.data);
-		const liveTrace = patchTraceViewWithEvents(traceQuery.data, overlayEvents, sessionStatus);
-		annotateLiveTraceForkEntryIds(liveTrace.nodes, traceQuery.data.nodes);
+		if (!overlayEvents.length) return reconcileOptimisticUserMessages(baseTraceView);
+		const liveTrace = patchTraceViewWithEvents(baseTraceView, overlayEvents, sessionStatus);
+		annotateLiveTraceForkEntryIds(liveTrace.nodes, baseTraceView.nodes);
 		return reconcileOptimisticUserMessages(liveTrace);
-	}, [liveTraceOverlay, selectedPiboSessionId, bootstrap, traceQuery.data]);
+	}, [liveTraceOverlay, selectedPiboSessionId, bootstrap, baseTraceView]);
 
 	const flushPendingStreamEvents = useCallback((piboSessionId: string) => {
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId);
@@ -1784,7 +1805,7 @@ function SessionTracePane({
 	}, []);
 
 	useEffect(() => {
-		if (!selectedPiboSessionId || !traceQueryKey) return;
+		if (!selectedPiboSessionId || !tracePageQueryKey) return;
 		if (!currentTraceView || currentTraceView.piboSessionId !== selectedPiboSessionId) return;
 		const params = new URLSearchParams({ piboSessionId: selectedPiboSessionId });
 		if (currentTraceView?.latestStreamId !== undefined) {
@@ -1861,7 +1882,7 @@ function SessionTracePane({
 			if (bootstrapTimer) clearTimeout(bootstrapTimer);
 			events.close();
 		};
-	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, traceQueryKey]);
+	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, tracePageQueryKey]);
 
 	const selectedTrace = null;
 	const sessionBreadcrumbs = useMemo(
@@ -1880,8 +1901,8 @@ function SessionTracePane({
 		() => (showRawEvents ? compactRawEvents(currentTraceView?.rawEvents ?? []) : []),
 		[showRawEvents, currentTraceView?.rawEvents],
 	);
-	const loadingTrace = Boolean(selectedPiboSessionId) && traceQuery.isFetching && !currentTraceView;
-	const traceError = traceQuery.error ? errorMessage(traceQuery.error) : null;
+	const loadingTrace = Boolean(selectedPiboSessionId) && tracePageQuery.isFetching && !currentTraceView;
+	const traceError = tracePageQuery.error ? errorMessage(tracePageQuery.error) : traceSummaryQuery.error ? errorMessage(traceSummaryQuery.error) : null;
 
 	useEffect(() => {
 		if (!currentTraceView?.piboSessionId) return;
@@ -1966,10 +1987,10 @@ function SessionTracePane({
 						<button
 							type="button"
 							onClick={() => setTraceEventLimit((current) => current + DEFAULT_TRACE_EVENTS_PAGE_SIZE)}
-							disabled={traceQuery.isFetching}
+							disabled={tracePageQuery.isFetching}
 							className="rounded-sm border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
 						>
-							{traceQuery.isFetching ? "Loading history…" : `Load older trace history (${Math.min(currentTraceView.eventLimit ?? traceEventLimit, currentTraceView.eventCount ?? traceEventLimit)} of ${currentTraceView.eventCount ?? "many"} events)`}
+							{tracePageQuery.isFetching ? "Loading history…" : `Load older trace history (${Math.min(currentTraceView.eventLimit ?? traceEventLimit, currentTraceView.eventCount ?? traceEventLimit)} of ${currentTraceView.eventCount ?? "many"} events)`}
 						</button>
 					</div>
 				) : null}
@@ -2022,10 +2043,10 @@ function SessionTracePane({
 							<button
 								type="button"
 								onClick={() => setRawEventLimit((current) => current + DEFAULT_RAW_EVENTS_LIMIT)}
-								disabled={traceQuery.isFetching}
+								disabled={tracePageQuery.isFetching}
 								className="mb-1 rounded-sm border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
 							>
-								{traceQuery.isFetching ? "Loading raw events…" : `Load older raw events (${rawEvents.length})`}
+								{tracePageQuery.isFetching ? "Loading raw events…" : `Load older raw events (${rawEvents.length})`}
 							</button>
 						) : null}
 						{rawEvents.slice(-rawEventLimit).reverse().map((event) => (
@@ -2310,40 +2331,6 @@ function piboSessionFromSessionNode(node: PiboWebSessionNode, base: PiboSession)
 		title: node.title,
 		updatedAt: node.lastActivityAt ?? base.updatedAt,
 	};
-}
-
-function appendOptimisticUserMessageToTrace(
-	view: PiboSessionTraceView,
-	piboSessionId: string,
-	text: string,
-	clientTxnId: string,
-): PiboSessionTraceView {
-	if (view.piboSessionId !== piboSessionId) return view;
-	const now = new Date().toISOString();
-	const id = `optimistic:user-message:${clientTxnId}`;
-	if (traceHasNode(view.nodes, id)) return view;
-	const node: PiboTraceNode = {
-		id,
-		piboSessionId,
-		type: "user.message",
-		title: "User Message",
-		status: "done",
-		startedAt: now,
-		summary: text,
-		output: text,
-		source: "event-log",
-		stableKey: id,
-		children: [],
-	};
-	return {
-		...view,
-		version: `${view.version}:optimistic:${clientTxnId}`,
-		nodes: [...view.nodes, node],
-	};
-}
-
-function traceHasNode(nodes: PiboTraceNode[], nodeId: string): boolean {
-	return nodes.some((node) => node.id === nodeId || traceHasNode(node.children, nodeId));
 }
 
 function reconcileOptimisticUserMessages(view: PiboSessionTraceView): PiboSessionTraceView {

@@ -1,4 +1,4 @@
-import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
+import type { AgentCatalog, BootstrapData, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
 
 const DOWNLOAD_FILENAME_RE = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i;
 
@@ -118,6 +118,30 @@ export async function getNavigation(
 	const params = createNavigationParams(piboSessionId, includeArchived, roomId);
 	const suffix = params.size ? `?${params.toString()}` : "";
 	return requestJson<Partial<NavigationData>>(`/api/chat/navigation${suffix}`).then(normalizeNavigation);
+}
+
+export async function getTraceSummary(piboSessionId: string, knownVersion?: string): Promise<{ summary?: PiboSessionTraceSummary; notModified: boolean; version?: string }> {
+	const params = new URLSearchParams({ piboSessionId });
+	const response = await fetch(`/api/chat/trace/summary?${params.toString()}`, {
+		headers: knownVersion ? { "if-none-match": toEtag(knownVersion) } : undefined,
+	});
+	if (response.status === 304) {
+		return { notModified: true, version: fromEtag(response.headers.get("etag")) ?? knownVersion };
+	}
+	const payload = await response.json().catch(() => undefined);
+	if (!response.ok) {
+		const message =
+			payload && typeof payload === "object" && "error" in payload ? String(payload.error) : "Request failed";
+		const error = new Error(message) as Error & { status?: number; data?: unknown };
+		error.status = response.status;
+		error.data = payload;
+		throw error;
+	}
+	return {
+		summary: payload as PiboSessionTraceSummary,
+		notModified: false,
+		version: fromEtag(response.headers.get("etag")) ?? (payload as PiboSessionTraceSummary).version,
+	};
 }
 
 export async function getTrace(

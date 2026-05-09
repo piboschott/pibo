@@ -1,4 +1,4 @@
-import type { BootstrapData, NavigationData, PiboSessionTraceView, PiboWebSessionNode } from "./types";
+import type { BootstrapData, NavigationData, PiboWebSessionNode } from "./types";
 
 export const BOOTSTRAP_STALE_TIME_MS = 30_000;
 export const BOOTSTRAP_GC_TIME_MS = 30 * 60_000;
@@ -30,13 +30,17 @@ export function chatSessionNavigationQueryKey(
 	return ["chat", "sessions", includeArchived ? "archived" : "active", roomId ?? "", piboSessionId ?? ""];
 }
 
-export function chatTraceQueryKey(
+export function chatTraceSummaryQueryKey(piboSessionId: string): readonly [string, string, string] {
+	return ["chat", "trace-summary", piboSessionId];
+}
+
+export function chatTracePageQueryKey(
 	piboSessionId: string,
 	options: { includeRawEvents?: boolean; rawEventsLimit?: number; eventLimit?: number } = {},
 ): readonly [string, string, string, string, number, number] {
 	return [
 		"chat",
-		"trace",
+		"trace-page",
 		piboSessionId,
 		options.includeRawEvents ? "raw" : "compact",
 		options.rawEventsLimit ?? DEFAULT_RAW_EVENTS_LIMIT,
@@ -62,12 +66,12 @@ export function setChatNavigationCache(
 	setQueryData(chatSessionNavigationQueryKey(includeArchived, roomId ?? data.selectedRoomId, data.selectedPiboSessionId), sessionNavigationFromBootstrap(data));
 }
 
-export function traceQueriesForSession(piboSessionId: string): readonly [string, string, string] {
-	return ["chat", "trace", piboSessionId];
+export function traceSummaryQueriesForSession(piboSessionId: string): readonly [string, string, string] {
+	return ["chat", "trace-summary", piboSessionId];
 }
 
-export function isTraceView(value: unknown): value is PiboSessionTraceView {
-	return Boolean(value && typeof value === "object" && "piboSessionId" in value && "nodes" in value);
+export function tracePageQueriesForSession(piboSessionId: string): readonly [string, string, string] {
+	return ["chat", "trace-page", piboSessionId];
 }
 
 export type ChatCacheMutation =

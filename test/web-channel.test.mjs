@@ -264,6 +264,51 @@ test("chat web trace returns raw events only when requested", async () => {
 	}
 });
 
+test("chat web trace summary is small and cacheable", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const sessionPayload = await sessionResponse.json();
+		emitOutput({
+			type: "text_message",
+			piboSessionId: sessionPayload.session.id,
+			text: "hello",
+		});
+
+		const response = await fetch(
+			`${baseURL}/api/chat/trace/summary?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}`,
+			{ headers: { "x-test-user": "user-1" } },
+		);
+		assert.equal(response.status, 200);
+		assert.ok(response.headers.get("etag"));
+		const summary = await response.json();
+		assert.equal(summary.piboSessionId, sessionPayload.session.id);
+		assert.equal(typeof summary.version, "string");
+		assert.equal(typeof summary.eventCount, "number");
+		assert.equal("nodes" in summary, false);
+		assert.equal("rawEvents" in summary, false);
+
+		const cachedResponse = await fetch(
+			`${baseURL}/api/chat/trace/summary?piboSessionId=${encodeURIComponent(sessionPayload.session.id)}`,
+			{
+				headers: {
+					"x-test-user": "user-1",
+					"if-none-match": response.headers.get("etag"),
+				},
+			},
+		);
+		assert.equal(cachedResponse.status, 304);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web trace returns fresh payload when a known trace version changes", async () => {
 	const { channel, baseURL, emitOutput } = await startWebHostChannel({
 		auth: createFakeAuthService(),

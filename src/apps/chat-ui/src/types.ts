@@ -70,7 +70,7 @@ export type PiboSession = {
 	updatedAt: string;
 };
 
-export type { PiboSessionTraceView } from "../../../shared/trace-types.js";
+export type { PiboSessionTraceSummary, PiboSessionTraceView } from "../../../shared/trace-types.js";
 
 export type PiboSignalStatus = string;
 

@@ -59,6 +59,16 @@ export type ChatWebStoredEvent<T = unknown> = {
 
 export type PiboWebSessionStatus = "idle" | "running" | "error";
 
+export type PiboSessionTraceSummary = {
+	piboSessionId: string;
+	piSessionId: string;
+	title: string;
+	version: string;
+	latestStreamId?: number;
+	eventCount: number;
+	status?: PiboWebSessionStatus;
+};
+
 export type PiboSessionTraceView = {
 	piboSessionId: string;
 	piSessionId: string;
