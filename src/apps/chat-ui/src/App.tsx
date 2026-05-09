@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
@@ -60,11 +60,17 @@ import { McpToolsView } from "./context/McpToolsView";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
 import {
+	BOOTSTRAP_GC_TIME_MS,
+	BOOTSTRAP_STALE_TIME_MS,
 	DEFAULT_RAW_EVENTS_LIMIT,
+	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
+	TRACE_GC_TIME_MS,
+	TRACE_STALE_TIME_MS,
 	chatBootstrapQueryKey,
 	chatSessionNavigationQueryKey,
 	chatTraceQueryKey,
 	isTraceView,
+	setChatNavigationCache,
 	traceQueriesForSession,
 } from "./cache";
 
@@ -108,8 +114,8 @@ const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
 const COMPOSER_HISTORY_LIMIT = 100;
 const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
-const ACTIVE_SESSION_RENDER_LIMIT = 120;
-const ARCHIVED_SESSION_RENDER_LIMIT = 60;
+const SESSION_PAGE_SIZE = 120;
+const ARCHIVED_SESSION_PAGE_SIZE = 60;
 
 type StoredSelection = {
 	roomId?: string;
@@ -130,8 +136,17 @@ async function loadBootstrapQueryData(
 	},
 ): Promise<BootstrapData> {
 	const queryKey = chatBootstrapQueryKey(input.piboSessionId, input.includeArchived, input.roomId);
-	await queryClient.removeQueries({ queryKey, exact: true });
-	return getBootstrap(input.piboSessionId, input.includeArchived, input.roomId, Boolean(input.markRead));
+	if (input.force || input.markRead) await queryClient.invalidateQueries({ queryKey, exact: true });
+	return queryClient.fetchQuery({
+		queryKey,
+		queryFn: async () => {
+			const data = await getBootstrap(input.piboSessionId, input.includeArchived, input.roomId, Boolean(input.markRead));
+			setChatNavigationCache(queryClient.setQueryData.bind(queryClient), data, input.includeArchived, input.roomId);
+			return data;
+		},
+		staleTime: input.force || input.markRead ? 0 : BOOTSTRAP_STALE_TIME_MS,
+		gcTime: BOOTSTRAP_GC_TIME_MS,
+	});
 }
 
 async function loadNavigationQueryData(
@@ -144,8 +159,17 @@ async function loadNavigationQueryData(
 	},
 ): Promise<NavigationData> {
 	const queryKey = chatSessionNavigationQueryKey(input.includeArchived, input.roomId, input.piboSessionId);
-	await queryClient.removeQueries({ queryKey, exact: true });
-	return getNavigation(input.piboSessionId, input.includeArchived, input.roomId);
+	if (input.force) await queryClient.invalidateQueries({ queryKey, exact: true });
+	return queryClient.fetchQuery({
+		queryKey,
+		queryFn: async () => {
+			const data = await getNavigation(input.piboSessionId, input.includeArchived, input.roomId);
+			setChatNavigationCache(queryClient.setQueryData.bind(queryClient), data, input.includeArchived, input.roomId);
+			return data;
+		},
+		staleTime: input.force ? 0 : BOOTSTRAP_STALE_TIME_MS,
+		gcTime: BOOTSTRAP_GC_TIME_MS,
+	});
 }
 
 function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: NavigationData): BootstrapData {
@@ -162,14 +186,19 @@ function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: Naviga
 }
 
 async function loadTraceQueryData(
+	queryClient: QueryClient,
 	piboSessionId: string,
-	options: { includeRawEvents?: boolean; rawEventsLimit?: number } = {},
+	options: { includeRawEvents?: boolean; rawEventsLimit?: number; eventLimit?: number; force?: boolean } = {},
 ): Promise<PiboSessionTraceView> {
+	const queryKey = chatTraceQueryKey(piboSessionId, options);
+	const cached = queryClient.getQueryData<PiboSessionTraceView>(queryKey);
 	const response = await getTrace(piboSessionId, {
 		includeRawEvents: options.includeRawEvents,
 		rawEventsLimit: options.rawEventsLimit,
+		eventLimit: options.eventLimit,
+		knownVersion: options.force ? undefined : cached?.version,
 	});
-	if (response.notModified) throw new Error("Trace response unexpectedly returned not modified without a cache.");
+	if (response.notModified && cached) return cached;
 	if (!response.trace) throw new Error("Trace response missing payload.");
 	return response.trace;
 }
@@ -198,6 +227,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
 	const [loadingArchivedSessions, setLoadingArchivedSessions] = useState(false);
+	const [visibleActiveSessionCount, setVisibleActiveSessionCount] = useState(SESSION_PAGE_SIZE);
+	const [visibleArchivedSessionCount, setVisibleArchivedSessionCount] = useState(ARCHIVED_SESSION_PAGE_SIZE);
 	const [loadingPiboSessionId, setLoadingPiboSessionId] = useState<string | null>(null);
 	const [autoRenameSessionId, setAutoRenameSessionId] = useState<string | null>(null);
 	const [contextPanel, setContextPanel] = useState<ContextPanel>("context-files");
@@ -228,6 +259,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 	useEffect(() => {
 		bootstrapRef.current = bootstrap;
 	}, [bootstrap]);
+
+	useEffect(() => {
+		setVisibleActiveSessionCount(SESSION_PAGE_SIZE);
+		setVisibleArchivedSessionCount(ARCHIVED_SESSION_PAGE_SIZE);
+	}, [selectedRoomId, showArchived]);
 
 	useEffect(() => {
 		setSignalNow(Date.now());
@@ -1084,12 +1120,12 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 	const sessionGroups = useMemo(() => bootstrap ? splitSessionNodesByArchive(bootstrap.sessions, showArchived) : { active: [], archived: [] }, [bootstrap?.sessions, showArchived]);
 	const visibleActiveSessions = useMemo(
-		() => limitSessionNodesForSidebar(sessionGroups.active, ACTIVE_SESSION_RENDER_LIMIT, selectedPiboSessionId),
-		[sessionGroups.active, selectedPiboSessionId],
+		() => limitSessionNodesForSidebar(sessionGroups.active, visibleActiveSessionCount, selectedPiboSessionId),
+		[sessionGroups.active, selectedPiboSessionId, visibleActiveSessionCount],
 	);
 	const visibleArchivedSessions = useMemo(
-		() => showArchived ? sessionGroups.archived.slice(0, ARCHIVED_SESSION_RENDER_LIMIT) : [],
-		[sessionGroups.archived, showArchived],
+		() => showArchived ? sessionGroups.archived.slice(0, visibleArchivedSessionCount) : [],
+		[sessionGroups.archived, showArchived, visibleArchivedSessionCount],
 	);
 	const selectedSessionPathIds = useMemo(
 		() => selectedPiboSessionId ? new Set(findSessionPath(bootstrap?.sessions ?? [], selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS,
@@ -1375,9 +1411,13 @@ export function App({ route }: { route: ChatAppRoute }) {
 								))}
 								{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active sessions</div> : null}
 								{sessionGroups.active.length > visibleActiveSessions.length ? (
-									<div className="mt-2 px-2 py-2 text-[11px] text-slate-500 border border-dashed border-slate-700 rounded-sm">
-										Showing first {ACTIVE_SESSION_RENDER_LIMIT} of {sessionGroups.active.length} active sessions.
-									</div>
+									<button
+										type="button"
+										onClick={() => setVisibleActiveSessionCount((current) => current + SESSION_PAGE_SIZE)}
+										className="mt-2 w-full px-2 py-2 text-[11px] text-slate-400 border border-dashed border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4]"
+									>
+										Load more active sessions ({visibleActiveSessions.length} of {sessionGroups.active.length})
+									</button>
 								) : null}
 							</div>
 							{showArchived ? (
@@ -1405,10 +1445,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 												autoRenameSessionId={autoRenameSessionId}
 												onAutoRenameConsumed={() => setAutoRenameSessionId(null)}
 											/>
-											{sessionGroups.archived.length > ARCHIVED_SESSION_RENDER_LIMIT ? (
-												<div className="mt-2 px-2 py-2 text-[11px] text-slate-500 border border-dashed border-slate-700 rounded-sm">
-													Showing first {ARCHIVED_SESSION_RENDER_LIMIT} of {sessionGroups.archived.length} archived sessions.
-												</div>
+											{sessionGroups.archived.length > visibleArchivedSessions.length ? (
+												<button
+													type="button"
+													onClick={() => setVisibleArchivedSessionCount((current) => current + ARCHIVED_SESSION_PAGE_SIZE)}
+													className="mt-2 w-full px-2 py-2 text-[11px] text-slate-400 border border-dashed border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													Load more archived sessions ({visibleArchivedSessions.length} of {sessionGroups.archived.length})
+												</button>
 											) : null}
 										</>
 									) : <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived sessions</div>}
@@ -1665,39 +1709,47 @@ function SessionTracePane({
 	const pendingStreamFrame = useRef<number | undefined>(undefined);
 	const liveEventSeqRef = useRef(0);
 	const [liveTraceOverlay, setLiveTraceOverlay] = useState<LiveTraceOverlay | null>(null);
+	const [traceEventLimit, setTraceEventLimit] = useState(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
+	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
 	const traceQueryKey = useMemo(
 		() =>
 			selectedPiboSessionId
-				? chatTraceQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT })
+				? chatTraceQueryKey(selectedPiboSessionId, { includeRawEvents: showRawEvents, rawEventsLimit: rawEventLimit, eventLimit: traceEventLimit })
 				: null,
-		[selectedPiboSessionId, showRawEvents],
+		[rawEventLimit, selectedPiboSessionId, showRawEvents, traceEventLimit],
 	);
 	const traceQuery = useQuery({
-		queryKey: traceQueryKey ?? ["chat", "trace", "idle", "compact", DEFAULT_RAW_EVENTS_LIMIT],
+		queryKey: traceQueryKey ?? ["chat", "trace", "idle", "compact", rawEventLimit, DEFAULT_TRACE_EVENTS_PAGE_SIZE],
 		queryFn: () => {
 			if (!selectedPiboSessionId) throw new Error("Session is required");
-			return loadTraceQueryData(selectedPiboSessionId, {
+			return loadTraceQueryData(queryClient, selectedPiboSessionId, {
 				includeRawEvents: showRawEvents,
-				rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT,
+				rawEventsLimit: rawEventLimit,
+				eventLimit: traceEventLimit,
 			});
 		},
 		enabled: Boolean(selectedPiboSessionId),
-		staleTime: 0,
-		gcTime: 0,
-		refetchOnMount: "always",
+		staleTime: TRACE_STALE_TIME_MS,
+		gcTime: TRACE_GC_TIME_MS,
+		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		retry: 1,
 	});
 
-	// Keep the complete server-built trace as the canonical base. Raw events are only a
-	// bounded debug/live tail, so using them as the full render source truncates history.
+	useEffect(() => {
+		setTraceEventLimit(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
+		setRawEventLimit(DEFAULT_RAW_EVENTS_LIMIT);
+	}, [selectedPiboSessionId]);
+
+	// Keep the server-built trace as the canonical base. Larger history is loaded by
+	// increasing traceEventLimit; cached traces stay page-sized by default.
 	useEffect(() => {
 		if (!traceQuery.data) return;
 		const maxSeq = traceQuery.data.rawEvents
 			.map((e) => e.eventSequence ?? 0)
 			.reduce((a, b) => Math.max(a, b), 0);
 		liveEventSeqRef.current = Math.max(liveEventSeqRef.current, maxSeq + 1);
-		setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, traceQuery.data));
+		startTransition(() => setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, traceQuery.data)));
 	}, [traceQuery.data]);
 
 	const currentTraceView = useMemo(() => {
@@ -1936,6 +1988,18 @@ function SessionTracePane({
 						) : null}
 					</div>
 				</div>
+				{currentTraceView?.hasOlderEvents ? (
+					<div className="border-b border-slate-800 bg-[#101d22] px-4 py-2 text-center">
+						<button
+							type="button"
+							onClick={() => setTraceEventLimit((current) => current + DEFAULT_TRACE_EVENTS_PAGE_SIZE)}
+							disabled={traceQuery.isFetching}
+							className="rounded-sm border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
+						>
+							{traceQuery.isFetching ? "Loading history…" : `Load older trace history (${Math.min(currentTraceView.eventLimit ?? traceEventLimit, currentTraceView.eventCount ?? traceEventLimit)} of ${currentTraceView.eventCount ?? "many"} events)`}
+						</button>
+					</div>
+				) : null}
 				{traceError && !currentTraceView ? (
 					<div className="min-h-0 flex-1 p-4 text-sm text-red-200">{traceError}</div>
 				) : (
@@ -1981,7 +2045,17 @@ function SessionTracePane({
 				<aside className="min-h-0 overflow-auto bg-[#0e1116] border-l border-slate-800 max-[980px]:hidden">
 					<div className="h-11 px-3 border-b border-slate-800 flex items-center text-xs font-bold uppercase tracking-wider">Raw Events</div>
 					<div className="p-3 flex flex-col gap-2">
-						{rawEvents.slice(-DEFAULT_RAW_EVENTS_LIMIT).reverse().map((event) => (
+						{currentTraceView && rawEvents.length >= rawEventLimit ? (
+							<button
+								type="button"
+								onClick={() => setRawEventLimit((current) => current + DEFAULT_RAW_EVENTS_LIMIT)}
+								disabled={traceQuery.isFetching}
+								className="mb-1 rounded-sm border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
+							>
+								{traceQuery.isFetching ? "Loading raw events…" : `Load older raw events (${rawEvents.length})`}
+							</button>
+						) : null}
+						{rawEvents.slice(-rawEventLimit).reverse().map((event) => (
 							<div key={event.id} className="border-l-2 border-[#11a4d4] bg-[#151f24] p-2">
 								<div className="flex items-center justify-between gap-2 text-[#11a4d4] font-mono text-[11px] mb-1">
 									<span>{event.type}</span>

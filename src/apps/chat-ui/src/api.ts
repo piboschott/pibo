@@ -122,11 +122,12 @@ export async function getNavigation(
 
 export async function getTrace(
 	piboSessionId: string,
-	options: { includeRawEvents?: boolean; rawEventsLimit?: number; knownVersion?: string } = {},
+	options: { includeRawEvents?: boolean; rawEventsLimit?: number; eventLimit?: number; knownVersion?: string } = {},
 ): Promise<{ trace?: PiboSessionTraceView; notModified: boolean; version?: string }> {
 	const params = new URLSearchParams({ piboSessionId });
 	if (options.includeRawEvents) params.set("includeRawEvents", "true");
 	if (options.rawEventsLimit) params.set("rawEventsLimit", String(options.rawEventsLimit));
+	if (options.eventLimit) params.set("eventLimit", String(options.eventLimit));
 	const response = await fetch(`/api/chat/trace?${params.toString()}`, {
 		headers: options.knownVersion ? { "if-none-match": toEtag(options.knownVersion) } : undefined,
 	});

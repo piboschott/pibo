@@ -393,7 +393,8 @@ function requestMatchesVersion(request: Request, version: string): boolean {
 		.some((value) => value === "*" || value === etagForVersion(version) || value === `W/${etagForVersion(version)}`);
 }
 
-const TRACE_RENDER_EVENTS_LIMIT = 2_000;
+const DEFAULT_TRACE_EVENTS_PAGE_SIZE = 2_000;
+const MAX_TRACE_EVENTS_PER_REQUEST = 50_000;
 
 function traceCacheKey(piboSessionId: string, version: string): string {
 	return [piboSessionId, version, "structural"].join(":");
@@ -3564,6 +3565,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const webSession = await requireSession(request, context);
 				const includeRawEvents = parseBooleanSearchParam(url, "includeRawEvents");
 				const rawEventsLimit = parsePositiveIntSearchParam(url, "rawEventsLimit", 80, 1000);
+				const eventLimit = parsePositiveIntSearchParam(url, "eventLimit", DEFAULT_TRACE_EVENTS_PAGE_SIZE, MAX_TRACE_EVENTS_PER_REQUEST);
 				const selectedSession = resolveRequestedSession(
 					state,
 					context,
@@ -3589,7 +3591,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					metadata,
 					latestStreamId,
 				});
-				const cacheKey = traceCacheKey(selectedSession.id, version);
+				const cacheKey = traceCacheKey(selectedSession.id, `${version}:limit:${eventLimit}`);
 				const cached = state.traceCache.get(cacheKey);
 				const serverTiming = (cacheState: "hit" | "miss", eventCount = 0) => ({
 					"server-timing": [
@@ -3608,7 +3610,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				if (!trace) {
 					const events = state.readModel.listTraceEvents({
 						piboSessionId: selectedSession.id,
-						limit: TRACE_RENDER_EVENTS_LIMIT,
+						limit: eventLimit,
 					});
 					eventCount = events.length;
 					trace = await buildTraceView({
@@ -3620,6 +3622,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						includeRawEvents: false,
 						latestStreamId,
 					});
+					trace = { ...trace, eventCount: lastEventSequence, eventLimit, hasOlderEvents: lastEventSequence > events.length };
 					setTraceCache(state.traceCache, cacheKey, trace);
 				}
 				if (includeRawEvents) {
@@ -3654,7 +3657,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const trace = await buildTraceView({
 					session,
 					sessions: ownedSessions,
-					events: state.readModel.listTraceEvents({ piboSessionId, beforeOrAtSequence: eventSequence, limit: TRACE_RENDER_EVENTS_LIMIT }),
+					events: state.readModel.listTraceEvents({ piboSessionId, beforeOrAtSequence: eventSequence, limit: DEFAULT_TRACE_EVENTS_PAGE_SIZE }),
 					status: indexedSession?.status,
 				});
 				return responseJson(trace);

@@ -1,7 +1,5 @@
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 
-const LIVE_TRACE_EVENTS_LIMIT = 2000;
-
 type ChatStreamEvent = {
 	type: string;
 	piboSessionId?: string;
@@ -26,7 +24,7 @@ export function applyTraceLiveEvents(input: ApplyInput): ChatWebStoredEvent[] {
 		if (!stored) continue;
 		events = reduceStoredEvent(events, stored);
 	}
-	return events.slice(-LIVE_TRACE_EVENTS_LIMIT);
+	return events;
 }
 
 function reduceStoredEvent(events: ChatWebStoredEvent[], event: ChatWebStoredEvent): ChatWebStoredEvent[] {

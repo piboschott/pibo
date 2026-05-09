@@ -2,7 +2,9 @@ import type { BootstrapData, NavigationData, PiboSessionTraceView, PiboWebSessio
 
 export const BOOTSTRAP_STALE_TIME_MS = 30_000;
 export const BOOTSTRAP_GC_TIME_MS = 30 * 60_000;
+export const TRACE_STALE_TIME_MS = 10_000;
 export const TRACE_GC_TIME_MS = 30 * 60_000;
+export const DEFAULT_TRACE_EVENTS_PAGE_SIZE = 2_000;
 export const DEFAULT_RAW_EVENTS_LIMIT = 80;
 
 export type SessionNavigationData = {
@@ -30,14 +32,15 @@ export function chatSessionNavigationQueryKey(
 
 export function chatTraceQueryKey(
 	piboSessionId: string,
-	options: { includeRawEvents?: boolean; rawEventsLimit?: number } = {},
-): readonly [string, string, string, string, number] {
+	options: { includeRawEvents?: boolean; rawEventsLimit?: number; eventLimit?: number } = {},
+): readonly [string, string, string, string, number, number] {
 	return [
 		"chat",
 		"trace",
 		piboSessionId,
 		options.includeRawEvents ? "raw" : "compact",
 		options.rawEventsLimit ?? DEFAULT_RAW_EVENTS_LIMIT,
+		options.eventLimit ?? DEFAULT_TRACE_EVENTS_PAGE_SIZE,
 	];
 }
 
