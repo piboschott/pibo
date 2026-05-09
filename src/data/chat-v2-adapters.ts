@@ -358,7 +358,11 @@ function outputPayloadFromV2Row(row: EventLogRow, attributes: PiboJsonObject): P
 	if (row.type === "message_finished") return { ...base, type: "message_finished" };
 	if (row.type === "thinking_started") return { ...base, type: "thinking_started" };
 	if (row.type === "thinking_finished") return { ...base, type: "thinking_finished", text: row.preview_text ?? "" };
+	if (row.type === "tool_call") return { ...base, type: "tool_call", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: inlinePayload ?? null, argsComplete: booleanAttribute(attributes, "argsComplete") ?? true };
+	if (row.type === "tool_execution_started") return { ...base, type: "tool_execution_started", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: inlinePayload ?? null };
+	if (row.type === "tool_execution_updated") return { ...base, type: "tool_execution_updated", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: null, partialResult: inlinePayload ?? null };
 	if (row.type === "tool_execution_finished") return { ...base, type: "tool_execution_finished", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", result: inlinePayload ?? null, isError: booleanAttribute(attributes, "isError") ?? false };
+	if (row.type === "execution_result") return { ...base, type: "execution_result", action: row.preview_text ?? stringAttribute(attributes, "action") ?? "execution", result: inlinePayload ?? null };
 	if (row.type === "user.message.accepted") return { type: "user.message.accepted", piboSessionId, roomId: row.room_id ?? undefined, text: stringAttribute(attributes, "inlineText") ?? row.preview_text ?? "", clientTxnId: stringAttribute(attributes, "clientTxnId") } as unknown as PiboOutputEvent;
 	return { ...base, type: row.type } as PiboOutputEvent;
 }

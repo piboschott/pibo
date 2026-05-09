@@ -572,7 +572,7 @@ function createExploringGroup(candidates: readonly RowCandidate[]): CompactTermi
 }
 
 function classifyExploringTool(node: PiboTraceNode): CompactTerminalDetailItem | undefined {
-	const normalized = node.title.trim().toLowerCase();
+	const normalized = (node.title ?? "").trim().toLowerCase();
 	const args = isRecord(node.input) ? node.input : undefined;
 	if (matchesTool(normalized, ["read", "open"])) {
 		return {
