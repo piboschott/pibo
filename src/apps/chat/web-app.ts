@@ -3885,7 +3885,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return createEventStream({
 					roomId: streamPiboSessionId ? undefined : roomId,
 					piboSessionId: streamPiboSessionId,
-					activePiboSessionId: selectedSession.id,
+					activePiboSessionId: streamPiboSessionId ? selectedSession.id : undefined,
 					principalId: principalIdFor(webSession),
 					context,
 					state,

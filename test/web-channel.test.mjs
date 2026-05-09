@@ -1011,6 +1011,58 @@ test("chat web app marks the selected session subtree read during bootstrap", as
 	}
 });
 
+test("chat web app room event streams do not mark assistant messages read", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const sessionPayload = await sessionResponse.json();
+		const session = sessionPayload.session;
+		const room = sessionPayload.room;
+
+		const controller = new AbortController();
+		const eventsResponse = await fetch(
+			`${baseURL}/api/chat/events?roomId=${encodeURIComponent(room.id)}&since=0`,
+			{
+				headers: { "x-test-user": "user-1" },
+				signal: controller.signal,
+			},
+		);
+		assert.equal(eventsResponse.status, 200);
+		const reader = eventsResponse.body.getReader();
+		await reader.read();
+
+		emitOutput({
+			type: "assistant_message",
+			piboSessionId: session.id,
+			eventId: "room-stream-turn",
+			text: "background answer",
+		});
+		emitOutput({
+			type: "message_finished",
+			piboSessionId: session.id,
+			eventId: "room-stream-turn",
+		});
+
+		const bootstrapResponse = await fetch(`${baseURL}/api/chat/bootstrap?markRead=false&piboSessionId=${encodeURIComponent(session.id)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrapResponse.status, 200);
+		const bootstrap = await bootstrapResponse.json();
+		assert.equal(bootstrap.rooms[0].unreadCount, 1);
+		assert.equal(bootstrap.sessions[0].unreadCount, 1);
+
+		controller.abort();
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app keeps active session completions read while preserving unfocused unread", async () => {
 	const { channel, baseURL, emitOutput, sessions } = await startWebHostChannel({
 		auth: createFakeAuthService(),
