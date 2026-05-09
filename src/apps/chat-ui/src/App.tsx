@@ -112,14 +112,16 @@ const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
 const COMPOSER_HISTORY_LIMIT = 100;
 const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
-const ACTIVE_SESSION_RENDER_LIMIT = 300;
-const ARCHIVED_SESSION_RENDER_LIMIT = 100;
+const ACTIVE_SESSION_RENDER_LIMIT = 120;
+const ARCHIVED_SESSION_RENDER_LIMIT = 60;
 
 type StoredSelection = {
 	roomId?: string;
 	piboSessionId?: string;
 	sessionsByRoom?: Record<string, string>;
 };
+
+const EMPTY_SESSION_PATH_IDS = new Set<string>();
 
 async function loadBootstrapQueryData(
 	queryClient: QueryClient,
@@ -1117,7 +1119,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 		() => limitSessionNodesForSidebar(sessionGroups.active, ACTIVE_SESSION_RENDER_LIMIT, selectedPiboSessionId),
 		[sessionGroups.active, selectedPiboSessionId],
 	);
-	const visibleArchivedSessions = showArchived ? sessionGroups.archived.slice(0, ARCHIVED_SESSION_RENDER_LIMIT) : [];
+	const visibleArchivedSessions = useMemo(
+		() => showArchived ? sessionGroups.archived.slice(0, ARCHIVED_SESSION_RENDER_LIMIT) : [],
+		[sessionGroups.archived, showArchived],
+	);
+	const selectedSessionPathIds = useMemo(
+		() => selectedPiboSessionId ? new Set(findSessionPath(bootstrap?.sessions ?? [], selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS,
+		[bootstrap?.sessions, selectedPiboSessionId],
+	);
 
 	if (error && !bootstrap) {
 		return <SignedOut message={error} />;
@@ -1386,6 +1395,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 										node={session}
 										signalNow={signalNow}
 										selectedPiboSessionId={selectedPiboSessionId}
+										selectedSessionPathIds={selectedSessionPathIds}
 										onSelect={(piboSessionId) => void selectSession(piboSessionId)}
 										onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)}
 										onArchive={(piboSessionId, archived) => void setSessionArchived(piboSessionId, archived)}
@@ -1418,6 +1428,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 												sessions={visibleArchivedSessions}
 												signalNow={signalNow}
 												selectedPiboSessionId={selectedPiboSessionId}
+												selectedSessionPathIds={selectedSessionPathIds}
 												onSelect={(piboSessionId) => void selectSession(piboSessionId)}
 												onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)}
 												onArchive={(piboSessionId, archived) => void setSessionArchived(piboSessionId, archived)}
@@ -2641,6 +2652,7 @@ function ArchivedSessionsList({
 	sessions,
 	signalNow,
 	selectedPiboSessionId,
+	selectedSessionPathIds,
 	onSelect,
 	onRename,
 	onArchive,
@@ -2652,6 +2664,7 @@ function ArchivedSessionsList({
 	sessions: PiboWebSessionNode[];
 	signalNow: number;
 	selectedPiboSessionId: string | null;
+	selectedSessionPathIds: ReadonlySet<string>;
 	onSelect: (piboSessionId: string) => void;
 	onRename: (piboSessionId: string, title: string | null) => void;
 	onArchive: (piboSessionId: string, archived: boolean) => void;
@@ -2668,6 +2681,7 @@ function ArchivedSessionsList({
 					node={session}
 					signalNow={signalNow}
 					selectedPiboSessionId={selectedPiboSessionId}
+					selectedSessionPathIds={selectedSessionPathIds}
 					onSelect={onSelect}
 					onRename={onRename}
 					onArchive={onArchive}
@@ -2931,6 +2945,7 @@ function SessionNode({
 	node,
 	signalNow,
 	selectedPiboSessionId,
+	selectedSessionPathIds,
 	onSelect,
 	onRename,
 	onArchive,
@@ -2943,6 +2958,7 @@ function SessionNode({
 	node: PiboWebSessionNode;
 	signalNow: number;
 	selectedPiboSessionId: string | null;
+	selectedSessionPathIds: ReadonlySet<string>;
 	onSelect: (piboSessionId: string) => void;
 	onRename: (piboSessionId: string, title: string | null) => void;
 	onArchive: (piboSessionId: string, archived: boolean) => void;
@@ -2956,7 +2972,7 @@ function SessionNode({
 	const [draftTitle, setDraftTitle] = useState(node.title);
 	const titleInputRef = useRef<HTMLInputElement>(null);
 	const hasChildren = node.children.length > 0;
-	const hasSelectedDescendant = selectedPiboSessionId ? sessionTreeHasSession(node.children, selectedPiboSessionId) : false;
+	const hasSelectedDescendant = selectedPiboSessionId !== null && node.piboSessionId !== selectedPiboSessionId && selectedSessionPathIds.has(node.piboSessionId);
 	const [expanded, setExpanded] = useState(hasSelectedDescendant);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
@@ -3186,6 +3202,7 @@ function SessionNode({
 					node={child}
 					signalNow={signalNow}
 					selectedPiboSessionId={selectedPiboSessionId}
+					selectedSessionPathIds={selectedSessionPathIds}
 					onSelect={onSelect}
 					onRename={onRename}
 					onArchive={onArchive}
