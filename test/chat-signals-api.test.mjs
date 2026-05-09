@@ -194,6 +194,41 @@ test("chat navigation clears stale indexed running status from settled signal st
 	}
 });
 
+test("chat navigation treats session errors as unread until marked read", async () => {
+	const { channel, baseURL, sessions, signals, emitOutput } = await startSignalWebHost();
+	try {
+		const selected = createSession(sessions, "ps_navigation_error_selected");
+		const failed = createSession(sessions, "ps_navigation_error_failed");
+		for (const session of [selected, failed]) signals.project({ type: "session_created", session });
+
+		const initial = await fetch(`${baseURL}/api/chat/bootstrap?piboSessionId=${selected.id}&markRead=true`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(initial.status, 200);
+
+		emitOutput({ type: "session_error", piboSessionId: failed.id, eventId: "err1", error: "boom" });
+
+		const unreadResponse = await fetch(`${baseURL}/api/chat/navigation?piboSessionId=${selected.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(unreadResponse.status, 200);
+		const unreadBody = await unreadResponse.json();
+		assert.equal(findSessionNode(unreadBody.sessions, failed.id)?.status, "error");
+		assert.equal(findSessionNode(unreadBody.sessions, failed.id)?.unreadCount, 1);
+
+		const readResponse = await fetch(`${baseURL}/api/chat/sessions/${encodeURIComponent(failed.id)}/read`, {
+			method: "POST",
+			headers: { "x-test-user": "user-1", "content-type": "application/json", origin: baseURL },
+			body: "{}",
+		});
+		assert.equal(readResponse.status, 200);
+
+		const readNavigation = await fetch(`${baseURL}/api/chat/navigation?piboSessionId=${selected.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(readNavigation.status, 200);
+		const readBody = await readNavigation.json();
+		assert.equal(findSessionNode(readBody.sessions, failed.id)?.status, "error");
+		assert.equal(findSessionNode(readBody.sessions, failed.id)?.unreadCount, undefined);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat navigation includes unread counts for completed messages in other sessions", async () => {
 	const { channel, baseURL, sessions, signals, emitOutput } = await startSignalWebHost();
 	try {

@@ -25,10 +25,12 @@ export class ChatReadStateService {
 				FROM event_log e
 				LEFT JOIN principal_session_stats reads ON reads.session_id = e.session_id AND reads.principal_id = ?
 				WHERE e.session_id IN (${placeholders})
-					AND e.retention_class = 'chat_message'
 					AND e.stream_id > COALESCE(reads.last_read_stream_id, 0)
 					AND (e.actor_type IS NULL OR e.actor_type != 'user' OR e.actor_id IS NULL OR e.actor_id != ?)
-					AND e.type IN ('user.message.accepted', 'assistant_message')
+					AND (
+						(e.retention_class = 'chat_message' AND e.type IN ('user.message.accepted', 'assistant_message'))
+						OR e.type = 'session_error'
+					)
 				GROUP BY e.session_id
 			`).all(input.principalId, ...ids, input.principalId) as Array<{ session_id: string; count: number }>;
 			for (const row of rows) if (Number(row.count) > 0) counts.set(row.session_id, Number(row.count));

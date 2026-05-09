@@ -928,7 +928,7 @@ function ensureEventIndexing(state: ChatWebAppState, context: PiboWebAppContext)
 					}
 				}
 				if (!stored) continue;
-				if (persistableEvent.type === "assistant_message" || persistableEvent.type === "message_finished") {
+				if (persistableEvent.type === "assistant_message" || persistableEvent.type === "message_finished" || persistableEvent.type === "session_error") {
 					markActiveSessionRead(state, persistableEvent.piboSessionId, stored.streamId);
 				}
 				state.sessionQuery.recordEvent(persistableEvent, session, stored.streamId);

@@ -3450,13 +3450,13 @@ function sessionNodeTitle(node: PiboWebSessionNode): string {
 
 function sessionNodeSignal(node: PiboWebSessionNode, now: number): { className: string; title: string } {
 	const base = "session-signal h-2 w-2 rounded-full";
-	if (node.status === "error") {
+	if (node.status === "error" && (node.unreadCount ?? 0) > 0) {
 		return { className: `${base} session-signal-error`, title: "Run failed" };
 	}
 	if (node.status === "running") {
 		return { className: `${base} session-signal-running`, title: "Runtime is working" };
 	}
-	if ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node, now)) {
+	if (node.status !== "error" && ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node, now))) {
 		return { className: `${base} session-signal-unread`, title: "New completed assistant message" };
 	}
 	return { className: `${base} session-signal-idle`, title: "Idle" };
