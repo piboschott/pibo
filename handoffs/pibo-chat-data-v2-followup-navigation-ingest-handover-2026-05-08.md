@@ -1,3 +1,5 @@
+> Status: Superseded for runtime decisions. Chat Web was cut over to V2-only on 2026-05-09. Use `plans/2026-05-09-chat-data-v2-cleanup-and-session-unification-plan.md` and the final V2 removal report for current architecture.
+
 # Handover — Pibo Chat Data System V2 Follow-up: Navigation Split + User Shadow Ingest
 
 Date: 2026-05-08  

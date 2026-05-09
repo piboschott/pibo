@@ -1,3 +1,5 @@
+> Status: Still relevant for frontend trace performance. Data-system assumptions that mention legacy stores are superseded by the V2-only cutover.
+
 # Chat Web Performance 05: Frontend Trace Transforms optimieren
 
 ## Zweck

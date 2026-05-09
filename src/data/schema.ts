@@ -219,6 +219,12 @@ export function applyPiboDataSchema(db: DatabaseSync): void {
 			ON sessions(owner_scope, archived_at, last_activity_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_sessions_room_activity
 			ON sessions(room_id, archived_at, last_activity_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_sessions_parent_activity
+			ON sessions(parent_id, updated_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_sessions_origin_activity
+			ON sessions(origin_id, updated_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_sessions_channel_kind_activity
+			ON sessions(channel, kind, updated_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_room_members_principal
 			ON room_members(principal_id, room_id);
 		CREATE INDEX IF NOT EXISTS idx_event_log_session_stream

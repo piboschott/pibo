@@ -940,7 +940,7 @@ test("chat web app exposes unread room and session counts", async () => {
 	}
 });
 
-test("chat web app marks only the selected session read during bootstrap", async () => {
+test("chat web app marks the selected session subtree read during bootstrap", async () => {
 	const { channel, baseURL, emitOutput, sessions } = await startWebHostChannel({
 		auth: createFakeAuthService(),
 	});
@@ -1004,8 +1004,8 @@ test("chat web app marks only the selected session read during bootstrap", async
 		);
 		assert.equal(readResponse.status, 200);
 		const readData = await readResponse.json();
-		assert.equal(readData.rooms[0].unreadCount, 2);
-		assert.equal(readData.sessions[0].children[0].unreadCount, 2);
+		assert.equal(readData.rooms[0].unreadCount, undefined);
+		assert.equal(readData.sessions[0].children[0].unreadCount, undefined);
 	} finally {
 		await channel.stop?.();
 	}

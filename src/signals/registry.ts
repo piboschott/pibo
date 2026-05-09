@@ -3,6 +3,7 @@ import { createDefaultSignalProducers } from "./projector.js";
 import type {
 	ChildSessionSignalSummary,
 	PiboSessionSignalSnapshot,
+	PiboSignalError,
 	PiboSignalInput,
 	PiboSignalListener,
 	PiboSignalMutation,
@@ -55,6 +56,23 @@ function arrayEqual<T>(a: readonly T[] | undefined, b: readonly T[] | undefined,
 
 function errorEqual(a: unknown, b: unknown): boolean {
 	return jsonValueEqual(a, b);
+}
+
+function dedupeErrors(errors: readonly PiboSignalError[]): PiboSignalError[] {
+	const seen = new Set<string>();
+	const deduped: PiboSignalError[] = [];
+	for (const error of errors) {
+		const key = JSON.stringify({
+			message: error.message,
+			code: error.code,
+			source: error.source,
+			retryable: error.retryable,
+		});
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(error);
+	}
+	return deduped;
 }
 
 function signalNodeEqual(a: PiboSignalNode | undefined, b: PiboSignalNode): boolean {
@@ -402,6 +420,7 @@ export class InMemoryPiboSignalRegistry implements PiboSignalRegistry {
 			return errorFromNode(node) ?? [];
 		});
 		const childErrors = childSnapshots.flatMap((snapshot) => snapshot.errors);
+		const errors = dedupeErrors([...localErrors, ...childErrors]);
 		const isLocalActive = isActiveSignalStatus(localStatus);
 		const hasActiveDescendant = childSnapshots.some((snapshot) => snapshot.isTreeActive);
 		return {
@@ -426,7 +445,7 @@ export class InMemoryPiboSignalRegistry implements PiboSignalRegistry {
 			activeToolCalls,
 			activeRuns,
 			activeChildren,
-			errors: [...localErrors, ...childErrors],
+			errors,
 		};
 	}
 

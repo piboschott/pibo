@@ -185,12 +185,12 @@ function createConnection(
 }
 
 async function createGatewaySessionStore(options: GatewayServerOptions): Promise<PiboSessionStore> {
-	const { createDefaultPiboSessionStore, SqlitePiboSessionStore } = await import(
-		"../sessions/sqlite-store.js"
-	);
-	return options.sessionDbPath
-		? new SqlitePiboSessionStore(options.sessionDbPath)
-		: createDefaultPiboSessionStore();
+	if (options.sessionDbPath) {
+		const { SqlitePiboSessionStore } = await import("../sessions/sqlite-store.js");
+		return new SqlitePiboSessionStore(options.sessionDbPath);
+	}
+	const { createDefaultPiboDataSessionStore } = await import("../sessions/pibo-data-store.js");
+	return createDefaultPiboDataSessionStore();
 }
 
 export class PiboGatewayServer {

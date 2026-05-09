@@ -1497,9 +1497,9 @@ function stringifyPreview(value: unknown): string {
 	}
 }
 
-function parseRunNotificationText(text: string): RunNotificationPayload | undefined {
+function parseRunNotificationText(text: string | undefined): RunNotificationPayload | undefined {
 	// Legacy history support only: live yielded-run state is projected from Session Signals.
-	const trimmed = text.trim();
+	const trimmed = (text ?? "").trim();
 	const start = "<pibo_run_notification>";
 	const end = "</pibo_run_notification>";
 	if (!trimmed.startsWith(start) || !trimmed.endsWith(end)) return undefined;

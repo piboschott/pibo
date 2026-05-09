@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { piboHomePath } from "../core/pibo-home.js";
 import { importLegacyChatData } from "./legacy-importer.js";
+import { PiboDataStore } from "./pibo-store.js";
 
 type StoreInventory = {
 	name: string;
@@ -59,6 +60,30 @@ export async function runDataCli(argv: string[]): Promise<void> {
 		const report = importLegacyChatData({ root, from, to, payloadRootDir });
 		if (json) console.log(JSON.stringify(report, null, 2));
 		else printImportReport(report);
+		return;
+	}
+	if (args[0] === "migrate" && args[1] === "sessions-to-v2") {
+		const json = args.includes("--json");
+		const root = optionValue(args, "--root") ?? process.env.PIBO_HOME;
+		const from = optionValue(args, "--from") ?? dataPath(root, "pibo-sessions.sqlite");
+		const to = optionValue(args, "--to") ?? dataPath(root, "pibo.sqlite");
+		const report = migrateSessionsToV2({ from, to });
+		if (json) console.log(JSON.stringify(report, null, 2));
+		else printSessionMigrationReport(report);
+		return;
+	}
+	if (args[0] === "repair" && args[1] === "unread-baseline") {
+		const json = args.includes("--json");
+		const root = optionValue(args, "--root") ?? process.env.PIBO_HOME;
+		const to = optionValue(args, "--to") ?? dataPath(root, "pibo.sqlite");
+		const ownerScope = optionValue(args, "--owner-scope");
+		const before = optionValue(args, "--before");
+		const dryRun = args.includes("--dry-run");
+		if (!ownerScope) throw new Error("pibo data repair unread-baseline requires --owner-scope <ownerScope>");
+		if (!before) throw new Error("pibo data repair unread-baseline requires --before <isoTimestamp>");
+		const report = repairUnreadBaseline({ to, ownerScope, before, dryRun });
+		if (json) console.log(JSON.stringify(report, null, 2));
+		else printUnreadBaselineRepairReport(report);
 		return;
 	}
 	throw new Error(`Unknown pibo data command "${args[0]}". Run pibo data --help.`);
@@ -194,6 +219,255 @@ function printComparison(comparison: SessionComparison): void {
 	console.log(`delta.observationsMinusLegacyTraceEvents\t${comparison.deltas.observationsMinusLegacyTraceEvents}`);
 }
 
+type LegacySessionRow = {
+	id: string;
+	pi_session_id: string;
+	channel: string;
+	kind: string;
+	profile: string;
+	owner_scope: string | null;
+	parent_id: string | null;
+	origin_id: string | null;
+	workspace: string | null;
+	title: string | null;
+	metadata_json: string | null;
+	active_model_json: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
+type SessionMigrationReport = {
+	from: string;
+	to: string;
+	inputExists: boolean;
+	read: number;
+	inserted: number;
+	updated: number;
+	skipped: number;
+};
+
+function migrateSessionsToV2(input: { from: string; to: string }): SessionMigrationReport {
+	const report: SessionMigrationReport = { from: input.from, to: input.to, inputExists: existsSync(input.from), read: 0, inserted: 0, updated: 0, skipped: 0 };
+	if (!report.inputExists) return report;
+	const source = new DatabaseSync(input.from, { readOnly: true });
+	const target = new PiboDataStore(input.to);
+	try {
+		if (!hasTable(source, "pibo_sessions")) return report;
+		const rows = source.prepare("SELECT * FROM pibo_sessions ORDER BY created_at ASC").all() as LegacySessionRow[];
+		report.read = rows.length;
+		for (const row of rows) {
+			const existing = target.db.prepare("SELECT updated_at FROM sessions WHERE id = ?").get(row.id) as { updated_at: string } | undefined;
+			const metadata = parseJsonObject(row.metadata_json);
+			const rootSessionId = row.parent_id ? (typeof metadata.rootSessionId === "string" ? metadata.rootSessionId : row.parent_id) : row.id;
+			if (!existing) {
+				target.db.prepare(`
+					INSERT INTO sessions (
+						id, pi_session_id, owner_scope, room_id, root_session_id, parent_id, origin_id,
+						channel, kind, profile, active_model_json, workspace, title, status,
+						metadata_json, created_at, updated_at, last_activity_at
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				`).run(
+					row.id,
+					row.pi_session_id,
+					row.owner_scope ?? "user:unknown",
+					typeof metadata.chatRoomId === "string" ? metadata.chatRoomId : null,
+					rootSessionId,
+					row.parent_id,
+					row.origin_id,
+					row.channel,
+					row.kind,
+					row.profile,
+					row.active_model_json,
+					row.workspace,
+					row.title ?? "Untitled Session",
+					"idle",
+					JSON.stringify(metadata),
+					row.created_at,
+					row.updated_at,
+					row.updated_at,
+				);
+				report.inserted++;
+			} else if (row.updated_at > existing.updated_at) {
+				target.db.prepare(`
+					UPDATE sessions SET
+						pi_session_id = ?, owner_scope = ?, root_session_id = ?, parent_id = ?, origin_id = ?,
+						channel = ?, kind = ?, profile = ?, active_model_json = ?, workspace = ?, title = ?,
+						metadata_json = ?, updated_at = ?, last_activity_at = MAX(last_activity_at, ?)
+					WHERE id = ?
+				`).run(
+					row.pi_session_id,
+					row.owner_scope ?? "user:unknown",
+					rootSessionId,
+					row.parent_id,
+					row.origin_id,
+					row.channel,
+					row.kind,
+					row.profile,
+					row.active_model_json,
+					row.workspace,
+					row.title ?? "Untitled Session",
+					JSON.stringify(metadata),
+					row.updated_at,
+					row.updated_at,
+					row.id,
+				);
+				report.updated++;
+			} else {
+				report.skipped++;
+			}
+		}
+	} finally {
+		source.close();
+		target.close();
+	}
+	return report;
+}
+
+type UnreadBaselineRepairSession = {
+	sessionId: string;
+	previousLastReadStreamId: number;
+	targetLastReadStreamId: number;
+	inserted: boolean;
+	changed: boolean;
+};
+
+type UnreadBaselineRepairReport = {
+	to: string;
+	inputExists: boolean;
+	ownerScope: string;
+	before: string;
+	dryRun: boolean;
+	candidateSessions: number;
+	changedSessions: number;
+	inserted: number;
+	updated: number;
+	skipped: number;
+	sessions: UnreadBaselineRepairSession[];
+};
+
+function repairUnreadBaseline(input: { to: string; ownerScope: string; before: string; dryRun: boolean }): UnreadBaselineRepairReport {
+	const report: UnreadBaselineRepairReport = {
+		to: input.to,
+		inputExists: existsSync(input.to),
+		ownerScope: input.ownerScope,
+		before: input.before,
+		dryRun: input.dryRun,
+		candidateSessions: 0,
+		changedSessions: 0,
+		inserted: 0,
+		updated: 0,
+		skipped: 0,
+		sessions: [],
+	};
+	if (!report.inputExists) return report;
+	const db = new DatabaseSync(input.to);
+	try {
+		if (!hasTable(db, "sessions") || !hasTable(db, "event_log") || !hasTable(db, "principal_session_stats")) return report;
+		const rows = db.prepare(`
+			SELECT
+				s.id AS session_id,
+				stats.session_id AS stats_session_id,
+				COALESCE(stats.last_read_stream_id, 0) AS previous_last_read_stream_id,
+				MAX(e.stream_id) AS target_last_read_stream_id
+			FROM sessions s
+			JOIN event_log e ON e.session_id = s.id
+			LEFT JOIN principal_session_stats stats ON stats.session_id = s.id AND stats.principal_id = s.owner_scope
+			WHERE s.owner_scope = ?
+				AND s.deleted_at IS NULL
+				AND e.created_at <= ?
+			GROUP BY s.id
+			ORDER BY s.id ASC
+		`).all(input.ownerScope, input.before) as Array<{
+			session_id: string;
+			stats_session_id: string | null;
+			previous_last_read_stream_id: number;
+			target_last_read_stream_id: number;
+		}>;
+		report.candidateSessions = rows.length;
+		const now = new Date().toISOString();
+		const upsert = db.prepare(`
+			INSERT INTO principal_session_stats (
+				session_id, principal_id, unread_count, last_read_stream_id, last_read_message_sequence, last_read_at, updated_at
+			) VALUES (?, ?, 0, ?, 0, ?, ?)
+			ON CONFLICT(session_id, principal_id) DO UPDATE SET
+				last_read_stream_id = MAX(principal_session_stats.last_read_stream_id, excluded.last_read_stream_id),
+				unread_count = 0,
+				last_read_at = excluded.last_read_at,
+				updated_at = excluded.updated_at
+		`);
+		if (!input.dryRun) db.exec("BEGIN IMMEDIATE");
+		try {
+			for (const row of rows) {
+				const previous = Number(row.previous_last_read_stream_id ?? 0);
+				const target = Number(row.target_last_read_stream_id ?? 0);
+				const inserted = !row.stats_session_id;
+				const changed = target > previous;
+				report.sessions.push({
+					sessionId: row.session_id,
+					previousLastReadStreamId: previous,
+					targetLastReadStreamId: target,
+					inserted,
+					changed,
+				});
+				if (!changed) {
+					report.skipped++;
+					continue;
+				}
+				report.changedSessions++;
+				if (inserted) report.inserted++;
+				else report.updated++;
+				if (!input.dryRun) upsert.run(row.session_id, input.ownerScope, target, now, now);
+			}
+			if (!input.dryRun) db.exec("COMMIT");
+		} catch (error) {
+			if (!input.dryRun) db.exec("ROLLBACK");
+			throw error;
+		}
+	} finally {
+		db.close();
+	}
+	return report;
+}
+
+function parseJsonObject(json: string | null | undefined): Record<string, unknown> {
+	if (!json) return {};
+	try {
+		const value = JSON.parse(json);
+		return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+	} catch {
+		return {};
+	}
+}
+
+function printSessionMigrationReport(report: SessionMigrationReport): void {
+	console.log(`from\t${report.from}`);
+	console.log(`to\t${report.to}`);
+	console.log(`inputExists\t${report.inputExists}`);
+	console.log(`read\t${report.read}`);
+	console.log(`inserted\t${report.inserted}`);
+	console.log(`updated\t${report.updated}`);
+	console.log(`skipped\t${report.skipped}`);
+}
+
+function printUnreadBaselineRepairReport(report: UnreadBaselineRepairReport): void {
+	console.log(`to\t${report.to}`);
+	console.log(`inputExists\t${report.inputExists}`);
+	console.log(`ownerScope\t${report.ownerScope}`);
+	console.log(`before\t${report.before}`);
+	console.log(`dryRun\t${report.dryRun}`);
+	console.log(`candidateSessions\t${report.candidateSessions}`);
+	console.log(`changedSessions\t${report.changedSessions}`);
+	console.log(`inserted\t${report.inserted}`);
+	console.log(`updated\t${report.updated}`);
+	console.log(`skipped\t${report.skipped}`);
+	if (report.sessions.length) {
+		console.log("session\tpreviousLastReadStreamId\ttargetLastReadStreamId\tinserted\tchanged");
+		for (const session of report.sessions) {
+			console.log(`${session.sessionId}\t${session.previousLastReadStreamId}\t${session.targetLastReadStreamId}\t${session.inserted}\t${session.changed}`);
+		}
+	}
+}
+
 function printImportReport(report: ReturnType<typeof importLegacyChatData>): void {
 	console.log(`legacyRoot\t${report.legacyRoot}`);
 	console.log(`v2Path\t${report.v2Path}`);
@@ -234,6 +508,8 @@ Commands:
   inventory           Read-only row counts, sizes, WAL sizes, and integrity checks
   compare             Compare legacy Chat DB counts with V2 for one session
   import legacy-chat  Import legacy Chat Web data into pibo.sqlite idempotently
+  migrate sessions-to-v2  Import pibo-sessions.sqlite rows into pibo.sqlite idempotently
+  repair unread-baseline  Seed read cursors for historical imported chat events
 
 Options:
   --json              Print machine-readable JSON
@@ -242,10 +518,15 @@ Options:
   --to FILE           Legacy import target pibo.sqlite path
   --payload-root DIR  V2 payload directory for import
   --session SESSION   Session id for compare
+  --owner-scope ID    Owner/principal for unread-baseline repair
+  --before TIMESTAMP  Baseline events at or before this ISO timestamp
+  --dry-run           Report unread-baseline changes without writing
 
 Next:
   pibo data inventory --json
   pibo data import legacy-chat --json
+  pibo data migrate sessions-to-v2 --json
+  pibo data repair unread-baseline --owner-scope <ownerScope> --before <isoTimestamp> --dry-run --json
   pibo data compare --session <piboSessionId> --json
 `);
 }

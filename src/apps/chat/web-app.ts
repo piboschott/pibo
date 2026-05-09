@@ -9,10 +9,10 @@ import type { PiboJsonObject, PiboJsonValue, PiboOutputEvent } from "../../core/
 import { PiboWebHttpError, readJsonBody, responseHtml, responseJson } from "../../web/http.js";
 import type { PiboWebApp, PiboWebAppContext, PiboWebSession } from "../../web/types.js";
 import type { PiboSession, UpdatePiboSessionInput } from "../../sessions/store.js";
-import type { ChatEventLog, StoredChatEvent } from "./event-log.js";
 import { OutputCompactor } from "./output-compactor.js";
 import { isPersistableOutputEvent } from "./output-event-policy.js";
-import type { ChatWebReadModel } from "./read-model.js";
+import type { ChatEventAppendInput, ChatEventListInput, StoredChatEvent } from "./types/event-store.js";
+import type { ChatWebSessionBootstrapIndexResult, ChatWebSessionIndexItem, ChatWebStoredPiboEvent } from "./types/read-model.js";
 import {
 	chatRoomIdFromMetadata,
 	isDefaultPiboRoom,
@@ -21,10 +21,13 @@ import {
 	withChatRoomId,
 	withPiboRoomArchived,
 	withPiboRoomWorkspace,
+	type CreatePiboRoomInput,
 	type PiboRoom,
+	type PiboRoomMember,
 	type PiboRoomNode,
-	type PiboRoomStore,
-} from "./rooms.js";
+	type PiboRoomRole,
+	type UpdatePiboRoomInput,
+} from "./types/rooms.js";
 import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStreamEvent } from "./stream.js";
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView, type PiboWebSessionNode } from "./trace.js";
 import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
@@ -92,49 +95,49 @@ type ChatPersistenceMetrics = {
 	lastErrorAt?: string;
 };
 
-type ChatReadModelStore = Pick<ChatWebReadModel,
-	| "upsertSession"
-	| "upsertSessionsIfChanged"
-	| "recordEvent"
-	| "listSessions"
-	| "getSession"
-	| "listEvents"
-	| "listAllEvents"
-	| "listTraceEvents"
-	| "hasSessionActivity"
-	| "countEventsByType"
-	| "getLatestEventSequence"
-	| "deleteSessions"
-	| "close"
->;
+type ChatReadModelStore = {
+	upsertSession(session: PiboSession, status?: ChatWebSessionIndexItem["status"]): void;
+	upsertSessionsIfChanged(sessions: PiboSession[]): ChatWebSessionBootstrapIndexResult;
+	recordEvent(event: PiboOutputEvent, session?: PiboSession, streamId?: number): ChatWebStoredPiboEvent | undefined;
+	listSessions(): ChatWebSessionIndexItem[];
+	getSession(piboSessionId: string): ChatWebSessionIndexItem | undefined;
+	listEvents(piboSessionId: string, limit?: number): ChatWebStoredPiboEvent[];
+	listAllEvents(piboSessionId: string): ChatWebStoredPiboEvent[];
+	listTraceEvents(input: { piboSessionId: string; limit?: number; beforeOrAtSequence?: number; beforeSequence?: number; includeLive?: boolean } | string): ChatWebStoredPiboEvent[];
+	hasSessionActivity(piboSessionId: string): boolean;
+	countEventsByType(input?: { piboSessionId?: string; eventTypes?: string[] }): Array<{ eventType: string; count: number }>;
+	getLatestEventSequence(piboSessionId: string): number;
+	deleteSessions(piboSessionIds: string[]): number;
+	close?(): void;
+};
 
-type ChatEventStore = Pick<ChatEventLog,
-	| "appendEvent"
-	| "appendOutputEvent"
-	| "listEvents"
-	| "findByClientTxn"
-	| "getLatestStreamId"
-	| "markSessionRead"
-	| "countUnreadMessagesBySession"
-	| "deleteSessions"
-	| "deleteRooms"
->;
+type ChatEventStore = {
+	appendEvent(input: ChatEventAppendInput): StoredChatEvent;
+	appendOutputEvent(event: PiboOutputEvent, input?: { roomId?: string; actorId?: string }): StoredChatEvent | undefined;
+	listEvents(input: ChatEventListInput): StoredChatEvent[];
+	findByClientTxn(roomId: string | undefined, actorId: string | undefined, clientTxnId: string): StoredChatEvent | undefined;
+	getLatestStreamId(input?: { roomId?: string; piboSessionId?: string }): number | undefined;
+	markSessionRead(piboSessionId: string, principalId: string, lastReadStreamId: number): void;
+	countUnreadMessagesBySession(input: { piboSessionIds: string[]; principalId: string }): Map<string, number>;
+	deleteSessions(piboSessionIds: string[]): number;
+	deleteRooms(roomIds: string[]): number;
+};
 
-type ChatRoomStore = Pick<PiboRoomStore,
-	| "createRoom"
-	| "updateRoom"
-	| "deleteRooms"
-	| "getRoom"
-	| "listRooms"
-	| "listRoomTree"
-	| "listRoomSubtree"
-	| "ensureDefaultRoom"
-	| "ensureMember"
-	| "getMember"
-	| "updateReadCursor"
-	| "requireRoomAccess"
-	| "close"
->;
+type ChatRoomStore = {
+	createRoom(input: CreatePiboRoomInput): PiboRoom;
+	updateRoom(id: string, input: UpdatePiboRoomInput): PiboRoom | undefined;
+	deleteRooms(ids: string[]): number;
+	getRoom(id: string): PiboRoom | undefined;
+	listRooms(ownerScope: string): PiboRoom[];
+	listRoomTree(ownerScope: string): PiboRoomNode[];
+	listRoomSubtree(rootRoomId: string): PiboRoom[];
+	ensureDefaultRoom(input: { ownerScope: string; principalId: string; name?: string }): PiboRoom;
+	ensureMember(input: { roomId: string; principalId: string; role: PiboRoomRole }): PiboRoomMember;
+	getMember(roomId: string, principalId: string): PiboRoomMember | undefined;
+	updateReadCursor(roomId: string, principalId: string, lastReadStreamId: number): PiboRoomMember | undefined;
+	requireRoomAccess(roomId: string, principalId: string, action?: "read" | "write" | "admin"): PiboRoom;
+	close?(): void;
+};
 
 type ChatWebAppState = {
 	readModel: ChatReadModelStore;
@@ -3044,7 +3047,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					principalId,
 				});
 				if (markRead) {
-					markSessionsRead(state, [selectedSession], principalId);
+					markSessionsRead(state, sessionSubtree(ownedSessions, selectedSession.id), principalId);
 				}
 				indexOwnedSessions(state.readModel, roomSessions);
 				const sessionUnreadCounts = buildSessionUnreadCounts(state, ownedSessions, principalId);
@@ -3583,7 +3586,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				const readSessionId = decodeURIComponent(encodedId);
 				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, readSessionId);
-				markSessionsRead(state, [selectedSession], principalIdFor(webSession));
+				markSessionsRead(state, sessionSubtree(listOwnedSessions(context, webSession), selectedSession.id), principalIdFor(webSession));
 				return responseJson({ ok: true, piboSessionId: selectedSession.id });
 			}
 

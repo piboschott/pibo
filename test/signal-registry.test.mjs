@@ -205,3 +205,14 @@ test("queued message signal settles after a provider error", () => {
 	assert.equal(snapshot.sessions.root.isTreeActive, false);
 	assert.equal(snapshot.nodes["message:root:m1"].status, "error");
 });
+
+test("signal snapshot dedupes identical local errors", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "pibo_output", event: { type: "session_error", piboSessionId: "root", eventId: "m1", error: "No API key" } });
+
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.sessions.root.errors.length, 1);
+	assert.deepEqual(snapshot.sessions.root.errors[0], { message: "No API key", source: "pi" });
+});

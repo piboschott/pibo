@@ -153,7 +153,15 @@ async function loadNavigationQueryData(
 	return getNavigation(input.piboSessionId, input.includeArchived, input.roomId);
 }
 
-function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: NavigationData): BootstrapData {
+function mergeNavigationIntoBootstrap(
+	current: BootstrapData,
+	navigation: NavigationData,
+	options: { readSessionId?: string } = {},
+): BootstrapData {
+	const readSessionIds = options.readSessionId ? collectSessionSubtreeIds(current.sessions, options.readSessionId) : new Set<string>();
+	const previousUnreadBySessionId = new Map<string, number>();
+	collectSessionUnreadCounts(current.sessions, previousUnreadBySessionId);
+	const clearedUnreadCount = [...readSessionIds].reduce((sum, sessionId) => sum + (previousUnreadBySessionId.get(sessionId) ?? 0), 0);
 	return {
 		...current,
 		identity: navigation.identity,
@@ -161,9 +169,90 @@ function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: Naviga
 		room: navigation.room,
 		selectedRoomId: navigation.selectedRoomId,
 		selectedPiboSessionId: navigation.selectedPiboSessionId,
-		rooms: navigation.rooms,
-		sessions: navigation.sessions,
+		rooms: mergeNavigationRooms(current.rooms, navigation.rooms, navigation.selectedRoomId, clearedUnreadCount),
+		sessions: mergeNavigationSessions(navigation.sessions, readSessionIds, previousUnreadBySessionId),
 	};
+}
+
+function collectSessionUnreadCounts(sessions: readonly PiboWebSessionNode[], output: Map<string, number>): void {
+	for (const session of sessions) {
+		output.set(session.piboSessionId, session.unreadCount ?? 0);
+		collectSessionUnreadCounts(session.children, output);
+	}
+}
+
+function collectSessionSubtreeIds(sessions: readonly PiboWebSessionNode[], rootSessionId: string): Set<string> {
+	const ids = new Set<string>();
+	const visit = (session: PiboWebSessionNode): boolean => {
+		if (session.piboSessionId === rootSessionId) {
+			collectAllSessionIds(session, ids);
+			return true;
+		}
+		return session.children.some((child) => visit(child));
+	};
+	for (const session of sessions) visit(session);
+	return ids;
+}
+
+function collectAllSessionIds(session: PiboWebSessionNode, output: Set<string>): void {
+	output.add(session.piboSessionId);
+	for (const child of session.children) collectAllSessionIds(child, output);
+}
+
+function mergeNavigationSessions(
+	next: readonly PiboWebSessionNode[],
+	readSessionIds: ReadonlySet<string>,
+	previousUnreadBySessionId: ReadonlyMap<string, number>,
+): PiboWebSessionNode[] {
+	return next.map((session) => {
+		const preservedUnread = previousUnreadBySessionId.get(session.piboSessionId);
+		const unreadCount = readSessionIds.has(session.piboSessionId) ? 0 : (session.unreadCount ?? preservedUnread ?? 0);
+		return {
+			...session,
+			...(unreadCount > 0 ? { unreadCount } : { unreadCount: undefined }),
+			children: mergeNavigationSessions(session.children, readSessionIds, previousUnreadBySessionId),
+		};
+	});
+}
+
+function mergeNavigationRooms(
+	current: readonly PiboRoom[],
+	next: readonly PiboRoom[],
+	selectedRoomId: string | undefined,
+	clearedUnreadCount: number,
+): PiboRoom[] {
+	const previousUnreadByRoomId = new Map<string, number>();
+	collectRoomUnreadCounts(current, previousUnreadByRoomId);
+	return mergeRoomNodes(next, previousUnreadByRoomId, selectedRoomId, clearedUnreadCount).rooms;
+}
+
+function collectRoomUnreadCounts(rooms: readonly PiboRoom[], output: Map<string, number>): void {
+	for (const room of rooms) {
+		output.set(room.id, room.unreadCount ?? 0);
+		collectRoomUnreadCounts(room.children ?? [], output);
+	}
+}
+
+function mergeRoomNodes(
+	rooms: readonly PiboRoom[],
+	previousUnreadByRoomId: ReadonlyMap<string, number>,
+	selectedRoomId: string | undefined,
+	clearedUnreadCount: number,
+): { rooms: PiboRoom[]; selectedRoomFound: boolean } {
+	let selectedRoomFound = false;
+	const merged = rooms.map((room) => {
+		const childResult = mergeRoomNodes(room.children ?? [], previousUnreadByRoomId, selectedRoomId, clearedUnreadCount);
+		const roomContainsSelection = room.id === selectedRoomId || childResult.selectedRoomFound;
+		selectedRoomFound = selectedRoomFound || roomContainsSelection;
+		const preservedUnread = room.unreadCount ?? previousUnreadByRoomId.get(room.id) ?? 0;
+		const unreadCount = roomContainsSelection && clearedUnreadCount > 0 ? Math.max(0, preservedUnread - clearedUnreadCount) : preservedUnread;
+		return {
+			...room,
+			...(unreadCount > 0 ? { unreadCount } : { unreadCount: undefined }),
+			...(room.children ? { children: childResult.rooms } : {}),
+		};
+	});
+	return { rooms: merged, selectedRoomFound };
 }
 
 function appendSessionRoots(current: PiboWebSessionNode[], next: PiboWebSessionNode[]): PiboWebSessionNode[] {
@@ -483,7 +572,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			const requestId = bootstrapRequestId.current + 1;
 			bootstrapRequestId.current = requestId;
 			const navigation = await loadNavigationQueryData(queryClient, { piboSessionId, includeArchived, roomId });
-			const data = mergeNavigationIntoBootstrap(currentBootstrap, navigation);
+			const data = mergeNavigationIntoBootstrap(currentBootstrap, navigation, { readSessionId: piboSessionId });
 			if (requestId !== bootstrapRequestId.current) return data;
 			setBootstrap(data);
 			setSelectedPiboSessionId(data.selectedPiboSessionId);
@@ -510,14 +599,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 		piboSessionId?: string,
 		includeArchived = showArchivedRef.current,
 		roomId?: string,
-		options: { force?: boolean } = {},
+		options: { force?: boolean; readSessionId?: string } = {},
 	) => {
 		const currentBootstrap = bootstrapRef.current;
 		if (!currentBootstrap) return loadBootstrap(piboSessionId, includeArchived, roomId, { force: options.force });
 		const requestId = bootstrapRequestId.current + 1;
 		bootstrapRequestId.current = requestId;
 		const navigation = await loadNavigationQueryData(queryClient, { piboSessionId, includeArchived, roomId, force: options.force });
-		const data = mergeNavigationIntoBootstrap(currentBootstrap, navigation);
+		const data = mergeNavigationIntoBootstrap(currentBootstrap, navigation, { readSessionId: options.readSessionId });
 		if (requestId !== bootstrapRequestId.current) return data;
 		setBootstrap(data);
 		setSelectedPiboSessionId(data.selectedPiboSessionId);
@@ -798,7 +887,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		navigateToSelectedSession(selectedRoomId ?? bootstrap?.selectedRoomId, piboSessionId, false, { closeMobileSidebar: false });
 		try {
 			await markSessionRead(piboSessionId);
-			const data = await loadNavigation(piboSessionId, showArchivedRef.current, selectedRoomId ?? bootstrap?.selectedRoomId);
+			const data = await loadNavigation(piboSessionId, showArchivedRef.current, selectedRoomId ?? bootstrap?.selectedRoomId, { readSessionId: piboSessionId });
 			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, true, { closeMobileSidebar: false });
 		} finally {
 			setLoadingPiboSessionId((current) => current === piboSessionId ? null : current);

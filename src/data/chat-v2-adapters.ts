@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { PiboJsonObject, PiboJsonValue, PiboOutputEvent } from "../core/events.js";
-import type { ChatEventAppendInput, ChatEventListInput, ChatUnreadCountInput, StoredChatEvent } from "../apps/chat/event-log.js";
-import { chatRoomIdFromMetadata, roomWorkspaceFromMetadata, type CreatePiboRoomInput, type PiboRoom, type PiboRoomMember, type PiboRoomNode, type PiboRoomRole, type UpdatePiboRoomInput } from "../apps/chat/rooms.js";
-import type { ChatWebSessionBootstrapIndexResult, ChatWebSessionIndexItem, ChatWebStoredPiboEvent } from "../apps/chat/read-model.js";
+import type { ChatEventAppendInput, ChatEventListInput, ChatUnreadCountInput, StoredChatEvent } from "../apps/chat/types/event-store.js";
+import { chatRoomIdFromMetadata, roomWorkspaceFromMetadata, type CreatePiboRoomInput, type PiboRoom, type PiboRoomMember, type PiboRoomNode, type PiboRoomRole, type UpdatePiboRoomInput } from "../apps/chat/types/rooms.js";
+import type { ChatWebSessionBootstrapIndexResult, ChatWebSessionIndexItem, ChatWebStoredPiboEvent } from "../apps/chat/types/read-model.js";
 import { isLiveOnlyOutputEvent } from "../apps/chat/output-event-policy.js";
 import type { PiboSession } from "../sessions/store.js";
 import type { PiboDataStore } from "./pibo-store.js";
