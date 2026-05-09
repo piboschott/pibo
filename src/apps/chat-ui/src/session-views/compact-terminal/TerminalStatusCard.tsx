@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, Cpu, Folder, Hash, Layers } from "lucide-react";
+import { Activity, Cpu, Folder, Gauge, Hash, Layers } from "lucide-react";
 import type { CompactTerminalRow } from "./terminalRows";
 
 type StatusData = {
@@ -15,6 +15,21 @@ type StatusData = {
 		tokens?: number;
 		contextWindow?: number;
 		percent?: number;
+	};
+	providerUsage?: {
+		provider?: string;
+		planType?: string;
+		fetchedAt?: string;
+		limits: Array<{
+			label: string;
+			usedPercent: number;
+			remainingPercent: number;
+			resetsAt?: string;
+		}>;
+		credits?: {
+			unlimited?: boolean;
+			balance?: string;
+		};
 	};
 };
 
@@ -35,6 +50,24 @@ function parseStatusData(output: unknown): StatusData | undefined {
 	const contextUsage =
 		typeof obj.contextUsage === "object" && obj.contextUsage !== null
 			? (obj.contextUsage as Record<string, unknown>)
+			: undefined;
+	const providerUsage =
+		typeof obj.providerUsage === "object" && obj.providerUsage !== null
+			? (obj.providerUsage as Record<string, unknown>)
+			: undefined;
+	const providerLimits = Array.isArray(providerUsage?.limits)
+		? providerUsage.limits
+				.filter((limit): limit is Record<string, unknown> => Boolean(limit) && typeof limit === "object" && !Array.isArray(limit))
+				.map((limit) => ({
+					label: typeof limit.label === "string" ? limit.label : "limit",
+					usedPercent: typeof limit.usedPercent === "number" ? limit.usedPercent : 0,
+					remainingPercent: typeof limit.remainingPercent === "number" ? limit.remainingPercent : 0,
+					resetsAt: typeof limit.resetsAt === "string" ? limit.resetsAt : undefined,
+				}))
+		: [];
+	const providerCredits =
+		typeof providerUsage?.credits === "object" && providerUsage.credits !== null
+			? (providerUsage.credits as Record<string, unknown>)
 			: undefined;
 
 	return {
@@ -73,7 +106,32 @@ function parseStatusData(output: unknown): StatusData | undefined {
 							: undefined,
 				}
 			: undefined,
+		providerUsage: providerUsage && (providerLimits.length > 0 || providerCredits)
+			? {
+					provider: typeof providerUsage.provider === "string" ? providerUsage.provider : undefined,
+					planType: typeof providerUsage.planType === "string" ? providerUsage.planType : undefined,
+					fetchedAt: typeof providerUsage.fetchedAt === "string" ? providerUsage.fetchedAt : undefined,
+					limits: providerLimits,
+					credits: providerCredits
+						? {
+							unlimited: providerCredits.unlimited === true,
+							balance: typeof providerCredits.balance === "string" ? providerCredits.balance : undefined,
+						}
+						: undefined,
+				}
+			: undefined,
 	};
+}
+
+function formatResetTime(value?: string): string | undefined {
+	if (!value) return undefined;
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return undefined;
+	return date.toLocaleString(undefined, {
+		weekday: "short",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
 }
 
 export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
@@ -171,6 +229,37 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 							style={{ width: `${Math.min(percent, 100)}%` }}
 						/>
 					</div>
+				</div>
+			) : null}
+
+			{/* Provider Usage */}
+			{data.providerUsage ? (
+				<div className="mt-3 space-y-1.5 border-t border-[#2a2a2a] pt-2">
+					<div className="flex items-center gap-1.5 text-[11px] text-[#737373]">
+						<Gauge size={11} />
+						<span>OpenAI Codex quota{data.providerUsage.planType ? ` (${data.providerUsage.planType})` : ""}</span>
+					</div>
+					{data.providerUsage.limits.map((limit) => {
+						const reset = formatResetTime(limit.resetsAt);
+						return (
+							<div key={`${limit.label}-${limit.resetsAt ?? ""}`} className="space-y-1">
+								<div className="flex items-center justify-between gap-2 text-[11px]">
+									<span className="text-[#a3a3a3]">{limit.label}</span>
+									<span className="shrink-0 font-mono text-[#d4d4d4]">
+										{limit.remainingPercent.toFixed(0)}% left{reset ? ` · resets ${reset}` : ""}
+									</span>
+								</div>
+								<div className="h-1.5 w-full overflow-hidden rounded-full bg-[#2a2a2a]">
+									<div className="h-full rounded-full bg-[#38bdf8] transition-all" style={{ width: `${Math.min(Math.max(limit.remainingPercent, 0), 100)}%` }} />
+								</div>
+							</div>
+						);
+					})}
+					{data.providerUsage.credits ? (
+						<div className="text-[11px] text-[#a3a3a3]">
+							Credits: {data.providerUsage.credits.unlimited ? "unlimited" : data.providerUsage.credits.balance ?? "available"}
+						</div>
+					) : null}
 				</div>
 			) : null}
 

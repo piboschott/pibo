@@ -29,6 +29,7 @@ import type {
 	ToolProfile,
 } from "../core/profiles.js";
 import type { PiboPiPackageInfo } from "../pi-packages/types.js";
+import type { PiboProviderUsageStatus } from "../auth/openai-codex-usage.js";
 
 export type PiboProfileBuildContext = {
 	getTool(name: string): ToolProfile;
@@ -155,6 +156,8 @@ export type PiboGatewayActionContext = {
 	piboSessionId: string;
 	getStatus(): PiboSessionStatus;
 	getContextUsage(): ContextUsage | undefined;
+	getActiveModel(): ModelProfile | undefined;
+	getProviderUsage(): Promise<PiboProviderUsageStatus | undefined>;
 	clearQueue(): number;
 	abort(): Promise<void>;
 	dispose(): Promise<void>;

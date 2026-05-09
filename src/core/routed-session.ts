@@ -22,6 +22,7 @@ import type {
 import type { PiboThinkingLevel } from "./thinking.js";
 import type { CompactionResult } from "@mariozechner/pi-coding-agent";
 import type { ContextUsage } from "@mariozechner/pi-coding-agent";
+import { getOpenAiCodexProviderUsageForActiveModel } from "../auth/openai-codex-usage.js";
 import { expandInlineSkills } from "./skill-expansion.js";
 import type { ModelProfile } from "./profiles.js";
 
@@ -473,6 +474,19 @@ export class RoutedSession {
 		return this.runtime.session.getContextUsage();
 	}
 
+	getActiveModel(): { provider: string; id: string } | undefined {
+		const model = this.runtime.session.model;
+		return model ? { provider: model.provider, id: model.id } : undefined;
+	}
+
+	async getProviderUsage() {
+		try {
+			return await getOpenAiCodexProviderUsageForActiveModel(this.getActiveModel());
+		} catch {
+			return undefined;
+		}
+	}
+
 	removeQueuedMessages(predicate: (event: PiboMessageEvent) => boolean): number {
 		this.assertActive();
 
@@ -749,6 +763,8 @@ export class RoutedSession {
 				piboSessionId: this.piboSessionId,
 				getStatus: () => this.getStatus(),
 				getContextUsage: () => this.getContextUsage(),
+				getActiveModel: () => this.getActiveModel(),
+				getProviderUsage: () => this.getProviderUsage(),
 				clearQueue: () => this.clearQueue(),
 				abort: async () => {
 					await this.runtime.session.abort();
