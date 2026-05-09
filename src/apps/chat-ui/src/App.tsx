@@ -162,12 +162,9 @@ function mergeNavigationIntoBootstrap(current: BootstrapData, navigation: Naviga
 }
 
 async function loadTraceQueryData(
-	queryClient: QueryClient,
 	piboSessionId: string,
 	options: { includeRawEvents?: boolean; rawEventsLimit?: number } = {},
 ): Promise<PiboSessionTraceView> {
-	const queryKey = chatTraceQueryKey(piboSessionId, options);
-	await queryClient.removeQueries({ queryKey, exact: true });
 	const response = await getTrace(piboSessionId, {
 		includeRawEvents: options.includeRawEvents,
 		rawEventsLimit: options.rawEventsLimit,
@@ -1679,7 +1676,7 @@ function SessionTracePane({
 		queryKey: traceQueryKey ?? ["chat", "trace", "idle", "compact", DEFAULT_RAW_EVENTS_LIMIT],
 		queryFn: () => {
 			if (!selectedPiboSessionId) throw new Error("Session is required");
-			return loadTraceQueryData(queryClient, selectedPiboSessionId, {
+			return loadTraceQueryData(selectedPiboSessionId, {
 				includeRawEvents: showRawEvents,
 				rawEventsLimit: DEFAULT_RAW_EVENTS_LIMIT,
 			});
