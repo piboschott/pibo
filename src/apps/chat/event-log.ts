@@ -7,4 +7,3 @@ export type {
 	ChatUnreadCountInput,
 	StoredChatEvent,
 } from "./types/event-store.js";
-export { ChatEventLog, createDefaultChatEventLog } from "../../data/legacy/chat-event-log.js";

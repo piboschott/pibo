@@ -15,4 +15,3 @@ export {
 	type PiboRoomType,
 	type UpdatePiboRoomInput,
 } from "./types/rooms.js";
-export { PiboRoomStore, createDefaultPiboRoomStore } from "../../data/legacy/chat-room-store.js";
