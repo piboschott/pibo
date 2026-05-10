@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Use `recordWorkflowEdgeTransfer` when a direct edge transfer should update the run cursor, emit `edge.transferred`, and persist the run; keep `transferWorkflowEdgeData` pure for validation/payload creation.
 - Direct edge runtime transfer is exposed as `transferWorkflowEdgeData`; it creates an immutable `EdgeTransfer` from a completed source attempt output only after validating source output and target input ports.
 - Direct workflow edge compatibility is conservative: text ports match text ports, and JSON ports match only when their semantic schema contracts are equivalent; otherwise use an explicit edge adapter or adapter node.
 - Single-prompt one-node runtime coverage should assert validation, routed Pibo session creation/message emission, trace events, and reopened `SqliteWorkflowRunStore` facts in one end-to-end test.
@@ -238,4 +239,16 @@
   - `transferWorkflowEdgeData` is a pure runtime helper today; story 4.4 can wrap it with `edge.transferred` event emission without reimplementing validation.
   - Edge adapters are deliberately rejected by direct transfer until registry-backed adapter resolution lands in section 5.
   - Use `Object.hasOwn(sourceNodeAttempt, "output")` semantics to distinguish a missing output from other falsy JSON/text values such as `null`, `false`, `0`, or an empty string.
+---
+
+## 2026-05-10 23:26 UTC - 4.4
+- Added `recordWorkflowEdgeTransfer`, a runtime wrapper around direct edge transfer that appends/emits `edge.transferred`, advances the workflow run cursor to the transferred edge, updates `run.updatedAt`, and persists the run when a store is provided.
+- Added edge transfer event tests for successful event/cursor/store recording and for validation failures that must not emit events or mutate the run cursor.
+- Marked task `4.4` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- Files changed: `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/testing/runtime-edge-transfer.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Keep pure edge transfer validation/payload creation (`transferWorkflowEdgeData`) separate from run/event side effects (`recordWorkflowEdgeTransfer`) so future graph runtime code can choose the correct boundary.
+  - Edge transfer event recording should only happen after transfer validation succeeds; failed transfers should return diagnostics without invoking event emitters or changing the run cursor.
+  - The existing `WorkflowRun.current` cursor can represent an edge boundary with `{ edgeId, status }`, and `SqliteWorkflowRunStore` already persists `current_edge_id` through the serialized cursor.
 ---

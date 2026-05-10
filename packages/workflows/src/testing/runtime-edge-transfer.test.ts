@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { json, text, transferWorkflowEdgeData } from "../index.js";
-import type { NodeAttempt, WorkflowDefinition, WorkflowRun } from "../index.js";
+import { json, recordWorkflowEdgeTransfer, text, transferWorkflowEdgeData } from "../index.js";
+import type {
+  NodeAttempt,
+  WorkflowDefinition,
+  WorkflowRun,
+  WorkflowRuntimeEvent,
+  WorkflowRunStore,
+} from "../index.js";
 
 function createTwoNodeWorkflow(): WorkflowDefinition {
   return {
@@ -91,6 +97,73 @@ describe("workflow edge data transfer", () => {
       payload: "Draft output for review.",
       createdAt: "2026-05-10T23:20:03.000Z",
     });
+  });
+
+  it("records an edge transfer event and advances the workflow run cursor", async () => {
+    const definition = createTwoNodeWorkflow();
+    const run = createRun();
+    const events: WorkflowRuntimeEvent[] = [];
+    const emittedEvents: WorkflowRuntimeEvent[] = [];
+    const savedRuns: WorkflowRun[] = [];
+    const store: WorkflowRunStore = {
+      saveRun(savedRun) {
+        savedRuns.push(structuredClone(savedRun));
+      },
+      getRun(id) {
+        return savedRuns.find((savedRun) => savedRun.id === id);
+      },
+    };
+
+    const result = await recordWorkflowEdgeTransfer(
+      definition,
+      run,
+      "draft-to-review",
+      createSourceAttempt(),
+      {
+        now: () => "2026-05-10T23:20:03.000Z",
+        createEdgeTransferId: () => "wet_draft_to_review",
+        events,
+        emitEvent: (event) => {
+          emittedEvents.push(event);
+        },
+        store,
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.events, [
+      {
+        type: "edge.transferred",
+        runId: "wfr_edge_transfer",
+        edgeTransferId: "wet_draft_to_review",
+        edgeId: "draft-to-review",
+      },
+    ]);
+    assert.deepEqual(emittedEvents, result.events);
+    assert.deepEqual(run.current, { edgeId: "draft-to-review", status: "running" });
+    assert.equal(run.updatedAt, "2026-05-10T23:20:03.000Z");
+    assert.equal(savedRuns.length, 1);
+    assert.deepEqual(savedRuns[0]?.current, { edgeId: "draft-to-review", status: "running" });
+  });
+
+  it("does not record an event when edge transfer validation fails", async () => {
+    const run = createRun();
+    const originalCursor = structuredClone(run.current);
+    const result = await recordWorkflowEdgeTransfer(
+      createTwoNodeWorkflow(),
+      run,
+      "draft-to-review",
+      createSourceAttempt({ status: "running" }),
+      {
+        emitEvent() {
+          throw new Error("failed transfers should not emit events");
+        },
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.events, []);
+    assert.deepEqual(run.current, originalCursor);
   });
 
   it("validates target node input before transferring the payload", () => {

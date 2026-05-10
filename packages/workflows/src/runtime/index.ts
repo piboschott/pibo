@@ -148,6 +148,12 @@ export type WorkflowEdgeTransferOptions = {
   createEdgeTransferId?: () => EdgeTransferId;
 };
 
+export type RecordedWorkflowEdgeTransferOptions = WorkflowEdgeTransferOptions & {
+  events?: WorkflowRuntimeEvent[];
+  emitEvent?: WorkflowEventEmitter;
+  store?: WorkflowRunStore;
+};
+
 export type WorkflowEdgeTransferSuccess = {
   ok: true;
   transfer: EdgeTransfer;
@@ -162,6 +168,20 @@ export type WorkflowEdgeTransferFailure = {
 };
 
 export type WorkflowEdgeTransferResult = WorkflowEdgeTransferSuccess | WorkflowEdgeTransferFailure;
+
+export type RecordedWorkflowEdgeTransferSuccess = WorkflowEdgeTransferSuccess & {
+  run: WorkflowRun;
+  events: WorkflowRuntimeEvent[];
+};
+
+export type RecordedWorkflowEdgeTransferFailure = WorkflowEdgeTransferFailure & {
+  run: WorkflowRun;
+  events: WorkflowRuntimeEvent[];
+};
+
+export type RecordedWorkflowEdgeTransferResult =
+  | RecordedWorkflowEdgeTransferSuccess
+  | RecordedWorkflowEdgeTransferFailure;
 
 export type OneNodeAgentWorkflowSuccess = {
   ok: true;
@@ -393,6 +413,32 @@ export function transferWorkflowEdgeData(
   };
 
   return { ok: true, transfer, targetInput: payload, diagnostics };
+}
+
+export async function recordWorkflowEdgeTransfer(
+  definition: WorkflowDefinition,
+  run: WorkflowRun,
+  edgeId: string,
+  sourceNodeAttempt: NodeAttempt,
+  options: RecordedWorkflowEdgeTransferOptions = {},
+): Promise<RecordedWorkflowEdgeTransferResult> {
+  const events = options.events ?? [];
+  const result = transferWorkflowEdgeData(definition, run, edgeId, sourceNodeAttempt, options);
+  if (!result.ok) {
+    return { ...result, run, events };
+  }
+
+  run.current = { edgeId, status: run.status };
+  run.updatedAt = result.transfer.createdAt;
+  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    type: "edge.transferred",
+    runId: run.id,
+    edgeTransferId: result.transfer.id,
+    edgeId,
+  });
+  await persistWorkflowRun(options.store, run);
+
+  return { ...result, run, events };
 }
 
 export function validateOneNodeAgentWorkflowPath(definition: WorkflowDefinition): ValidationResult {
