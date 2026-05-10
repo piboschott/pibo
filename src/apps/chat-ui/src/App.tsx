@@ -971,19 +971,19 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, [bootstrap?.selectedRoomId, loadNavigation, navigateToSelectedSession, selectedRoomId]);
 
 	const selectRoom = useCallback(async (roomId: string, options: NavigationOptions = {}) => {
-		if (options.closeMobileSidebar !== false) setMobileSidebarOpen(false);
+		const navigationOptions = { ...options, closeMobileSidebar: false };
 		const storedPiboSessionId = readStoredSelection().sessionsByRoom?.[roomId];
 		setSelectedRoomId(roomId);
 		setSelectedPiboSessionId(storedPiboSessionId ?? null);
 		try {
 			const data = await loadNavigation(storedPiboSessionId, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
 		} catch (caught) {
 			if (!storedPiboSessionId) throw caught;
 			removeStoredRoomSelection(roomId);
 			setSelectedPiboSessionId(null);
 			const data = await loadNavigation(undefined, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
 		}
 	}, [loadNavigation, navigateToSelectedSession]);
 
