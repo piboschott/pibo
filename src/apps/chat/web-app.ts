@@ -74,7 +74,10 @@ import { ChatReadStateService } from "./data/read-state-service.js";
 import { ChatRoomService } from "./data/room-service.js";
 import { ChatSessionQueryService } from "./data/session-query-service.js";
 import { ChatTimelineQueryService } from "./data/timeline-query-service.js";
+import { ChatProjectService, type PiboProject, type PiboProjectSession } from "./data/project-service.js";
 import { PiboDataStore } from "../../data/pibo-store.js";
+import { createDefaultPiboCronStore, type PiboCronStore } from "../../cron/store.js";
+import { handleChatCronApiRequest } from "./cron-api.js";
 
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
@@ -87,6 +90,8 @@ export type ChatWebAppOptions = {
 	reliabilityStorePath?: string;
 	dataStorePath?: string;
 	dataPayloadRootDir?: string;
+	projectStorePath?: string;
+	cronStorePath?: string;
 };
 
 type ChatPersistenceMetrics = {
@@ -155,8 +160,10 @@ type ChatWebAppState = {
 	eventCommands: ChatEventCommands;
 	readState: ChatReadState;
 	roomService: ChatRoomActions;
+	projectService: ChatProjectService;
 	agentStore: CustomAgentStore;
 	reliabilityStore: PiboReliabilityStore;
+	cronStore: PiboCronStore;
 	dataStore: PiboDataStore;
 	ingestService: ChatDataIngestService;
 	traceCache: Map<string, PiboSessionTraceView>;
@@ -217,6 +224,34 @@ function loadBootstrapCatalog(
 type ChatSessionCreateBody = {
 	profile?: unknown;
 	roomId?: unknown;
+};
+
+type ChatProjectCreateBody = {
+	name?: unknown;
+	description?: unknown;
+	projectFolder?: unknown;
+	createFolder?: unknown;
+};
+
+type ChatProjectPatchBody = {
+	name?: unknown;
+	description?: unknown;
+	archived?: unknown;
+};
+
+type ChatProjectDeleteBody = {
+	confirmName?: unknown;
+	deleteFiles?: unknown;
+};
+
+type ChatProjectSessionCreateBody = {
+	profile?: unknown;
+	workflowId?: unknown;
+};
+
+type ChatProjectSessionPatchBody = {
+	title?: unknown;
+	archived?: unknown;
 };
 
 type ChatSessionDeleteBody = {
@@ -292,6 +327,17 @@ type ChatMessageBody = {
 	roomId?: unknown;
 	text?: unknown;
 	clientTxnId?: unknown;
+};
+
+type ChatProjectsBootstrap = ChatBootstrapCatalog & {
+	identity: PiboWebSession["authSession"]["identity"];
+	personalProject: PiboProject;
+	project?: PiboProject;
+	projects: PiboProject[];
+	session?: PiboSession;
+	selectedProjectId: string;
+	selectedPiboSessionId?: string;
+	sessions: PiboWebSessionNode[];
 };
 
 type ChatEventCursor = {
@@ -1187,6 +1233,87 @@ function createPersonalChatSession(
 	});
 }
 
+function createProjectChatSession(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	project: PiboProject;
+	profile: string;
+	workflowId?: string;
+}): PiboSession {
+	const workflowId = normalizeProjectWorkflowId(input.workflowId);
+	const session = input.context.channelContext.createSession({
+		channel: CHAT_WEB_CHANNEL,
+		kind: "chat",
+		profile: input.profile,
+		ownerScope: input.webSession.ownerScope,
+		workspace: input.project.projectFolder,
+		metadata: {
+			projectId: input.project.id,
+			projectSessionKind: "main",
+			projectWorkflowId: workflowId,
+		},
+	});
+	input.state.projectService.addProjectSession({
+		projectId: input.project.id,
+		piboSessionId: session.id,
+		kind: "main",
+		workflowId,
+		title: session.title,
+	});
+	input.state.sessionQuery.upsertSession(session);
+	return session;
+}
+
+function normalizeProjectWorkflowId(value: unknown): string {
+	if (value === undefined || value === null || value === "") return "simple-chat";
+	if (value !== "simple-chat") throw new PiboWebHttpError("Only the simple-chat workflow is available in V1", 400);
+	return value;
+}
+
+function normalizeProjectPath(value: unknown): string {
+	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Project folder is required", 400);
+	let projectPath = value.trim();
+	if (projectPath === "~") projectPath = process.env.HOME ?? projectPath;
+	else if (projectPath.startsWith("~/")) projectPath = `${process.env.HOME ?? ""}${projectPath.slice(1)}`;
+	if (!isAbsolute(projectPath)) throw new PiboWebHttpError("Project folder must be an absolute path, e.g. ~/code/my-project or /home/me/code/my-project", 400);
+	return resolve(projectPath);
+}
+
+function normalizeProjectDescription(value: unknown): string | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "string") throw new PiboWebHttpError("Project description must be a string", 400);
+	return value.trim() || undefined;
+}
+
+function normalizeProjectArchived(value: unknown): boolean | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "boolean") throw new PiboWebHttpError("Project archived flag must be boolean", 400);
+	return value;
+}
+
+function normalizeProjectSessionArchived(value: unknown): boolean | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "boolean") throw new PiboWebHttpError("Project session archived flag must be boolean", 400);
+	return value;
+}
+
+function projectResourcePath(pathname: string): { projectId: string; child?: string } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+	if (!parts[0]) return undefined;
+	return { projectId: parts[0], ...(parts[1] ? { child: parts[1] } : {}) };
+}
+
+function projectSessionResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/project-sessions/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	return decodeURIComponent(encodedId);
+}
+
 function resolveDownloadPath(path: string, basePath: string): string {
 	return isAbsolute(path) ? resolve(path) : resolve(basePath, path);
 }
@@ -1909,6 +2036,101 @@ function createEventStream(input: {
 			connection: "keep-alive",
 		},
 	});
+}
+
+async function buildProjectsBootstrap(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	defaultProfile: string;
+	projectId?: string;
+	piboSessionId?: string;
+	includeArchived?: boolean;
+}): Promise<ChatProjectsBootstrap> {
+	const personalProject = input.state.projectService.ensurePersonalProject({ ownerScope: input.webSession.ownerScope });
+	const selectedProject = input.projectId ? input.state.projectService.requireProject(input.projectId, { includeArchived: true }) : personalProject;
+	let projectSessions = input.state.projectService.listProjectSessions(selectedProject.id, { includeArchived: input.includeArchived });
+	if (selectedProject.id === personalProject.id && projectSessions.length === 0) {
+		const session = createProjectChatSession({
+			state: input.state,
+			context: input.context,
+			webSession: input.webSession,
+			project: personalProject,
+			profile: input.defaultProfile,
+			workflowId: "simple-chat",
+		});
+		projectSessions = [input.state.projectService.getProjectSession(session.id)!];
+	}
+	const sessions = projectSessions
+		.map((projectSession) => input.context.channelContext.getSession(projectSession.piboSessionId))
+		.filter((session): session is PiboSession => Boolean(session));
+	const requestedSession = input.piboSessionId ? sessions.find((session) => session.id === input.piboSessionId) : undefined;
+	const selectedSession = requestedSession ?? sessions.find((session) => session.id === selectedProject.currentMainSessionId) ?? sessions[0];
+	indexOwnedSessions(input.state.sessionQuery, sessions);
+	const nodes = await buildSessionNodes(sessions, input.state.sessionQuery.listSessions(), selectedProject.projectFolder, new Map(), { skipPiMetadataFallback: true });
+	applyProjectSessionArchiveState(nodes, new Map(projectSessions.map((projectSession) => [projectSession.piboSessionId, Boolean(projectSession.archived)])));
+	return {
+		identity: input.webSession.authSession.identity,
+		personalProject,
+		project: selectedProject,
+		projects: input.state.projectService.listProjects({ includeArchived: input.includeArchived }),
+		...(selectedSession ? { session: selectedSession, selectedPiboSessionId: selectedSession.id } : {}),
+		selectedProjectId: selectedProject.id,
+		sessions: nodes,
+		...(await loadBootstrapCatalog(input.state, input.context, input.webSession)),
+	};
+}
+
+function applyProjectSessionArchiveState(nodes: PiboWebSessionNode[], archivedBySessionId: ReadonlyMap<string, boolean>): void {
+	for (const node of nodes) {
+		const archived = archivedBySessionId.get(node.piboSessionId);
+		if (archived !== undefined) node.archived = archived;
+		applyProjectSessionArchiveState(node.children, archivedBySessionId);
+	}
+}
+
+async function sendProjectMessage(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	defaultProfile: string;
+	body: ChatMessageBody;
+}): Promise<Response> {
+	const text = normalizeMessageText(input.body.text);
+	const clientTxnId = normalizeClientTxnId(input.body.clientTxnId);
+	if (typeof input.body.piboSessionId !== "string") throw new PiboWebHttpError("Project session is required", 400);
+	const selectedSession = input.context.channelContext.getSession(input.body.piboSessionId);
+	if (!selectedSession || selectedSession.ownerScope !== input.webSession.ownerScope) throw new PiboWebHttpError("Session not found", 404);
+	const projectSession = input.state.projectService.getProjectSession(selectedSession.id);
+	if (!projectSession) throw new PiboWebHttpError("Project session not found", 404);
+	const actorId = principalIdFor(input.webSession);
+	const duplicate = clientTxnId ? input.state.eventCommands.findByClientTxn(undefined, actorId, clientTxnId) : undefined;
+	if (duplicate) return responseJson({ duplicate: true, event: duplicate });
+	const accepted = input.state.eventCommands.appendEvent({
+		piboSessionId: selectedSession.id,
+		eventType: "user.message.accepted",
+		actorType: "user",
+		actorId,
+		clientTxnId,
+		retentionClass: "chat_message",
+		payload: {
+			type: "user.message.accepted",
+			piboSessionId: selectedSession.id,
+			projectId: projectSession.projectId,
+			text,
+			...(clientTxnId ? { clientTxnId } : {}),
+		},
+	});
+	for (const listener of input.state.liveListeners) listener(accepted);
+	const messageId = randomUUID();
+	const output = await input.context.channelContext.emit({
+		type: "message",
+		piboSessionId: selectedSession.id,
+		id: messageId,
+		text,
+		source: "user",
+	});
+	return responseJson({ accepted, output });
 }
 
 async function sendChatMessage(input: {
@@ -2951,8 +3173,10 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		eventCommands: new ChatEventCommandService(dataStore),
 		readState: new ChatReadStateService(dataStore),
 		roomService: new ChatRoomService(dataStore),
+		projectService: new ChatProjectService(options.projectStorePath),
 		agentStore: createAgentStore(options.agentStorePath),
 		reliabilityStore: createReliabilityStore(options.reliabilityStorePath),
+		cronStore: createDefaultPiboCronStore({ path: options.cronStorePath }),
 		dataStore,
 		ingestService: new ChatDataIngestService(dataStore),
 		traceCache: new Map(),
@@ -3132,6 +3356,127 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					sessions,
 					...catalog,
 				});
+			}
+
+			if (url.pathname.startsWith(`${CHAT_WEB_API_PREFIX}/cron`)) {
+				const webSession = await requireSession(request, context);
+				const response = await handleChatCronApiRequest({
+					request,
+					context,
+					webSession,
+					roomService: state.roomService,
+					cronStore: state.cronStore,
+					defaultProfile,
+				});
+				if (response) return response;
+			}
+
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects/bootstrap` && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				return responseJson(await buildProjectsBootstrap({
+					state,
+					context,
+					webSession,
+					defaultProfile,
+					projectId: url.searchParams.get("projectId") || undefined,
+					piboSessionId: url.searchParams.get("piboSessionId") || undefined,
+					includeArchived: parseBooleanSearchParam(url, "includeArchived"),
+				}));
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects/message` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatMessageBody>(request);
+				return sendProjectMessage({ state, context, webSession, defaultProfile, body });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects` && request.method === "GET") {
+				await requireSession(request, context);
+				return responseJson({ projects: state.projectService.listProjects({ includeArchived: parseBooleanSearchParam(url, "includeArchived") }) });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectCreateBody>(request);
+				try {
+					const project = state.projectService.createProject({
+						ownerScope: webSession.ownerScope,
+						name: normalizeRoomName(body.name),
+						description: normalizeProjectDescription(body.description),
+						projectFolder: normalizeProjectPath(body.projectFolder),
+						createFolder: body.createFolder === true,
+					});
+					return responseJson({ project }, { status: 201 });
+				} catch (error) {
+					throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+				}
+			}
+
+			const projectResource = projectResourcePath(url.pathname);
+			if (projectResource && projectResource.child === undefined && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectPatchBody>(request);
+				try {
+					const project = state.projectService.updateProject(projectResource.projectId, {
+						...(body.name !== undefined ? { name: normalizeRoomName(body.name) } : {}),
+						...(body.description !== undefined ? { description: normalizeProjectDescription(body.description) ?? null } : {}),
+						...(body.archived !== undefined ? { archived: normalizeProjectArchived(body.archived) } : {}),
+					});
+					if (!project) throw new PiboWebHttpError("Project not found", 404);
+					return responseJson({ project });
+				} catch (error) {
+					if (error instanceof PiboWebHttpError) throw error;
+					throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+				}
+			}
+
+			if (projectResource && projectResource.child === undefined && request.method === "DELETE") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectDeleteBody>(request);
+				try {
+					return responseJson(state.projectService.deleteProject(projectResource.projectId, {
+						confirmName: normalizeRoomDeleteConfirmation(body.confirmName),
+						deleteFiles: body.deleteFiles === true,
+					}));
+				} catch (error) {
+					throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+				}
+			}
+
+			if (projectResource && projectResource.child === "sessions" && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectSessionCreateBody>(request);
+				const project = state.projectService.requireProject(projectResource.projectId);
+				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
+				const session = createProjectChatSession({ state, context, webSession, project, profile, workflowId: normalizeProjectWorkflowId(body.workflowId) });
+				return responseJson({ session, projectSession: state.projectService.getProjectSession(session.id) }, { status: 201 });
+			}
+
+			const projectSessionId = projectSessionResourceId(url.pathname);
+			if (projectSessionId && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, projectSessionId);
+				const body = await readJsonBody<ChatProjectSessionPatchBody>(request);
+				const updateSession = context.channelContext.updateSession;
+				if (!updateSession) throw new PiboWebHttpError("Session updates are not available", 501);
+				const title = normalizeSessionTitle(body.title);
+				let updated = selectedSession;
+				if (title !== undefined) {
+					const next = updateSession(selectedSession.id, { title });
+					if (!next) throw new PiboWebHttpError("Session not found", 404);
+					updated = next;
+					state.sessionQuery.upsertSession(updated);
+				}
+				const archived = normalizeProjectSessionArchived(body.archived);
+				const projectSession = archived === undefined ? state.projectService.getProjectSession(selectedSession.id) : state.projectService.setProjectSessionArchived(selectedSession.id, archived);
+				return responseJson({ session: updated, projectSession });
 			}
 
 			const requestedSignal = signalResource(url.pathname);
@@ -3935,9 +4280,19 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					requestedPiboSessionId,
 					requestedRoomId,
 				);
+				const cursor = parseSseCursor(url.searchParams.get("since")) ?? parseSseCursor(request.headers.get("last-event-id"));
+				if (!requestedRoomId && state.projectService.getProjectSession(selectedSession.id)) {
+					return createEventStream({
+						piboSessionId: selectedSession.id,
+						activePiboSessionId: selectedSession.id,
+						principalId: principalIdFor(webSession),
+						context,
+						state,
+						cursor,
+					});
+				}
 				const roomId = requestedRoomId ?? selectedRoomIdForSession(state, context, selectedSession);
 				requireRoom(state, roomId, webSession, "read");
-				const cursor = parseSseCursor(url.searchParams.get("since")) ?? parseSseCursor(request.headers.get("last-event-id"));
 				const streamPiboSessionId = requestedPiboSessionId || !requestedRoomId ? selectedSession.id : undefined;
 				return createEventStream({
 					roomId: streamPiboSessionId ? undefined : roomId,

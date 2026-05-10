@@ -25,14 +25,14 @@ In scope for the initial Projects concept:
 - A new top-level `Projects` tab in the Chat Web App header/top bar.
 - A Projects experience that is a 1:1 copy of the existing Sessions tab layout, behavior, sidebar hierarchy, session tree, selected-session pane, composer, terminal/session views, and CRUD controls, with Workflow and Project metadata added.
 - Project containers that replace the user-facing label `Rooms` with `Projects` in the Projects module.
-- The same green Personal Chat entry shown at the top of the Sessions sidebar, also shown at the top of the Projects sidebar as a convenience entry. It must not make Session data and Project data the same module.
+- The Projects sidebar shows its own green Personal Chat entry at the top, styled like the Sessions sidebar Personal Chat entry, but backed by separate Projects data and the `~/.pibo/projects/workspace` working directory.
 - Separate Projects routes, selection state, and storage partitioning so Rooms/Sessions and Projects/Project Sessions do not mix.
-- Every Project must be linked to a concrete project folder/workspace path, or must be explicitly marked as draft/unconfigured until that folder is set.
+- Every Project must be linked to a concrete local project folder/workspace path at creation time. Draft/unconfigured Projects are not part of V1.
 - Each Project can contain many Project Sessions.
 - Project Sessions are normal Pibo runtime/chat sessions with additional Project and Workflow metadata.
-- Project Sessions have explicit workflow definitions. The simplest definition is a one-node `simple-chat` workflow.
+- Project Sessions have explicit workflow definitions. In V1, `simple-chat` is the only implemented workflow, but it must still use the workflow definition interface so later workflows can be added cleanly.
 - V1 must support the one-node workflow so Projects can ship as a separate Sessions clone before complex workflow behavior is complete.
-- `standard-project` is the first complex coding workflow target. It can add specs, planning, implementation, agent testing, human review, and cleanup states.
+- `standard-project` is the first complex coding workflow target after V1. It can add specs, planning, implementation, agent testing, human review, and cleanup states.
 - Sub-Sessions are created by subagent calls from a Main Project Session and remain visible/selectable in the Project Session tree.
 - Main Project Sessions have an extensible workflow state machine when their workflow is more complex than `simple-chat`.
 - Complex workflow state machines must be selected by workflow id so future workflows can define their own states and logic.
@@ -53,7 +53,7 @@ Out of scope for V1:
 
 - **Sessions Area**: The existing top-level Chat Web App area for general chat rooms and sessions.
 - **Projects Area**: The top-level Chat Web App area reached through the `Projects` tab. It is a separate session-like module, not a filtered view of Sessions.
-- **Pibo Project**: A user-facing coding-work container that groups Project Sessions and is always linked to one project folder unless explicitly draft/unconfigured.
+- **Pibo Project**: A user-facing work container that groups Project Sessions and is always linked to one local project folder in V1.
 - **Project Folder**: The local workspace/root path associated with a Pibo Project. It is the source project folder from which isolated session worktrees are created.
 - **Project Session**: A normal Pibo runtime/chat session associated with a Pibo Project. It keeps the standard Session transcript, terminal/session view, composer, status, trace view, tree behavior, archive/delete behavior, and Sub-Session hierarchy, and adds Project/Workflow metadata.
 - **Workflow Definition**: The process graph selected for a Project Session. It defines nodes, edges, allowed transitions, waiting states, and actions.
@@ -63,7 +63,8 @@ Out of scope for V1:
 - **Research Session**: A future Project Session type focused on gathering information, analysis, comparison, investigation, and recommendations. It may have its own states and logic and is not implemented in V1.
 - **Main Project Session**: A top-level Project Session inside a Project. For complex workflows, it owns the workflow run state.
 - **Sub-Session**: A child Pibo Session created when the agent in a Main Project Session calls a subagent. A Sub-Session follows the delegated task, appears in the Project Session tree, and remains selectable as a normal session surface.
-- **Project Session Workspace**: The isolated worktree and Docker compute worker assigned to one Project Session when the chosen workflow needs execution isolation.
+- **Project Session Workspace**: The isolated worktree and Docker compute worker assigned to one Project Session when the chosen workflow needs execution isolation. `simple-chat` does not create a worktree or Docker worker in V1.
+- **Projects Personal Chat**: The Projects module's own Personal Chat entry. It is separate from the Sessions module Personal Chat and uses `~/.pibo/projects/workspace` as its default working directory.
 - **Workflow State**: The current node/phase of a Project Session's workflow run.
 - **Session State Class**: A code-level state implementation that owns the behavior, available actions, validation, prompts, and side effects for one state.
 - **Project State Machine**: The orchestration layer that owns allowed transitions between Workflow States for Main Project Sessions but does not embed state-specific behavior.
@@ -86,53 +87,65 @@ The new `Projects` area is optimized for coding and project work, but its first 
 - The left-side grouping concept is called `Projects`, not `Rooms`.
 - The session list is called `Project Sessions`, not `Sessions`, where the distinction matters.
 - The selected Project Session opens the same kind of main surface as a selected Session: terminal/transcript, trace controls, model/profile/status header, slash commands, and composer.
-- A Project must have a project folder, unless it is explicitly draft/unconfigured.
+- A Project must have a project folder at creation time in V1.
 - A Project can contain multiple Project Sessions over time.
+- Each Main Project Session represents one topic or work order, such as a feature, bugfix, research report, documentation update, investigation, or cleanup task.
 - Each Main Project Session has a selected workflow.
-- V1 supports `simple-chat` as the one-node baseline workflow.
-- `standard-project` is the first complex workflow target for feature/change/bugfix work.
+- V1 implements only `simple-chat` as the one-node baseline workflow, but the workflow registry/interface must exist from the start.
+- `standard-project` is the first complex workflow target after V1 for feature/change/bugfix work.
 - Future Main Session workflows may have different graphs. For example, a Research workflow may focus on information gathering and analysis instead of code implementation.
 - Sub-Sessions appear below the Main Project Session when subagents are called.
 - A Project may later collect knowledge, documentation, project files, acceptance notes, and operational history.
 
 ### 3.2 Relationship to Pibo Rooms and Routes
 
-Implementation may initially reuse the existing Pibo Room/session infrastructure, but the product concept and route space must remain separate:
+Projects should use their own Projects storage from the start. The product concept, route space, and persistence must remain separate from Rooms/Sessions. V1 lists all Projects in that storage, regardless of owner scope; owner-scoped filtering can be added later.
 
 - A Pibo Room is a general Chat Web container in the Sessions module.
 - A Pibo Project is a coding-focused product container in the Projects module.
-- If Projects are backed by room/session tables in the first implementation, those rows must have a module discriminator, prefix, separate owner scope, separate table, or another explicit partition.
+- V1 should create a separate Projects database, for example `.pibo/web-projects.sqlite`, with first-class Projects tables rather than mixing Project containers into Room tables.
 - Rooms from the Sessions tab must not appear as Projects.
 - Projects from the Projects tab must not appear as Rooms.
 - Session records created in the Sessions tab must not appear as Project Sessions.
 - Project Sessions created in the Projects tab must not appear in the Sessions tab unless a future feature explicitly exports or links them.
 - Projects routes must be their own route family, for example `/projects`, `/projects/:projectId`, and `/projects/:projectId/sessions/:piboSessionId`.
 - Project actions must not redirect to `/rooms/:roomId` or `/sessions/:piboSessionId`.
-- If Projects are backed by rooms in the first implementation, that should be treated as a storage bridge, not as permanent product language.
+- If any temporary bridge to existing room/session code is needed, it must remain an implementation detail and must not leak product language or routes.
 - UI labels in the Projects area must consistently say `Project`/`Projects`, not `Room`/`Rooms`.
 
 ### 3.3 Project Folder Requirement
 
-Every Project must be linked to one project folder before it can be used for agent coding work.
+Every Project must be linked to one local project folder at creation time.
 
 The folder link should provide:
 
 - Display name/path in the Project header.
 - Source workspace context for new Project Sessions.
-- A stable basis for creating session worktrees and for cleanup checks such as Git status, worktree state, branch, changed files, and test commands.
+- A stable basis for later workflow-specific workspace setup and cleanup checks such as Git status, worktree state, branch, changed files, and test commands.
+
+V1 Project folder rules:
+
+- The user may point a Project at any existing local folder; it does not have to be under a Pibo-managed directory.
+- The existing folder may contain arbitrary files and does not need to be empty.
+- V1 does not need to verify that the folder is a Git repository.
+- Project creation requires `name` and `projectFolder`; `description` is optional.
+- Project names must be unique.
+- Project folders must be unique; two Projects must not point to the same folder.
+- When creating a new folder, the user selects or enters a parent path and a Project name; Pibo creates the folder on disk and sets the Project folder to that new path.
+- V1 may use direct path entry for folder selection. A richer file explorer can be added later.
 
 ### 3.4 Project Session Workflows
 
 Project Sessions must select a workflow to keep the system extensible.
 
-V1 must support the `simple-chat` workflow:
+V1 must support the `simple-chat` workflow as the only implemented workflow:
 
-- It is the safest default while Projects is first introduced.
+- It is the default and only selectable workflow while Projects is first introduced.
 - It has one effective node and no extra process gates.
 - It preserves normal chat/session behavior.
 - It lets Projects ship as a separate clone of Sessions while the Workflow foundation is hardened.
 
-The first complex workflow target is `standard-project`:
+The first complex workflow target after V1 is `standard-project`:
 
 - It represents coding work such as a feature, change, bugfix, refactor, cleanup, or similar implementation task.
 - It uses the standard specs/plan/implementation/agent-test/human-review/cleanup flow.
@@ -155,7 +168,9 @@ Each workflow should be able to define:
 
 ### 3.5 Project Session Isolation
 
-Every Project Session, including Main Sessions and Sub-Sessions, must automatically create and use an isolated execution workspace when created:
+Project Sessions should create and use isolated execution workspaces only when the selected workflow requires execution isolation. `simple-chat` Project Sessions do not create Docker compute workers or worktrees in V1.
+
+For workflows that require execution isolation:
 
 - A new worktree is created for the session.
 - A Docker compute worker is spawned for the session.
@@ -190,7 +205,7 @@ Required layout:
 Top nav: Sessions | Projects | Agents | Context | Settings
 
 Projects sidebar:
-  Personal Chat        // same green personal chat row used by Sessions
+  Personal Chat        // Projects-owned green personal chat row, styled like Sessions
   Projects             // same position where Sessions shows Rooms
     Project A
     Project B
@@ -201,6 +216,8 @@ Projects sidebar:
 ```
 
 The Projects tab may add workflow status chips, workflow run panels, workflow selection menus, review actions, and project-folder metadata. These controls are additive. They must not replace the copied Sessions structure, session tree, selected Session view, terminal/transcript, trace controls, or chat composer.
+
+The green Personal Chat row in Projects is a Projects-owned Personal Chat, not a link to the Sessions module Personal Chat. It uses `~/.pibo/projects/workspace` as its working directory and uses `simple-chat` by default.
 
 Parity means the Projects area keeps the same user capabilities as Sessions unless this spec explicitly says otherwise:
 
@@ -224,6 +241,8 @@ Chat composer with the same commands and behavior as Sessions
 ```
 
 The user must be able to talk to the selected Project Session, watch its runtime output, inspect traces, and switch to Sub-Sessions in the same way they can in the Sessions tab.
+
+Project Session creation should mirror normal Session creation, with the Projects-specific addition that a workflow is selected at creation time. In V1, the only available workflow is `simple-chat`, so the UI may preselect it while still persisting it through the workflow model.
 
 ## 4. Standard Project Workflow
 
@@ -424,20 +443,24 @@ The exact interface can change during implementation, but the separation should 
 - **REQ-001**: The Chat Web App top bar MUST include a new `Projects` tab next to the existing `Sessions` tab.
 - **REQ-002**: The existing `Sessions` tab and behavior MUST remain unchanged for the initial Projects work.
 - **REQ-003**: The Projects tab MUST be a 1:1 copy of the Sessions tab structure and behavior before Workflow extras are added.
-- **REQ-004**: The Projects sidebar MUST show the same green Personal Chat entry at the top that the Sessions sidebar shows.
+- **REQ-004**: The Projects sidebar MUST show a Projects-owned green Personal Chat entry at the top, styled like the Sessions sidebar Personal Chat entry.
 - **REQ-005**: Below the Personal Chat entry, the Projects sidebar MUST show `Projects` where the Sessions sidebar shows `Rooms`.
 - **REQ-006**: The Projects sidebar MUST show `Project Sessions` in the same sidebar position and style where the Sessions tab shows `Sessions`.
 - **REQ-007**: The Projects tab MUST NOT use the Context Files/settings-style layout as its primary layout.
 - **REQ-008**: Projects MUST use their own route family, for example `/projects`, `/projects/:projectId`, and `/projects/:projectId/sessions/:piboSessionId`.
 - **REQ-009**: Creating, selecting, editing, archiving, restoring, or deleting a Project MUST keep the user in the Projects tab.
 - **REQ-010**: Project flows MUST NOT redirect to `/rooms/:roomId`, `/sessions/:piboSessionId`, or the Sessions tab.
-- **REQ-011**: Sessions-tab Rooms/Sessions and Projects-tab Projects/Project Sessions MUST be separated by a route/storage discriminator, prefix, separate tables, or an equivalent isolation mechanism.
-- **REQ-012**: Creating a Project MUST require selecting or entering a project folder unless the implementation explicitly marks the project as draft/unconfigured.
+- **REQ-011**: Sessions-tab Rooms/Sessions and Projects-tab Projects/Project Sessions MUST be separated by Projects-owned storage, preferably `.pibo/web-projects.sqlite` in V1.
+- **REQ-012**: Creating a Project MUST require selecting or entering a project folder. Draft/unconfigured Projects are not part of V1.
+- **REQ-012a**: V1 MAY use direct path entry for folder selection; a graphical file explorer is not required for V1.
+- **REQ-012b**: Project creation MUST require a unique Project name and unique folder path; description is optional.
+- **REQ-012c**: Project deletion MUST follow the Room-style confirmation flow, including typing the Project name for destructive deletion.
+- **REQ-012d**: Permanent Project deletion MUST ask whether to delete the underlying project files; archiving MUST NOT delete files.
 - **REQ-013**: Project Sessions MUST be listed under the selected Project.
 - **REQ-014**: Project Sessions MUST show their selected workflow where it is useful for understanding behavior.
-- **REQ-015**: V1 MUST support creating Project Sessions with the `simple-chat` one-node workflow.
+- **REQ-015**: V1 MUST support creating Project Sessions with the `simple-chat` one-node workflow as the only implemented workflow.
 - **REQ-016**: `simple-chat` Project Sessions MUST behave like normal chat sessions: same terminal/transcript, traces, composer, slash commands, profile/model controls, and Sub-Session tree.
-- **REQ-017**: The first complex workflow target SHOULD be `standard-project`.
+- **REQ-017**: The first complex workflow target after V1 SHOULD be `standard-project`.
 - **REQ-018**: The UI MUST visually distinguish Main Project Sessions from Sub-Sessions.
 - **REQ-019**: A selected Main Project Session with a complex workflow MUST show its workflow state prominently.
 - **REQ-020**: A selected Sub-Session MUST show its delegated task context and parent Main Session, but MUST NOT expose independent project state transitions unless a future workflow explicitly models them.
@@ -448,9 +471,9 @@ The exact interface can change during implementation, but the separation should 
 - **REQ-025**: The Project Session composer MUST send messages to the selected Project Session and support the same slash commands, draft behavior, history behavior, disabled states, and submit behavior as the Sessions composer.
 - **REQ-026**: Workflow selection menus, status panels, and review actions MUST be additive controls around the normal selected-Session surface.
 - **REQ-027**: Projects MUST NOT replace the selected Project Session main pane with a Workflow-only dashboard or static status card.
-- **REQ-028**: New execution-capable Project Sessions SHOULD automatically create a worktree and Docker compute worker when their workflow requires agent coding work.
+- **REQ-028**: New execution-capable Project Sessions SHOULD automatically create a worktree and Docker compute worker only when their workflow requires agent coding work. `simple-chat` MUST NOT create a worktree or Docker worker in V1.
 - **REQ-029**: New Main Project Sessions SHOULD inherit the Project's folder/workspace context but MUST execute only in the session worktree when isolated execution is active.
-- **REQ-030**: Sub-Sessions SHOULD also execute only in their own session workspace unless a later design explicitly chooses shared workspaces.
+- **REQ-030**: Sub-Sessions SHOULD also execute only in their own session workspace when their workflow requires execution isolation, unless a later design explicitly chooses shared workspaces.
 - **REQ-031**: The UI SHOULD show the active worktree path, worker status, and relevant worker ports when available.
 - **REQ-032**: The Specs phase MUST make spec changes visible and durable for `standard-project` sessions.
 - **REQ-033**: The Plan phase MUST show the plan derived from the specs before execution for `standard-project` sessions.
@@ -481,8 +504,8 @@ export type PiboProject = {
   ownerScope: string;
   name: string;
   description?: string;
-  projectFolder?: string;
-  configurationStatus: "draft" | "configured";
+  projectFolder: string;
+  configurationStatus: "configured";
   currentMainSessionId?: string;
   archivedAt?: string;
   metadata?: Record<string, unknown>;
@@ -547,7 +570,7 @@ export type PiboProjectEvent = {
 };
 ```
 
-Project Sessions may initially be associated through `PiboSession.metadata.projectId`, `PiboSession.metadata.projectSessionKind`, `PiboSession.metadata.projectWorkflowId`, `PiboSession.metadata.projectWorkflowRunId`, and normal `parentId` hierarchy. Projects and Sessions must still be separated by an explicit module discriminator, prefix, separate table, or equivalent mechanism. Long-term implementations may introduce first-class relation tables if needed.
+Project Sessions may initially be associated through `PiboSession.metadata.projectId`, `PiboSession.metadata.projectSessionKind`, `PiboSession.metadata.projectWorkflowId`, `PiboSession.metadata.projectWorkflowRunId`, and normal `parentId` hierarchy. Project container and workflow metadata should live in the Projects-owned database, separate from Room storage. Long-term implementations may introduce additional first-class relation tables if needed.
 
 ## 8. Future Extensions
 
@@ -568,15 +591,11 @@ Projects are intended to become more than session groups. Future versions may ad
 
 ## 9. Open Questions
 
-- Should Projects use separate database tables, or is a hard module discriminator in the existing room/session tables enough?
-- Should the Personal Chat row inside Projects open the real Sessions Personal Chat, or should Projects have its own Personal Chat-equivalent data partition?
-- Should `simple-chat` be the default workflow for new Project Sessions, or should workflow selection be required during creation?
-- Should a Project represent one long-lived repository, while each standard Main Session represents one feature/change/bugfix?
 - Should a standard Main Session always start in `specs`, or can some sessions import existing specs and start in `plan`?
-- What should the first post-V1 Project workflow be: `research`, documentation, incident analysis, or something else?
+- What should the first post-V1 Project workflow be after `standard-project`: `research`, documentation, incident analysis, or something else?
 - Should Sub-Sessions inherit the Main Session workflow, use their own workflow, or remain untyped delegated work?
-- Should Sub-Sessions always receive separate worktrees/workers, or should some delegated tasks share the Main Session workspace?
-- Should project folders be limited to local paths, or can they later represent remote repositories?
+- Should Sub-Sessions always receive separate worktrees/workers for execution workflows, or should some delegated tasks share the Main Session workspace?
+- Can project folders later represent remote repositories, or are Projects always local-folder-backed?
 - Which cleanup operations should be UI-only confirmations vs direct executable actions?
 - How much Git automation is safe before explicit user confirmation is required?
 - What should the default `maxRetries` be for the agent implementation/test loop?

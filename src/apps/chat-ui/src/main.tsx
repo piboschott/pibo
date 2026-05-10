@@ -34,12 +34,18 @@ function chatRouteFromLocation(pathname: string, search: Record<string, unknown>
 	const sessionViewId = parseChatSessionViewId(search.view);
 	if (parts[0] === "context") return { area: "context" };
 	if (parts[0] === "agents") return { area: "agents" };
+	if (parts[0] === "cron") return { area: "cron" };
 	if (parts[0] === "settings") {
 		if (parts[1] === "pi-packages") return { area: "settings", panel: "pi-packages" };
 		if (parts[1] === "skills") return { area: "settings", panel: "skills" };
 		if (parts[1] === "providers") return { area: "settings", panel: "providers" };
 		return { area: "settings", panel: "general" };
 	}
+	if (parts[0] === "projects" && parts[1] && parts[2] === "sessions" && parts[3]) {
+		return { area: "projects", projectId: parts[1], piboSessionId: parts[3], sessionViewId };
+	}
+	if (parts[0] === "projects" && parts[1]) return { area: "projects", projectId: parts[1], sessionViewId };
+	if (parts[0] === "projects") return { area: "projects", sessionViewId };
 	if (parts[0] === "rooms" && parts[1] && parts[2] === "sessions" && parts[3]) {
 		return { area: "sessions", roomId: parts[1], piboSessionId: parts[3], sessionViewId };
 	}
@@ -67,9 +73,25 @@ const roomSessionRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "rooms/$roomId/sessions/$piboSessionId",
 });
+const projectsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "projects",
+});
+const projectRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "projects/$projectId",
+});
+const projectSessionRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "projects/$projectId/sessions/$piboSessionId",
+});
 const agentsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "agents",
+});
+const cronRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "cron",
 });
 const contextRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -92,7 +114,7 @@ const settingsProvidersRoute = createRoute({
 	path: "settings/providers",
 });
 const router = createRouter({
-	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, agentsRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
+	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
 	basepath: "/apps/chat",
 });
 

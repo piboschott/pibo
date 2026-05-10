@@ -1,4 +1,4 @@
-import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
+import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboCronJob, PiboCronRun, PiboCronSchedule, PiboCronStatus, PiboCronTarget, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
 
 const DOWNLOAD_FILENAME_RE = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i;
 
@@ -118,6 +118,135 @@ export async function getNavigation(
 	const params = createNavigationParams(piboSessionId, includeArchived, roomId);
 	const suffix = params.size ? `?${params.toString()}` : "";
 	return requestJson<Partial<NavigationData>>(`/api/chat/navigation${suffix}`).then(normalizeNavigation);
+}
+
+export async function getProjectsBootstrap(input: { projectId?: string; piboSessionId?: string; includeArchived?: boolean } = {}): Promise<ProjectsBootstrapData> {
+	const params = new URLSearchParams();
+	if (input.projectId) params.set("projectId", input.projectId);
+	if (input.piboSessionId) params.set("piboSessionId", input.piboSessionId);
+	if (input.includeArchived) params.set("includeArchived", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<ProjectsBootstrapData>(`/api/chat/projects/bootstrap${suffix}`);
+}
+
+export async function postProject(input: { name: string; projectFolder: string; description?: string; createFolder?: boolean }): Promise<{ project: PiboProject }> {
+	return requestJson<{ project: PiboProject }>("/api/chat/projects", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function patchProject(projectId: string, input: { name?: string; description?: string | null; archived?: boolean }): Promise<{ project: PiboProject }> {
+	return requestJson<{ project: PiboProject }>(`/api/chat/projects/${encodeURIComponent(projectId)}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function deleteProject(projectId: string, input: { confirmName: string; deleteFiles?: boolean }): Promise<{ deletedProjectId: string }> {
+	return requestJson<{ deletedProjectId: string }>(`/api/chat/projects/${encodeURIComponent(projectId)}`, {
+		method: "DELETE",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function postProjectSession(projectId: string, input: { profile?: string; workflowId?: string } = {}): Promise<CreateSessionData> {
+	return requestJson<CreateSessionData>(`/api/chat/projects/${encodeURIComponent(projectId)}/sessions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function patchProjectSession(piboSessionId: string, input: { title?: string | null; archived?: boolean }): Promise<{ session: PiboSession }> {
+	return requestJson<{ session: PiboSession }>(`/api/chat/project-sessions/${encodeURIComponent(piboSessionId)}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function postProjectMessage(piboSessionId: string, text: string, clientTxnId?: string): Promise<unknown> {
+	return requestJson<unknown>("/api/chat/projects/message", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ piboSessionId, text, ...(clientTxnId ? { clientTxnId } : {}) }),
+	});
+}
+
+
+export type CronScheduleInput =
+	| { kind: "in"; value: string }
+	| { kind: "at"; at: string }
+	| { kind: "at"; value: string; tz?: string }
+	| { kind: "every"; value: string }
+	| { kind: "daily"; time: string; tz?: string }
+	| { kind: "weekly"; weekdays: string; time: string; tz?: string }
+	| { kind: "monthly"; dayOfMonth: number; time: string; tz?: string }
+	| { kind: "cron"; expr: string; tz?: string }
+	| PiboCronSchedule;
+
+export type CronJobInput = {
+	name?: string;
+	description?: string;
+	enabled?: boolean;
+	target: PiboCronTarget;
+	profile?: string;
+	prompt: string;
+	schedule: CronScheduleInput;
+	deleteAfterRun?: boolean;
+};
+
+export async function getCronStatus(): Promise<{ status: PiboCronStatus }> {
+	return requestJson<{ status: PiboCronStatus }>("/api/chat/cron/status");
+}
+
+export async function getCronJobs(includeDisabled = true): Promise<{ jobs: PiboCronJob[] }> {
+	const params = new URLSearchParams();
+	if (includeDisabled) params.set("includeDisabled", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<{ jobs: PiboCronJob[] }>(`/api/chat/cron/jobs${suffix}`);
+}
+
+export async function postCronJob(input: CronJobInput): Promise<{ job: PiboCronJob }> {
+	return requestJson<{ job: PiboCronJob }>("/api/chat/cron/jobs", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function patchCronJob(id: string, input: Partial<CronJobInput>): Promise<{ job: PiboCronJob }> {
+	return requestJson<{ job: PiboCronJob }>(`/api/chat/cron/jobs/${encodeURIComponent(id)}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function deleteCronJob(id: string): Promise<{ removed: boolean }> {
+	return requestJson<{ removed: boolean }>(`/api/chat/cron/jobs/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	});
+}
+
+export async function runCronJobNow(id: string): Promise<{ run: PiboCronRun }> {
+	return requestJson<{ run: PiboCronRun }>(`/api/chat/cron/jobs/${encodeURIComponent(id)}/run`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	});
+}
+
+export async function getCronRuns(jobId?: string, limit = 100): Promise<{ runs: PiboCronRun[] }> {
+	const params = new URLSearchParams({ limit: String(limit) });
+	if (jobId) params.set("jobId", jobId);
+	return requestJson<{ runs: PiboCronRun[] }>(`/api/chat/cron/runs?${params.toString()}`);
 }
 
 export async function getSessionPage(input: {

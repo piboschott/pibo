@@ -53,6 +53,36 @@ export type PiboRoom = {
 	children?: PiboRoom[];
 };
 
+export type PiboProject = {
+	id: string;
+	ownerScope: string;
+	name: string;
+	description?: string;
+	projectFolder: string;
+	configurationStatus: "configured";
+	currentMainSessionId?: string;
+	archivedAt?: string;
+	metadata: Record<string, unknown>;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type PiboProjectSession = {
+	projectId: string;
+	piboSessionId: string;
+	kind: "main" | "sub";
+	workflowId: "simple-chat" | "standard-project" | string;
+	workflowRunId?: string;
+	parentMainSessionId?: string;
+	title?: string;
+	state?: string;
+	retryCount?: number;
+	maxRetries?: number;
+	archived?: boolean;
+	createdAt: string;
+	updatedAt: string;
+};
+
 export type PiboSession = {
 	id: string;
 	piSessionId: string;
@@ -177,6 +207,89 @@ export type BootstrapData = NavigationData & {
 	modelCatalog?: ModelCatalog;
 	agentCatalog?: AgentCatalog;
 	capabilities: { actions: Array<{ name: string; description?: string; slashCommands: string[] }> };
+};
+
+export type ProjectsBootstrapData = {
+	identity: { userId: string; email?: string; name?: string };
+	personalProject: PiboProject;
+	project?: PiboProject;
+	projects: PiboProject[];
+	session?: PiboSession;
+	selectedProjectId: string;
+	selectedPiboSessionId?: string;
+	sessions: PiboWebSessionNode[];
+	agents: AgentProfile[];
+	customAgents: CustomAgent[];
+	modelDefaults?: ModelDefaults;
+	modelCatalog?: ModelCatalog;
+	agentCatalog?: AgentCatalog;
+	capabilities: { actions: Array<{ name: string; description?: string; slashCommands: string[] }> };
+};
+
+
+export type PiboCronTarget =
+	| { kind: "room"; roomId: string }
+	| { kind: "personal"; principalId: string };
+
+export type PiboCronSchedule =
+	| { kind: "at"; at: string }
+	| { kind: "every"; everyMs: number; anchorMs?: number }
+	| { kind: "cron"; expr: string; tz?: string };
+
+export type PiboCronScheduleUi =
+	| { preset: "in"; amount: number; unit: "minutes" | "hours" | "days" }
+	| { preset: "at"; localDateTime: string; tz?: string }
+	| { preset: "every"; amount: number; unit: "minutes" | "hours" | "days" }
+	| { preset: "daily"; time: string; tz?: string }
+	| { preset: "weekly"; weekdays: number[]; time: string; tz?: string }
+	| { preset: "monthly"; dayOfMonth: number; time: string; tz?: string }
+	| { preset: "advanced"; expr: string; tz?: string };
+
+export type PiboCronJob = {
+	id: string;
+	ownerScope: string;
+	name: string;
+	description?: string;
+	enabled: boolean;
+	target: PiboCronTarget;
+	profile: string;
+	prompt: string;
+	schedule: PiboCronSchedule;
+	scheduleUi?: PiboCronScheduleUi;
+	deleteAfterRun?: boolean;
+	state: {
+		nextRunAt?: string;
+		runningAt?: string;
+		lastRunAt?: string;
+		lastStatus?: "ok" | "error" | "skipped";
+		lastError?: string;
+		lastRunId?: string;
+		lastPiboSessionId?: string;
+		consecutiveErrors?: number;
+	};
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type PiboCronRun = {
+	id: string;
+	jobId: string;
+	ownerScope: string;
+	piboSessionId?: string;
+	status: "queued" | "running" | "ok" | "error" | "skipped";
+	reason?: string;
+	error?: string;
+	startedAt?: string;
+	completedAt?: string;
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type PiboCronStatus = {
+	enabled: boolean;
+	jobs: number;
+	running: number;
+	nextRunAt?: string;
 };
 
 export type ModelProfile = {

@@ -1,0 +1,157 @@
+import { Command } from "commander";
+import { parseFriendlySchedule } from "./schedule.js";
+import { createDefaultPiboCronStore } from "./store.js";
+import type { PiboCronTarget } from "./types.js";
+
+function printDiscovery(): void {
+	console.log(`pibo cron
+
+Manage scheduled Pibo agent jobs.
+
+Commands:
+  status    Show scheduler store status
+  list      List cron jobs
+  add       Create a cron job
+  pause     Disable a cron job
+  resume    Enable a cron job and recompute next run
+  remove    Delete a cron job
+  runs      List cron runs
+
+Next: pibo cron add --help`);
+}
+
+function printJson(value: unknown): void {
+	console.log(JSON.stringify(value, null, 2));
+}
+
+function ownerScope(value: string | undefined): string {
+	return value || process.env.PIBO_OWNER_SCOPE || "user:local";
+}
+
+function targetFromOptions(options: { room?: string; personal?: boolean; principalId?: string; ownerScope?: string }): PiboCronTarget {
+	if (options.room) return { kind: "room", roomId: options.room };
+	if (options.personal) return { kind: "personal", principalId: options.principalId || ownerScope(options.ownerScope) };
+	throw new Error("Choose --room <roomId> or --personal");
+}
+
+function scheduleFromOptions(options: Record<string, unknown>, positionalCron?: string) {
+	if (typeof options.in === "string") return parseFriendlySchedule({ kind: "in", value: options.in });
+	if (typeof options.at === "string") return parseFriendlySchedule({ kind: "at", value: options.at, tz: typeof options.tz === "string" ? options.tz : undefined });
+	if (typeof options.every === "string") return parseFriendlySchedule({ kind: "every", value: options.every });
+	if (typeof options.daily === "string") return parseFriendlySchedule({ kind: "daily", time: options.daily, tz: typeof options.tz === "string" ? options.tz : undefined });
+	if (typeof options.weekly === "string") {
+		const time = typeof options.time === "string" ? options.time : undefined;
+		if (!time) throw new Error("--weekly requires --time HH:MM");
+		return parseFriendlySchedule({ kind: "weekly", weekdays: options.weekly, time, tz: typeof options.tz === "string" ? options.tz : undefined });
+	}
+	if (typeof options.monthly === "string" || typeof options.monthly === "number") {
+		const time = typeof options.time === "string" ? options.time : undefined;
+		if (!time) throw new Error("--monthly requires --time HH:MM");
+		return parseFriendlySchedule({ kind: "monthly", dayOfMonth: Number(options.monthly), time, tz: typeof options.tz === "string" ? options.tz : undefined });
+	}
+	if (typeof options.cron === "string") return parseFriendlySchedule({ kind: "cron", expr: options.cron, tz: typeof options.tz === "string" ? options.tz : undefined });
+	if (positionalCron) return parseFriendlySchedule({ kind: "cron", expr: positionalCron, tz: typeof options.tz === "string" ? options.tz : undefined });
+	throw new Error("Choose a schedule: --in, --at, --every, --daily, --weekly, --monthly, --cron, or pass a quoted cron expression");
+}
+
+export async function runCronCli(argv = process.argv): Promise<void> {
+	if (argv.length <= 2 || argv[2] === "--help" || argv[2] === "-h") {
+		printDiscovery();
+		return;
+	}
+
+	const program = new Command();
+	program.name("pibo cron").description("Manage scheduled Pibo jobs").helpOption("-h, --help");
+	program.option("--store <path>", "Cron store path");
+	program.option("--owner-scope <scope>", "Owner scope for local CLI operations");
+
+	program.command("status").description("Show cron store status").option("--json", "Print JSON").action((options) => {
+		const store = createDefaultPiboCronStore({ path: program.opts().store });
+		const status = store.status();
+		if (options.json) printJson(status);
+		else {
+			console.log(`jobs\t${status.jobs}`);
+			console.log(`running\t${status.running}`);
+			console.log(`nextRunAt\t${status.nextRunAt ?? "-"}`);
+		}
+		store.close();
+	});
+
+	program.command("list").description("List cron jobs").option("--all", "Include disabled jobs").option("--json", "Print JSON").action((options) => {
+		const store = createDefaultPiboCronStore({ path: program.opts().store });
+		const jobs = store.listJobs({ ownerScope: ownerScope(program.opts().ownerScope), includeDisabled: options.all });
+		if (options.json) printJson(jobs);
+		else for (const job of jobs) console.log(`${job.id}\t${job.enabled ? "enabled" : "disabled"}\t${job.state.nextRunAt ?? "-"}\t${job.name}`);
+		store.close();
+	});
+
+	program.command("add")
+		.description("Create a cron job")
+		.argument("[cronExpr...]", "Raw 5-field cron expression, e.g. \"0 8 * * *\"")
+		.option("--room <roomId>", "Target room")
+		.option("--personal", "Target personal chat")
+		.option("--principal-id <id>", "Principal id for personal target")
+		.option("--agent <profile>", "Agent/profile", "codex-compat-openai-web")
+		.option("--name <name>", "Job name")
+		.requiredOption("--prompt <text>", "Prompt/task")
+		.option("--in <duration>", "Run once after duration, e.g. 20m")
+		.option("--at <iso>", "Run once at ISO timestamp")
+		.option("--every <duration>", "Run every duration, e.g. 2h")
+		.option("--daily <HH:MM>", "Run daily at time")
+		.option("--weekly <days>", "Run weekly on comma-separated days")
+		.option("--monthly <day>", "Run monthly on day of month")
+		.option("--time <HH:MM>", "Time for weekly/monthly")
+		.option("--cron <expr>", "Raw 5-field cron expression")
+		.option("--tz <timezone>", "Timezone for wall-clock schedules")
+		.option("--disabled", "Create disabled")
+		.option("--delete-after-run", "Delete successful one-shot job")
+		.option("--json", "Print JSON")
+		.action((cronExprParts: string[], options) => {
+			const store = createDefaultPiboCronStore({ path: program.opts().store });
+			const positionalCron = Array.isArray(cronExprParts) && cronExprParts.length ? cronExprParts.join(" ") : undefined;
+			const normalized = scheduleFromOptions(options, positionalCron);
+			const job = store.createJob({
+				ownerScope: ownerScope(program.opts().ownerScope),
+				name: options.name,
+				enabled: options.disabled ? false : true,
+				target: targetFromOptions({ ...options, ownerScope: program.opts().ownerScope }),
+				profile: options.agent,
+				prompt: options.prompt,
+				schedule: normalized.schedule,
+				scheduleUi: normalized.scheduleUi,
+				deleteAfterRun: options.deleteAfterRun === true,
+			});
+			if (options.json) printJson(job);
+			else console.log(`${job.id}\t${job.state.nextRunAt ?? "-"}\t${job.name}`);
+			store.close();
+		});
+
+	for (const [name, enabled] of [["pause", false], ["resume", true]] as const) {
+		program.command(name).argument("<id>").description(enabled ? "Enable a cron job" : "Disable a cron job").option("--json", "Print JSON").action((id, options) => {
+			const store = createDefaultPiboCronStore({ path: program.opts().store });
+			const job = store.updateJob(ownerScope(program.opts().ownerScope), id, { enabled });
+			if (!job) throw new Error("Cron job not found");
+			if (options.json) printJson(job);
+			else console.log(`${job.id}\t${job.enabled ? "enabled" : "disabled"}\t${job.state.nextRunAt ?? "-"}`);
+			store.close();
+		});
+	}
+
+	program.command("remove").argument("<id>").description("Delete a cron job").option("--json", "Print JSON").action((id, options) => {
+		const store = createDefaultPiboCronStore({ path: program.opts().store });
+		const removed = store.removeJob(ownerScope(program.opts().ownerScope), id);
+		if (options.json) printJson({ removed });
+		else console.log(removed ? "removed" : "not found");
+		store.close();
+	});
+
+	program.command("runs").description("List cron runs").option("--job <id>", "Filter by job").option("--json", "Print JSON").action((options) => {
+		const store = createDefaultPiboCronStore({ path: program.opts().store });
+		const runs = store.listRuns({ ownerScope: ownerScope(program.opts().ownerScope), jobId: options.job });
+		if (options.json) printJson(runs);
+		else for (const run of runs) console.log(`${run.id}\t${run.status}\t${run.createdAt}\t${run.piboSessionId ?? "-"}`);
+		store.close();
+	});
+
+	await program.parseAsync(argv);
+}

@@ -4,6 +4,7 @@ import type { BetterAuthServiceOptions } from "../auth/better-auth.js";
 import { createPiboBetterAuthPlugin } from "../plugins/better-auth.js";
 import { createPiboChatWebPlugin, type ChatWebAppOptions } from "../plugins/chat-web.js";
 import { createPiboContextFilesPlugin, type ContextFilesPluginOptions } from "../plugins/context-files.js";
+import { createPiboCronPlugin } from "../cron/plugin.js";
 import { createPiboDevAuthPlugin } from "../plugins/dev-auth.js";
 import { PiboPluginRegistry } from "../plugins/registry.js";
 import { createPiboWebHostPlugin } from "../plugins/web.js";
@@ -94,6 +95,7 @@ export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {
 			...createDefaultPiboPlugins(),
 			useDevAuth ? createPiboDevAuthPlugin() : createPiboBetterAuthPlugin(resolvedOptions.auth),
 			createPiboWebHostPlugin({ announce: false, canonicalBaseURL: useDevAuth ? undefined : authBaseURL(resolvedOptions), gatewayMode: webGatewayMode(resolvedOptions, useDevAuth), ...resolvedOptions.web }),
+			createPiboCronPlugin({ cronStorePath: resolvedOptions.chat?.cronStorePath, dataStorePath: resolvedOptions.chat?.dataStorePath, dataPayloadRootDir: resolvedOptions.chat?.dataPayloadRootDir }),
 			createPiboContextFilesPlugin(resolvedOptions.contextFiles),
 			createPiboChatWebPlugin(resolvedOptions.chat),
 		],

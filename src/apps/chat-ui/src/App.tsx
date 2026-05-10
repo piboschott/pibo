@@ -41,9 +41,9 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getSessionPage, getTrace, getTraceSummary, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
 import { THINKING_LEVELS } from "./types";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
@@ -57,6 +57,7 @@ import { BasePromptView } from "./context/BasePromptView";
 import { CompactionPromptView } from "./context/CompactionPromptView";
 import { PiboToolsView } from "./context/PiboToolsView";
 import { McpToolsView } from "./context/McpToolsView";
+import { CronArea } from "./CronArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
 import {
@@ -73,13 +74,15 @@ import {
 	traceSummaryQueriesForSession,
 } from "./cache";
 
-type Area = "sessions" | "agents" | "context" | "settings";
+type Area = "sessions" | "projects" | "cron" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
 type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
+	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
 	| { area: "agents" }
+	| { area: "cron" }
 	| { area: "context" }
 	| { area: "settings"; panel?: SettingsPanel };
 
@@ -296,8 +299,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const queryClient = useQueryClient();
 	const area = route.area;
 	const routeRoomId = route.area === "sessions" ? route.roomId : undefined;
-	const routePiboSessionId = route.area === "sessions" ? route.piboSessionId : undefined;
-	const routeSessionViewId = route.area === "sessions" ? route.sessionViewId : undefined;
+	const routeProjectId = route.area === "projects" ? route.projectId : undefined;
+	const routePiboSessionId = route.area === "sessions" || route.area === "projects" ? route.piboSessionId : undefined;
+	const routeSessionViewId = route.area === "sessions" || route.area === "projects" ? route.sessionViewId : undefined;
 	const settingsPanel: SettingsPanel = route.area === "settings" ? route.panel ?? "general" : "general";
 	const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
 	const [selectedPiboSessionId, setSelectedPiboSessionId] = useState<string | null>(null);
@@ -414,7 +418,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, []);
 
 	useEffect(() => {
-		if (area !== "sessions") return;
+		if (area !== "sessions" && area !== "projects") return;
 		const next = routeSessionViewId ?? readStoredSessionView();
 		setSessionViewId((current) => (current === next ? current : next));
 	}, [area, routeSessionViewId]);
@@ -426,8 +430,29 @@ export function App({ route }: { route: ChatAppRoute }) {
 		(target: ChatAppRoute, replace = false, nextSessionViewId = sessionViewId, options: NavigationOptions = {}) => {
 			if (options.closeMobileSidebar !== false) setMobileSidebarOpen(false);
 			const sessionViewSearch = { view: nextSessionViewId };
+			if (target.area === "projects") {
+				if (target.projectId && target.piboSessionId) {
+					void navigate({
+						to: "/projects/$projectId/sessions/$piboSessionId",
+						params: { projectId: target.projectId, piboSessionId: target.piboSessionId },
+						search: sessionViewSearch,
+						replace,
+					});
+					return;
+				}
+				if (target.projectId) {
+					void navigate({ to: "/projects/$projectId", params: { projectId: target.projectId }, search: sessionViewSearch, replace });
+					return;
+				}
+				void navigate({ to: "/projects", search: sessionViewSearch, replace });
+				return;
+			}
 			if (target.area === "agents") {
 				void navigate({ to: "/agents", replace });
+				return;
+			}
+			if (target.area === "cron") {
+				void navigate({ to: "/cron", replace });
 				return;
 			}
 			if (target.area === "context") {
@@ -480,6 +505,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 				return;
 			}
 			navigateToRoute({ area: "sessions", ...(roomId ? { roomId } : {}), piboSessionId }, replace, sessionViewId, options);
+		},
+		[navigateToRoute, sessionViewId],
+	);
+
+	const navigateToSelectedProjectSession = useCallback(
+		(projectId: string | undefined, piboSessionId: string | undefined, replace = false, options: NavigationOptions = {}) => {
+			if (!piboSessionId) {
+				navigateToRoute({ area: "projects", ...(projectId ? { projectId } : {}) }, replace, sessionViewId, options);
+				return;
+			}
+			navigateToRoute({ area: "projects", ...(projectId ? { projectId } : {}), piboSessionId }, replace, sessionViewId, options);
 		},
 		[navigateToRoute, sessionViewId],
 	);
@@ -1233,6 +1269,18 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const selectSessionView = useCallback(
 		(nextViewId: ChatSessionViewId) => {
 			setSessionViewId(nextViewId);
+			if (area === "projects") {
+				navigateToRoute(
+					{
+						area: "projects",
+						...(routeProjectId ? { projectId: routeProjectId } : {}),
+						...(routePiboSessionId ? { piboSessionId: routePiboSessionId } : {}),
+					},
+					false,
+					nextViewId,
+				);
+				return;
+			}
 			if (area !== "sessions") return;
 			navigateToRoute(
 				{
@@ -1244,7 +1292,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				nextViewId,
 			);
 		},
-		[area, navigateToRoute, selectedPiboSessionId, selectedRoomId],
+		[area, navigateToRoute, routePiboSessionId, routeProjectId, selectedPiboSessionId, selectedRoomId],
 	);
 
 	const sessionGroups = useMemo(() => bootstrap ? splitSessionNodesByArchive(bootstrap.sessions, showArchived) : { active: [], archived: [] }, [bootstrap?.sessions, showArchived]);
@@ -1329,13 +1377,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
 					<nav className="flex gap-1 flex-wrap">
-					{(["sessions", "agents", "context", "settings"] as const).map((item) => (
+					{(["sessions", "projects", "cron", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
 							type="button"
 							onClick={() => {
 								if (item === "sessions") {
 									navigateToSelectedSession(selectedRoomId ?? bootstrap.selectedRoomId, selectedPiboSessionId ?? bootstrap.selectedPiboSessionId);
+									return;
+								}
+								if (item === "projects") {
+									navigateToRoute({ area: "projects" });
 									return;
 								}
 								navigateToRoute({ area: item });
@@ -1364,14 +1416,16 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 			<div
 				className={`min-h-0 ${
-					area === "agents" ? "h-full overflow-hidden" : `grid ${
-						area === "sessions" && showRawEvents
+					(area === "agents" || area === "cron") ? "h-full overflow-hidden" : `grid ${
+						(area === "sessions" || area === "projects") && showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-1"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-1"
 					}`
 				}`}
 			>
-				{area === "agents" ? (
+				{area === "cron" ? (
+					<CronArea bootstrap={bootstrap} />
+				) : area === "agents" ? (
 					<AgentsView
 						agents={bootstrap.agents}
 						initialCustomAgents={bootstrap.customAgents}
@@ -1383,6 +1437,41 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onEditMcpServer={openMcpToolsEditor}
 						onAgentsChanged={() => void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { selectSession: false })}
 						creatingSession={creatingSession || selectedRoomArchived}
+					/>
+				) : area === "projects" ? (
+					<ProjectsArea
+						baseBootstrap={bootstrap}
+						routeProjectId={routeProjectId}
+						routePiboSessionId={routePiboSessionId}
+						sessionViewId={sessionViewId}
+						sessionViews={sessionViews}
+						currentSessionView={currentSessionView}
+						showRawEvents={showRawEvents}
+						showThinking={showThinking}
+						expandThinking={expandThinking}
+						commands={slashCommands}
+						skills={skills}
+						mobileSidebarOpen={mobileSidebarOpen}
+						onCloseMobileSidebar={() => setMobileSidebarOpen(false)}
+						onNavigate={navigateToSelectedProjectSession}
+						onSelectSessionView={selectSessionView}
+						onToggleRawEvents={() => {
+							const next = !showRawEvents;
+							setShowRawEvents(next);
+							localStorage.setItem("pibo.chat.showRawEvents", String(next));
+						}}
+						onToggleThinking={() => {
+							const next = !showThinking;
+							setShowThinking(next);
+							localStorage.setItem("pibo.chat.showThinking", String(next));
+						}}
+						onToggleExpandThinking={() => {
+							const next = !expandThinking;
+							setExpandThinking(next);
+							localStorage.setItem("pibo.chat.expandThinking", String(next));
+						}}
+						onThinkingLevelChange={(level) => void postAction(routePiboSessionId ?? "", "thinking", { level })}
+						onError={setError}
 					/>
 				) : (
 				<>
@@ -1767,6 +1856,387 @@ export function App({ route }: { route: ChatAppRoute }) {
 	);
 }
 
+function ProjectsArea({
+	baseBootstrap,
+	routeProjectId,
+	routePiboSessionId,
+	sessionViewId,
+	sessionViews,
+	currentSessionView,
+	showRawEvents,
+	showThinking,
+	expandThinking,
+	commands,
+	skills,
+	onNavigate,
+	onSelectSessionView,
+	onToggleRawEvents,
+	onToggleThinking,
+	onToggleExpandThinking,
+	onThinkingLevelChange,
+	mobileSidebarOpen,
+	onCloseMobileSidebar,
+	onError,
+}: {
+	baseBootstrap: BootstrapData;
+	routeProjectId?: string;
+	routePiboSessionId?: string;
+	sessionViewId: ChatSessionViewId;
+	sessionViews: ReturnType<typeof listChatSessionViews>;
+	currentSessionView: ReturnType<typeof getChatSessionView>;
+	showRawEvents: boolean;
+	showThinking: boolean;
+	expandThinking: boolean;
+	commands: SlashCommand[];
+	skills: Array<{ name: string; description?: string; path?: string }>;
+	onNavigate: (projectId: string | undefined, piboSessionId: string | undefined, replace?: boolean, options?: NavigationOptions) => void;
+	onSelectSessionView: (viewId: ChatSessionViewId) => void;
+	onToggleRawEvents: () => void;
+	onToggleThinking: () => void;
+	onToggleExpandThinking: () => void;
+	onThinkingLevelChange: (level: ThinkingLevel) => void;
+	mobileSidebarOpen: boolean;
+	onCloseMobileSidebar: () => void;
+	onError: (message: string | null) => void;
+}) {
+	const [data, setData] = useState<ProjectsBootstrapData | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [showArchivedProjects, setShowArchivedProjects] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedProjects") === "true");
+	const [showArchivedSessions, setShowArchivedSessions] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedSessions") === "true");
+	const [creatingSession, setCreatingSession] = useState(false);
+	const [autoRenameSessionId, setAutoRenameSessionId] = useState<string | null>(null);
+	const [composerText, setComposerText] = useState(() => routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
+	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
+
+	const load = useCallback(async (input: { projectId?: string; piboSessionId?: string } = {}) => {
+		setLoading(true);
+		try {
+			const next = await getProjectsBootstrap({
+				projectId: input.projectId ?? routeProjectId,
+				piboSessionId: input.piboSessionId ?? routePiboSessionId,
+				includeArchived: showArchivedProjects || showArchivedSessions,
+			});
+			setData(next);
+			if (!routeProjectId || next.selectedProjectId !== routeProjectId || (next.selectedPiboSessionId && next.selectedPiboSessionId !== routePiboSessionId)) {
+				onNavigate(next.selectedProjectId, next.selectedPiboSessionId, true, { closeMobileSidebar: false });
+			}
+			onError(null);
+			return next;
+		} catch (caught) {
+			onError(errorMessage(caught));
+			throw caught;
+		} finally {
+			setLoading(false);
+		}
+	}, [onError, onNavigate, routePiboSessionId, routeProjectId, showArchivedProjects, showArchivedSessions]);
+
+	useEffect(() => {
+		void load();
+	}, [load]);
+
+	useEffect(() => {
+		setComposerText(routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
+	}, [routePiboSessionId]);
+
+	const selectedProject = data?.project;
+	const selectedPiboSessionId = data?.selectedPiboSessionId ?? null;
+	const selectedSessionNode = selectedPiboSessionId && data ? findSessionNode(data.sessions, selectedPiboSessionId) : undefined;
+	const selectedSessionProfile = selectedSessionNode?.profile ?? defaultProfileFromBootstrap(baseBootstrap);
+	const activeProjects = data?.projects.filter((project) => !project.archivedAt) ?? [];
+	const archivedProjects = data?.projects.filter((project) => project.archivedAt) ?? [];
+	const sessionGroups = useMemo(() => data ? splitSessionNodesByArchive(data.sessions, showArchivedSessions) : { active: [], archived: [] }, [data, showArchivedSessions]);
+	const selectedSessionPathIds = useMemo(() => selectedPiboSessionId && data ? new Set(findSessionPath(data.sessions, selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS, [data, selectedPiboSessionId]);
+	const traceBootstrap = useMemo(() => ({
+		...baseBootstrap,
+		...(data?.session ? { session: data.session } : {}),
+		agents: data?.agents ?? baseBootstrap.agents,
+		customAgents: data?.customAgents ?? baseBootstrap.customAgents,
+		modelDefaults: data?.modelDefaults ?? baseBootstrap.modelDefaults,
+		modelCatalog: data?.modelCatalog ?? baseBootstrap.modelCatalog,
+		agentCatalog: data?.agentCatalog ?? baseBootstrap.agentCatalog,
+		capabilities: data?.capabilities ?? baseBootstrap.capabilities,
+		sessions: data?.sessions ?? [],
+	}) as BootstrapData, [baseBootstrap, data]);
+
+	const createProject = async () => {
+		const name = window.prompt("Project name");
+		if (!name) return;
+		const projectFolder = window.prompt("Project folder path (absolute path, e.g. ~/code/my-project or /home/me/code/my-project)");
+		if (!projectFolder) return;
+		const description = window.prompt("Description (optional)") ?? undefined;
+		try {
+			const { project } = await postProject({ name, projectFolder, createFolder: true, ...(description ? { description } : {}) });
+			await load({ projectId: project.id });
+			onNavigate(project.id, undefined);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const createProjectSession = async () => {
+		if (!selectedProject) return;
+		setCreatingSession(true);
+		try {
+			const created = await postProjectSession(selectedProject.id, { profile: selectedSessionProfile, workflowId: "simple-chat" });
+			setAutoRenameSessionId(created.session.id);
+			onNavigate(selectedProject.id, created.session.id, false, { closeMobileSidebar: false });
+			await load({ projectId: selectedProject.id, piboSessionId: created.session.id });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		} finally {
+			setCreatingSession(false);
+		}
+	};
+
+	const renameSession = async (piboSessionId: string, title: string | null) => {
+		try {
+			await patchProjectSession(piboSessionId, { title });
+			await load({ projectId: selectedProject?.id, piboSessionId });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const renameProject = async (project: PiboProject, name: string) => {
+		try {
+			await patchProject(project.id, { name });
+			await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId ?? undefined });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const setProjectArchived = async (project: PiboProject, archived: boolean) => {
+		try {
+			await patchProject(project.id, { archived });
+			const next = await load({ projectId: archived ? undefined : project.id });
+			if (archived && selectedProject?.id === project.id) onNavigate(next.selectedProjectId, next.selectedPiboSessionId);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const deleteArchivedProject = async (project: PiboProject) => {
+		const confirmName = window.prompt(`Type the project name to permanently delete "${project.name}".`);
+		if (confirmName === null) return;
+		const deleteFiles = window.confirm(`Also delete the real project folder?\n\n${project.projectFolder}`);
+		try {
+			await deleteProject(project.id, { confirmName, deleteFiles });
+			const next = await load({ projectId: selectedProject?.id === project.id ? undefined : selectedProject?.id });
+			if (selectedProject?.id === project.id) onNavigate(next.selectedProjectId, next.selectedPiboSessionId);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const runCommand = async (text: string) => {
+		if (!selectedPiboSessionId) return false;
+		const commandText = text.trim().split(/\s+/)[0];
+		const command = commands.find((candidate) => candidate.slash === commandText);
+		if (!command) return false;
+		await postAction(selectedPiboSessionId, command.action);
+		await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId });
+		return true;
+	};
+
+	if (loading && !data) {
+		return <main className="min-h-0 grid place-items-center text-slate-400">Loading Projects...</main>;
+	}
+
+	return (
+		<>
+			<div
+				className={`fixed inset-0 z-30 bg-black/60 min-[981px]:hidden transition-opacity duration-200 ${
+					mobileSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+				}`}
+				onClick={onCloseMobileSidebar}
+			/>
+			<aside
+				className={`min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800 max-[980px]:fixed max-[980px]:left-0 max-[980px]:top-0 max-[980px]:bottom-0 max-[980px]:z-40 max-[980px]:w-[280px] max-[980px]:transition-transform max-[980px]:duration-200 ${
+					mobileSidebarOpen ? "max-[980px]:translate-x-0" : "max-[980px]:-translate-x-full"
+				}`}
+			>
+				<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider max-[980px]:h-auto max-[980px]:py-2">
+					<span>projects</span>
+					<div className="flex items-center gap-1">
+						<button type="button" onClick={() => void load()} title="Refresh" aria-label="Refresh" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><RefreshCw size={13} /></button>
+						<button type="button" onClick={onCloseMobileSidebar} title="Close sidebar" aria-label="Close sidebar" className="min-[981px]:hidden p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
+					</div>
+				</div>
+				<div className="p-2 space-y-3">
+					<div>
+						<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Personal Chat</div>
+						<ProjectRow project={data!.personalProject} selected={selectedProject?.id === data!.personalProject.id} onSelect={() => onNavigate(data!.personalProject.id, undefined)} />
+					</div>
+					<div>
+						<div className="flex items-center justify-between gap-2 px-1 pb-1">
+							<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Projects</div>
+							<div className="flex items-center gap-1">
+								<button type="button" onClick={() => void createProject()} title="New Project" aria-label="New Project" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Plus size={14} /></button>
+								<button type="button" onClick={() => { const next = !showArchivedProjects; setShowArchivedProjects(next); localStorage.setItem("pibo.chat.projects.showArchivedProjects", String(next)); }} title="Archived Projects" aria-label="Archived Projects" className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedProjects ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedProjects ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
+							</div>
+						</div>
+						{activeProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, true)} />)}
+						{activeProjects.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No projects</div> : null}
+						{showArchivedProjects ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Projects</div>{archivedProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, false)} onDelete={() => void deleteArchivedProject(project)} archived />)}</div> : null}
+					</div>
+					<div>
+						<div className="flex items-center justify-between gap-2 px-1 pb-1">
+							<div>
+								<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Project Sessions</div>
+								<div className="text-[10px] text-slate-500">Workflow: simple-chat</div>
+							</div>
+							<div className="flex items-center gap-1">
+								<button type="button" onClick={() => void createProjectSession()} disabled={creatingSession || !selectedProject} title="New Project Session" aria-label="New Project Session" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"><Plus size={14} /></button>
+								<button type="button" onClick={() => { const next = !showArchivedSessions; setShowArchivedSessions(next); localStorage.setItem("pibo.chat.projects.showArchivedSessions", String(next)); }} title={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} aria-label={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedSessions ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedSessions ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
+							</div>
+						</div>
+						{sessionGroups.active.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} loadingPiboSessionId={null} autoRename={autoRenameSessionId === session.piboSessionId} onAutoRenameConsumed={() => setAutoRenameSessionId(null)} />)}
+						{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active project sessions</div> : null}
+						{showArchivedSessions ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Project Sessions</div>{sessionGroups.archived.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} loadingPiboSessionId={null} />)}{sessionGroups.archived.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived project sessions</div> : null}</div> : null}
+					</div>
+				</div>
+			</aside>
+			<SessionTracePane
+				bootstrap={traceBootstrap}
+				selectedPiboSessionId={selectedPiboSessionId}
+				selectedRoomId={null}
+				selectedRoomArchived={Boolean(selectedProject?.archivedAt)}
+				selectedSessionProfile={selectedSessionProfile}
+				selectedSessionActiveModel={resolveSessionActiveModelLabel(traceBootstrap, selectedSessionNode ?? { profile: selectedSessionProfile })}
+				selectedSessionStatus={selectedSessionNode?.status}
+				sessionViewId={sessionViewId}
+				sessionViews={sessionViews}
+				currentSessionView={currentSessionView}
+				creatingSession={creatingSession}
+				showRawEvents={showRawEvents}
+				showThinking={showThinking}
+				expandThinking={expandThinking}
+				commands={commands}
+				skills={skills}
+				composerText={composerText}
+				composerFocusSignal={composerFocusSignal}
+				onComposerTextChange={(next) => setComposerText((current) => typeof next === "function" ? next(current) : next)}
+				onToggleRawEvents={onToggleRawEvents}
+				onToggleThinking={onToggleThinking}
+				onToggleExpandThinking={onToggleExpandThinking}
+				onSessionAgentProfileChange={async (profile) => { if (selectedPiboSessionId) await patchSession(selectedPiboSessionId, { profile }); }}
+				onFork={() => undefined}
+				onOpenSession={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)}
+				onSelectSessionView={onSelectSessionView}
+				onCommand={runCommand}
+				onThinkingLevelChange={onThinkingLevelChange}
+				onRefreshTrace={async () => undefined}
+				onRefreshBootstrap={async () => { await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId ?? undefined }); }}
+				onSend={async (text) => {
+					if (!selectedPiboSessionId) return;
+					await postProjectMessage(selectedPiboSessionId, text, createClientTxnId());
+					await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId });
+				}}
+				onError={onError}
+			/>
+		</>
+	);
+}
+
+function ProjectRow({ project, selected, archived, onSelect, onRename, onArchive, onDelete }: { project: PiboProject; selected: boolean; archived?: boolean; onSelect: () => void; onRename?: (name: string) => void; onArchive?: () => void; onDelete?: () => void }) {
+	const personal = project.metadata?.personal === true;
+	const [editing, setEditing] = useState(false);
+	const [draftName, setDraftName] = useState(project.name);
+	const [menuOpen, setMenuOpen] = useState(false);
+	const inputRef = useRef<HTMLInputElement>(null);
+	const menuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!editing) setDraftName(project.name);
+	}, [editing, project.name]);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const handle = (event: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+		};
+		document.addEventListener("mousedown", handle);
+		return () => document.removeEventListener("mousedown", handle);
+	}, [menuOpen]);
+
+	useLayoutEffect(() => {
+		if (!editing) return;
+		inputRef.current?.focus();
+		inputRef.current?.select();
+	}, [editing]);
+
+	const submitRename = () => {
+		const name = draftName.trim();
+		if (name && name !== project.name) onRename?.(name);
+		setEditing(false);
+	};
+
+	return (
+		<div className={`group flex items-center gap-2 rounded-sm border px-2 py-2 text-sm ${
+			personal
+				? selected
+					? "border-[#0bda57] bg-[#0bda57]/10 text-green-100"
+					: "border-[#0bda57]/50 bg-[#0bda57]/5 text-slate-300 hover:border-[#0bda57]"
+				: selected
+					? "border-[#11a4d4] bg-[#11a4d4]/10 text-sky-100"
+					: "border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-900/40"
+		}`}>
+			<span className={`h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm ${personal ? "bg-[#0bda57]/15 text-[#0bda57]" : archived ? "bg-[#f59e0b]/15 text-[#f59e0b]" : "bg-[#151f24] text-slate-500"}`}>
+				{personal ? <Lock size={13} /> : archived ? <Archive size={13} /> : <FolderPlus size={13} />}
+			</span>
+			{editing ? (
+				<form
+					className="min-w-0 flex-1 grid grid-cols-[1fr_auto_auto] gap-1"
+					onSubmit={(event) => {
+						event.preventDefault();
+						submitRename();
+					}}
+				>
+					<input
+						ref={inputRef}
+						value={draftName}
+						onChange={(event) => setDraftName(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Escape") {
+								event.preventDefault();
+								setEditing(false);
+								setDraftName(project.name);
+							}
+						}}
+						className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4]"
+					/>
+					<button type="submit" title="Save Project Name" aria-label="Save Project Name" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Check size={13} /></button>
+					<button type="button" onClick={() => { setEditing(false); setDraftName(project.name); }} title="Cancel Rename" aria-label="Cancel Rename" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
+				</form>
+			) : (
+				<button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+					<span className="block truncate font-medium">{project.name}</span>
+					<span className="block truncate text-[11px] text-slate-500">{personal ? "locked personal project chat" : project.projectFolder}</span>
+				</button>
+			)}
+			{personal ? (
+				<span title="Personal Chat is locked" aria-label="Personal Chat is locked" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-[#0bda57]/50 rounded-sm text-[#0bda57]">
+					<Lock size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+				</span>
+			) : editing ? null : (
+				<div className="relative opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100" ref={menuRef}>
+					<button type="button" onClick={() => setMenuOpen((value) => !value)} title="Project actions" aria-label="Project actions" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
+						<MoreVertical size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+					</button>
+					{menuOpen ? (
+						<div className="absolute right-0 top-full z-50 mt-1 w-48 bg-[#1a262b] border border-slate-700 rounded-sm shadow-lg py-1">
+							{onRename ? <button type="button" onClick={() => { setMenuOpen(false); setEditing(true); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"><Edit3 size={16} /> Rename Project</button> : null}
+							{onArchive ? <button type="button" onClick={() => { setMenuOpen(false); onArchive(); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2">{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} {archived ? "Restore Project" : "Archive Project"}</button> : null}
+							{onDelete ? <button type="button" onClick={() => { setMenuOpen(false); onDelete(); }} className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button> : null}
+						</div>
+					) : null}
+				</div>
+			)}
+		</div>
+	);
+}
+
 function AppErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
 	return (
 		<div className="border-b border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-100 flex items-start justify-between gap-3">
@@ -1853,7 +2323,7 @@ function SessionTracePane({
 	onCommand: (text: string) => Promise<boolean>;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onRefreshTrace: () => Promise<void>;
-	onRefreshBootstrap: () => Promise<BootstrapData>;
+	onRefreshBootstrap: () => Promise<unknown>;
 	onSend: (text: string) => Promise<void>;
 	onError: (message: string | null) => void;
 }) {
@@ -2170,6 +2640,34 @@ function SessionTracePane({
 		copyHeaderPiboSessionTimeout.current = window.setTimeout(() => setCopiedHeaderPiboSessionId(null), 900);
 	};
 
+	const handleComposerSend = async (text: string) => {
+		if (!selectedPiboSessionId) return;
+		const now = new Date().toISOString();
+		const eventId = `optimistic:user-message:${createClientTxnId()}`;
+		const optimisticEvent: ChatWebStoredEvent = {
+			id: eventId,
+			piboSessionId: selectedPiboSessionId,
+			eventSequence: liveEventSeqRef.current++,
+			eventId,
+			type: "message_queued",
+			createdAt: now,
+			payload: {
+				type: "message_queued",
+				piboSessionId: selectedPiboSessionId,
+				eventId,
+				queuedMessages: 1,
+				text,
+				source: "user",
+			},
+		};
+		setLiveTraceOverlay((current) => ({
+			piboSessionId: selectedPiboSessionId,
+			events: [...(current?.piboSessionId === selectedPiboSessionId ? current.events : []), optimisticEvent],
+		}));
+		await onSend(text);
+		await tracePageQuery.refetch();
+	};
+
 	return (
 		<>
 			<main className="min-h-0 flex flex-col">
@@ -2288,7 +2786,7 @@ function SessionTracePane({
 					focusSignal={composerFocusSignal}
 					onValueChange={onComposerTextChange}
 					onCommand={onCommand}
-					onSend={onSend}
+					onSend={handleComposerSend}
 				/>
 			</main>
 
