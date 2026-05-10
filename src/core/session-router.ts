@@ -151,6 +151,11 @@ function userIdFromOwnerScope(ownerScope: string | undefined): string | undefine
 	return ownerScope.startsWith("user:") ? ownerScope.slice("user:".length) : ownerScope;
 }
 
+function piboRoomIdFromMetadata(metadata: PiboJsonObject | undefined): string | undefined {
+	const value = metadata?.chatRoomId;
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 export class PiboSessionRouter {
 	private readonly sessions = new Map<string, RoutedSession>();
 	private readonly pendingSessions = new Map<string, Promise<RoutedSession>>();
@@ -388,6 +393,7 @@ export class PiboSessionRouter {
 				userId: userIdFromOwnerScope(piboSession.ownerScope),
 				ownerScope: piboSession.ownerScope,
 				piboSessionId: piboSession.id,
+				piboRoomId: piboRoomIdFromMetadata(piboSession.metadata),
 				timezone: userSettings.timezone,
 			},
 		});

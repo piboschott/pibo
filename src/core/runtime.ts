@@ -67,6 +67,7 @@ export type PiboRuntimeSessionContext = {
 	userId?: string;
 	ownerScope?: string;
 	piboSessionId?: string;
+	piboRoomId?: string;
 	timezone?: string;
 };
 
@@ -105,6 +106,7 @@ function createSessionContextFile(context: PiboRuntimeSessionContext | undefined
 	const userId = context?.userId?.trim() || userIdFromOwnerScope(context?.ownerScope) || "unknown";
 	const ownerScope = context?.ownerScope?.trim() || "unknown";
 	const piboSessionId = context?.piboSessionId?.trim() || "unknown";
+	const piboRoomId = context?.piboRoomId?.trim() || "unknown";
 	const timezone = context?.timezone?.trim() || DEFAULT_USER_TIMEZONE;
 	return {
 		path: "pibo://runtime/session-context.md",
@@ -114,9 +116,10 @@ function createSessionContextFile(context: PiboRuntimeSessionContext | undefined
 			`- User ID: ${userId}`,
 			`- Owner scope: ${ownerScope}`,
 			`- Pibo Session ID: ${piboSessionId}`,
+			`- Pibo Room ID: ${piboRoomId}`,
 			`- User timezone: ${timezone}`,
 			"",
-			"Use these product-level identifiers when scheduling jobs, correlating events, or referring to the current Pibo session.",
+			"Use these product-level identifiers when scheduling jobs, correlating events, or referring to the current Pibo session or room.",
 		].join("\n"),
 	};
 }
