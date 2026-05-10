@@ -42,7 +42,7 @@
 - [x] 5.2 Reject incompatible edges without registered adapter refs.
 - [x] 5.3 Implement adapter resolution through the Workflow Registry.
 - [x] 5.4 Validate adapter output before target node execution.
-- [ ] 5.5 Test text-to-JSON and JSON-to-text registered adapter cases.
+- [x] 5.5 Test text-to-JSON and JSON-to-text registered adapter cases.
 
 ## 6. Requirement: Nodes support TypeScript code, Agent nodes, nested workflows, and human waits
 

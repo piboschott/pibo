@@ -342,7 +342,7 @@ describe("workflow edge data transfer", () => {
     );
   });
 
-  it("runs a registered edge adapter and validates its output before target node input", async () => {
+  it("runs a registered text-to-JSON edge adapter and validates its output before target node input", async () => {
     const definition = createTwoNodeWorkflow();
     const summaryPort = createSummaryJsonPort();
     definition.nodes.review.input = summaryPort;
@@ -371,6 +371,55 @@ describe("workflow edge data transfer", () => {
     assert.deepEqual(result.targetInput, { summary: "Draft output for review." });
     assert.deepEqual(result.transfer.payload, { summary: "Draft output for review." });
     assert.equal(result.transfer.targetNodeId, "review");
+  });
+
+  it("runs a registered JSON-to-text edge adapter and validates its output before target node input", async () => {
+    const definition = createJsonTwoNodeWorkflow();
+    definition.nodes.publish.input = text();
+    definition.edges["compose-to-publish"].adapter = edgeAdapter(adapterRef("test.adapters.articleToReviewText"), text());
+    const registry = createWorkflowRegistry();
+    registerWorkflowAdapter(registry, "test.adapters.articleToReviewText", ({ input }) => {
+      assert.equal(typeof input, "object");
+      assert.notEqual(input, null);
+      assert.equal(Array.isArray(input), false);
+      const article = input as { title: string; summary: string };
+      return { output: `${article.title}: ${article.summary}` };
+    });
+
+    const definitionValidation = validateWorkflow(definition, { registry });
+    assert.equal(definitionValidation.ok, true);
+
+    const nodeAOutput: WorkflowValue = {
+      title: "Adapter edges",
+      summary: "Registered adapters can bridge JSON source output into text target input.",
+    };
+    const result = await transferWorkflowEdgeAdapterData(
+      definition,
+      createJsonRun(),
+      "compose-to-publish",
+      {
+        id: "wna_compose",
+        workflowRunId: "wfr_json_edge_transfer",
+        nodeId: "compose",
+        attempt: 1,
+        kind: "agent",
+        status: "completed",
+        input: "Write an article summary.",
+        output: nodeAOutput,
+        startedAt: "2026-05-10T23:30:01.000Z",
+        completedAt: "2026-05-10T23:30:02.000Z",
+      },
+      {
+        registry,
+        now: () => "2026-05-10T23:30:03.000Z",
+        createEdgeTransferId: () => "wet_adapted_compose_to_publish",
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.targetInput, "Adapter edges: Registered adapters can bridge JSON source output into text target input.");
+    assert.equal(result.transfer.payload, "Adapter edges: Registered adapters can bridge JSON source output into text target input.");
+    assert.equal(result.transfer.targetNodeId, "publish");
   });
 
   it("rejects registered edge adapter output that does not satisfy the declared output port", async () => {
