@@ -157,6 +157,36 @@ export type OneNodeAgentWorkflowOptions = {
   agentExecutor: OneNodeAgentExecutor;
 };
 
+export type WorkflowAgentNodeDispatchOptions = {
+  now?: () => Date | string;
+  createNodeAttemptId?: () => NodeAttemptId;
+  store?: WorkflowRunStore;
+  emitEvent?: WorkflowEventEmitter;
+  agentExecutor: OneNodeAgentExecutor;
+};
+
+export type WorkflowAgentNodeDispatchSuccess = {
+  ok: true;
+  run: WorkflowRun;
+  nodeAttempt: NodeAttempt;
+  events: WorkflowRuntimeEvent[];
+  output: WorkflowValue;
+  result: OneNodeAgentExecutorResult;
+};
+
+export type WorkflowAgentNodeDispatchFailure = {
+  ok: false;
+  run: WorkflowRun;
+  nodeAttempt?: NodeAttempt;
+  events: WorkflowRuntimeEvent[];
+  diagnostics: WorkflowDiagnostic[];
+  error: WorkflowErrorSummary;
+};
+
+export type WorkflowAgentNodeDispatchResult =
+  | WorkflowAgentNodeDispatchSuccess
+  | WorkflowAgentNodeDispatchFailure;
+
 export type WorkflowCodeNodeDispatchOptions = {
   registry: Pick<WorkflowRegistry, "handlers">;
   now?: () => Date | string;
@@ -296,6 +326,206 @@ export function createPiboSessionRoutingAgentExecutor(
       effectiveTools: status?.enabledTools ?? status?.activeTools,
     };
   };
+}
+
+export async function dispatchWorkflowAgentNode(
+  definition: WorkflowDefinition,
+  run: WorkflowRun,
+  nodeId: string,
+  input: WorkflowValue,
+  options: WorkflowAgentNodeDispatchOptions,
+): Promise<WorkflowAgentNodeDispatchResult> {
+  const events: WorkflowRuntimeEvent[] = [];
+  const timestamp = createTimestampFactory(options.now);
+  const node = definition.nodes[nodeId];
+
+  if (!node) {
+    return agentNodeDispatchFailure({
+      run,
+      events,
+      diagnostics: [
+        {
+          code: "WorkflowRuntimeError.unknownNode",
+          message: `Workflow node '${nodeId}' does not exist, so it cannot be dispatched as an agent node.`,
+          severity: "error",
+          nodeId,
+          path: `$.nodes.${nodeId}`,
+        },
+      ],
+      error: {
+        code: "WorkflowRuntimeError.unknownNode",
+        message: "Agent node dispatch failed because the node is not declared.",
+      },
+    });
+  }
+
+  if (node.kind !== "agent") {
+    return agentNodeDispatchFailure({
+      run,
+      events,
+      diagnostics: [
+        {
+          code: "WorkflowRuntimeError.agentNodeRequired",
+          message: `Workflow node '${nodeId}' is '${node.kind}', but agent node dispatch requires an agent node.`,
+          severity: "error",
+          nodeId,
+          path: `$.nodes.${nodeId}.kind`,
+        },
+      ],
+      error: {
+        code: "WorkflowRuntimeError.agentNodeRequired",
+        message: "Agent node dispatch failed because the selected node is not an agent node.",
+      },
+    });
+  }
+
+  const agentNode = node as AgentNodeDefinition;
+  if (agentNode.runtime !== "pibo") {
+    return agentNodeDispatchFailure({
+      run,
+      events,
+      diagnostics: [
+        {
+          code: "WorkflowRuntimeError.piboRuntimeRequired",
+          message: `Workflow agent node '${nodeId}' uses runtime '${agentNode.runtime}', but V1 agent dispatch requires the Pibo runtime.`,
+          severity: "error",
+          nodeId,
+          path: `$.nodes.${nodeId}.runtime`,
+        },
+      ],
+      error: {
+        code: "WorkflowRuntimeError.piboRuntimeRequired",
+        message: "Agent node dispatch failed because the selected node does not use the Pibo runtime.",
+      },
+    });
+  }
+
+  const startedAt = timestamp();
+  const nodeAttempt: NodeAttempt = {
+    id: options.createNodeAttemptId?.() ?? createId("wna"),
+    workflowRunId: run.id,
+    nodeId,
+    attempt: 1,
+    kind: "agent",
+    status: "running",
+    input,
+    startedAt,
+  };
+  run.current = { nodeId, status: "running" };
+  run.updatedAt = startedAt;
+
+  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    type: "node.started",
+    runId: run.id,
+    nodeAttemptId: nodeAttempt.id,
+    nodeId,
+  });
+  await persistWorkflowRun(options.store, run);
+
+  const diagnostics: WorkflowDiagnostic[] = [];
+  if (agentNode.input) {
+    diagnostics.push(
+      ...validateWorkflowPortValue(agentNode.input, input, { path: `$.nodes.${nodeId}.input` }).diagnostics.map(
+        (diagnostic) => ({ ...diagnostic, nodeId }),
+      ),
+    );
+  }
+
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+    return failAgentNodeDispatch({
+      run,
+      nodeAttempt,
+      events,
+      diagnostics,
+      timestamp,
+      store: options.store,
+      emitEvent: options.emitEvent,
+      error: {
+        code: "WorkflowRuntimeError.agentNodeDispatchFailed",
+        message: "Agent node dispatch failed before Pibo Runtime execution.",
+      },
+    });
+  }
+
+  try {
+    const prompt = buildAgentNodePrompt(agentNode, input);
+    const executorResult = await options.agentExecutor({
+      workflow: definition,
+      run,
+      nodeAttemptId: nodeAttempt.id,
+      nodeId,
+      node: agentNode,
+      input,
+      prompt,
+      profileId: agentNode.profile.id,
+      routing: agentNode.routing,
+    });
+
+    const nodeOutputResult = validateNodeOutput(definition, nodeId, executorResult.output);
+    if (!nodeOutputResult.ok) {
+      return failAgentNodeDispatch({
+        run,
+        nodeAttempt,
+        events,
+        diagnostics: nodeOutputResult.diagnostics,
+        timestamp,
+        store: options.store,
+        emitEvent: options.emitEvent,
+        error: {
+          code: "WorkflowRuntimeError.invalidNodeOutput",
+          message: "Agent node output failed validation before downstream use.",
+        },
+      });
+    }
+
+    const runtimeMetadata: RuntimeSelectionMetadata = {
+      profileId: executorResult.effectiveProfile ?? agentNode.profile.id,
+      tools: executorResult.effectiveTools,
+      skills: executorResult.effectiveSkills,
+      contextFiles: executorResult.effectiveContextFiles,
+      routing: agentNode.routing,
+    };
+
+    const completedAt = timestamp();
+    nodeAttempt.status = "completed";
+    nodeAttempt.output = executorResult.output;
+    nodeAttempt.completedAt = completedAt;
+    nodeAttempt.metadata = {
+      runtime: runtimeMetadata,
+      piboSessionId: executorResult.piboSessionId,
+      piSessionId: executorResult.piSessionId,
+    };
+    run.current = { nodeId, status: run.status };
+    run.updatedAt = completedAt;
+
+    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+      type: "node.completed",
+      runId: run.id,
+      nodeAttemptId: nodeAttempt.id,
+      output: executorResult.output,
+    });
+    await persistWorkflowRun(options.store, run);
+
+    return {
+      ok: true,
+      run,
+      nodeAttempt,
+      events,
+      output: executorResult.output,
+      result: executorResult,
+    };
+  } catch (caught) {
+    return failAgentNodeDispatch({
+      run,
+      nodeAttempt,
+      events,
+      diagnostics: [],
+      timestamp,
+      store: options.store,
+      emitEvent: options.emitEvent,
+      error: errorSummaryFromCaught(caught),
+    });
+  }
 }
 
 export async function dispatchWorkflowCodeNode(
@@ -1038,7 +1268,7 @@ export async function runOneNodeAgentWorkflow(
   });
 
   try {
-    const prompt = buildOneNodeAgentPrompt(node, input);
+    const prompt = buildAgentNodePrompt(node, input);
     const executorResult = await options.agentExecutor({
       workflow: definition,
       run,
@@ -1291,6 +1521,42 @@ function toWorkflowCommandArray(command: WorkflowCommand | WorkflowCommand[] | u
   return Array.isArray(command) ? command : [command];
 }
 
+async function failAgentNodeDispatch(options: {
+  run: WorkflowRun;
+  nodeAttempt: NodeAttempt;
+  events: WorkflowRuntimeEvent[];
+  diagnostics: WorkflowDiagnostic[];
+  timestamp: () => string;
+  store?: WorkflowRunStore;
+  emitEvent?: WorkflowEventEmitter;
+  error: WorkflowErrorSummary;
+}): Promise<WorkflowAgentNodeDispatchFailure> {
+  const failure = await failNodeDispatch(options);
+  return {
+    ok: false,
+    run: failure.run,
+    nodeAttempt: failure.nodeAttempt,
+    events: failure.events,
+    diagnostics: failure.diagnostics,
+    error: failure.error,
+  };
+}
+
+function agentNodeDispatchFailure(options: {
+  run: WorkflowRun;
+  events: WorkflowRuntimeEvent[];
+  diagnostics: WorkflowDiagnostic[];
+  error: WorkflowErrorSummary;
+}): WorkflowAgentNodeDispatchFailure {
+  return {
+    ok: false,
+    run: options.run,
+    events: options.events,
+    diagnostics: options.diagnostics,
+    error: options.error,
+  };
+}
+
 async function failCodeNodeDispatch(options: {
   run: WorkflowRun;
   nodeAttempt: NodeAttempt;
@@ -1301,6 +1567,33 @@ async function failCodeNodeDispatch(options: {
   emitEvent?: WorkflowEventEmitter;
   error: WorkflowErrorSummary;
 }): Promise<WorkflowCodeNodeDispatchFailure> {
+  const failure = await failNodeDispatch(options);
+  return {
+    ok: false,
+    run: failure.run,
+    nodeAttempt: failure.nodeAttempt,
+    events: failure.events,
+    diagnostics: failure.diagnostics,
+    error: failure.error,
+  };
+}
+
+async function failNodeDispatch(options: {
+  run: WorkflowRun;
+  nodeAttempt: NodeAttempt;
+  events: WorkflowRuntimeEvent[];
+  diagnostics: WorkflowDiagnostic[];
+  timestamp: () => string;
+  store?: WorkflowRunStore;
+  emitEvent?: WorkflowEventEmitter;
+  error: WorkflowErrorSummary;
+}): Promise<{
+  run: WorkflowRun;
+  nodeAttempt: NodeAttempt;
+  events: WorkflowRuntimeEvent[];
+  diagnostics: WorkflowDiagnostic[];
+  error: WorkflowErrorSummary;
+}> {
   const failedAt = options.timestamp();
   options.nodeAttempt.status = "failed";
   options.nodeAttempt.error = options.error;
@@ -1318,7 +1611,6 @@ async function failCodeNodeDispatch(options: {
   await persistWorkflowRun(options.store, options.run);
 
   return {
-    ok: false,
     run: options.run,
     nodeAttempt: options.nodeAttempt,
     events: options.events,
@@ -1469,7 +1761,7 @@ async function persistWorkflowRun(store: WorkflowRunStore | undefined, run: Work
   await store?.saveRun(run);
 }
 
-function buildOneNodeAgentPrompt(node: AgentNodeDefinition, input: WorkflowValue): string {
+function buildAgentNodePrompt(node: AgentNodeDefinition, input: WorkflowValue): string {
   const serializedInput = typeof input === "string" ? input : JSON.stringify(input);
   return node.promptTemplate?.replaceAll("{{input}}", serializedInput) ?? serializedInput;
 }

@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Agent node dispatch goes through `dispatchWorkflowAgentNode` with an injected `agentExecutor`; it validates node input, routes through `createPiboSessionRoutingAgentExecutor`, validates node output, emits node lifecycle events, and records runtime/session metadata on the node attempt.
 - Code node dispatch goes through `dispatchWorkflowCodeNode` with a `WorkflowRegistry`; registered handlers receive scoped `global`, `local`, `edge`, `emit`, and `command` context and state patches must be declared in `node.state.writes`.
 - Registered edge adapter runtime tests should validate the workflow with a `WorkflowRegistry` and then call `transferWorkflowEdgeAdapterData` so both static adapter refs and runtime adapter output are covered.
 - Use `transferWorkflowEdgeAdapterData` for registered edge-adapter runtime transfer; it resolves the adapter, validates source output, validates adapter output with `validateWorkflowEdgeAdapterOutput`, and only then returns `targetInput` for the downstream node.
@@ -347,4 +348,18 @@
   - Code handlers should stay registry-backed (`registerWorkflowHandler`/`createWorkflowRegistry`) so workflow IR stores only durable handler ids.
   - State access is deliberately explicit: reads are enforced through context readers and returned patches are rejected unless matching `global.*` or `local.*` paths are declared in `node.state.writes`.
   - `dispatchWorkflowCodeNode` is a node-level executor seam; later graph-runtime stories can compose it with agent/workflow/human dispatch rather than duplicating code handler invocation logic.
+---
+
+
+## 2026-05-10 23:58 UTC - 6.2
+- Implemented `dispatchWorkflowAgentNode` so arbitrary agent nodes can execute through the existing Pibo Runtime/session-routing executor seam outside the previous one-node workflow path.
+- Added agent node dispatch validation for unknown/non-agent nodes, Pibo runtime selection, node input ports, and Pibo Runtime output ports, plus node lifecycle events and runtime/session metadata recording on node attempts.
+- Added agent dispatch tests covering routed Pibo session creation/message emission, metadata capture, invalid input rejection before executor call, invalid output rejection, and non-agent node rejection.
+- Marked task `6.2` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- Files changed: `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/testing/runtime-agent-node.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Use `dispatchWorkflowAgentNode` for graph-level agent node execution; keep `runOneNodeAgentWorkflow` as the workflow-level convenience path that additionally validates workflow input/output and emits workflow start/complete events.
+  - The existing `createPiboSessionRoutingAgentExecutor` already works for general agent dispatch because its context includes workflow/run/node ids, rendered prompt, fixed profile id, and node routing policy.
+  - Node executor dispatch helpers should emit only node lifecycle events; graph/workflow orchestration should remain responsible for workflow completion/failure events.
 ---

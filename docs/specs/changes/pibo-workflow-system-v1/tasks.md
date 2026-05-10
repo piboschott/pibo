@@ -47,7 +47,7 @@
 ## 6. Requirement: Nodes support TypeScript code, Agent nodes, nested workflows, and human waits
 
 - [x] 6.1 Implement `code` node dispatch using registered TypeScript handlers.
-- [ ] 6.2 Implement `agent` node dispatch through Pibo Runtime.
+- [x] 6.2 Implement `agent` node dispatch through Pibo Runtime.
 - [ ] 6.3 Implement `workflow` node dispatch for nested workflows.
 - [ ] 6.4 Implement `human` node dispatch with durable wait tokens.
 - [ ] 6.5 Persist node run status for each node kind.
