@@ -92,3 +92,59 @@ test('cron CLI uses explicit owner scope as personal target default', async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('cron CLI edits prompt, target, profile, and schedule', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pibo-cron-cli-'));
+  const storePath = join(root, 'cron.sqlite');
+  try {
+    const added = await execFileAsync('node', [
+      cliPath,
+      'cron',
+      '--store',
+      storePath,
+      '--owner-scope',
+      'user:test',
+      'add',
+      '--personal',
+      '--daily',
+      '09:10',
+      '--prompt',
+      'old prompt',
+      '--json',
+    ]);
+    const original = JSON.parse(added.stdout);
+    const edited = await execFileAsync('node', [
+      cliPath,
+      'cron',
+      '--store',
+      storePath,
+      '--owner-scope',
+      'user:test',
+      'edit',
+      original.id,
+      '--room',
+      'room_123',
+      '--every',
+      '2h',
+      '--agent',
+      'agent-x',
+      '--prompt',
+      'new prompt',
+      '--name',
+      'new name',
+      '--delete-after-run',
+      '--json',
+    ]);
+    const job = JSON.parse(edited.stdout);
+    assert.equal(job.id, original.id);
+    assert.equal(job.name, 'new name');
+    assert.equal(job.prompt, 'new prompt');
+    assert.equal(job.profile, 'agent-x');
+    assert.deepEqual(job.target, { kind: 'room', roomId: 'room_123' });
+    assert.equal(job.schedule.kind, 'every');
+    assert.equal(job.schedule.everyMs, 2 * 60 * 60 * 1000);
+    assert.equal(job.deleteAfterRun, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
