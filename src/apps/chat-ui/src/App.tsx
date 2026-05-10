@@ -4874,7 +4874,7 @@ function AgentsView({
 							modelTitle="Main Agent Model"
 							model={draft.mainModel}
 							thinking={draft.mainThinkingLevel}
-							fast={draft.mainFast}
+							fast={draft.mainFast ?? false}
 							modelCatalog={modelCatalog}
 							readOnly={readOnly}
 							modelHint="Unset to use the settings default."
@@ -4887,7 +4887,7 @@ function AgentsView({
 							modelTitle="Subagent Model"
 							model={draft.subagentModel}
 							thinking={draft.subagentThinkingLevel}
-							fast={draft.subagentFast}
+							fast={draft.subagentFast ?? false}
 							modelCatalog={modelCatalog}
 							readOnly={readOnly}
 							modelHint="Unset to use the settings default."
@@ -5062,9 +5062,9 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		thinkingLevel: undefined,
 		mainThinkingLevel: undefined,
 		subagentThinkingLevel: undefined,
-		fast: undefined,
-		mainFast: undefined,
-		subagentFast: undefined,
+		fast: false,
+		mainFast: false,
+		subagentFast: false,
 		builtinTools: "default",
 		builtinToolNames: [...DEFAULT_BUILTIN_TOOL_NAMES],
 		autoContextFiles: true,
@@ -5092,9 +5092,9 @@ function agentToDraft(agent: CustomAgent): AgentDraft {
 		thinkingLevel: agent.thinkingLevel,
 		mainThinkingLevel: agent.mainThinkingLevel,
 		subagentThinkingLevel: agent.subagentThinkingLevel,
-		fast: agent.fast,
-		mainFast: agent.mainFast,
-		subagentFast: agent.subagentFast,
+		fast: agent.fast ?? false,
+		mainFast: agent.mainFast ?? false,
+		subagentFast: agent.subagentFast ?? false,
 		builtinTools: agent.builtinTools,
 		builtinToolNames: normalizeBuiltinToolNames(agent.builtinToolNames, agent.builtinTools),
 		autoContextFiles: agent.autoContextFiles ?? true,
@@ -5121,9 +5121,9 @@ function profileToDraft(profile: BootstrapData["agents"][number], catalog?: Agen
 		thinkingLevel: profile.thinkingLevel,
 		mainThinkingLevel: profile.mainThinkingLevel ?? profile.thinkingLevel,
 		subagentThinkingLevel: profile.subagentThinkingLevel ?? profile.thinkingLevel,
-		fast: profile.fast,
-		mainFast: profile.mainFast ?? profile.fast,
-		subagentFast: profile.subagentFast ?? profile.fast,
+		fast: profile.fast ?? false,
+		mainFast: profile.mainFast ?? profile.fast ?? false,
+		subagentFast: profile.subagentFast ?? profile.fast ?? false,
 		builtinTools: profile.builtinTools ?? "default",
 		builtinToolNames: normalizeBuiltinToolNames(profile.builtinToolNames, profile.builtinTools),
 		autoContextFiles: profile.autoContextFiles ?? true,
@@ -6434,7 +6434,7 @@ function ModelDefaultsSettings({
 				modelTitle="Main Agent Default"
 				model={draft.main}
 				thinking={draft.mainThinking}
-				fast={draft.mainFast}
+				fast={draft.mainFast ?? false}
 				modelCatalog={modelCatalog}
 				readOnly={saving}
 				modelHint="Unset to use provider fallback."
@@ -6448,7 +6448,7 @@ function ModelDefaultsSettings({
 				modelTitle="Subagent Default"
 				model={draft.subagent}
 				thinking={draft.subagentThinking}
-				fast={draft.subagentFast}
+				fast={draft.subagentFast ?? false}
 				modelCatalog={modelCatalog}
 				readOnly={saving}
 				modelHint="Unset to use provider fallback."
@@ -6487,7 +6487,7 @@ function AgentRuntimeOptions({
 	configuredProvidersOnly?: boolean;
 	onModelChange: (value: ModelProfile | undefined) => void;
 	onThinkingChange: (value: ThinkingLevel | undefined) => void;
-	onFastChange: (value: boolean | undefined) => void;
+	onFastChange: (value: boolean) => void;
 }) {
 	return (
 		<div className="grid gap-2 border border-slate-800 rounded-sm p-3">
@@ -6517,13 +6517,12 @@ function AgentRuntimeOptions({
 					<button
 						type="button"
 						disabled={readOnly}
-						onClick={() => onFastChange(fast === undefined ? true : !fast)}
+						onClick={() => onFastChange(!fast)}
 						className="inline-flex h-9 w-fit items-center gap-2 text-left text-sm text-slate-300 hover:text-slate-100 disabled:opacity-60"
 					>
 						<SelectionCheckbox checked={fast === true} disabled={readOnly} />
-						<span>{fast === undefined ? "Default" : "Fast"}</span>
+						<span>{fast ? "Fast on" : "Fast off"}</span>
 					</button>
-					<button type="button" disabled={readOnly || fast === undefined} onClick={() => onFastChange(undefined)} className="text-left text-[10px] uppercase tracking-wider text-slate-500 hover:text-slate-300 disabled:opacity-50">Unset</button>
 				</div>
 			</div>
 		</div>
