@@ -1,5 +1,7 @@
 import type {
   AgentNodeDefinition,
+  EdgeTransfer,
+  EdgeTransferId,
   NodeAttempt,
   NodeAttemptId,
   RuntimeSelectionMetadata,
@@ -14,7 +16,13 @@ import type {
   WorkflowValue,
 } from "../types/index.js";
 import type { WorkflowRunStore } from "../store/index.js";
-import { validateNodeOutput, validateWorkflow, validateWorkflowInput, validateWorkflowOutput } from "../validation/index.js";
+import {
+  validateNodeOutput,
+  validateWorkflow,
+  validateWorkflowInput,
+  validateWorkflowOutput,
+  validateWorkflowPortValue,
+} from "../validation/index.js";
 
 export type OneNodeAgentExecutorContext = {
   workflow: WorkflowDefinition;
@@ -135,6 +143,26 @@ export type OneNodeAgentWorkflowOptions = {
   agentExecutor: OneNodeAgentExecutor;
 };
 
+export type WorkflowEdgeTransferOptions = {
+  now?: () => Date | string;
+  createEdgeTransferId?: () => EdgeTransferId;
+};
+
+export type WorkflowEdgeTransferSuccess = {
+  ok: true;
+  transfer: EdgeTransfer;
+  targetInput: WorkflowValue;
+  diagnostics: WorkflowDiagnostic[];
+};
+
+export type WorkflowEdgeTransferFailure = {
+  ok: false;
+  diagnostics: WorkflowDiagnostic[];
+  error: WorkflowErrorSummary;
+};
+
+export type WorkflowEdgeTransferResult = WorkflowEdgeTransferSuccess | WorkflowEdgeTransferFailure;
+
 export type OneNodeAgentWorkflowSuccess = {
   ok: true;
   run: WorkflowRun;
@@ -199,6 +227,172 @@ export function createPiboSessionRoutingAgentExecutor(
       effectiveTools: status?.enabledTools ?? status?.activeTools,
     };
   };
+}
+
+export function transferWorkflowEdgeData(
+  definition: WorkflowDefinition,
+  run: WorkflowRun,
+  edgeId: string,
+  sourceNodeAttempt: NodeAttempt,
+  options: WorkflowEdgeTransferOptions = {},
+): WorkflowEdgeTransferResult {
+  const timestamp = createTimestampFactory(options.now);
+  const edge = definition.edges[edgeId];
+  if (!edge) {
+    return edgeTransferFailure(
+      [
+        {
+          code: "WorkflowRuntimeError.unknownEdge",
+          message: `Workflow edge '${edgeId}' does not exist, so no payload can be transferred.`,
+          severity: "error",
+          edgeId,
+          path: `$.edges.${edgeId}`,
+          hint: "Evaluate and transfer only edges declared in the workflow definition.",
+        },
+      ],
+      {
+        code: "WorkflowRuntimeError.unknownEdge",
+        message: "Workflow edge data transfer failed because the edge is not declared.",
+      },
+    );
+  }
+
+  const diagnostics: WorkflowDiagnostic[] = [];
+  const sourceNode = definition.nodes[edge.from.nodeId];
+  const targetNode = definition.nodes[edge.to.nodeId];
+
+  if (!sourceNode) {
+    diagnostics.push({
+      code: "WorkflowGraphError.unknownSourceNode",
+      message: `Workflow edge '${edgeId}' references missing source node '${edge.from.nodeId}'.`,
+      severity: "error",
+      edgeId,
+      nodeId: edge.from.nodeId,
+      path: `$.edges.${edgeId}.from.nodeId`,
+    });
+  }
+
+  if (!targetNode) {
+    diagnostics.push({
+      code: "WorkflowGraphError.unknownTargetNode",
+      message: `Workflow edge '${edgeId}' references missing target node '${edge.to.nodeId}'.`,
+      severity: "error",
+      edgeId,
+      nodeId: edge.to.nodeId,
+      path: `$.edges.${edgeId}.to.nodeId`,
+    });
+  }
+
+  if ((edge.kind ?? "data") !== "data") {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.nonDataEdgeTransferUnsupported",
+      message: `Workflow edge '${edgeId}' is not a data edge and cannot transfer a direct payload.`,
+      severity: "error",
+      edgeId,
+      path: `$.edges.${edgeId}.kind`,
+      hint: "Use data edges for payload transfer; control, error, and resume routing are handled by later runtime paths.",
+    });
+  }
+
+  if (edge.adapter) {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.edgeAdapterTransferUnsupported",
+      message: `Workflow edge '${edgeId}' uses an edge adapter, which is not available in direct edge data transfer yet.`,
+      severity: "error",
+      edgeId,
+      path: `$.edges.${edgeId}.adapter`,
+      hint: "Use direct compatible ports until registered adapter resolution is implemented.",
+    });
+  }
+
+  if (sourceNodeAttempt.workflowRunId !== run.id) {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.sourceAttemptRunMismatch",
+      message: `Source node attempt '${sourceNodeAttempt.id}' belongs to a different workflow run.`,
+      severity: "error",
+      edgeId,
+      nodeId: sourceNodeAttempt.nodeId,
+      path: "$.sourceNodeAttempt.workflowRunId",
+      hint: "Transfer edge payloads only from attempts created for the same workflow run.",
+    });
+  }
+
+  if (sourceNodeAttempt.nodeId !== edge.from.nodeId) {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.sourceAttemptNodeMismatch",
+      message: `Source node attempt '${sourceNodeAttempt.id}' does not match edge source node '${edge.from.nodeId}'.`,
+      severity: "error",
+      edgeId,
+      nodeId: sourceNodeAttempt.nodeId,
+      path: "$.sourceNodeAttempt.nodeId",
+      hint: "Use the completed attempt for the edge source node when transferring data.",
+    });
+  }
+
+  if (sourceNodeAttempt.status !== "completed") {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.sourceAttemptIncomplete",
+      message: `Source node attempt '${sourceNodeAttempt.id}' must be completed before edge data can transfer.`,
+      severity: "error",
+      edgeId,
+      nodeId: sourceNodeAttempt.nodeId,
+      path: "$.sourceNodeAttempt.status",
+      hint: "Transfer edge payloads only after a source node attempt completes successfully.",
+    });
+  }
+
+  if (!Object.hasOwn(sourceNodeAttempt, "output")) {
+    diagnostics.push({
+      code: "WorkflowRuntimeError.sourceOutputMissing",
+      message: `Source node attempt '${sourceNodeAttempt.id}' has no output to transfer.`,
+      severity: "error",
+      edgeId,
+      nodeId: sourceNodeAttempt.nodeId,
+      path: "$.sourceNodeAttempt.output",
+      hint: "Persist or pass the source node output before evaluating outgoing data edges.",
+    });
+  }
+
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+    return edgeTransferFailure(diagnostics, {
+      code: "WorkflowRuntimeError.edgeTransferFailed",
+      message: "Workflow edge data transfer failed before payload validation.",
+    });
+  }
+
+  const payload = sourceNodeAttempt.output as WorkflowValue;
+  const sourceOutputResult = validateNodeOutput(definition, edge.from.nodeId, payload, {
+    path: `$.edges.${edgeId}.payload`,
+  });
+  diagnostics.push(...sourceOutputResult.diagnostics.map((diagnostic) => ({ ...diagnostic, edgeId })));
+
+  if (targetNode?.input) {
+    diagnostics.push(
+      ...validateWorkflowPortValue(targetNode.input, payload, {
+        path: `$.edges.${edgeId}.targetInput`,
+      }).diagnostics.map((diagnostic) => ({ ...diagnostic, edgeId, nodeId: edge.to.nodeId })),
+    );
+  }
+
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+    return edgeTransferFailure(diagnostics, {
+      code: "WorkflowRuntimeError.invalidEdgePayload",
+      message: "Workflow edge payload failed source output or target input validation.",
+    });
+  }
+
+  const transfer: EdgeTransfer = {
+    id: options.createEdgeTransferId?.() ?? createId("wet"),
+    workflowRunId: run.id,
+    edgeId,
+    sourceNodeAttemptId: sourceNodeAttempt.id,
+    targetNodeId: edge.to.nodeId,
+    status: "transferred",
+    payload,
+    createdAt: timestamp(),
+  };
+
+  return { ok: true, transfer, targetInput: payload, diagnostics };
 }
 
 export function validateOneNodeAgentWorkflowPath(definition: WorkflowDefinition): ValidationResult {
@@ -549,6 +743,13 @@ function runtimeFailure(
   error: WorkflowErrorSummary,
 ): OneNodeAgentWorkflowFailure {
   return { ok: false, events, diagnostics, error };
+}
+
+function edgeTransferFailure(
+  diagnostics: WorkflowDiagnostic[],
+  error: WorkflowErrorSummary,
+): WorkflowEdgeTransferFailure {
+  return { ok: false, diagnostics, error };
 }
 
 async function emitWorkflowRuntimeEvent(

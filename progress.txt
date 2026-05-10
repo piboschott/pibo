@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Direct edge runtime transfer is exposed as `transferWorkflowEdgeData`; it creates an immutable `EdgeTransfer` from a completed source attempt output only after validating source output and target input ports.
 - Direct workflow edge compatibility is conservative: text ports match text ports, and JSON ports match only when their semantic schema contracts are equivalent; otherwise use an explicit edge adapter or adapter node.
 - Single-prompt one-node runtime coverage should assert validation, routed Pibo session creation/message emission, trace events, and reopened `SqliteWorkflowRunStore` facts in one end-to-end test.
 - Workflow run persistence is exposed through `WorkflowRunStore` and `SqliteWorkflowRunStore` in `packages/workflows/src/store/index.ts`; inject a store into `runOneNodeAgentWorkflow` when a runtime path must persist run status/cursor/input/output facts.
@@ -224,4 +225,17 @@
   - Direct JSON edge compatibility deliberately uses semantic schema equality rather than broad JSON Schema subsumption; if compatibility cannot be proven, future adapter stories should require an explicit adapter.
   - Edge compatibility validation skips edges with `edge.adapter` so adapter-specific output-to-target checks can be layered in the later adapter stories without rejecting existing adapter fixtures.
   - Keep graph compatibility diagnostics in the `WorkflowGraphError.*` family with `edgeId` and JSONPath-like `path` fields for UI/CLI highlighting.
+---
+
+## 2026-05-10 23:23 UTC - 4.3
+- Implemented direct workflow edge data transfer with `transferWorkflowEdgeData`, producing `EdgeTransfer` records from completed source node attempts.
+- Added runtime validation for source run/node/status/output, source output port, and target input port before transfer; direct transfer intentionally rejects adapter and non-data edges until later stories.
+- Added edge transfer tests for successful text payload transfer, invalid target input rejection, and incomplete source attempt rejection.
+- Marked task `4.3` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- Files changed: `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/testing/runtime-edge-transfer.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - `transferWorkflowEdgeData` is a pure runtime helper today; story 4.4 can wrap it with `edge.transferred` event emission without reimplementing validation.
+  - Edge adapters are deliberately rejected by direct transfer until registry-backed adapter resolution lands in section 5.
+  - Use `Object.hasOwn(sourceNodeAttempt, "output")` semantics to distinguish a missing output from other falsy JSON/text values such as `null`, `false`, `0`, or an empty string.
 ---
