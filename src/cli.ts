@@ -101,6 +101,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		return;
 	}
 
+	if (argv[2] === "cron") {
+		const { runCronCli } = await import("./cron/cli.js");
+		await runCronCli([argv[0] ?? "node", "pibo cron", ...argv.slice(3)]);
+		return;
+	}
+
 	if (argv[2] === "config" && (argv[3] === "--help" || argv[3] === "-h" || argv.length === 3)) {
 		printConfigDiscovery();
 		return;
@@ -191,6 +197,18 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		.action(async (args: string[]) => {
 			const { runSkillsCli } = await import("./skills/cli.js");
 			await runSkillsCli([argv[0] ?? "node", "pibo skills", ...args]);
+		});
+
+	program
+		.command("cron")
+		.description("Manage scheduled Pibo jobs")
+		.helpOption(false)
+		.allowUnknownOption(true)
+		.allowExcessArguments(true)
+		.argument("[args...]")
+		.action(async (args: string[]) => {
+			const { runCronCli } = await import("./cron/cli.js");
+			await runCronCli([argv[0] ?? "node", "pibo cron", ...args]);
 		});
 
 	const config = program.command("config").description(`Manage pibo config at ${getDefaultPiboConfigPath()}`).helpOption(false);
@@ -328,6 +346,7 @@ Commands:
   data         Inspect and maintain Pibo data stores
   compute      Manage Pibo Docker compute workers
   skills       Manage Pibo user skills
+  cron         Manage scheduled Pibo jobs
   profile      Inspect a pibo profile
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI

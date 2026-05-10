@@ -158,6 +158,7 @@ export type PiboSignalMutation =
 export type PiboSignalProjectorContext = {
 	now(): string;
 	getNode(nodeId: string): PiboSignalNode | undefined;
+	getSessionNodes(piboSessionId: string): PiboSignalNode[];
 	getSessionRoot(piboSessionId: string): string;
 	getSessionParent(piboSessionId: string): string | undefined;
 };

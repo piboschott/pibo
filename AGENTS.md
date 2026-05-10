@@ -63,6 +63,29 @@ Server access details are configured in the operator environment. Do not hard-co
 ## Frontend Design
 If you are doing any frontend design for the Web Chat App, be sure to read `DESIGN.md`.
 
+## Documentation Structure
+All project documentation belongs under `docs/`.
+
+Use this structure:
+
+```text
+docs/
+  project/  Normal/current project docs and other canonical documentation
+  specs/    Product, technical, and implementation specifications
+  plans/    Implementation plans and design plans
+  reports/  Investigation reports, validation reports, and generated report artifacts
+  legacy/   Previous documentation kept for reference
+```
+
+Rules:
+
+- Put normal/current project docs and other canonical documentation in `docs/project/`.
+- Put specifications in `docs/specs/`.
+- Put implementation plans in `docs/plans/`.
+- Put investigation, validation, incident, and generated reports in `docs/reports/`.
+- Keep old documentation in `docs/legacy/` unless there is an explicit cleanup decision.
+- Do not create new root-level `plans/`, `reports/`, or `specs/` directories.
+
 # Pibo Rules
 
 This file captures fundamental project truths. These rules should guide design decisions, reviews, and future implementation work.

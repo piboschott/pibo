@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
@@ -19,9 +19,9 @@ test("gateway default session store uses pibo.sqlite, not pibo-sessions.sqlite",
 });
 
 test("runtime source does not reintroduce legacy chat data mode flags", () => {
+	assert.equal(existsSync(join(repoRoot, "src/data/chat-v2-adapters.ts")), false);
 	const runtimeFiles = [
 		"src/apps/chat/web-app.ts",
-		"src/data/chat-v2-adapters.ts",
 		"src/gateway/server.ts",
 	];
 	for (const file of runtimeFiles) {

@@ -149,8 +149,14 @@ export const piboCorePlugin = definePiboPlugin({
 			name: "status",
 			description: "Return current session status with context usage quota.",
 			slashCommands: ["status"],
-			execute(context) {
-				return { ...context.getStatus(), contextUsage: context.getContextUsage() };
+			async execute(context) {
+				const providerUsage = await context.getProviderUsage();
+				return {
+					...context.getStatus(),
+					activeModel: context.getActiveModel(),
+					contextUsage: context.getContextUsage(),
+					...(providerUsage ? { providerUsage } : {}),
+				};
 			},
 		});
 		api.registerGatewayAction({
@@ -220,6 +226,16 @@ export const piboCorePlugin = definePiboPlugin({
 			execute(context, event) {
 				const params = getThinkingParams(event);
 				return params.level ? context.setThinkingLevel(params.level) : context.getThinkingLevel();
+			},
+		});
+		api.registerGatewayAction({
+			name: "fast_mode",
+			description: "Toggle between Fast mode and Normal mode for models with thinking support.",
+			slashCommands: ["fast"],
+			execute(context) {
+				const current = context.getFastMode();
+				if (!current.supported) return { ...current, changed: false };
+				return context.setFastMode(current.mode !== "fast");
 			},
 		});
 		api.registerGatewayAction({

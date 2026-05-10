@@ -263,7 +263,13 @@ export class InMemoryPiboSignalRegistry implements PiboSignalRegistry {
 	}
 
 	private context(): PiboSignalProjectorContext {
-		return { now, getNode: (id) => this.nodesById.get(id), getSessionRoot: (id) => this.getSessionRoot(id), getSessionParent: (id) => this.parentSessionIdByChildId.get(id) };
+		return {
+			now,
+			getNode: (id) => this.nodesById.get(id),
+			getSessionNodes: (id) => this.nodesForSession(id),
+			getSessionRoot: (id) => this.getSessionRoot(id),
+			getSessionParent: (id) => this.parentSessionIdByChildId.get(id),
+		};
 	}
 
 	private applyMutation(mutation: PiboSignalMutation, changedSessionIds: Set<string>, upserts: PiboSignalNode[], removes: string[]): void {

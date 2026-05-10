@@ -19,6 +19,7 @@ import type {
 	RuntimeVarsResult,
 } from "./types.js";
 import { PythonRuntimeBackend } from "./python-backend.js";
+import { NodeRuntimeBackend } from "./node-backend.js";
 
 export type RuntimeSessionRegistryOptions = {
 	cwd: string;
@@ -35,7 +36,7 @@ function nowIso(): string {
 	return new Date().toISOString();
 }
 
-function notFoundExec(sessionId: string): RuntimeExecResult {
+function notFoundExec(sessionId = "auto"): RuntimeExecResult {
 	return {
 		status: "not_found",
 		sessionId,
@@ -44,7 +45,7 @@ function notFoundExec(sessionId: string): RuntimeExecResult {
 	};
 }
 
-function notFoundInspect(sessionId: string): RuntimeInspectResult {
+function notFoundInspect(sessionId = "auto"): RuntimeInspectResult {
 	return {
 		status: "not_found",
 		sessionId,
@@ -52,7 +53,7 @@ function notFoundInspect(sessionId: string): RuntimeInspectResult {
 	};
 }
 
-function notFoundVars(sessionId: string): RuntimeVarsResult {
+function notFoundVars(sessionId = "auto"): RuntimeVarsResult {
 	return {
 		status: "not_found",
 		sessionId,
@@ -70,26 +71,22 @@ export class RuntimeSessionRegistry {
 	}
 
 	async start(ownerPiboSessionId: string, input: RuntimeStartInput): Promise<RuntimeStartResult> {
-		if (input.runtime !== "python") {
-			return {
-				status: "error",
-				error: { name: "UnsupportedRuntime", message: `Runtime "${input.runtime}" is not implemented yet.` },
-			};
-		}
 		if (input.target?.type && input.target.type !== "local") {
 			return {
 				status: "error",
 				error: { name: "UnsupportedRuntimeTarget", message: `Runtime target "${input.target.type}" is not implemented yet.` },
 			};
 		}
-		const sessionId = `rt_python_${randomUUID().slice(0, 8)}`;
+		const sessionId = `rt_${input.runtime}_${randomUUID().slice(0, 8)}`;
 		try {
-			const backend = await PythonRuntimeBackend.start(this.options.cwd, input);
+			const backend = input.runtime === "python"
+				? await PythonRuntimeBackend.start(this.options.cwd, input)
+				: await NodeRuntimeBackend.start(this.options.cwd, input);
 			const startedAt = nowIso();
 			const record = backend.getRecord();
 			const session: RuntimeSession = {
 				sessionId,
-				runtime: "python",
+				runtime: input.runtime,
 				name: input.name,
 				cwd: record.cwd,
 				status: "idle",
@@ -103,12 +100,12 @@ export class RuntimeSessionRegistry {
 				history: [],
 			};
 			this.sessions.set(sessionId, session);
-			return { status: "ok", sessionId, runtime: "python", name: input.name, ...record, startedAt };
+			return { status: "ok", sessionId, runtime: input.runtime, name: input.name, ...record, startedAt };
 		} catch (error) {
 			return {
 				status: "failed",
 				sessionId,
-				runtime: "python",
+				runtime: input.runtime,
 				error: error instanceof Error
 					? { name: error.name, message: error.message, stack: error.stack }
 					: { name: "RuntimeStartError", message: String(error) },
@@ -117,16 +114,19 @@ export class RuntimeSessionRegistry {
 	}
 
 	async exec(ownerPiboSessionId: string, input: RuntimeExecInput): Promise<RuntimeExecResult> {
-		const session = this.getOwned(ownerPiboSessionId, input.sessionId);
-		if (!session) return notFoundExec(input.sessionId);
-		if (session.status === "closed" || session.status === "failed") return notFoundExec(input.sessionId);
+		const session = input.sessionId
+			? this.getOwned(ownerPiboSessionId, input.sessionId)
+			: await this.getOrStartDefault(ownerPiboSessionId, input);
+		const sessionId = input.sessionId ?? session?.sessionId ?? "auto";
+		if (!session) return notFoundExec(sessionId);
+		if (session.status === "closed" || session.status === "failed") return notFoundExec(sessionId);
 		if (session.status === "busy") {
 			return {
 				status: "failed",
-				sessionId: input.sessionId,
+				sessionId,
 				runtime: session.runtime,
 				durationMs: 0,
-				error: { name: "RuntimeBusy", message: `Runtime session "${input.sessionId}" is already busy.` },
+				error: { name: "RuntimeBusy", message: `Runtime session "${sessionId}" is already busy.` },
 			};
 		}
 		const startedAt = nowIso();
@@ -148,7 +148,6 @@ export class RuntimeSessionRegistry {
 			id: randomUUID(),
 			startedAt,
 			durationMs: result.durationMs,
-			mode: input.mode ?? "exec",
 			code: input.code,
 			status: result.status,
 			error: result.error,
@@ -161,22 +160,23 @@ export class RuntimeSessionRegistry {
 	}
 
 	async inspect(ownerPiboSessionId: string, input: RuntimeInspectInput): Promise<RuntimeInspectResult> {
-		const session = this.getOwned(ownerPiboSessionId, input.sessionId);
+		const session = input.sessionId ? this.getOwned(ownerPiboSessionId, input.sessionId) : this.getDefault(ownerPiboSessionId, input.runtime ?? "python");
 		if (!session) return notFoundInspect(input.sessionId);
 		const result = await session.backend.inspect(input);
 		return { ...result, sessionId: session.sessionId };
 	}
 
 	async vars(ownerPiboSessionId: string, input: RuntimeVarsInput): Promise<RuntimeVarsResult> {
-		const session = this.getOwned(ownerPiboSessionId, input.sessionId);
+		const session = input.sessionId ? this.getOwned(ownerPiboSessionId, input.sessionId) : this.getDefault(ownerPiboSessionId, input.runtime ?? "python");
 		if (!session) return notFoundVars(input.sessionId);
 		const result = await session.backend.vars(input);
 		return { ...result, sessionId: session.sessionId };
 	}
 
 	async interrupt(ownerPiboSessionId: string, input: RuntimeInterruptInput): Promise<RuntimeInterruptResult> {
-		const session = this.getOwned(ownerPiboSessionId, input.sessionId);
-		if (!session) return { status: "not_found", sessionId: input.sessionId, message: `Runtime session "${input.sessionId}" was not found.` };
+		const session = input.sessionId ? this.getOwned(ownerPiboSessionId, input.sessionId) : this.getDefault(ownerPiboSessionId, input.runtime ?? "python");
+		const sessionId = input.sessionId ?? session?.sessionId ?? "auto";
+		if (!session) return { status: "not_found", sessionId, message: `Runtime session "${sessionId}" was not found.` };
 		const result = await session.backend.interrupt();
 		return { ...result, sessionId: session.sessionId };
 	}
@@ -241,6 +241,28 @@ export class RuntimeSessionRegistry {
 			close: (input: RuntimeCloseInput) => this.close(ownerPiboSessionId, input),
 			list: () => this.list(ownerPiboSessionId),
 		};
+	}
+
+	private getDefault(ownerPiboSessionId: string, runtime: RuntimeStartInput["runtime"]): RuntimeSession | undefined {
+		return [...this.sessions.values()].find((session) =>
+			session.ownerPiboSessionId === ownerPiboSessionId &&
+			session.runtime === runtime &&
+			session.status !== "closed" &&
+			session.status !== "failed"
+		);
+	}
+
+	private async getOrStartDefault(ownerPiboSessionId: string, input: RuntimeExecInput): Promise<RuntimeSession | undefined> {
+		const runtime = input.runtime ?? "python";
+		const existing = this.getDefault(ownerPiboSessionId, runtime);
+		if (existing) return existing;
+		const started = await this.start(ownerPiboSessionId, {
+			runtime,
+			name: input.name,
+			target: input.target,
+			timeoutMs: input.timeoutMs,
+		});
+		return started.sessionId ? this.getOwned(ownerPiboSessionId, started.sessionId) : undefined;
 	}
 
 	private getOwned(ownerPiboSessionId: string, sessionId: string): RuntimeSession | undefined {

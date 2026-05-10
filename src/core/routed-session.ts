@@ -22,6 +22,7 @@ import type {
 import type { PiboThinkingLevel } from "./thinking.js";
 import type { CompactionResult } from "@mariozechner/pi-coding-agent";
 import type { ContextUsage } from "@mariozechner/pi-coding-agent";
+import { getOpenAiCodexProviderUsageForActiveModel } from "../auth/openai-codex-usage.js";
 import { expandInlineSkills } from "./skill-expansion.js";
 import type { ModelProfile } from "./profiles.js";
 
@@ -310,6 +311,7 @@ export class RoutedSession {
 	private readonly queue: RoutedQueueItem[] = [];
 	private processing = false;
 	private disposed = false;
+	private fastMode = false;
 	private activeMessage?: PiboMessageEvent;
 	private activeAssistantIndex?: number;
 	private nextAssistantIndex = 0;
@@ -324,10 +326,12 @@ export class RoutedSession {
 		private readonly emit: PiboEventListener,
 		private readonly pluginRegistry: PiboPluginRegistry,
 		private readonly forwardPiEvents: boolean,
+		initialFastMode: boolean,
 		private readonly onSessionOperation?: PiboSessionOperationListener,
 		private readonly onKillChildren?: (piboSessionId: string, options?: { includeRuns?: boolean }) => Promise<{ killed: string[]; cancelledRuns: string[] }>,
 		private readonly onStateChange?: (state: { processing: boolean; queuedMessages: number; disposed: boolean }) => void,
 	) {
+		this.fastMode = initialFastMode && this.runtime.session.supportsThinking();
 		this.bindRuntimeSession();
 		this.patchAgentContinue();
 		this.runtime.setRebindSession(async () => {
@@ -457,6 +461,7 @@ export class RoutedSession {
 
 	getStatus(): PiboSessionStatus {
 		const enabledTools = this.runtime.session.getActiveToolNames();
+		const thinkingLevel = this.runtime.session.thinkingLevel as PiboThinkingLevel;
 		return {
 			piboSessionId: this.piboSessionId,
 			queuedMessages: this.queue.length,
@@ -466,11 +471,26 @@ export class RoutedSession {
 			enabledTools,
 			cwd: this.runtime.cwd,
 			disposed: this.disposed,
+			thinkingLevel,
+			fastMode: this.getFastModeResult().mode === "fast",
 		};
 	}
 
 	getContextUsage(): ContextUsage | undefined {
 		return this.runtime.session.getContextUsage();
+	}
+
+	getActiveModel(): { provider: string; id: string } | undefined {
+		const model = this.runtime.session.model;
+		return model ? { provider: model.provider, id: model.id } : undefined;
+	}
+
+	async getProviderUsage() {
+		try {
+			return await getOpenAiCodexProviderUsageForActiveModel(this.getActiveModel());
+		} catch {
+			return undefined;
+		}
 	}
 
 	removeQueuedMessages(predicate: (event: PiboMessageEvent) => boolean): number {
@@ -596,6 +616,19 @@ export class RoutedSession {
 		this.assertActive();
 		this.runtime.session.cycleThinkingLevel();
 		return this.getThinkingResult();
+	}
+
+	getFastMode(): { mode: "fast" | "normal"; supported: boolean } {
+		this.assertActive();
+		return this.getFastModeResult();
+	}
+
+	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean } {
+		this.assertActive();
+		const before = this.getFastModeResult().mode;
+		if (this.runtime.session.supportsThinking()) this.fastMode = enabled;
+		const current = this.getFastModeResult();
+		return { ...current, changed: before !== current.mode };
 	}
 
 	async compact(customInstructions?: string): Promise<CompactionResult> {
@@ -749,6 +782,8 @@ export class RoutedSession {
 				piboSessionId: this.piboSessionId,
 				getStatus: () => this.getStatus(),
 				getContextUsage: () => this.getContextUsage(),
+				getActiveModel: () => this.getActiveModel(),
+				getProviderUsage: () => this.getProviderUsage(),
 				clearQueue: () => this.clearQueue(),
 				abort: async () => {
 					await this.runtime.session.abort();
@@ -765,6 +800,8 @@ export class RoutedSession {
 				getThinkingLevel: () => this.getThinkingResult(),
 				setThinkingLevel: (level) => this.setThinkingLevel(level),
 				cycleThinkingLevel: () => this.cycleThinkingLevel(),
+				getFastMode: () => this.getFastMode(),
+				setFastMode: (enabled) => this.setFastMode(enabled),
 				setModel: (model) => this.setModel(model),
 				compact: (customInstructions) => this.compact(customInstructions),
 				kill: async () => {
@@ -804,6 +841,11 @@ export class RoutedSession {
 			availableLevels: this.runtime.session.getAvailableThinkingLevels() as PiboThinkingLevel[],
 			supported: this.runtime.session.supportsThinking(),
 		};
+	}
+
+	private getFastModeResult(): { mode: "fast" | "normal"; supported: boolean } {
+		const supported = this.runtime.session.supportsThinking();
+		return { mode: supported && this.fastMode ? "fast" : "normal", supported };
 	}
 
 	private clearQueue(): number {

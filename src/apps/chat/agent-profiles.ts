@@ -18,6 +18,11 @@ export function createCustomAgentProfileDefinition(agent: CustomAgentDefinition)
 			if (agent.mainModel) builder.withMainModel(agent.mainModel);
 			if (agent.subagentModel) builder.withSubagentModel(agent.subagentModel);
 			if (agent.thinkingLevel) builder.withThinkingLevel(agent.thinkingLevel);
+			if (agent.mainThinkingLevel) builder.withMainThinkingLevel(agent.mainThinkingLevel);
+			if (agent.subagentThinkingLevel) builder.withSubagentThinkingLevel(agent.subagentThinkingLevel);
+			if (agent.fast !== undefined) builder.withFastMode(agent.fast);
+			if (agent.mainFast !== undefined) builder.withMainFastMode(agent.mainFast);
+			if (agent.subagentFast !== undefined) builder.withSubagentFastMode(agent.subagentFast);
 
 			for (const skillName of agent.skills) {
 				try {

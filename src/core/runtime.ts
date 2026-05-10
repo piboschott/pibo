@@ -42,6 +42,7 @@ import { getActivePiboBasePromptPath } from "./base-prompt.js";
 import { createPiboCompactionPromptExtension } from "./compaction-prompt.js";
 import { getPiPackageRuntimeOptions } from "../pi-packages/runtime.js";
 import { getDefaultPiboWorkspace } from "./workspace.js";
+import { DEFAULT_USER_TIMEZONE } from "./user-settings.js";
 import { createRuntimeToolDefinition, type PiboRuntimeToolController } from "../tools/runtime/tool.js";
 import { RuntimeSessionRegistry } from "../tools/runtime/registry.js";
 
@@ -58,6 +59,16 @@ export type PiboRuntimeOptions = {
 	modelDefaults?: PiboModelDefaults;
 	/** SessionStore-persisted model. Routed sessions must prefer this over current defaults. */
 	activeModel?: ModelProfile;
+	/** Product metadata that is always injected into runtime context. */
+	sessionContext?: PiboRuntimeSessionContext;
+};
+
+export type PiboRuntimeSessionContext = {
+	userId?: string;
+	ownerScope?: string;
+	piboSessionId?: string;
+	piboRoomId?: string;
+	timezone?: string;
 };
 
 export type PiboProfileInspection = {
@@ -89,6 +100,33 @@ async function loadContextFiles(
 	}
 
 	return loaded;
+}
+
+function createSessionContextFile(context: PiboRuntimeSessionContext | undefined): { path: string; content: string } {
+	const userId = context?.userId?.trim() || userIdFromOwnerScope(context?.ownerScope) || "unknown";
+	const ownerScope = context?.ownerScope?.trim() || "unknown";
+	const piboSessionId = context?.piboSessionId?.trim() || "unknown";
+	const piboRoomId = context?.piboRoomId?.trim() || "unknown";
+	const timezone = context?.timezone?.trim() || DEFAULT_USER_TIMEZONE;
+	return {
+		path: "pibo://runtime/session-context.md",
+		content: [
+			"# Pibo Runtime Context",
+			"",
+			`- User ID: ${userId}`,
+			`- Owner scope: ${ownerScope}`,
+			`- Pibo Session ID: ${piboSessionId}`,
+			`- Pibo Room ID: ${piboRoomId}`,
+			`- User timezone: ${timezone}`,
+			"",
+			"Use these product-level identifiers when scheduling jobs, correlating events, or referring to the current Pibo session or room.",
+		].join("\n"),
+	};
+}
+
+function userIdFromOwnerScope(ownerScope: string | undefined): string | undefined {
+	if (!ownerScope) return undefined;
+	return ownerScope.startsWith("user:") ? ownerScope.slice("user:".length) : ownerScope;
 }
 
 function mergeContextFiles(
@@ -280,6 +318,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 		sessionStartEvent,
 	}) => {
 		const contextFiles = await loadContextFiles(runtimeCwd, profile.contextFiles);
+		const sessionContextFile = createSessionContextFile({ piboSessionId: profile.sessionId, ...options.sessionContext });
 		const installedToolContextFile = getInstalledCliToolContextFile();
 		const mcpAgentContextFile = await getMcpAgentContextFile(profile.mcpServers);
 		const skillPaths = getEnabledSkillPaths(runtimeCwd, profile);
@@ -302,6 +341,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 					agentsFiles: mergeContextFiles(
 						base.agentsFiles,
 						[
+							sessionContextFile,
 							...contextFiles,
 							...(installedToolContextFile ? [installedToolContextFile] : []),
 							...(mcpAgentContextFile ? [mcpAgentContextFile] : []),

@@ -43,6 +43,10 @@ function seedConversation(runtime) {
 	return { firstUserId, secondUserId };
 }
 
+function enableThinkingSupport(runtime) {
+	runtime.session.state.model = { provider: "test", id: "reasoning-test-model", reasoning: true };
+}
+
 async function createSessionHarness() {
 	const cwd = await mkdtemp(join(tmpdir(), "pibo-session-actions-"));
 	const profile = new InitialSessionContextBuilder("session-actions-test").createSession();
@@ -69,6 +73,7 @@ async function createSessionHarness() {
 test("thinking action without level reports current level without cycling", async () => {
 	const harness = await createSessionHarness();
 	try {
+		enableThinkingSupport(harness.routed.runtime);
 		harness.routed.runtime.session.setThinkingLevel("medium");
 
 		const result = await harness.routed.executeAction({
@@ -80,6 +85,46 @@ test("thinking action without level reports current level without cycling", asyn
 		assert.equal(result.type, "execution_result");
 		assert.equal(result.result.level, "medium");
 		assert.equal(harness.routed.runtime.session.thinkingLevel, "medium");
+	} finally {
+		await harness.dispose();
+	}
+});
+
+test("fast action toggles independently of thinking level", async () => {
+	const harness = await createSessionHarness();
+	try {
+		enableThinkingSupport(harness.routed.runtime);
+		harness.routed.runtime.session.setThinkingLevel("medium");
+
+		const fast = await harness.routed.executeAction({
+			type: "execution",
+			piboSessionId: "route:test",
+			action: "fast_mode",
+		});
+		assert.equal(fast.type, "execution_result");
+		assert.equal(fast.result.mode, "fast");
+		assert.equal(harness.routed.runtime.session.thinkingLevel, "medium");
+		assert.equal(harness.routed.getStatus().fastMode, true);
+
+		const thinking = await harness.routed.executeAction({
+			type: "execution",
+			piboSessionId: "route:test",
+			action: "thinking",
+			params: { level: "high" },
+		});
+		assert.equal(thinking.type, "execution_result");
+		assert.equal(thinking.result.level, "high");
+		assert.equal(harness.routed.getStatus().fastMode, true);
+
+		const normal = await harness.routed.executeAction({
+			type: "execution",
+			piboSessionId: "route:test",
+			action: "fast_mode",
+		});
+		assert.equal(normal.type, "execution_result");
+		assert.equal(normal.result.mode, "normal");
+		assert.equal(harness.routed.runtime.session.thinkingLevel, "high");
+		assert.equal(harness.routed.getStatus().fastMode, false);
 	} finally {
 		await harness.dispose();
 	}

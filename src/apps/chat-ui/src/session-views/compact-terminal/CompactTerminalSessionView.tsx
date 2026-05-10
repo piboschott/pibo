@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
-import { ChevronDown, ChevronRight, GitBranch } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
@@ -46,8 +46,6 @@ export function CompactTerminalSessionView({
 	);
 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 	const runningCount = rows.filter((row) => row.status === "running").length;
-	const signalActiveDescendantCount = (selectedSessionSignal?.activeChildren.length ?? 0) + (selectedSessionSignal?.activeRuns.length ?? 0);
-	const workingPhase = selectedSessionSignal?.phase;
 	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
 	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
 	const signalWorking = selectedSessionSignal?.isTreeActive ?? false;
@@ -96,12 +94,8 @@ export function CompactTerminalSessionView({
 	return (
 		<section className="relative min-w-0 flex-1 flex flex-col overflow-hidden bg-[#0b0b0b] text-[#d4d4d4]">
 			<TerminalHeader
-				isLoading={isLoading}
-				runningCount={runningCount}
 				errorCount={errorCount}
 				toolErrorCount={toolErrorCount}
-				workingPhase={workingPhase}
-				activeDescendantCount={signalActiveDescendantCount}
 				sessionAgentProfile={sessionAgentProfile}
 				sessionActiveModel={sessionActiveModel}
 				sessionBreadcrumbs={sessionBreadcrumbs}
@@ -164,12 +158,8 @@ export function CompactTerminalSessionView({
 }
 
 function TerminalHeader({
-	isLoading,
-	runningCount,
 	errorCount,
 	toolErrorCount,
-	workingPhase,
-	activeDescendantCount,
 	sessionAgentProfile,
 	sessionActiveModel,
 	sessionBreadcrumbs,
@@ -177,12 +167,8 @@ function TerminalHeader({
 	derivedSessions,
 	onOpenSession,
 }: {
-	isLoading: boolean;
-	runningCount: number;
 	errorCount: number;
 	toolErrorCount: number;
-	workingPhase?: string;
-	activeDescendantCount: number;
 	sessionAgentProfile?: string;
 	sessionActiveModel?: string;
 	sessionBreadcrumbs: ChatSessionViewProps["sessionBreadcrumbs"];
@@ -193,14 +179,10 @@ function TerminalHeader({
 	return (
 		<div className="border-b border-[#2a2a2a] bg-[#111111] px-4 py-2 text-[11px]">
 			<div className="flex flex-wrap items-center gap-2">
-				{isLoading ? <TerminalBadge tone="cyan">Loading</TerminalBadge> : null}
-				{workingPhase ? <TerminalBadge tone="cyan">{workingPhase}</TerminalBadge> : null}
-				{runningCount > 0 ? <TerminalBadge tone="cyan">{runningCount} running</TerminalBadge> : null}
-				{activeDescendantCount > 0 ? <TerminalBadge tone="cyan">{activeDescendantCount} active descendants/runs</TerminalBadge> : null}
-				{errorCount > 0 ? <TerminalBadge tone="red">{errorCount} errors</TerminalBadge> : null}
-				{toolErrorCount > 0 ? <TerminalBadge tone="amber">{toolErrorCount} tool errors</TerminalBadge> : null}
 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
+				{errorCount > 0 ? <TerminalBadge tone="red" label={`${errorCount} errors`}>{errorCount}<CircleX size={12} /></TerminalBadge> : null}
+				{toolErrorCount > 0 ? <TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors`}>{toolErrorCount}<Hammer size={12} /></TerminalBadge> : null}
 				{originSession ? (
 					<SessionLinkButton onClick={() => onOpenSession(originSession.piboSessionId)}>
 						Origin {originSession.label}
@@ -563,9 +545,11 @@ function useAnimatedDots() {
 
 function TerminalBadge({
 	tone,
+	label,
 	children,
 }: {
 	tone: "cyan" | "red" | "amber" | "purple" | "neutral";
+	label?: string;
 	children: ReactNode;
 }) {
 	const className =
@@ -578,7 +562,7 @@ function TerminalBadge({
 					: tone === "purple"
 						? "border-purple-500/40 text-purple-300"
 						: "border-[#3a3a3a] text-[#d4d4d4]";
-	return <span className={`border px-2 py-0.5 ${className}`}>{children}</span>;
+	return <span className={`inline-flex items-center gap-1 border px-2 py-0.5 ${className}`} title={label} aria-label={label}>{children}</span>;
 }
 
 function RowAction({

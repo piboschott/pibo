@@ -1,5 +1,5 @@
 import type { PiboRunStatus } from "../runs/registry.js";
-import { isTerminalSignalStatus } from "./aggregate.js";
+import { isActiveSignalStatus, isTerminalSignalStatus } from "./aggregate.js";
 import type {
 	PiboSignalInput,
 	PiboSignalMutation,
@@ -24,6 +24,12 @@ function runStatus(status: PiboRunStatus): PiboSignalStatus {
 	if (status === "completed") return "done";
 	if (status === "failed") return "error";
 	return status;
+}
+
+function settleActiveSessionNodes(piboSessionId: string, context: PiboSignalProjectorContext): PiboSignalMutation[] {
+	return context.getSessionNodes(piboSessionId)
+		.filter((node) => node.kind !== "session" && node.kind !== "yielded_run" && isActiveSignalStatus(node.status))
+		.map((node) => ({ type: "patch_node", nodeId: node.id, patch: { status: "done", completedAt: context.now() } }));
 }
 
 export const sessionLifecycleSignalProducer: PiboSignalProducer = {
@@ -55,6 +61,7 @@ export const sessionLifecycleSignalProducer: PiboSignalProducer = {
 			return [
 				{ type: "patch_node", nodeId: `session:${data.piboSessionId}`, patch: { status } },
 				{ type: "set_session_queue", piboSessionId: data.piboSessionId, queuedMessages: data.queuedMessages },
+				...(data.processing ? [] : settleActiveSessionNodes(data.piboSessionId, context)),
 			];
 		}
 		if (data.type === "queue_changed") {
@@ -121,12 +128,18 @@ export const outputSignalProducer: PiboSignalProducer = {
 			mutations.push({ type: "patch_node", nodeId: `compaction:${piboSessionId}:${event.reason}`, patch: { status: event.aborted ? "cancelled" : event.errorMessage ? "error" : "done", completedAt: context.now(), error: event.errorMessage ? { message: event.errorMessage, source: "pi" } : undefined } });
 		}
 		if (event.type === "message_finished") {
+			const existingSession = context.getNode(`session:${piboSessionId}`);
+			if (!existingSession || !isTerminalSignalStatus(existingSession.status)) {
+				mutations.push({ type: "patch_node", nodeId: `session:${piboSessionId}`, patch: { status: "idle" } });
+			}
 			if (event.eventId) {
 				mutations.push({ type: "patch_node", nodeId: `message:${piboSessionId}:${event.eventId}`, patch: { status: "done", completedAt: context.now() } });
 				mutations.push({ type: "patch_node", nodeId: `turn:${piboSessionId}:${event.eventId}`, patch: { status: "done", completedAt: context.now() } });
 			}
+			mutations.push(...settleActiveSessionNodes(piboSessionId, context));
 		}
 		if (event.type === "session_error") {
+			mutations.push(...settleActiveSessionNodes(piboSessionId, context));
 			mutations.push({ type: "patch_node", nodeId: `session:${piboSessionId}`, patch: { status: "error", completedAt: context.now(), error: { message: event.error, source: "pi" } } });
 			if (event.eventId) {
 				mutations.push({ type: "patch_node", nodeId: `message:${piboSessionId}:${event.eventId}`, patch: { status: "error", completedAt: context.now(), error: { message: event.error, source: "pi" } } });

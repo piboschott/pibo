@@ -111,6 +111,71 @@ test("runtime vars, inspect, and owner isolation work", async () => {
 	});
 });
 
+test("node runtime preserves variables across exec calls", async () => {
+	await withRuntimeRegistry(async (registry) => {
+		const start = await registry.start("owner", { runtime: "node" });
+		assert.equal(start.status, "ok");
+		const sessionId = start.sessionId;
+		assert.ok(sessionId);
+
+		assert.equal((await registry.exec("owner", { sessionId, code: "let x = 1" })).status, "ok");
+		const result = await registry.exec("owner", { sessionId, code: "x + 1", mode: "eval" });
+		assert.equal(result.status, "ok");
+		assert.equal(result.result?.repr, "2");
+	});
+});
+
+test("node runtime errors keep prior state and expose failing line", async () => {
+	await withRuntimeRegistry(async (registry) => {
+		const start = await registry.start("owner", { runtime: "node" });
+		const sessionId = start.sessionId;
+		assert.ok(sessionId);
+
+		const failed = await registry.exec("owner", {
+			sessionId,
+			code: "globalThis.x = 1\nthrow new Error('boom')",
+			closeOnSuccess: true,
+		});
+		assert.equal(failed.status, "error");
+		assert.equal(failed.autoClosed, undefined);
+		assert.equal(failed.error?.line, 2);
+
+		const result = await registry.exec("owner", { sessionId, code: "x", mode: "eval" });
+		assert.equal(result.status, "ok");
+		assert.equal(result.result?.repr, "1");
+	});
+});
+
+test("node runtime captures stdout, stderr, inspect, vars, and closeOnSuccess", async () => {
+	await withRuntimeRegistry(async (registry) => {
+		const start = await registry.start("owner", { runtime: "node" });
+		const sessionId = start.sessionId;
+		assert.ok(sessionId);
+
+		const output = await registry.exec("owner", {
+			sessionId,
+			code: "globalThis.public = 2; console.log('out'); console.error('err'); function f(a, b = 1) { return a + b; } globalThis.f = f;",
+		});
+		assert.equal(output.status, "ok");
+		assert.equal(output.stdout, "out\n");
+		assert.equal(output.stderr, "err\n");
+
+		const vars = await registry.vars("owner", { sessionId });
+		assert.equal(vars.status, "ok");
+		assert.ok(vars.variables.some((entry) => entry.name === "public"));
+
+		const inspected = await registry.inspect("owner", { sessionId, expression: "f", what: "signature" });
+		assert.equal(inspected.status, "ok");
+		assert.match(inspected.signature, /function f\(a, b = 1\)/);
+
+		const success = await registry.exec("owner", { sessionId, code: "public + 1", mode: "eval", closeOnSuccess: true });
+		assert.equal(success.status, "ok");
+		assert.equal(success.autoClosed, true);
+		assert.equal(success.result?.repr, "3");
+		assert.equal(registry.list("owner").sessions.length, 0);
+	});
+});
+
 test("runtime is registered in codex-compatible profile and inspection", async () => {
 	const registry = createDefaultPiboPluginRegistry();
 	const profile = registry.createProfile("codex");

@@ -96,6 +96,11 @@ export type InitialSessionContextOptions = {
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
+	mainThinkingLevel?: PiboThinkingLevel;
+	subagentThinkingLevel?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 	skills?: readonly SkillProfile[];
 	tools?: readonly ToolProfile[];
 	subagents?: readonly SubagentProfile[];
@@ -116,6 +121,11 @@ export class InitialSessionContext {
 	readonly mainModel?: ModelProfile;
 	readonly subagentModel?: ModelProfile;
 	readonly thinkingLevel?: PiboThinkingLevel;
+	readonly mainThinkingLevel?: PiboThinkingLevel;
+	readonly subagentThinkingLevel?: PiboThinkingLevel;
+	readonly fast?: boolean;
+	readonly mainFast?: boolean;
+	readonly subagentFast?: boolean;
 	readonly skills: readonly SkillProfile[];
 	readonly tools: readonly ToolProfile[];
 	readonly subagents: readonly SubagentProfile[];
@@ -135,6 +145,11 @@ export class InitialSessionContext {
 		this.mainModel = options.mainModel ? { ...options.mainModel } : undefined;
 		this.subagentModel = options.subagentModel ? { ...options.subagentModel } : undefined;
 		this.thinkingLevel = options.thinkingLevel;
+		this.mainThinkingLevel = options.mainThinkingLevel;
+		this.subagentThinkingLevel = options.subagentThinkingLevel;
+		this.fast = options.fast;
+		this.mainFast = options.mainFast;
+		this.subagentFast = options.subagentFast;
 		this.skills = [...(options.skills ?? [])];
 		this.tools = [...(options.tools ?? [])];
 		this.subagents = [...(options.subagents ?? [])];
@@ -156,6 +171,11 @@ export class InitialSessionContextBuilder {
 	private mainModel?: ModelProfile;
 	private subagentModel?: ModelProfile;
 	private thinkingLevel?: PiboThinkingLevel;
+	private mainThinkingLevel?: PiboThinkingLevel;
+	private subagentThinkingLevel?: PiboThinkingLevel;
+	private fast?: boolean;
+	private mainFast?: boolean;
+	private subagentFast?: boolean;
 	private skills: SkillProfile[] = [];
 	private tools: ToolProfile[] = [];
 	private subagents: SubagentProfile[] = [];
@@ -198,6 +218,31 @@ export class InitialSessionContextBuilder {
 
 	withThinkingLevel(level: PiboThinkingLevel): this {
 		this.thinkingLevel = level;
+		return this;
+	}
+
+	withMainThinkingLevel(level: PiboThinkingLevel): this {
+		this.mainThinkingLevel = level;
+		return this;
+	}
+
+	withSubagentThinkingLevel(level: PiboThinkingLevel): this {
+		this.subagentThinkingLevel = level;
+		return this;
+	}
+
+	withFastMode(enabled: boolean): this {
+		this.fast = enabled;
+		return this;
+	}
+
+	withMainFastMode(enabled: boolean): this {
+		this.mainFast = enabled;
+		return this;
+	}
+
+	withSubagentFastMode(enabled: boolean): this {
+		this.subagentFast = enabled;
 		return this;
 	}
 
@@ -290,6 +335,11 @@ export class InitialSessionContextBuilder {
 			mainModel: this.mainModel,
 			subagentModel: this.subagentModel,
 			thinkingLevel: this.thinkingLevel,
+			mainThinkingLevel: this.mainThinkingLevel,
+			subagentThinkingLevel: this.subagentThinkingLevel,
+			fast: this.fast,
+			mainFast: this.mainFast,
+			subagentFast: this.subagentFast,
 			skills: this.skills,
 			tools: this.tools,
 			subagents: this.subagents,

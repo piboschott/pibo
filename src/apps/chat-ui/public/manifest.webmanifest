@@ -10,13 +10,13 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/apps/chat/icons/pibo-icon-192.png",
+      "src": "/apps/chat/assets/pwa-images/android/launchericon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/apps/chat/icons/pibo-icon-512.png",
+      "src": "/apps/chat/assets/pwa-images/android/launchericon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

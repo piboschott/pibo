@@ -1,5 +1,5 @@
 export type RuntimeKind = "python" | "node";
-export type RuntimeAction = "start" | "exec" | "inspect" | "vars" | "interrupt" | "close" | "list";
+export type RuntimeAction = "exec" | "inspect" | "vars" | "interrupt" | "list";
 export type RuntimeSessionStatus = "starting" | "idle" | "busy" | "closed" | "failed";
 
 export type RuntimeTarget = {
@@ -37,7 +37,10 @@ export type RuntimeStartInput = {
 };
 
 export type RuntimeExecInput = {
-	sessionId: string;
+	sessionId?: string;
+	runtime?: RuntimeKind;
+	name?: string;
+	target?: RuntimeTarget;
 	code: string;
 	timeoutMs?: number;
 	mode?: "exec" | "eval" | "auto";
@@ -45,21 +48,24 @@ export type RuntimeExecInput = {
 };
 
 export type RuntimeInspectInput = {
-	sessionId: string;
+	sessionId?: string;
+	runtime?: RuntimeKind;
 	expression: string;
 	what?: "summary" | "signature" | "members" | "source" | "doc" | "all";
 	maxBytes?: number;
 };
 
 export type RuntimeVarsInput = {
-	sessionId: string;
+	sessionId?: string;
+	runtime?: RuntimeKind;
 	includePrivate?: boolean;
 	maxItems?: number;
 	maxBytes?: number;
 };
 
 export type RuntimeInterruptInput = {
-	sessionId: string;
+	sessionId?: string;
+	runtime?: RuntimeKind;
 };
 
 export type RuntimeCloseInput = {
@@ -151,14 +157,13 @@ export type RuntimeHistoryEntry = {
 	id: string;
 	startedAt: string;
 	durationMs: number;
-	mode: "exec" | "eval" | "auto";
 	code: string;
 	status: RuntimeExecResult["status"];
 	error?: RuntimeErrorSummary;
 };
 
 export type RuntimeBackend = {
-	exec(input: Omit<RuntimeExecInput, "sessionId" | "closeOnSuccess">): Promise<RuntimeExecResult>;
+	exec(input: Pick<RuntimeExecInput, "code" | "timeoutMs" | "mode">): Promise<RuntimeExecResult>;
 	inspect(input: Omit<RuntimeInspectInput, "sessionId">): Promise<RuntimeInspectResult>;
 	vars(input: Omit<RuntimeVarsInput, "sessionId">): Promise<RuntimeVarsResult>;
 	interrupt(): Promise<RuntimeInterruptResult>;

@@ -175,6 +175,35 @@ test("patch versions are monotonic per root", () => {
 	assert.equal(second?.toVersion, 2);
 });
 
+test("message finish settles active tool signals without matching tool finish", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "pibo_output", event: { type: "tool_execution_started", piboSessionId: "root", eventId: "m1", toolCallId: "tc1", toolName: "bash" } });
+	assert.equal(registry.snapshotTree("root").sessions.root.isTreeActive, true);
+
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.nodes["tool:root:tc1"].status, "done");
+	assert.equal(snapshot.sessions.root.aggregateStatus, "idle");
+	assert.equal(snapshot.sessions.root.isTreeActive, false);
+});
+
+test("processing false settles orphan active tool signals", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "pibo_output", event: { type: "tool_execution_started", piboSessionId: "root", eventId: "m1", toolCallId: "tc1", toolName: "bash" } });
+
+	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
+
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.nodes["tool:root:tc1"].status, "done");
+	assert.equal(snapshot.sessions.root.aggregateStatus, "idle");
+	assert.equal(snapshot.sessions.root.isTreeActive, false);
+});
+
 test("tool call errors do not mark the session signal as failed", () => {
 	const registry = createPiboSignalRegistry();
 	registry.project({ type: "session_created", session: session("root") });

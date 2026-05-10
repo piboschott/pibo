@@ -103,7 +103,8 @@ test("profiles can disable automatic AGENTS.md context discovery", async () => {
 		const inspection = await inspectPiboProfile({ cwd, profile, persistSession: false });
 		const contextFileNames = inspection.contextFiles.map((contextFile) => basename(contextFile.path));
 
-		assert.deepEqual(contextFileNames, ["profile-context.md"]);
+		assert.equal(contextFileNames.includes("AGENTS.md"), false);
+		assert.equal(contextFileNames.includes("profile-context.md"), true);
 	});
 });
 

@@ -30,6 +30,11 @@ export type CustomAgentDefinition = {
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
+	mainThinkingLevel?: PiboThinkingLevel;
+	subagentThinkingLevel?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
@@ -54,6 +59,11 @@ export type CreateCustomAgentInput = {
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
+	mainThinkingLevel?: PiboThinkingLevel;
+	subagentThinkingLevel?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 	builtinTools?: BuiltinToolsMode;
 	builtinToolNames?: string[];
 	autoContextFiles?: boolean;
@@ -77,6 +87,11 @@ type AgentRow = {
 	main_model_json: string | null;
 	subagent_model_json: string | null;
 	thinking_level: string | null;
+	main_thinking_level: string | null;
+	subagent_thinking_level: string | null;
+	fast: 0 | 1 | null;
+	main_fast: 0 | 1 | null;
+	subagent_fast: 0 | 1 | null;
 	builtin_tools: BuiltinToolsMode;
 	builtin_tool_names_json: string;
 	auto_context_files: 0 | 1;
@@ -111,6 +126,11 @@ export class CustomAgentStore {
 				main_model_json TEXT,
 				subagent_model_json TEXT,
 				thinking_level TEXT,
+				main_thinking_level TEXT,
+				subagent_thinking_level TEXT,
+				fast INTEGER,
+				main_fast INTEGER,
+				subagent_fast INTEGER,
 				builtin_tools TEXT NOT NULL,
 				builtin_tool_names_json TEXT NOT NULL DEFAULT '["read","bash","edit","write"]',
 				auto_context_files INTEGER NOT NULL DEFAULT 1,
@@ -129,6 +149,7 @@ export class CustomAgentStore {
 		this.migratePiPackagesColumn();
 		this.migrateModelColumns();
 		this.migrateThinkingLevelColumn();
+		this.migrateThinkingOptionColumns();
 		this.migrateBuiltinToolNamesColumn();
 		this.migrateLegacyProfileNames();
 	}
@@ -169,6 +190,11 @@ export class CustomAgentStore {
 			mainModel: sanitizeModelProfile(input.mainModel),
 			subagentModel: sanitizeModelProfile(input.subagentModel),
 			thinkingLevel: sanitizeThinkingLevel(input.thinkingLevel),
+			mainThinkingLevel: sanitizeThinkingLevel(input.mainThinkingLevel),
+			subagentThinkingLevel: sanitizeThinkingLevel(input.subagentThinkingLevel),
+			fast: sanitizeBoolean(input.fast),
+			mainFast: sanitizeBoolean(input.mainFast),
+			subagentFast: sanitizeBoolean(input.subagentFast),
 			builtinTools: input.builtinTools ?? "default",
 			builtinToolNames: sanitizeBuiltinToolNames(input.builtinToolNames),
 			autoContextFiles: input.autoContextFiles ?? true,
@@ -202,6 +228,11 @@ export class CustomAgentStore {
 			mainModel: input.mainModel === undefined ? existing.mainModel : sanitizeModelProfile(input.mainModel),
 			subagentModel: input.subagentModel === undefined ? existing.subagentModel : sanitizeModelProfile(input.subagentModel),
 			thinkingLevel: input.thinkingLevel === undefined ? existing.thinkingLevel : sanitizeThinkingLevel(input.thinkingLevel),
+			mainThinkingLevel: input.mainThinkingLevel === undefined ? existing.mainThinkingLevel : sanitizeThinkingLevel(input.mainThinkingLevel),
+			subagentThinkingLevel: input.subagentThinkingLevel === undefined ? existing.subagentThinkingLevel : sanitizeThinkingLevel(input.subagentThinkingLevel),
+			fast: input.fast === undefined ? existing.fast : sanitizeBoolean(input.fast),
+			mainFast: input.mainFast === undefined ? existing.mainFast : sanitizeBoolean(input.mainFast),
+			subagentFast: input.subagentFast === undefined ? existing.subagentFast : sanitizeBoolean(input.subagentFast),
 			builtinTools: input.builtinTools ?? existing.builtinTools,
 			builtinToolNames: input.builtinToolNames ? sanitizeBuiltinToolNames(input.builtinToolNames) : existing.builtinToolNames,
 			autoContextFiles: input.autoContextFiles ?? existing.autoContextFiles,
@@ -223,6 +254,11 @@ export class CustomAgentStore {
 					main_model_json = ?,
 					subagent_model_json = ?,
 					thinking_level = ?,
+					main_thinking_level = ?,
+					subagent_thinking_level = ?,
+					fast = ?,
+					main_fast = ?,
+					subagent_fast = ?,
 					builtin_tools = ?,
 					builtin_tool_names_json = ?,
 					auto_context_files = ?,
@@ -243,6 +279,11 @@ export class CustomAgentStore {
 				updated.mainModel ? JSON.stringify(updated.mainModel) : null,
 				updated.subagentModel ? JSON.stringify(updated.subagentModel) : null,
 				updated.thinkingLevel ?? null,
+				updated.mainThinkingLevel ?? null,
+				updated.subagentThinkingLevel ?? null,
+				serializeBoolean(updated.fast),
+				serializeBoolean(updated.mainFast),
+				serializeBoolean(updated.subagentFast),
 				updated.builtinTools,
 				JSON.stringify(updated.builtinToolNames),
 				updated.autoContextFiles ? 1 : 0,
@@ -291,6 +332,11 @@ export class CustomAgentStore {
 					main_model_json,
 					subagent_model_json,
 					thinking_level,
+					main_thinking_level,
+					subagent_thinking_level,
+					fast,
+					main_fast,
+					subagent_fast,
 					builtin_tools,
 					builtin_tool_names_json,
 					auto_context_files,
@@ -298,7 +344,7 @@ export class CustomAgentStore {
 					created_at,
 					updated_at,
 					archived_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				agent.id,
@@ -315,6 +361,11 @@ export class CustomAgentStore {
 				agent.mainModel ? JSON.stringify(agent.mainModel) : null,
 				agent.subagentModel ? JSON.stringify(agent.subagentModel) : null,
 				agent.thinkingLevel ?? null,
+				agent.mainThinkingLevel ?? null,
+				agent.subagentThinkingLevel ?? null,
+				serializeBoolean(agent.fast),
+				serializeBoolean(agent.mainFast),
+				serializeBoolean(agent.subagentFast),
 				agent.builtinTools,
 				JSON.stringify(agent.builtinToolNames),
 				agent.autoContextFiles ? 1 : 0,
@@ -405,6 +456,27 @@ export class CustomAgentStore {
 		}
 	}
 
+	private migrateThinkingOptionColumns(): void {
+		const columns = new Set(
+			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
+		);
+		if (!columns.has("main_thinking_level")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN main_thinking_level TEXT").run();
+		}
+		if (!columns.has("subagent_thinking_level")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN subagent_thinking_level TEXT").run();
+		}
+		if (!columns.has("fast")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN fast INTEGER").run();
+		}
+		if (!columns.has("main_fast")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN main_fast INTEGER").run();
+		}
+		if (!columns.has("subagent_fast")) {
+			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN subagent_fast INTEGER").run();
+		}
+	}
+
 	private migrateBuiltinToolNamesColumn(): void {
 		const columns = new Set(
 			(this.db.prepare("PRAGMA table_info(chat_agents)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -435,6 +507,11 @@ function agentFromRow(row: AgentRow): CustomAgentDefinition {
 		mainModel: parseModelProfile(row.main_model_json),
 		subagentModel: parseModelProfile(row.subagent_model_json),
 		thinkingLevel: sanitizeThinkingLevel(row.thinking_level),
+		mainThinkingLevel: sanitizeThinkingLevel(row.main_thinking_level),
+		subagentThinkingLevel: sanitizeThinkingLevel(row.subagent_thinking_level),
+		fast: parseBoolean(row.fast),
+		mainFast: parseBoolean(row.main_fast),
+		subagentFast: parseBoolean(row.subagent_fast),
 		builtinTools: row.builtin_tools,
 		builtinToolNames: sanitizeBuiltinToolNames(parseStringArray(row.builtin_tool_names_json)),
 		autoContextFiles: row.auto_context_files !== 0,
@@ -468,6 +545,20 @@ function sanitizePiPackages(value: readonly string[]): string[] {
 
 function sanitizeThinkingLevel(value: unknown): PiboThinkingLevel | undefined {
 	return typeof value === "string" && isPiboThinkingLevel(value) ? value : undefined;
+}
+
+function sanitizeBoolean(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function serializeBoolean(value: boolean | undefined): 0 | 1 | null {
+	if (value === undefined) return null;
+	return value ? 1 : 0;
+}
+
+function parseBoolean(value: 0 | 1 | null): boolean | undefined {
+	if (value === null) return undefined;
+	return value === 1;
 }
 
 function sanitizeBuiltinToolNames(value: readonly string[] | undefined): string[] {

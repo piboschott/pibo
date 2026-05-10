@@ -14,6 +14,7 @@ import {
 	ChevronRight,
 	ChevronsDown,
 	ChevronsUp,
+	Copy,
 	CopyPlus,
 	Edit3,
 	EyeOff,
@@ -41,9 +42,9 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getSessionPage, getTrace, getTraceSummary, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchRoom, patchSession, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput } from "./api";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, installUserSkill, listUserSkills, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput, type UserSettings } from "./api";
 import { THINKING_LEVELS } from "./types";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
@@ -57,6 +58,7 @@ import { BasePromptView } from "./context/BasePromptView";
 import { CompactionPromptView } from "./context/CompactionPromptView";
 import { PiboToolsView } from "./context/PiboToolsView";
 import { McpToolsView } from "./context/McpToolsView";
+import { CronArea } from "./CronArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
 import {
@@ -73,13 +75,15 @@ import {
 	traceSummaryQueriesForSession,
 } from "./cache";
 
-type Area = "sessions" | "agents" | "context" | "settings";
+type Area = "sessions" | "projects" | "cron" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
 type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
+	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
 	| { area: "agents" }
+	| { area: "cron" }
 	| { area: "context" }
 	| { area: "settings"; panel?: SettingsPanel };
 
@@ -169,6 +173,7 @@ function mergeNavigationIntoBootstrap(
 		room: navigation.room,
 		selectedRoomId: navigation.selectedRoomId,
 		selectedPiboSessionId: navigation.selectedPiboSessionId,
+		latestRoomStreamId: navigation.latestRoomStreamId,
 		rooms: mergeNavigationRooms(current.rooms, navigation.rooms, navigation.selectedRoomId, clearedUnreadCount),
 		sessions: mergeNavigationSessions(navigation.sessions, readSessionIds, previousUnreadBySessionId),
 	};
@@ -295,8 +300,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const queryClient = useQueryClient();
 	const area = route.area;
 	const routeRoomId = route.area === "sessions" ? route.roomId : undefined;
-	const routePiboSessionId = route.area === "sessions" ? route.piboSessionId : undefined;
-	const routeSessionViewId = route.area === "sessions" ? route.sessionViewId : undefined;
+	const routeProjectId = route.area === "projects" ? route.projectId : undefined;
+	const routePiboSessionId = route.area === "sessions" || route.area === "projects" ? route.piboSessionId : undefined;
+	const routeSessionViewId = route.area === "sessions" || route.area === "projects" ? route.sessionViewId : undefined;
 	const settingsPanel: SettingsPanel = route.area === "settings" ? route.panel ?? "general" : "general";
 	const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
 	const [selectedPiboSessionId, setSelectedPiboSessionId] = useState<string | null>(null);
@@ -312,6 +318,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [composerText, setComposerText] = useState("");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
+	const creatingSessionRef = useRef(false);
 	const [loadingActiveSessions, setLoadingActiveSessions] = useState(false);
 	const [loadingArchivedSessions, setLoadingArchivedSessions] = useState(false);
 	const [visibleActiveSessionCount, setVisibleActiveSessionCount] = useState(SESSION_PAGE_SIZE);
@@ -412,7 +419,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, []);
 
 	useEffect(() => {
-		if (area !== "sessions") return;
+		if (area !== "sessions" && area !== "projects") return;
 		const next = routeSessionViewId ?? readStoredSessionView();
 		setSessionViewId((current) => (current === next ? current : next));
 	}, [area, routeSessionViewId]);
@@ -424,8 +431,29 @@ export function App({ route }: { route: ChatAppRoute }) {
 		(target: ChatAppRoute, replace = false, nextSessionViewId = sessionViewId, options: NavigationOptions = {}) => {
 			if (options.closeMobileSidebar !== false) setMobileSidebarOpen(false);
 			const sessionViewSearch = { view: nextSessionViewId };
+			if (target.area === "projects") {
+				if (target.projectId && target.piboSessionId) {
+					void navigate({
+						to: "/projects/$projectId/sessions/$piboSessionId",
+						params: { projectId: target.projectId, piboSessionId: target.piboSessionId },
+						search: sessionViewSearch,
+						replace,
+					});
+					return;
+				}
+				if (target.projectId) {
+					void navigate({ to: "/projects/$projectId", params: { projectId: target.projectId }, search: sessionViewSearch, replace });
+					return;
+				}
+				void navigate({ to: "/projects", search: sessionViewSearch, replace });
+				return;
+			}
 			if (target.area === "agents") {
 				void navigate({ to: "/agents", replace });
+				return;
+			}
+			if (target.area === "cron") {
+				void navigate({ to: "/cron", replace });
 				return;
 			}
 			if (target.area === "context") {
@@ -478,6 +506,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 				return;
 			}
 			navigateToRoute({ area: "sessions", ...(roomId ? { roomId } : {}), piboSessionId }, replace, sessionViewId, options);
+		},
+		[navigateToRoute, sessionViewId],
+	);
+
+	const navigateToSelectedProjectSession = useCallback(
+		(projectId: string | undefined, piboSessionId: string | undefined, replace = false, options: NavigationOptions = {}) => {
+			if (!piboSessionId) {
+				navigateToRoute({ area: "projects", ...(projectId ? { projectId } : {}) }, replace, sessionViewId, options);
+				return;
+			}
+			navigateToRoute({ area: "projects", ...(projectId ? { projectId } : {}), piboSessionId }, replace, sessionViewId, options);
 		},
 		[navigateToRoute, sessionViewId],
 	);
@@ -633,6 +672,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 			return;
 		}
 
+		if (creatingSessionRef.current) {
+			return;
+		}
+
 		if (
 			bootstrap &&
 			route.area === "sessions" &&
@@ -747,6 +790,39 @@ export function App({ route }: { route: ChatAppRoute }) {
 		setBootstrap((current) => current ? updater(current) : current);
 		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => current ? updater(current) : current);
 	}, [queryClient]);
+
+	const latestRoomStreamId = bootstrap?.latestRoomStreamId;
+
+	useEffect(() => {
+		if (area !== "sessions" || !activeRoomId) return;
+		const params = new URLSearchParams({ roomId: activeRoomId });
+		params.set("since", `${latestRoomStreamId ?? 0}:999999`);
+		const events = new EventSource(`/api/chat/events?${params.toString()}`);
+		let bootstrapTimer: ReturnType<typeof setTimeout> | undefined;
+		const scheduleFullBootstrapRefresh = () => {
+			if (bootstrapTimer) clearTimeout(bootstrapTimer);
+			bootstrapTimer = setTimeout(() => {
+				bootstrapTimer = undefined;
+				loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, activeRoomId, { force: true, selectSession: false })
+					.catch((caught) => setError(errorMessage(caught)));
+			}, 900);
+		};
+		events.addEventListener("pibo", (message) => {
+			const event = chatStreamEvent(message);
+			if (!event || event.type === "ready") return;
+			const targetPiboSessionId = event.piboSessionId;
+			const status = liveSessionStatusFromEvent(event);
+			if (targetPiboSessionId && status) {
+				const lastActivityAt = new Date().toISOString();
+				updateBootstrapCache((data) => updateSessionNodeInBootstrap(data, targetPiboSessionId, (node) => ({ ...node, status, lastActivityAt })));
+			}
+			if (eventShouldRefreshNavigation(event)) scheduleFullBootstrapRefresh();
+		});
+		return () => {
+			if (bootstrapTimer) clearTimeout(bootstrapTimer);
+			events.close();
+		};
+	}, [activeRoomId, area, latestRoomStreamId, loadBootstrap, selectedPiboSessionId, updateBootstrapCache]);
 
 	const restoreBootstrapSnapshot = useCallback((snapshot: BootstrapMutationSnapshot | undefined) => {
 		if (!snapshot) return;
@@ -895,35 +971,38 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, [bootstrap?.selectedRoomId, loadNavigation, navigateToSelectedSession, selectedRoomId]);
 
 	const selectRoom = useCallback(async (roomId: string, options: NavigationOptions = {}) => {
-		if (options.closeMobileSidebar !== false) setMobileSidebarOpen(false);
+		const navigationOptions = { ...options, closeMobileSidebar: false };
 		const storedPiboSessionId = readStoredSelection().sessionsByRoom?.[roomId];
 		setSelectedRoomId(roomId);
 		setSelectedPiboSessionId(storedPiboSessionId ?? null);
 		try {
 			const data = await loadNavigation(storedPiboSessionId, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
 		} catch (caught) {
 			if (!storedPiboSessionId) throw caught;
 			removeStoredRoomSelection(roomId);
 			setSelectedPiboSessionId(null);
 			const data = await loadNavigation(undefined, showArchivedRef.current, roomId);
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, options);
+			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
 		}
 	}, [loadNavigation, navigateToSelectedSession]);
 
 	const createSession = async (profile = newSessionProfile) => {
 		if (creatingSession || selectedRoomArchived) return;
+		creatingSessionRef.current = true;
 		setCreatingSession(true);
 		try {
 			const created = await createSessionMutation.mutateAsync({ profile, roomId: selectedRoomId ?? undefined });
 			setSelectedPiboSessionId(created.session.id);
 			setAutoRenameSessionId(created.session.id);
+			navigateToSelectedSession(selectedRoomId ?? bootstrap?.selectedRoomId ?? undefined, created.session.id, false, { closeMobileSidebar: false });
 			const data = await loadBootstrap(created.session.id, showArchivedRef.current, selectedRoomId ?? undefined, { force: true });
 			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, { closeMobileSidebar: false });
 			setError(null);
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : String(caught));
 		} finally {
+			creatingSessionRef.current = false;
 			setCreatingSession(false);
 		}
 	};
@@ -1191,6 +1270,18 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const selectSessionView = useCallback(
 		(nextViewId: ChatSessionViewId) => {
 			setSessionViewId(nextViewId);
+			if (area === "projects") {
+				navigateToRoute(
+					{
+						area: "projects",
+						...(routeProjectId ? { projectId: routeProjectId } : {}),
+						...(routePiboSessionId ? { piboSessionId: routePiboSessionId } : {}),
+					},
+					false,
+					nextViewId,
+				);
+				return;
+			}
 			if (area !== "sessions") return;
 			navigateToRoute(
 				{
@@ -1202,7 +1293,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				nextViewId,
 			);
 		},
-		[area, navigateToRoute, selectedPiboSessionId, selectedRoomId],
+		[area, navigateToRoute, routePiboSessionId, routeProjectId, selectedPiboSessionId, selectedRoomId],
 	);
 
 	const sessionGroups = useMemo(() => bootstrap ? splitSessionNodesByArchive(bootstrap.sessions, showArchived) : { active: [], archived: [] }, [bootstrap?.sessions, showArchived]);
@@ -1283,17 +1374,21 @@ export function App({ route }: { route: ChatAppRoute }) {
 						>
 							<Menu size={16} />
 						</button>
-						<img src="/apps/chat/assets/logo.png" alt="Logo" className="h-5 w-auto" />
+						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto" />
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
 					<nav className="flex gap-1 flex-wrap">
-					{(["sessions", "agents", "context", "settings"] as const).map((item) => (
+					{(["sessions", "projects", "cron", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
 							type="button"
 							onClick={() => {
 								if (item === "sessions") {
 									navigateToSelectedSession(selectedRoomId ?? bootstrap.selectedRoomId, selectedPiboSessionId ?? bootstrap.selectedPiboSessionId);
+									return;
+								}
+								if (item === "projects") {
+									navigateToRoute({ area: "projects" });
 									return;
 								}
 								navigateToRoute({ area: item });
@@ -1322,14 +1417,16 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 			<div
 				className={`min-h-0 ${
-					area === "agents" ? "h-full overflow-hidden" : `grid ${
-						area === "sessions" && showRawEvents
+					(area === "agents" || area === "cron") ? "h-full overflow-hidden" : `grid ${
+						(area === "sessions" || area === "projects") && showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-1"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-1"
 					}`
 				}`}
 			>
-				{area === "agents" ? (
+				{area === "cron" ? (
+					<CronArea bootstrap={bootstrap} mobileSidebarOpen={mobileSidebarOpen} onCloseMobileSidebar={() => setMobileSidebarOpen(false)} />
+				) : area === "agents" ? (
 					<AgentsView
 						agents={bootstrap.agents}
 						initialCustomAgents={bootstrap.customAgents}
@@ -1341,6 +1438,41 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onEditMcpServer={openMcpToolsEditor}
 						onAgentsChanged={() => void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { selectSession: false })}
 						creatingSession={creatingSession || selectedRoomArchived}
+					/>
+				) : area === "projects" ? (
+					<ProjectsArea
+						baseBootstrap={bootstrap}
+						routeProjectId={routeProjectId}
+						routePiboSessionId={routePiboSessionId}
+						sessionViewId={sessionViewId}
+						sessionViews={sessionViews}
+						currentSessionView={currentSessionView}
+						showRawEvents={showRawEvents}
+						showThinking={showThinking}
+						expandThinking={expandThinking}
+						commands={slashCommands}
+						skills={skills}
+						mobileSidebarOpen={mobileSidebarOpen}
+						onCloseMobileSidebar={() => setMobileSidebarOpen(false)}
+						onNavigate={navigateToSelectedProjectSession}
+						onSelectSessionView={selectSessionView}
+						onToggleRawEvents={() => {
+							const next = !showRawEvents;
+							setShowRawEvents(next);
+							localStorage.setItem("pibo.chat.showRawEvents", String(next));
+						}}
+						onToggleThinking={() => {
+							const next = !showThinking;
+							setShowThinking(next);
+							localStorage.setItem("pibo.chat.showThinking", String(next));
+						}}
+						onToggleExpandThinking={() => {
+							const next = !expandThinking;
+							setExpandThinking(next);
+							localStorage.setItem("pibo.chat.expandThinking", String(next));
+						}}
+						onThinkingLevelChange={(level) => void postAction(routePiboSessionId ?? "", "thinking", { level })}
+						onError={setError}
 					/>
 				) : (
 				<>
@@ -1725,6 +1857,387 @@ export function App({ route }: { route: ChatAppRoute }) {
 	);
 }
 
+function ProjectsArea({
+	baseBootstrap,
+	routeProjectId,
+	routePiboSessionId,
+	sessionViewId,
+	sessionViews,
+	currentSessionView,
+	showRawEvents,
+	showThinking,
+	expandThinking,
+	commands,
+	skills,
+	onNavigate,
+	onSelectSessionView,
+	onToggleRawEvents,
+	onToggleThinking,
+	onToggleExpandThinking,
+	onThinkingLevelChange,
+	mobileSidebarOpen,
+	onCloseMobileSidebar,
+	onError,
+}: {
+	baseBootstrap: BootstrapData;
+	routeProjectId?: string;
+	routePiboSessionId?: string;
+	sessionViewId: ChatSessionViewId;
+	sessionViews: ReturnType<typeof listChatSessionViews>;
+	currentSessionView: ReturnType<typeof getChatSessionView>;
+	showRawEvents: boolean;
+	showThinking: boolean;
+	expandThinking: boolean;
+	commands: SlashCommand[];
+	skills: Array<{ name: string; description?: string; path?: string }>;
+	onNavigate: (projectId: string | undefined, piboSessionId: string | undefined, replace?: boolean, options?: NavigationOptions) => void;
+	onSelectSessionView: (viewId: ChatSessionViewId) => void;
+	onToggleRawEvents: () => void;
+	onToggleThinking: () => void;
+	onToggleExpandThinking: () => void;
+	onThinkingLevelChange: (level: ThinkingLevel) => void;
+	mobileSidebarOpen: boolean;
+	onCloseMobileSidebar: () => void;
+	onError: (message: string | null) => void;
+}) {
+	const [data, setData] = useState<ProjectsBootstrapData | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [showArchivedProjects, setShowArchivedProjects] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedProjects") === "true");
+	const [showArchivedSessions, setShowArchivedSessions] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedSessions") === "true");
+	const [creatingSession, setCreatingSession] = useState(false);
+	const [autoRenameSessionId, setAutoRenameSessionId] = useState<string | null>(null);
+	const [composerText, setComposerText] = useState(() => routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
+	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
+
+	const load = useCallback(async (input: { projectId?: string; piboSessionId?: string } = {}) => {
+		setLoading(true);
+		try {
+			const next = await getProjectsBootstrap({
+				projectId: input.projectId ?? routeProjectId,
+				piboSessionId: input.piboSessionId ?? routePiboSessionId,
+				includeArchived: showArchivedProjects || showArchivedSessions,
+			});
+			setData(next);
+			if (!routeProjectId || next.selectedProjectId !== routeProjectId || (next.selectedPiboSessionId && next.selectedPiboSessionId !== routePiboSessionId)) {
+				onNavigate(next.selectedProjectId, next.selectedPiboSessionId, true, { closeMobileSidebar: false });
+			}
+			onError(null);
+			return next;
+		} catch (caught) {
+			onError(errorMessage(caught));
+			throw caught;
+		} finally {
+			setLoading(false);
+		}
+	}, [onError, onNavigate, routePiboSessionId, routeProjectId, showArchivedProjects, showArchivedSessions]);
+
+	useEffect(() => {
+		void load();
+	}, [load]);
+
+	useEffect(() => {
+		setComposerText(routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
+	}, [routePiboSessionId]);
+
+	const selectedProject = data?.project;
+	const selectedPiboSessionId = data?.selectedPiboSessionId ?? null;
+	const selectedSessionNode = selectedPiboSessionId && data ? findSessionNode(data.sessions, selectedPiboSessionId) : undefined;
+	const selectedSessionProfile = selectedSessionNode?.profile ?? defaultProfileFromBootstrap(baseBootstrap);
+	const activeProjects = data?.projects.filter((project) => !project.archivedAt) ?? [];
+	const archivedProjects = data?.projects.filter((project) => project.archivedAt) ?? [];
+	const sessionGroups = useMemo(() => data ? splitSessionNodesByArchive(data.sessions, showArchivedSessions) : { active: [], archived: [] }, [data, showArchivedSessions]);
+	const selectedSessionPathIds = useMemo(() => selectedPiboSessionId && data ? new Set(findSessionPath(data.sessions, selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS, [data, selectedPiboSessionId]);
+	const traceBootstrap = useMemo(() => ({
+		...baseBootstrap,
+		...(data?.session ? { session: data.session } : {}),
+		agents: data?.agents ?? baseBootstrap.agents,
+		customAgents: data?.customAgents ?? baseBootstrap.customAgents,
+		modelDefaults: data?.modelDefaults ?? baseBootstrap.modelDefaults,
+		modelCatalog: data?.modelCatalog ?? baseBootstrap.modelCatalog,
+		agentCatalog: data?.agentCatalog ?? baseBootstrap.agentCatalog,
+		capabilities: data?.capabilities ?? baseBootstrap.capabilities,
+		sessions: data?.sessions ?? [],
+	}) as BootstrapData, [baseBootstrap, data]);
+
+	const createProject = async () => {
+		const name = window.prompt("Project name");
+		if (!name) return;
+		const projectFolder = window.prompt("Project folder path (absolute path, e.g. ~/code/my-project or /home/me/code/my-project)");
+		if (!projectFolder) return;
+		const description = window.prompt("Description (optional)") ?? undefined;
+		try {
+			const { project } = await postProject({ name, projectFolder, createFolder: true, ...(description ? { description } : {}) });
+			await load({ projectId: project.id });
+			onNavigate(project.id, undefined);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const createProjectSession = async () => {
+		if (!selectedProject) return;
+		setCreatingSession(true);
+		try {
+			const created = await postProjectSession(selectedProject.id, { profile: selectedSessionProfile, workflowId: "simple-chat" });
+			setAutoRenameSessionId(created.session.id);
+			onNavigate(selectedProject.id, created.session.id, false, { closeMobileSidebar: false });
+			await load({ projectId: selectedProject.id, piboSessionId: created.session.id });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		} finally {
+			setCreatingSession(false);
+		}
+	};
+
+	const renameSession = async (piboSessionId: string, title: string | null) => {
+		try {
+			await patchProjectSession(piboSessionId, { title });
+			await load({ projectId: selectedProject?.id, piboSessionId });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const renameProject = async (project: PiboProject, name: string) => {
+		try {
+			await patchProject(project.id, { name });
+			await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId ?? undefined });
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const setProjectArchived = async (project: PiboProject, archived: boolean) => {
+		try {
+			await patchProject(project.id, { archived });
+			const next = await load({ projectId: archived ? undefined : project.id });
+			if (archived && selectedProject?.id === project.id) onNavigate(next.selectedProjectId, next.selectedPiboSessionId);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const deleteArchivedProject = async (project: PiboProject) => {
+		const confirmName = window.prompt(`Type the project name to permanently delete "${project.name}".`);
+		if (confirmName === null) return;
+		const deleteFiles = window.confirm(`Also delete the real project folder?\n\n${project.projectFolder}`);
+		try {
+			await deleteProject(project.id, { confirmName, deleteFiles });
+			const next = await load({ projectId: selectedProject?.id === project.id ? undefined : selectedProject?.id });
+			if (selectedProject?.id === project.id) onNavigate(next.selectedProjectId, next.selectedPiboSessionId);
+		} catch (caught) {
+			onError(errorMessage(caught));
+		}
+	};
+
+	const runCommand = async (text: string) => {
+		if (!selectedPiboSessionId) return false;
+		const commandText = text.trim().split(/\s+/)[0];
+		const command = commands.find((candidate) => candidate.slash === commandText);
+		if (!command) return false;
+		await postAction(selectedPiboSessionId, command.action);
+		await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId });
+		return true;
+	};
+
+	if (loading && !data) {
+		return <main className="min-h-0 grid place-items-center text-slate-400">Loading Projects...</main>;
+	}
+
+	return (
+		<>
+			<div
+				className={`fixed inset-0 z-30 bg-black/60 min-[981px]:hidden transition-opacity duration-200 ${
+					mobileSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+				}`}
+				onClick={onCloseMobileSidebar}
+			/>
+			<aside
+				className={`min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800 max-[980px]:fixed max-[980px]:left-0 max-[980px]:top-0 max-[980px]:bottom-0 max-[980px]:z-40 max-[980px]:w-[280px] max-[980px]:transition-transform max-[980px]:duration-200 ${
+					mobileSidebarOpen ? "max-[980px]:translate-x-0" : "max-[980px]:-translate-x-full"
+				}`}
+			>
+				<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider max-[980px]:h-auto max-[980px]:py-2">
+					<span>projects</span>
+					<div className="flex items-center gap-1">
+						<button type="button" onClick={() => void load()} title="Refresh" aria-label="Refresh" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><RefreshCw size={13} /></button>
+						<button type="button" onClick={onCloseMobileSidebar} title="Close sidebar" aria-label="Close sidebar" className="min-[981px]:hidden p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
+					</div>
+				</div>
+				<div className="p-2 space-y-3">
+					<div>
+						<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Personal Chat</div>
+						<ProjectRow project={data!.personalProject} selected={selectedProject?.id === data!.personalProject.id} onSelect={() => onNavigate(data!.personalProject.id, undefined)} />
+					</div>
+					<div>
+						<div className="flex items-center justify-between gap-2 px-1 pb-1">
+							<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Projects</div>
+							<div className="flex items-center gap-1">
+								<button type="button" onClick={() => void createProject()} title="New Project" aria-label="New Project" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Plus size={14} /></button>
+								<button type="button" onClick={() => { const next = !showArchivedProjects; setShowArchivedProjects(next); localStorage.setItem("pibo.chat.projects.showArchivedProjects", String(next)); }} title="Archived Projects" aria-label="Archived Projects" className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedProjects ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedProjects ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
+							</div>
+						</div>
+						{activeProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, true)} />)}
+						{activeProjects.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No projects</div> : null}
+						{showArchivedProjects ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Projects</div>{archivedProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, false)} onDelete={() => void deleteArchivedProject(project)} archived />)}</div> : null}
+					</div>
+					<div>
+						<div className="flex items-center justify-between gap-2 px-1 pb-1">
+							<div>
+								<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Project Sessions</div>
+								<div className="text-[10px] text-slate-500">Workflow: simple-chat</div>
+							</div>
+							<div className="flex items-center gap-1">
+								<button type="button" onClick={() => void createProjectSession()} disabled={creatingSession || !selectedProject} title="New Project Session" aria-label="New Project Session" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"><Plus size={14} /></button>
+								<button type="button" onClick={() => { const next = !showArchivedSessions; setShowArchivedSessions(next); localStorage.setItem("pibo.chat.projects.showArchivedSessions", String(next)); }} title={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} aria-label={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedSessions ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedSessions ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
+							</div>
+						</div>
+						{sessionGroups.active.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} loadingPiboSessionId={null} autoRename={autoRenameSessionId === session.piboSessionId} onAutoRenameConsumed={() => setAutoRenameSessionId(null)} />)}
+						{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active project sessions</div> : null}
+						{showArchivedSessions ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Project Sessions</div>{sessionGroups.archived.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} loadingPiboSessionId={null} />)}{sessionGroups.archived.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived project sessions</div> : null}</div> : null}
+					</div>
+				</div>
+			</aside>
+			<SessionTracePane
+				bootstrap={traceBootstrap}
+				selectedPiboSessionId={selectedPiboSessionId}
+				selectedRoomId={null}
+				selectedRoomArchived={Boolean(selectedProject?.archivedAt)}
+				selectedSessionProfile={selectedSessionProfile}
+				selectedSessionActiveModel={resolveSessionActiveModelLabel(traceBootstrap, selectedSessionNode ?? { profile: selectedSessionProfile })}
+				selectedSessionStatus={selectedSessionNode?.status}
+				sessionViewId={sessionViewId}
+				sessionViews={sessionViews}
+				currentSessionView={currentSessionView}
+				creatingSession={creatingSession}
+				showRawEvents={showRawEvents}
+				showThinking={showThinking}
+				expandThinking={expandThinking}
+				commands={commands}
+				skills={skills}
+				composerText={composerText}
+				composerFocusSignal={composerFocusSignal}
+				onComposerTextChange={(next) => setComposerText((current) => typeof next === "function" ? next(current) : next)}
+				onToggleRawEvents={onToggleRawEvents}
+				onToggleThinking={onToggleThinking}
+				onToggleExpandThinking={onToggleExpandThinking}
+				onSessionAgentProfileChange={async (profile) => { if (selectedPiboSessionId) await patchSession(selectedPiboSessionId, { profile }); }}
+				onFork={() => undefined}
+				onOpenSession={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)}
+				onSelectSessionView={onSelectSessionView}
+				onCommand={runCommand}
+				onThinkingLevelChange={onThinkingLevelChange}
+				onRefreshTrace={async () => undefined}
+				onRefreshBootstrap={async () => { await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId ?? undefined }); }}
+				onSend={async (text) => {
+					if (!selectedPiboSessionId) return;
+					await postProjectMessage(selectedPiboSessionId, text, createClientTxnId());
+					await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId });
+				}}
+				onError={onError}
+			/>
+		</>
+	);
+}
+
+function ProjectRow({ project, selected, archived, onSelect, onRename, onArchive, onDelete }: { project: PiboProject; selected: boolean; archived?: boolean; onSelect: () => void; onRename?: (name: string) => void; onArchive?: () => void; onDelete?: () => void }) {
+	const personal = project.metadata?.personal === true;
+	const [editing, setEditing] = useState(false);
+	const [draftName, setDraftName] = useState(project.name);
+	const [menuOpen, setMenuOpen] = useState(false);
+	const inputRef = useRef<HTMLInputElement>(null);
+	const menuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!editing) setDraftName(project.name);
+	}, [editing, project.name]);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const handle = (event: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+		};
+		document.addEventListener("mousedown", handle);
+		return () => document.removeEventListener("mousedown", handle);
+	}, [menuOpen]);
+
+	useLayoutEffect(() => {
+		if (!editing) return;
+		inputRef.current?.focus();
+		inputRef.current?.select();
+	}, [editing]);
+
+	const submitRename = () => {
+		const name = draftName.trim();
+		if (name && name !== project.name) onRename?.(name);
+		setEditing(false);
+	};
+
+	return (
+		<div className={`group flex items-center gap-2 rounded-sm border px-2 py-2 text-sm ${
+			personal
+				? selected
+					? "border-[#0bda57] bg-[#0bda57]/10 text-green-100"
+					: "border-[#0bda57]/50 bg-[#0bda57]/5 text-slate-300 hover:border-[#0bda57]"
+				: selected
+					? "border-[#11a4d4] bg-[#11a4d4]/10 text-sky-100"
+					: "border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-900/40"
+		}`}>
+			<span className={`h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm ${personal ? "bg-[#0bda57]/15 text-[#0bda57]" : archived ? "bg-[#f59e0b]/15 text-[#f59e0b]" : "bg-[#151f24] text-slate-500"}`}>
+				{personal ? <Lock size={13} /> : archived ? <Archive size={13} /> : <FolderPlus size={13} />}
+			</span>
+			{editing ? (
+				<form
+					className="min-w-0 flex-1 grid grid-cols-[1fr_auto_auto] gap-1"
+					onSubmit={(event) => {
+						event.preventDefault();
+						submitRename();
+					}}
+				>
+					<input
+						ref={inputRef}
+						value={draftName}
+						onChange={(event) => setDraftName(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Escape") {
+								event.preventDefault();
+								setEditing(false);
+								setDraftName(project.name);
+							}
+						}}
+						className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4]"
+					/>
+					<button type="submit" title="Save Project Name" aria-label="Save Project Name" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Check size={13} /></button>
+					<button type="button" onClick={() => { setEditing(false); setDraftName(project.name); }} title="Cancel Rename" aria-label="Cancel Rename" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
+				</form>
+			) : (
+				<button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+					<span className="block truncate font-medium">{project.name}</span>
+					<span className="block truncate text-[11px] text-slate-500">{personal ? "locked personal project chat" : project.projectFolder}</span>
+				</button>
+			)}
+			{personal ? (
+				<span title="Personal Chat is locked" aria-label="Personal Chat is locked" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-[#0bda57]/50 rounded-sm text-[#0bda57]">
+					<Lock size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+				</span>
+			) : editing ? null : (
+				<div className="relative opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100" ref={menuRef}>
+					<button type="button" onClick={() => setMenuOpen((value) => !value)} title="Project actions" aria-label="Project actions" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
+						<MoreVertical size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
+					</button>
+					{menuOpen ? (
+						<div className="absolute right-0 top-full z-50 mt-1 w-48 bg-[#1a262b] border border-slate-700 rounded-sm shadow-lg py-1">
+							{onRename ? <button type="button" onClick={() => { setMenuOpen(false); setEditing(true); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"><Edit3 size={16} /> Rename Project</button> : null}
+							{onArchive ? <button type="button" onClick={() => { setMenuOpen(false); onArchive(); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2">{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} {archived ? "Restore Project" : "Archive Project"}</button> : null}
+							{onDelete ? <button type="button" onClick={() => { setMenuOpen(false); onDelete(); }} className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button> : null}
+						</div>
+					) : null}
+				</div>
+			)}
+		</div>
+	);
+}
+
 function AppErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
 	return (
 		<div className="border-b border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-100 flex items-start justify-between gap-3">
@@ -1811,7 +2324,7 @@ function SessionTracePane({
 	onCommand: (text: string) => Promise<boolean>;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onRefreshTrace: () => Promise<void>;
-	onRefreshBootstrap: () => Promise<BootstrapData>;
+	onRefreshBootstrap: () => Promise<unknown>;
 	onSend: (text: string) => Promise<void>;
 	onError: (message: string | null) => void;
 }) {
@@ -1823,6 +2336,8 @@ function SessionTracePane({
 	const [traceEventLimit, setTraceEventLimit] = useState(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
 	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
 	const [baseTraceView, setBaseTraceView] = useState<PiboSessionTraceView | null>(null);
+	const [copiedHeaderPiboSessionId, setCopiedHeaderPiboSessionId] = useState<string | null>(null);
+	const copyHeaderPiboSessionTimeout = useRef<number | undefined>(undefined);
 	const traceSummaryQueryKey = useMemo(
 		() => selectedPiboSessionId ? chatTraceSummaryQueryKey(selectedPiboSessionId) : null,
 		[selectedPiboSessionId],
@@ -2067,6 +2582,13 @@ function SessionTracePane({
 	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, tracePageQueryKey]);
 
 	const selectedTrace = null;
+	const selectedSessionNode = selectedPiboSessionId ? findSessionNode(bootstrap.sessions, selectedPiboSessionId) : undefined;
+	const traceThinkingState = resolveTraceThinkingState(currentTraceView);
+	const sessionActiveModelBadge = formatSessionModelBadge(
+		selectedSessionActiveModel,
+		bootstrap.runtimeStatus?.thinkingLevel ?? traceThinkingState.level ?? resolveSessionThinkingLevel(bootstrap, selectedSessionProfile, Boolean(selectedSessionNode?.parentId)),
+		bootstrap.runtimeStatus?.fastMode ?? traceThinkingState.fast ?? resolveSessionFastMode(bootstrap, selectedSessionProfile, Boolean(selectedSessionNode?.parentId)) ?? false,
+	);
 	const sessionBreadcrumbs = useMemo(
 		() => selectedPiboSessionId ? createSessionBreadcrumbs(bootstrap.sessions, selectedPiboSessionId) : [],
 		[bootstrap.sessions, selectedPiboSessionId],
@@ -2104,6 +2626,50 @@ function SessionTracePane({
 		return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
 	}, [currentTraceView]);
 
+	useEffect(() => {
+		return () => {
+			if (copyHeaderPiboSessionTimeout.current) window.clearTimeout(copyHeaderPiboSessionTimeout.current);
+		};
+	}, []);
+
+	const headerPiboSessionId = currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? "";
+	const headerPiboSessionCopied = copiedHeaderPiboSessionId === headerPiboSessionId;
+	const copyHeaderPiboSessionId = () => {
+		if (!headerPiboSessionId) return;
+		void copyTextToClipboard(headerPiboSessionId).catch(() => undefined);
+		setCopiedHeaderPiboSessionId(headerPiboSessionId);
+		if (copyHeaderPiboSessionTimeout.current) window.clearTimeout(copyHeaderPiboSessionTimeout.current);
+		copyHeaderPiboSessionTimeout.current = window.setTimeout(() => setCopiedHeaderPiboSessionId(null), 900);
+	};
+
+	const handleComposerSend = async (text: string) => {
+		if (!selectedPiboSessionId) return;
+		const now = new Date().toISOString();
+		const eventId = `optimistic:user-message:${createClientTxnId()}`;
+		const optimisticEvent: ChatWebStoredEvent = {
+			id: eventId,
+			piboSessionId: selectedPiboSessionId,
+			eventSequence: liveEventSeqRef.current++,
+			eventId,
+			type: "message_queued",
+			createdAt: now,
+			payload: {
+				type: "message_queued",
+				piboSessionId: selectedPiboSessionId,
+				eventId,
+				queuedMessages: 1,
+				text,
+				source: "user",
+			},
+		};
+		setLiveTraceOverlay((current) => ({
+			piboSessionId: selectedPiboSessionId,
+			events: [...(current?.piboSessionId === selectedPiboSessionId ? current.events : []), optimisticEvent],
+		}));
+		await onSend(text);
+		await tracePageQuery.refetch();
+	};
+
 	return (
 		<>
 			<main className="min-h-0 flex flex-col">
@@ -2113,8 +2679,18 @@ function SessionTracePane({
 							{currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
 						</h1>
 						<div className="font-mono text-[11px] text-slate-500 truncate">
-							{bootstrap.room?.name ?? selectedRoomId ?? "Room"} · {currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? ""}{" "}
-							{currentTraceView ? `· ${currentTraceView.piSessionId}` : ""}
+							{bootstrap.room?.name ?? selectedRoomId ?? "Room"} · {headerPiboSessionId ? (
+								<button
+									type="button"
+									onMouseDown={(event) => event.preventDefault()}
+									onClick={() => void copyHeaderPiboSessionId()}
+									title={headerPiboSessionCopied ? "Copied Pibo session ID" : "Copy Pibo session ID"}
+									aria-label={headerPiboSessionCopied ? "Copied Pibo session ID" : "Copy Pibo session ID"}
+									className={`rounded-sm px-1 font-mono underline-offset-2 transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-[#11a4d4] ${headerPiboSessionCopied ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/50" : "text-slate-400 hover:text-[#11a4d4] hover:underline"}`}
+								>
+									{headerPiboSessionId}
+								</button>
+							) : ""}
 						</div>
 					</div>
 					<div className="flex items-center gap-2">
@@ -2186,7 +2762,7 @@ function SessionTracePane({
 						showThinking,
 						expandThinking,
 						sessionAgentProfile: selectedSessionProfile,
-						sessionActiveModel: selectedSessionActiveModel,
+						sessionActiveModel: sessionActiveModelBadge,
 						selectedSessionStatus,
 						selectedSessionSignal,
 						sessionBreadcrumbs,
@@ -2213,7 +2789,7 @@ function SessionTracePane({
 					focusSignal={composerFocusSignal}
 					onValueChange={onComposerTextChange}
 					onCommand={onCommand}
-					onSend={onSend}
+					onSend={handleComposerSend}
 				/>
 			</main>
 
@@ -2557,7 +3133,10 @@ function dropReplacedOptimisticUserMessages(
 }
 
 function isOptimisticUserMessageNode(node: PiboTraceNode): boolean {
-	return node.type === "user.message" && (node.id.startsWith("optimistic:user-message:") || node.stableKey?.startsWith("optimistic:user-message:") === true);
+	if (node.type !== "user.message") return false;
+	return [node.id, node.stableKey, node.eventId]
+		.filter((value): value is string => typeof value === "string")
+		.some((value) => value.startsWith("optimistic:user-message:") || value.includes(":optimistic:user-message:"));
 }
 
 function trimLiveOverlayForBaseTrace(overlay: LiveTraceOverlay | null, baseTrace: PiboSessionTraceView): LiveTraceOverlay | null {
@@ -2907,6 +3486,10 @@ function RoomNode({
 	const [menuOpen, setMenuOpen] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
 
+	const copyRoomId = () => {
+		void copyTextToClipboard(room.id).catch(() => undefined);
+	};
+
 	useEffect(() => {
 		if (!menuOpen) return;
 		const handle = (e: MouseEvent) => {
@@ -3015,6 +3598,15 @@ function RoomNode({
 											<>
 												<button
 													type="button"
+													onClick={copyRoomId}
+													title="Copy Room Id"
+													aria-label="Copy Room Id"
+													className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													<Copy size={13} />
+												</button>
+												<button
+													type="button"
 													onClick={() => onArchive(room.id, false)}
 													title="Restore Room"
 													aria-label="Restore Room"
@@ -3034,6 +3626,15 @@ function RoomNode({
 											</>
 										) : (
 											<>
+												<button
+													type="button"
+													onClick={copyRoomId}
+													title="Copy Room Id"
+													aria-label="Copy Room Id"
+													className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+												>
+													<Copy size={13} />
+												</button>
 												<button
 													type="button"
 													onClick={() => setEditing(true)}
@@ -3071,6 +3672,13 @@ function RoomNode({
 													<>
 														<button
 															type="button"
+															onClick={() => { copyRoomId(); setMenuOpen(false); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+														>
+															<Copy size={16} /> Copy Room Id
+														</button>
+														<button
+															type="button"
 															onClick={() => { setMenuOpen(false); onArchive(room.id, false); }}
 															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
 														>
@@ -3086,6 +3694,13 @@ function RoomNode({
 													</>
 												) : (
 													<>
+														<button
+															type="button"
+															onClick={() => { copyRoomId(); setMenuOpen(false); }}
+															className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"
+														>
+															<Copy size={16} /> Copy Room Id
+														</button>
 														<button
 															type="button"
 															onClick={() => { setMenuOpen(false); setEditing(true); }}
@@ -3408,13 +4023,13 @@ function sessionNodeTitle(node: PiboWebSessionNode): string {
 
 function sessionNodeSignal(node: PiboWebSessionNode, now: number): { className: string; title: string } {
 	const base = "session-signal h-2 w-2 rounded-full";
-	if (node.status === "error") {
+	if (node.status === "error" && (node.unreadCount ?? 0) > 0) {
 		return { className: `${base} session-signal-error`, title: "Run failed" };
 	}
 	if (node.status === "running") {
 		return { className: `${base} session-signal-running`, title: "Runtime is working" };
 	}
-	if ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node, now)) {
+	if (node.status !== "error" && ((node.unreadCount ?? 0) > 0 || sessionWasRecentlyActive(node, now))) {
 		return { className: `${base} session-signal-unread`, title: "New completed assistant message" };
 	}
 	return { className: `${base} session-signal-idle`, title: "Idle" };
@@ -3502,6 +4117,66 @@ function resolveSessionActiveModel(
 	const profileModel = staticAgent ?? customAgent;
 	if (session.parentId) return profileModel?.subagentModel ?? bootstrap.modelDefaults?.subagent;
 	return profileModel?.mainModel ?? bootstrap.modelDefaults?.main;
+}
+
+function resolveSessionThinkingLevel(bootstrap: BootstrapData, profileName: string, isSubagent = false): ThinkingLevel | undefined {
+	const staticAgent = bootstrap.agents.find((agent) => agent.name === profileName);
+	const customAgent = bootstrap.customAgents.find((agent) => agent.profileName === profileName);
+	const profile = staticAgent ?? customAgent;
+	if (isSubagent) return profile?.subagentThinkingLevel ?? profile?.thinkingLevel ?? bootstrap.modelDefaults?.subagentThinking ?? bootstrap.modelDefaults?.thinking;
+	return profile?.mainThinkingLevel ?? profile?.thinkingLevel ?? bootstrap.modelDefaults?.mainThinking ?? bootstrap.modelDefaults?.thinking;
+}
+
+function resolveSessionFastMode(bootstrap: BootstrapData, profileName: string, isSubagent = false): boolean | undefined {
+	const staticAgent = bootstrap.agents.find((agent) => agent.name === profileName);
+	const customAgent = bootstrap.customAgents.find((agent) => agent.profileName === profileName);
+	const profile = staticAgent ?? customAgent;
+	if (isSubagent) return profile?.subagentFast ?? profile?.fast ?? bootstrap.modelDefaults?.subagentFast ?? bootstrap.modelDefaults?.fast;
+	return profile?.mainFast ?? profile?.fast ?? bootstrap.modelDefaults?.mainFast ?? bootstrap.modelDefaults?.fast;
+}
+
+function formatSessionModelBadge(modelLabel: string | undefined, thinkingLevel: ThinkingLevel | undefined, fast: boolean): string | undefined {
+	if (!modelLabel) return undefined;
+	return [modelLabel, thinkingLevel, fast ? "fast" : undefined].filter(Boolean).join(" ");
+}
+
+function resolveTraceThinkingState(traceView: PiboSessionTraceView | null): { level?: ThinkingLevel; fast?: boolean } {
+	let state: { level?: ThinkingLevel; fast?: boolean } = {};
+	if (!traceView) return state;
+	for (const node of flattenTraceNodes(traceView.nodes)) {
+		if (node.type !== "execution.command" || (node.title !== "thinking" && node.title !== "fast_mode")) continue;
+		const output = node.output && typeof node.output === "object" ? node.output as Record<string, unknown> : undefined;
+		const level = typeof output?.level === "string" && isThinkingLevel(output.level) ? output.level : undefined;
+		state = {
+			level: level ?? state.level,
+			fast: node.title === "fast_mode" ? output?.mode === "fast" : state.fast,
+		};
+	}
+	return state;
+}
+
+function flattenTraceNodes(nodes: readonly PiboTraceNode[]): PiboTraceNode[] {
+	return nodes.flatMap((node) => [node, ...flattenTraceNodes(node.children)]);
+}
+
+function isThinkingLevel(value: string): value is ThinkingLevel {
+	return THINKING_LEVELS.includes(value as ThinkingLevel);
+}
+
+function copyTextToClipboard(text: string): Promise<void> {
+	if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+	const textarea = document.createElement("textarea");
+	textarea.value = text;
+	textarea.style.position = "fixed";
+	textarea.style.opacity = "0";
+	document.body.appendChild(textarea);
+	textarea.select();
+	try {
+		document.execCommand("copy");
+		return Promise.resolve();
+	} finally {
+		document.body.removeChild(textarea);
+	}
 }
 
 function findSessionNode(nodes: PiboWebSessionNode[], piboSessionId: string): PiboWebSessionNode | undefined {
@@ -4077,6 +4752,11 @@ function AgentsView({
 				mainModel: draft.mainModel,
 				subagentModel: draft.subagentModel,
 				thinkingLevel: draft.thinkingLevel ?? null,
+				mainThinkingLevel: draft.mainThinkingLevel ?? null,
+				subagentThinkingLevel: draft.subagentThinkingLevel ?? null,
+				fast: draft.fast,
+				mainFast: draft.mainFast,
+				subagentFast: draft.subagentFast,
 				builtinTools: draft.builtinTools,
 				builtinToolNames: draft.builtinToolNames,
 				autoContextFiles: draft.autoContextFiles,
@@ -4291,32 +4971,31 @@ function AgentsView({
 								This plugin profile hard-pins <span className="font-mono">{formatModelProfile(draft.hardPinnedModel)}</span>. Main-agent and subagent defaults do not apply.
 							</div>
 						) : null}
-						<ModelSelector
-							title="Main Agent Model"
-							catalog={modelCatalog}
-							value={draft.mainModel}
-							allowUnset
+						<AgentRuntimeOptions
+							title="Main Agent"
+							modelTitle="Main Agent Model"
+							model={draft.mainModel}
+							thinking={draft.mainThinkingLevel}
+							fast={draft.mainFast ?? false}
+							modelCatalog={modelCatalog}
 							readOnly={readOnly}
-							hint="Unset to use the settings default."
-							emptyProviderLabel="Default"
-							onChange={(mainModel) => setDraft((current) => ({ ...current, mainModel }))}
+							modelHint="Unset to use the settings default."
+							onModelChange={(mainModel) => setDraft((current) => ({ ...current, mainModel }))}
+							onThinkingChange={(mainThinkingLevel) => setDraft((current) => ({ ...current, mainThinkingLevel }))}
+							onFastChange={(mainFast) => setDraft((current) => ({ ...current, mainFast }))}
 						/>
-						<ModelSelector
-							title="Subagent Model"
-							catalog={modelCatalog}
-							value={draft.subagentModel}
-							allowUnset
+						<AgentRuntimeOptions
+							title="Subagent"
+							modelTitle="Subagent Model"
+							model={draft.subagentModel}
+							thinking={draft.subagentThinkingLevel}
+							fast={draft.subagentFast ?? false}
+							modelCatalog={modelCatalog}
 							readOnly={readOnly}
-							hint="Unset to use the settings default."
-							emptyProviderLabel="Default"
-							onChange={(subagentModel) => setDraft((current) => ({ ...current, subagentModel }))}
-						/>
-						<ThinkingLevelSelector
-							title="Thinking Level"
-							value={draft.thinkingLevel}
-							readOnly={readOnly}
-							hint="Unset to use the settings default."
-							onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
+							modelHint="Unset to use the settings default."
+							onModelChange={(subagentModel) => setDraft((current) => ({ ...current, subagentModel }))}
+							onThinkingChange={(subagentThinkingLevel) => setDraft((current) => ({ ...current, subagentThinkingLevel }))}
+							onFastChange={(subagentFast) => setDraft((current) => ({ ...current, subagentFast }))}
 						/>
 						<InlineCheckboxToggle disabled={readOnly} checked={draft.autoContextFiles} title="Load AGENTS.md / CLAUDE.md" onToggle={() => setDraft((current) => ({ ...current, autoContextFiles: !current.autoContextFiles }))} />
 						<BuiltinToolsDesigner draft={draft} setDraft={setDraft} readOnly={readOnly} />
@@ -4461,6 +5140,11 @@ type AgentDraft = SaveCustomAgentInput & {
 	archivedAt?: string;
 	hardPinnedModel?: ModelProfile;
 	thinkingLevel?: ThinkingLevel;
+	mainThinkingLevel?: ThinkingLevel;
+	subagentThinkingLevel?: ThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 	brokenContextFiles?: string[];
 	source: "custom" | "profile";
 };
@@ -4478,6 +5162,11 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		mainModel: undefined,
 		subagentModel: undefined,
 		thinkingLevel: undefined,
+		mainThinkingLevel: undefined,
+		subagentThinkingLevel: undefined,
+		fast: false,
+		mainFast: false,
+		subagentFast: false,
 		builtinTools: "default",
 		builtinToolNames: [...DEFAULT_BUILTIN_TOOL_NAMES],
 		autoContextFiles: true,
@@ -4503,6 +5192,11 @@ function agentToDraft(agent: CustomAgent): AgentDraft {
 		mainModel: agent.mainModel,
 		subagentModel: agent.subagentModel,
 		thinkingLevel: agent.thinkingLevel,
+		mainThinkingLevel: agent.mainThinkingLevel,
+		subagentThinkingLevel: agent.subagentThinkingLevel,
+		fast: agent.fast ?? false,
+		mainFast: agent.mainFast ?? false,
+		subagentFast: agent.subagentFast ?? false,
 		builtinTools: agent.builtinTools,
 		builtinToolNames: normalizeBuiltinToolNames(agent.builtinToolNames, agent.builtinTools),
 		autoContextFiles: agent.autoContextFiles ?? true,
@@ -4527,6 +5221,11 @@ function profileToDraft(profile: BootstrapData["agents"][number], catalog?: Agen
 		mainModel: profile.mainModel ?? profile.model,
 		subagentModel: profile.subagentModel ?? profile.model,
 		thinkingLevel: profile.thinkingLevel,
+		mainThinkingLevel: profile.mainThinkingLevel ?? profile.thinkingLevel,
+		subagentThinkingLevel: profile.subagentThinkingLevel ?? profile.thinkingLevel,
+		fast: profile.fast ?? false,
+		mainFast: profile.mainFast ?? profile.fast ?? false,
+		subagentFast: profile.subagentFast ?? profile.fast ?? false,
 		builtinTools: profile.builtinTools ?? "default",
 		builtinToolNames: normalizeBuiltinToolNames(profile.builtinToolNames, profile.builtinTools),
 		autoContextFiles: profile.autoContextFiles ?? true,
@@ -5648,6 +6347,7 @@ function SettingsView({
 				General
 			</h1>
 			<DesignerPanel title="General">
+				<UserTimezoneSettings />
 				<InlineCheckboxToggle
 					checked={showThinking}
 					title="Show thinking blocks"
@@ -5675,6 +6375,124 @@ function SettingsView({
 			</DesignerPanel>
 		</div>
 	);
+}
+
+const FALLBACK_TIMEZONES = [
+	"UTC",
+	"Europe/Berlin",
+	"Europe/London",
+	"Europe/Paris",
+	"Europe/Madrid",
+	"Europe/Rome",
+	"Europe/Amsterdam",
+	"Europe/Vienna",
+	"Europe/Zurich",
+	"Europe/Warsaw",
+	"Europe/Istanbul",
+	"America/New_York",
+	"America/Chicago",
+	"America/Denver",
+	"America/Los_Angeles",
+	"America/Toronto",
+	"America/Sao_Paulo",
+	"America/Mexico_City",
+	"Asia/Dubai",
+	"Asia/Jerusalem",
+	"Asia/Kolkata",
+	"Asia/Bangkok",
+	"Asia/Singapore",
+	"Asia/Shanghai",
+	"Asia/Tokyo",
+	"Asia/Seoul",
+	"Australia/Sydney",
+	"Australia/Melbourne",
+	"Pacific/Auckland",
+] as const;
+
+function UserTimezoneSettings() {
+	const queryClient = useQueryClient();
+	const { data, isLoading } = useQuery({ queryKey: ["user-settings"], queryFn: getUserSettings });
+	const timezoneOptions = useMemo(() => buildTimezoneOptions(data?.timezone), [data?.timezone]);
+	const [draft, setDraft] = useState("UTC");
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (data?.timezone) setDraft(data.timezone);
+	}, [data?.timezone]);
+
+	const save = async (timezone = draft) => {
+		setSaving(true);
+		setError(null);
+		try {
+			const saved = await patchUserSettings({ timezone } satisfies UserSettings);
+			setDraft(saved.timezone);
+			queryClient.setQueryData(["user-settings"], saved);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="border-b border-slate-800 pb-4 mb-4">
+			<div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">User timezone</div>
+			<div className="max-w-xl">
+				<select
+					value={draft}
+					disabled={isLoading || saving}
+					onChange={(event) => {
+						const timezone = event.target.value;
+						setDraft(timezone);
+						void save(timezone);
+					}}
+					className="w-full min-w-0 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+				>
+					{timezoneOptions.map((option) => (
+						<option key={option.value} value={option.value}>{option.label}</option>
+					))}
+				</select>
+			</div>
+			<div className="mt-2 text-[11px] text-slate-500">Choose a city-based timezone. Changes are saved automatically and loaded into every runtime context together with the user ID and current Pibo Session ID.</div>
+			{saving ? <div className="mt-2 text-xs text-slate-400">Saving…</div> : null}
+			{error ? <div className="mt-2 text-xs text-red-300">{error}</div> : null}
+		</div>
+	);
+}
+
+function buildTimezoneOptions(currentTimezone: string | undefined): Array<{ value: string; label: string }> {
+	const intl = Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] };
+	const zones = new Set<string>(["UTC", ...(intl.supportedValuesOf?.("timeZone") ?? FALLBACK_TIMEZONES)]);
+	if (currentTimezone) zones.add(currentTimezone);
+	return [...zones]
+		.map((timezone) => ({ value: timezone, label: timezoneLabel(timezone), offset: timezoneOffsetMinutes(timezone) }))
+		.sort((a, b) => a.offset - b.offset || a.label.localeCompare(b.label))
+		.map(({ value, label }) => ({ value, label }));
+}
+
+function timezoneLabel(timezone: string): string {
+	const city = timezone === "UTC" ? "UTC" : timezone.split("/").pop()?.replaceAll("_", " ") ?? timezone;
+	const region = timezone.includes("/") ? timezone.split("/")[0].replaceAll("_", " ") : undefined;
+	const offset = timezoneOffsetLabel(timezone);
+	return `${city}${region ? ` (${region})` : ""} — ${offset}`;
+}
+
+function timezoneOffsetLabel(timezone: string): string {
+	try {
+		const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "shortOffset" }).formatToParts(new Date());
+		return parts.find((part) => part.type === "timeZoneName")?.value.replace("GMT", "UTC") ?? timezone;
+	} catch {
+		return timezone;
+	}
+}
+
+function timezoneOffsetMinutes(timezone: string): number {
+	const label = timezoneOffsetLabel(timezone);
+	const match = /^UTC(?:(?<sign>[+-])(?<hours>\d{1,2})(?::(?<minutes>\d{2}))?)?$/.exec(label);
+	if (!match?.groups?.sign) return 0;
+	const direction = match.groups.sign === "-" ? -1 : 1;
+	return direction * (Number(match.groups.hours) * 60 + Number(match.groups.minutes ?? 0));
 }
 
 function ModelDefaultsSettings({
@@ -5711,34 +6529,102 @@ function ModelDefaultsSettings({
 	return (
 		<div className="grid gap-3 border-t border-slate-800 pt-3">
 			<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Runtime Model Defaults</div>
-			<ModelSelector
-				title="Main Agent Default"
-				catalog={modelCatalog}
-				value={draft.main}
-				allowUnset
+			<AgentRuntimeOptions
+				title="Main Agent"
+				modelTitle="Main Agent Default"
+				model={draft.main}
+				thinking={draft.mainThinking}
+				fast={draft.mainFast ?? false}
+				modelCatalog={modelCatalog}
 				readOnly={saving}
-				hint="Unset to use provider fallback."
+				modelHint="Unset to use provider fallback."
 				configuredProvidersOnly
-				onChange={(main) => void save({ ...draft, main })}
+				onModelChange={(main) => void save({ ...draft, main })}
+				onThinkingChange={(mainThinking) => void save({ ...draft, mainThinking })}
+				onFastChange={(mainFast) => void save({ ...draft, mainFast })}
 			/>
-			<ModelSelector
-				title="Subagent Default"
-				catalog={modelCatalog}
-				value={draft.subagent}
-				allowUnset
+			<AgentRuntimeOptions
+				title="Subagent"
+				modelTitle="Subagent Default"
+				model={draft.subagent}
+				thinking={draft.subagentThinking}
+				fast={draft.subagentFast ?? false}
+				modelCatalog={modelCatalog}
 				readOnly={saving}
-				hint="Unset to use provider fallback."
+				modelHint="Unset to use provider fallback."
 				configuredProvidersOnly
-				onChange={(subagent) => void save({ ...draft, subagent })}
-			/>
-			<ThinkingLevelSelector
-				title="Default Thinking Level"
-				value={draft.thinking}
-				readOnly={saving}
-				hint="Unset to use the provider/runtime fallback."
-				onChange={(thinking) => void save({ ...draft, thinking })}
+				onModelChange={(subagent) => void save({ ...draft, subagent })}
+				onThinkingChange={(subagentThinking) => void save({ ...draft, subagentThinking })}
+				onFastChange={(subagentFast) => void save({ ...draft, subagentFast })}
 			/>
 			{error ? <div className="text-xs text-amber-100">{error}</div> : null}
+		</div>
+	);
+}
+
+function AgentRuntimeOptions({
+	title,
+	modelTitle,
+	model,
+	thinking,
+	fast,
+	modelCatalog,
+	readOnly,
+	modelHint,
+	configuredProvidersOnly = false,
+	onModelChange,
+	onThinkingChange,
+	onFastChange,
+}: {
+	title: string;
+	modelTitle: string;
+	model?: ModelProfile;
+	thinking?: ThinkingLevel;
+	fast?: boolean;
+	modelCatalog?: ModelCatalog;
+	readOnly: boolean;
+	modelHint?: string;
+	configuredProvidersOnly?: boolean;
+	onModelChange: (value: ModelProfile | undefined) => void;
+	onThinkingChange: (value: ThinkingLevel | undefined) => void;
+	onFastChange: (value: boolean) => void;
+}) {
+	return (
+		<div className="grid gap-2 border border-slate-800 rounded-sm p-3">
+			<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{title}</div>
+			<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(150px,190px)_auto] lg:items-start">
+				<ModelSelector
+					title={modelTitle}
+					catalog={modelCatalog}
+					value={model}
+					allowUnset
+					readOnly={readOnly}
+					hint={modelHint}
+					emptyProviderLabel="Default"
+					configuredProvidersOnly={configuredProvidersOnly}
+					onChange={onModelChange}
+				/>
+				<ThinkingLevelSelector
+					title="Thinking"
+					value={thinking}
+					readOnly={readOnly}
+					reserveHintSpace
+					onChange={onThinkingChange}
+				/>
+				<div className="grid gap-2 pb-1">
+					<div className="text-[11px] uppercase tracking-wider text-slate-500">Fast</div>
+					<div className="h-4" aria-hidden="true" />
+					<button
+						type="button"
+						disabled={readOnly}
+						onClick={() => onFastChange(!fast)}
+						className="inline-flex h-9 w-fit items-center gap-2 text-left text-sm text-slate-300 hover:text-slate-100 disabled:opacity-60"
+					>
+						<SelectionCheckbox checked={fast === true} disabled={readOnly} />
+						<span>{fast ? "Fast on" : "Fast off"}</span>
+					</button>
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -5748,12 +6634,14 @@ function ThinkingLevelSelector({
 	value,
 	readOnly,
 	hint,
+	reserveHintSpace = false,
 	onChange,
 }: {
 	title: string;
 	value?: ThinkingLevel;
 	readOnly: boolean;
 	hint?: string;
+	reserveHintSpace?: boolean;
 	onChange: (value: ThinkingLevel | undefined) => void;
 }) {
 	return (
@@ -5769,7 +6657,7 @@ function ThinkingLevelSelector({
 					Unset
 				</button>
 			</div>
-			{hint ? <div className="text-xs text-slate-500">{hint}</div> : null}
+			{hint ? <div className="text-xs text-slate-500">{hint}</div> : reserveHintSpace ? <div className="h-4" aria-hidden="true" /> : null}
 			<select
 				value={value ?? ""}
 				disabled={readOnly}
@@ -6690,40 +7578,73 @@ function traceNodeText(node: PiboTraceNode): string {
 	return typeof node.output === "string" ? node.output : typeof node.summary === "string" ? node.summary : "";
 }
 
+type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string };
+
+function latestIsoTimestamp(...values: Array<string | undefined>): string | undefined {
+	let latest: string | undefined;
+	let latestMs = -Infinity;
+	for (const value of values) {
+		if (!value) continue;
+		const ms = Date.parse(value);
+		if (!Number.isFinite(ms) || ms < latestMs) continue;
+		latest = value;
+		latestMs = ms;
+	}
+	return latest;
+}
+
 function applySignalSnapshotToBootstrap(bootstrap: BootstrapData, snapshot: PiboSignalSnapshot): BootstrapData {
-	return updateBootstrapSessionStatuses(bootstrap, (piboSessionId) => signalLegacyStatus(snapshot.sessions[piboSessionId]));
+	return updateBootstrapSessionStatuses(bootstrap, (piboSessionId) => signalSessionUpdate(snapshot.sessions[piboSessionId]));
 }
 
 function applySignalPatchToBootstrap(bootstrap: BootstrapData, patch: PiboSignalPatch): BootstrapData {
-	const statuses = new Map(patch.sessionSnapshots.map((snapshot) => [snapshot.piboSessionId, signalLegacyStatus(snapshot)]));
-	return updateBootstrapSessionStatuses(bootstrap, (piboSessionId) => statuses.get(piboSessionId));
+	const updates = new Map(patch.sessionSnapshots.map((snapshot) => [snapshot.piboSessionId, signalSessionUpdate(snapshot)]));
+	return updateBootstrapSessionStatuses(bootstrap, (piboSessionId) => updates.get(piboSessionId));
 }
 
 function updateBootstrapSessionStatuses(
 	bootstrap: BootstrapData,
-	statusFor: (piboSessionId: string) => PiboWebSessionNode["status"] | undefined,
+	updateFor: (piboSessionId: string) => SignalSessionUpdate | undefined,
 ): BootstrapData {
 	return {
 		...bootstrap,
-		sessions: bootstrap.sessions.map((node) => updateSignalStatusInSessionNode(node, statusFor)),
+		sessions: bootstrap.sessions.map((node) => updateSignalStatusInSessionNode(node, updateFor)),
 	};
 }
 
 function updateSignalStatusInSessionNode(
 	node: PiboWebSessionNode,
-	statusFor: (piboSessionId: string) => PiboWebSessionNode["status"] | undefined,
+	updateFor: (piboSessionId: string) => SignalSessionUpdate | undefined,
 ): PiboWebSessionNode {
-	const status = statusFor(node.piboSessionId);
+	const update = updateFor(node.piboSessionId);
+	const status = update?.status;
+	const statusChanged = Boolean(status && status !== node.status);
+	const lastActivityAt = statusChanged
+		? latestIsoTimestamp(node.lastActivityAt, update?.updatedAt, new Date().toISOString())
+		: latestIsoTimestamp(node.lastActivityAt, update?.updatedAt);
 	return {
 		...node,
 		status: status ?? node.status,
-		lastActivityAt: status && status !== node.status ? new Date().toISOString() : node.lastActivityAt,
-		children: node.children.map((child) => updateSignalStatusInSessionNode(child, statusFor)),
-		derivedSessions: node.derivedSessions.map((derived) => ({
-			...derived,
-			status: statusFor(derived.piboSessionId) ?? derived.status,
-		})),
+		lastActivityAt,
+		children: node.children.map((child) => updateSignalStatusInSessionNode(child, updateFor)),
+		derivedSessions: node.derivedSessions.map((derived) => {
+			const derivedUpdate = updateFor(derived.piboSessionId);
+			const derivedStatusChanged = Boolean(derivedUpdate?.status && derivedUpdate.status !== derived.status);
+			return {
+				...derived,
+				status: derivedUpdate?.status ?? derived.status,
+				lastActivityAt: derivedStatusChanged
+					? latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt, new Date().toISOString())
+					: latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt),
+			};
+		}),
 	};
+}
+
+function signalSessionUpdate(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): SignalSessionUpdate | undefined {
+	const status = signalLegacyStatus(snapshot);
+	if (!snapshot && !status) return undefined;
+	return { status, updatedAt: snapshot?.updatedAt };
 }
 
 function signalLegacyStatus(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): PiboWebSessionNode["status"] | undefined {
@@ -6731,6 +7652,24 @@ function signalLegacyStatus(snapshot: PiboSignalSnapshot["sessions"][string] | u
 	if (snapshot.hasError || snapshot.hasErrorDescendant || snapshot.aggregateStatus === "error") return "error";
 	if (snapshot.isTreeActive) return "running";
 	return "idle";
+}
+
+function liveSessionStatusFromEvent(event: ChatStreamEvent): PiboWebSessionNode["status"] | undefined {
+	if (event.type === "RUN_ERROR") return "error";
+	if (event.type === "RUN_FINISHED" || event.type === "TEXT_MESSAGE_END") return "idle";
+	if (
+		event.type === "RUN_STARTED" ||
+		event.type === "TEXT_MESSAGE_START" ||
+		event.type === "TEXT_MESSAGE_CONTENT" ||
+		event.type === "REASONING_MESSAGE_START" ||
+		event.type === "REASONING_MESSAGE_CONTENT" ||
+		event.type === "TOOL_CALL_START" ||
+		event.type === "TOOL_CALL_ARGS" ||
+		event.type === "AGENT_DELEGATION"
+	) {
+		return "running";
+	}
+	return undefined;
 }
 
 function applySignalPatch(current: PiboSignalSnapshot | null, patch: PiboSignalPatch): PiboSignalSnapshot | null {

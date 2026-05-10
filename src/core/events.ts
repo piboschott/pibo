@@ -124,6 +124,8 @@ export type PiboSessionStatus = {
 	enabledTools: string[];
 	cwd: string;
 	disposed: boolean;
+	thinkingLevel?: PiboThinkingLevel;
+	fastMode?: boolean;
 };
 
 export type PiboPiSessionSnapshot = {

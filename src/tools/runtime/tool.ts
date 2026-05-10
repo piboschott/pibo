@@ -31,14 +31,14 @@ export type PiboRuntimeToolController = {
 export function createRuntimeToolProfile(): ToolProfile {
 	return {
 		name: "runtime",
-		description: "Start and use persistent Python/Node runtime sessions with structured exec, inspect, vars, interrupt, close, and list actions.",
+		description: "Run Python/Node code in persistent runtime sessions; exec runs normal scripts.",
 		yieldable: true,
 		builtInPiboTool: "runtime",
 	};
 }
 
 type RuntimeToolParams = {
-	action: "start" | "exec" | "inspect" | "vars" | "interrupt" | "close" | "list";
+	action: "exec" | "inspect" | "vars" | "interrupt" | "list";
 	runtime?: "python" | "node";
 	name?: string;
 	target?: unknown;
@@ -52,7 +52,6 @@ type RuntimeToolParams = {
 	maxBytes?: number;
 	includePrivate?: boolean;
 	maxItems?: number;
-	force?: boolean;
 };
 
 function requireString(value: unknown, field: string): string {
@@ -124,41 +123,35 @@ export function createRuntimeToolDefinition(controller: PiboRuntimeToolControlle
 	return defineTool({
 		name: "runtime",
 		label: "Runtime",
-		description: "Start and use persistent Python runtime sessions. Supports start, exec, inspect, vars, interrupt, close, and list. Node runtime is reserved for a later backend.",
-		promptSnippet: "Use runtime for stateful Python/Node exploration. Set closeOnSuccess on exec for one-shot code: success closes the runtime; failure keeps prior state for inspection and repair. Use bash for shell commands and package installs.",
+		description: "Run Python/Node code in persistent sessions. Use this instead of bash for Python/Node execution except trivial one-line shell checks.",
+		promptSnippet: "Use runtime for Python/Node execution, especially longer snippets (~20+ lines), uncertain code, or objects/state to inspect. Prefer runtime over bash for Python/Node except trivial one-line shell checks. Auto-starts on exec; print values you need. Runtime keeps variables and processes alive between calls; reuse sessionId to inspect or continue from that state after partial failures. This saves output tokens and keeps your mental model tied to live state. Use read for file contents; use bash for shell commands and package installs.",
 		executionMode: "parallel",
 		parameters: Type.Object({
-			action: StringEnum(["start", "exec", "inspect", "vars", "interrupt", "close", "list"], { description: "Runtime action to perform." }),
-			runtime: Type.Optional(StringEnum(["python", "node"], { description: "Runtime kind for start. Python is implemented first." })),
+			action: StringEnum(["exec", "inspect", "vars", "interrupt", "list"], { description: "Runtime action to perform." }),
+			runtime: Type.Optional(StringEnum(["python", "node"], { description: "Runtime kind; default python." })),
 			name: Type.Optional(Type.String({ description: "Optional human-readable runtime name." })),
-			target: Type.Optional(Type.Any({ description: "Runtime target options such as { type: 'local', cwd, executable, args, env }." })),
-			sessionId: Type.Optional(Type.String({ description: "Runtime session id returned by start." })),
+			target: Type.Optional(Type.Any({ description: "Auto-start target options such as { type: 'local', cwd, executable, args, env }." })),
+			sessionId: Type.Optional(Type.String({ description: "Existing runtime session id; omit to use auto runtime." })),
 			code: Type.Optional(Type.String({ description: "Code to execute for exec." })),
 			timeoutMs: Type.Optional(Type.Number({ description: "Action timeout in milliseconds." })),
-			mode: Type.Optional(StringEnum(["exec", "eval", "auto"], { description: "Execution mode for exec." })),
+			mode: Type.Optional(StringEnum(["exec", "eval", "auto"], { description: "For exec: execution mode. Use eval when you need an expression result." })),
 			closeOnSuccess: Type.Optional(Type.Boolean({ description: "For exec: close the runtime only if execution succeeds." })),
 			expression: Type.Optional(Type.String({ description: "Expression to inspect." })),
 			what: Type.Optional(StringEnum(["summary", "signature", "members", "source", "doc", "all"], { description: "Inspection detail to return." })),
 			maxBytes: Type.Optional(Type.Number({ description: "Maximum bytes for summaries or inspect fields." })),
 			includePrivate: Type.Optional(Type.Boolean({ description: "For vars: include private names." })),
 			maxItems: Type.Optional(Type.Number({ description: "For vars: maximum variables to return." })),
-			force: Type.Optional(Type.Boolean({ description: "For close: force process termination." })),
 		}),
 		async execute(_toolCallId, params: RuntimeToolParams) {
 			let result: unknown;
 			try {
 				switch (params.action) {
-					case "start":
-						result = await controller.start({
-							runtime: params.runtime ?? "python",
-							name: params.name,
-							target: validateTarget(params.target),
-							timeoutMs: params.timeoutMs,
-						});
-						break;
 					case "exec":
 						result = await controller.exec({
-							sessionId: requireString(params.sessionId, "sessionId"),
+							sessionId: params.sessionId,
+							runtime: params.runtime,
+							name: params.name,
+							target: validateTarget(params.target),
 							code: requireString(params.code, "code"),
 							timeoutMs: params.timeoutMs,
 							mode: params.mode,
@@ -167,20 +160,18 @@ export function createRuntimeToolDefinition(controller: PiboRuntimeToolControlle
 						break;
 					case "inspect":
 						result = await controller.inspect({
-							sessionId: requireString(params.sessionId, "sessionId"),
+							sessionId: params.sessionId,
+							runtime: params.runtime,
 							expression: requireString(params.expression, "expression"),
 							what: params.what,
 							maxBytes: params.maxBytes,
 						});
 						break;
 					case "vars":
-						result = await controller.vars({ sessionId: requireString(params.sessionId, "sessionId"), includePrivate: params.includePrivate, maxItems: params.maxItems, maxBytes: params.maxBytes });
+						result = await controller.vars({ sessionId: params.sessionId, runtime: params.runtime, includePrivate: params.includePrivate, maxItems: params.maxItems, maxBytes: params.maxBytes });
 						break;
 					case "interrupt":
-						result = await controller.interrupt({ sessionId: requireString(params.sessionId, "sessionId") });
-						break;
-					case "close":
-						result = await controller.close({ sessionId: requireString(params.sessionId, "sessionId"), force: params.force });
+						result = await controller.interrupt({ sessionId: params.sessionId, runtime: params.runtime });
 						break;
 					case "list":
 						result = await controller.list({});

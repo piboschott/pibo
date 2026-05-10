@@ -595,8 +595,9 @@ function printDebugDbDiscovery(): void {
 
 Stores:
   home        ${getPiboHome()}
-  sessions    pibo-sessions.sqlite
-  chat        web-chat.sqlite
+  pibo-data   pibo.sqlite        unified sessions, rooms, events, messages, observations, navigation, stats
+  sessions    pibo.sqlite        V2 alias for session metadata
+  chat        pibo.sqlite        V2 alias for Chat Web data
   agents      chat-agents.sqlite
   auth        auth.sqlite
   bindings    session-bindings.sqlite
@@ -609,8 +610,8 @@ Commands:
   query <store> <sql>  Run read-only SQL
 
 Next:
-  pibo debug db schema sessions
-  pibo debug db query sessions "select id, profile from pibo_sessions limit 5"
+  pibo debug db schema pibo-data
+  pibo debug db query pibo-data "select id, profile from sessions limit 5"
 `);
 }
 
@@ -654,7 +655,7 @@ Usage:
   pibo debug events stream [--topic topic] [--after stream_id] [--limit n] [--json]
   pibo debug events stats [--topic topic] [--session pibo-session-id] [--retention class] [--json]
   pibo debug events prune --topic topic --retention class --before iso-date [--limit n] [--destructive] [--json]
-  pibo debug events compact-deltas [--dry-run|--apply] [--store chat|reliability] [--session ps_...] [--json]
+  pibo debug events compact-deltas [--dry-run|--apply] [--store pibo-data|chat|reliability] [--session ps_...] [--json]
   pibo debug events consumers [--json]
 
 Examples:

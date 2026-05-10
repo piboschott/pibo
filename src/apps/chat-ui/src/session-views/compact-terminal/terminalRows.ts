@@ -372,6 +372,9 @@ function createExecutionCommandRow(node: PiboTraceNode): CompactTerminalRow {
 	if (node.title === "thinking") {
 		return createThinkingToolRow(node);
 	}
+	if (node.title === "fast_mode") {
+		return createFastModeToolRow(node);
+	}
 	if (node.title === "login" && isLoginMenuOutput(node.output)) {
 		return createLoginToolRow(node);
 	}
@@ -419,6 +422,37 @@ function createThinkingToolRow(node: PiboTraceNode): CompactTerminalRow {
 		kind: "tool.thinking",
 		status: mapStatus(node.status),
 		lines: [],
+		sourceNodeIds: [node.id],
+		input: node.input,
+		output: node.output,
+		error: node.error,
+		expandable: false,
+	};
+}
+
+function createFastModeToolRow(node: PiboTraceNode): CompactTerminalRow {
+	const result = isRecord(node.output) ? node.output : undefined;
+	const mode = result?.mode === "fast" ? "fast" : result?.mode === "normal" ? "normal" : undefined;
+	const changed = result?.changed !== false;
+	const supported = result?.supported !== false;
+	const label = !supported
+		? "Fast mode is not supported by this model."
+		: mode === "fast"
+			? changed ? "Switched to Fast mode." : "Fast mode is already on."
+			: mode === "normal"
+				? changed ? "Switched to Normal mode." : "Normal mode is already on."
+				: "Fast mode updated.";
+
+	return {
+		id: node.id,
+		kind: "execution.command",
+		status: mapStatus(node.status),
+		lines: [
+			{
+				prefix: "bullet",
+				tokens: [token(label, supported ? "green" : "dim", "semibold")],
+			},
+		],
 		sourceNodeIds: [node.id],
 		input: node.input,
 		output: node.output,

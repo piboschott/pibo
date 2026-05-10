@@ -11,7 +11,7 @@ for (let i = 2; i < process.argv.length; i += 1) {
 
 const targetUrl = args.get("url");
 const cdpUrl = args.get("cdp-url");
-const outPath = resolve(args.get("out") ?? `reports/chat-web-performance-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+const outPath = resolve(args.get("out") ?? `docs/reports/chat-web-performance-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 const maxLongTaskMs = Number(args.get("max-long-task-ms") ?? 500);
 
 if (!targetUrl || !cdpUrl) {

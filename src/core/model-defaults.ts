@@ -10,6 +10,11 @@ export type PiboModelDefaults = {
 	main?: ModelProfile;
 	subagent?: ModelProfile;
 	thinking?: PiboThinkingLevel;
+	mainThinking?: PiboThinkingLevel;
+	subagentThinking?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 };
 
 export function selectRequestedModelProfile(
@@ -25,7 +30,16 @@ export function selectRequestedThinkingLevel(
 	profile: InitialSessionContext,
 	defaults: PiboModelDefaults = {},
 ): PiboThinkingLevel | undefined {
-	return profile.thinkingLevel ?? defaults.thinking;
+	if (profile.parentSessionId) return profile.subagentThinkingLevel ?? profile.thinkingLevel ?? defaults.subagentThinking ?? defaults.thinking;
+	return profile.mainThinkingLevel ?? profile.thinkingLevel ?? defaults.mainThinking ?? defaults.thinking;
+}
+
+export function selectRequestedFastMode(
+	profile: InitialSessionContext,
+	defaults: PiboModelDefaults = {},
+): boolean | undefined {
+	if (profile.parentSessionId) return profile.subagentFast ?? profile.fast ?? defaults.subagentFast ?? defaults.fast;
+	return profile.mainFast ?? profile.fast ?? defaults.mainFast ?? defaults.fast;
 }
 
 export function loadPiboModelDefaults(
@@ -58,11 +72,24 @@ export function sanitizePiboModelDefaults(value: unknown): PiboModelDefaults {
 	const raw = value && typeof value === "object" && !Array.isArray(value)
 		? value as Record<string, unknown>
 		: {};
-	return {
-		main: sanitizeModelProfile(raw.main),
-		subagent: sanitizeModelProfile(raw.subagent),
-		thinking: sanitizeThinkingLevel(raw.thinking),
-	};
+	const sanitized: PiboModelDefaults = {};
+	const main = sanitizeModelProfile(raw.main);
+	const subagent = sanitizeModelProfile(raw.subagent);
+	const thinking = sanitizeThinkingLevel(raw.thinking);
+	const mainThinking = sanitizeThinkingLevel(raw.mainThinking);
+	const subagentThinking = sanitizeThinkingLevel(raw.subagentThinking);
+	const fast = sanitizeBoolean(raw.fast);
+	const mainFast = sanitizeBoolean(raw.mainFast);
+	const subagentFast = sanitizeBoolean(raw.subagentFast);
+	if (main) sanitized.main = main;
+	if (subagent) sanitized.subagent = subagent;
+	if (thinking) sanitized.thinking = thinking;
+	if (mainThinking) sanitized.mainThinking = mainThinking;
+	if (subagentThinking) sanitized.subagentThinking = subagentThinking;
+	if (fast !== undefined) sanitized.fast = fast;
+	if (mainFast !== undefined) sanitized.mainFast = mainFast;
+	if (subagentFast !== undefined) sanitized.subagentFast = subagentFast;
+	return sanitized;
 }
 
 export function sanitizeThinkingLevel(value: unknown): PiboThinkingLevel | undefined {
@@ -82,4 +109,8 @@ export function sanitizeModelProfile(value: unknown): ModelProfile | undefined {
 
 function cloneModelProfile(model: ModelProfile | undefined): ModelProfile | undefined {
 	return model ? { ...model } : undefined;
+}
+
+function sanitizeBoolean(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
 }

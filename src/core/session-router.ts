@@ -31,7 +31,8 @@ import {
 	type PiboSessionStore,
 } from "../sessions/store.js";
 import { getDefaultPiboWorkspace } from "./workspace.js";
-import { loadPiboModelDefaults, type PiboModelDefaults } from "./model-defaults.js";
+import { loadPiboModelDefaults, selectRequestedFastMode, type PiboModelDefaults } from "./model-defaults.js";
+import { loadPiboUserSettings } from "./user-settings.js";
 import { resolvePiboSessionActiveModel } from "./session-model.js";
 import { RuntimeSessionRegistry } from "../tools/runtime/registry.js";
 
@@ -75,6 +76,11 @@ function profileForSession(
 		mainModel: baseProfile.mainModel,
 		subagentModel: baseProfile.subagentModel,
 		thinkingLevel: baseProfile.thinkingLevel,
+		mainThinkingLevel: baseProfile.mainThinkingLevel,
+		subagentThinkingLevel: baseProfile.subagentThinkingLevel,
+		fast: baseProfile.fast,
+		mainFast: baseProfile.mainFast,
+		subagentFast: baseProfile.subagentFast,
 		skills: baseProfile.skills,
 		tools: baseProfile.tools,
 		subagents: baseProfile.subagents,
@@ -138,6 +144,16 @@ function isTerminalRunStatus(status: string): boolean {
 
 function asJsonObject(value: PiboJsonObject | undefined): PiboJsonObject {
 	return value ?? {};
+}
+
+function userIdFromOwnerScope(ownerScope: string | undefined): string | undefined {
+	if (!ownerScope) return undefined;
+	return ownerScope.startsWith("user:") ? ownerScope.slice("user:".length) : ownerScope;
+}
+
+function piboRoomIdFromMetadata(metadata: PiboJsonObject | undefined): string | undefined {
+	const value = metadata?.chatRoomId;
+	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export class PiboSessionRouter {
@@ -362,6 +378,7 @@ export class PiboSessionRouter {
 			: undefined;
 		const modelDefaults = this.resolveModelDefaults();
 		const activeModel = this.ensureSessionActiveModel(piboSession, profile, parentPiSessionId, modelDefaults);
+		const userSettings = loadPiboUserSettings(piboSession.ownerScope ?? "user:unknown");
 		const runtime = await createPiboRuntime({
 			cwd: piboSession.workspace ?? this.options.cwd,
 			persistSession: this.options.persistSession,
@@ -372,13 +389,22 @@ export class PiboSessionRouter {
 			runtimeToolController: this.runtimeRegistry.createController(piboSession.id),
 			modelDefaults,
 			activeModel,
+			sessionContext: {
+				userId: userIdFromOwnerScope(piboSession.ownerScope),
+				ownerScope: piboSession.ownerScope,
+				piboSessionId: piboSession.id,
+				piboRoomId: piboRoomIdFromMetadata(piboSession.metadata),
+				timezone: userSettings.timezone,
+			},
 		});
+		const initialFastMode = selectRequestedFastMode(profileForSession(profile, piboSession.piSessionId, parentPiSessionId), modelDefaults) ?? false;
 		const session = new RoutedSession(
 			piboSession.id,
 			runtime,
 			this.emitOutput,
 			this.pluginRegistry,
 			this.options.forwardPiEvents ?? false,
+			initialFastMode,
 			(result, event) => this.handleSessionOperation(result, event),
 			(id, opts) => this.killChildSessions(id, opts),
 			(state) => this.signalRegistry.project({ type: "session_processing_changed", piboSessionId: piboSession.id, processing: state.processing, queuedMessages: state.queuedMessages }),

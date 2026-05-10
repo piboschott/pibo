@@ -29,6 +29,7 @@ import type {
 	ToolProfile,
 } from "../core/profiles.js";
 import type { PiboPiPackageInfo } from "../pi-packages/types.js";
+import type { PiboProviderUsageStatus } from "../auth/openai-codex-usage.js";
 
 export type PiboProfileBuildContext = {
 	getTool(name: string): ToolProfile;
@@ -60,6 +61,11 @@ export type PiboProfileInfo = {
 	mainModel?: ModelProfile;
 	subagentModel?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
+	mainThinkingLevel?: PiboThinkingLevel;
+	subagentThinkingLevel?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
 	builtinTools: BuiltinToolsMode;
 	builtinToolNames: string[];
 	autoContextFiles: boolean;
@@ -155,6 +161,8 @@ export type PiboGatewayActionContext = {
 	piboSessionId: string;
 	getStatus(): PiboSessionStatus;
 	getContextUsage(): ContextUsage | undefined;
+	getActiveModel(): ModelProfile | undefined;
+	getProviderUsage(): Promise<PiboProviderUsageStatus | undefined>;
 	clearQueue(): number;
 	abort(): Promise<void>;
 	dispose(): Promise<void>;
@@ -169,6 +177,8 @@ export type PiboGatewayActionContext = {
 	getThinkingLevel(): PiboThinkingResult;
 	setThinkingLevel(level: PiboThinkingLevel): PiboThinkingResult;
 	cycleThinkingLevel(): PiboThinkingResult;
+	getFastMode(): { mode: "fast" | "normal"; supported: boolean };
+	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean };
 	setModel(model: ModelProfile): Promise<ModelProfile>;
 	compact(customInstructions?: string): Promise<CompactionResult>;
 	kill(): Promise<{ killed: string[]; cancelledRuns: string[] }>;

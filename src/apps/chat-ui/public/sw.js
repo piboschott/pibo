@@ -29,7 +29,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/apps/chat/assets/") || url.pathname.startsWith("/apps/chat/icons/")) {
+  if (url.pathname.startsWith("/apps/chat/assets/")) {
     event.respondWith(
       caches.match(request).then((cached) => cached ?? fetch(request).then((response) => {
         const copy = response.clone();

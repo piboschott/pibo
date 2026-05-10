@@ -23,7 +23,7 @@ type StoreResult = {
 };
 
 export function runDeltaCompaction(options: CompactOptions): { results: StoreResult[] } {
-	const names = options.store ? [options.store] : ["chat", "reliability"];
+	const names = options.store ? [options.store] : ["pibo-data", "reliability"];
 	return { results: names.map((name) => inspectStore(name, options)) };
 }
 
@@ -59,19 +59,13 @@ function inspectStore(name: string, options: CompactOptions): StoreResult {
 }
 
 function inspectChat(db: DatabaseSync, store: string, path: string, options: CompactOptions): StoreResult {
-	const chatEvents = tableExists(db, "chat_events")
-		? countRows(db, "chat_events", "event_type", "pibo_session_id", options.session)
+	const byType = tableExists(db, "event_log")
+		? countRows(db, "event_log", "type", "session_id", options.session)
 		: [];
-	const webEvents = tableExists(db, "web_chat_events")
-		? countRows(db, "web_chat_events", "type", "pibo_session_id", options.session)
-		: [];
-	const byType = mergeCounts([...chatEvents, ...webEvents]);
 	const liveOnlyRows = byType.reduce((sum, row) => sum + row.count, 0);
 	let deleted = 0;
-	if (options.apply && liveOnlyRows > 0) {
-		db.exec(auditTableSql());
-		if (tableExists(db, "chat_events")) deleted += deleteRows(db, "chat_events", "event_type", "pibo_session_id", options.session);
-		if (tableExists(db, "web_chat_events")) deleted += deleteRows(db, "web_chat_events", "type", "pibo_session_id", options.session);
+	if (options.apply && liveOnlyRows > 0 && tableExists(db, "event_log")) {
+		deleted += deleteRows(db, "event_log", "type", "session_id", options.session);
 	}
 	return { store, path, exists: true, liveOnlyRows, byType, plannedDeletes: liveOnlyRows, deleted, status: options.apply ? "applied" : "dry-run" };
 }
@@ -125,12 +119,6 @@ function liveOnlyPredicate(column: string): string {
 	return `${column} IN (${LIVE_ONLY_TYPES.map((type) => `'${type}'`).join(", ")})`;
 }
 
-function mergeCounts(rows: Array<{ type: string; count: number }>): Array<{ type: string; count: number }> {
-	const counts = new Map<string, number>();
-	for (const row of rows) counts.set(row.type, (counts.get(row.type) ?? 0) + row.count);
-	return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => a.type.localeCompare(b.type));
-}
-
 function tableExists(db: DatabaseSync, table: string): boolean {
 	const row = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { found: number } | undefined;
 	return Boolean(row);
@@ -138,23 +126,4 @@ function tableExists(db: DatabaseSync, table: string): boolean {
 
 function emptyResult(store: string, path: string, status: StoreResult["status"]): StoreResult {
 	return { store, path, exists: status !== "missing", liveOnlyRows: 0, byType: [], plannedDeletes: 0, deleted: 0, status };
-}
-
-function auditTableSql(): string {
-	return `CREATE TABLE IF NOT EXISTS chat_event_compactions (
-		id TEXT PRIMARY KEY,
-		store TEXT NOT NULL,
-		pibo_session_id TEXT,
-		event_id TEXT,
-		group_key TEXT NOT NULL,
-		old_event_types_json TEXT NOT NULL,
-		old_row_count INTEGER NOT NULL,
-		old_first_order INTEGER,
-		old_last_order INTEGER,
-		new_event_type TEXT,
-		new_order INTEGER,
-		status TEXT NOT NULL,
-		created_at TEXT NOT NULL,
-		details_json TEXT NOT NULL
-	)`;
 }

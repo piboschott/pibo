@@ -833,8 +833,6 @@ function traceNodeFromEvent(
 				status:
 					event.type === "message_finished" || sessionStatus !== "running" ? "done" : "running",
 				completedAt: event.type === "message_finished" ? createdAt : undefined,
-				summary: event.type === "message_started" ? event.text : undefined,
-				input: event.type === "message_started" ? { text: event.text, source: event.source } : undefined,
 				stableKey: eventId ? `turn:${eventId}` : base.stableKey,
 			};
 		case "thinking_finished": {
