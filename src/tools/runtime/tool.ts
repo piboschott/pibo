@@ -122,8 +122,8 @@ export function createRuntimeToolDefinition(controller: PiboRuntimeToolControlle
 	return defineTool({
 		name: "runtime",
 		label: "Runtime",
-		description: "Run Python/Node code. Auto-starts a persistent runtime when needed.",
-		promptSnippet: "Use runtime for Python/Node code, especially longer snippets (~20+ lines), uncertain code, or objects/state to inspect. For any Python or Node execution beyond trivial one-line shell checks, prefer runtime over bash. Auto-starts on exec; print values you need. Runtime keeps variables and processes alive between calls; reuse sessionId to inspect or continue from that state after partial failures. This saves output tokens and keeps your mental model tied to live state. Use read for file contents; use bash for shell commands and package installs.",
+		description: "Run Python/Node code in persistent sessions. Use this instead of bash for Python/Node execution except trivial one-line shell checks.",
+		promptSnippet: "Use runtime for Python/Node execution, especially longer snippets (~20+ lines), uncertain code, or objects/state to inspect. Prefer runtime over bash for Python/Node except trivial one-line shell checks. Auto-starts on exec; print values you need. Runtime keeps variables and processes alive between calls; reuse sessionId to inspect or continue from that state after partial failures. This saves output tokens and keeps your mental model tied to live state. Use read for file contents; use bash for shell commands and package installs.",
 		executionMode: "parallel",
 		parameters: Type.Object({
 			action: StringEnum(["exec", "inspect", "vars", "interrupt", "list"], { description: "Runtime action to perform." }),
