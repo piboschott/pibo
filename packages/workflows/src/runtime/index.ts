@@ -7,6 +7,7 @@ import type {
   WorkflowDefinition,
   WorkflowDiagnostic,
   WorkflowErrorSummary,
+  WorkflowEventEmitter,
   WorkflowRun,
   WorkflowRunId,
   WorkflowRuntimeEvent,
@@ -130,6 +131,7 @@ export type OneNodeAgentWorkflowOptions = {
   createRunId?: () => WorkflowRunId;
   createNodeAttemptId?: () => NodeAttemptId;
   store?: WorkflowRunStore;
+  emitEvent?: WorkflowEventEmitter;
   agentExecutor: OneNodeAgentExecutor;
 };
 
@@ -320,7 +322,11 @@ export async function runOneNodeAgentWorkflow(
     updatedAt: createdAt,
   };
 
-  events.push({ type: "workflow.started", runId: run.id, workflowId: definition.id });
+  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    type: "workflow.started",
+    runId: run.id,
+    workflowId: definition.id,
+  });
   await persistWorkflowRun(options.store, run);
 
   const nodeAttempt: NodeAttempt = {
@@ -334,7 +340,12 @@ export async function runOneNodeAgentWorkflow(
     startedAt: timestamp(),
   };
 
-  events.push({ type: "node.started", runId: run.id, nodeAttemptId: nodeAttempt.id, nodeId });
+  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    type: "node.started",
+    runId: run.id,
+    nodeAttemptId: nodeAttempt.id,
+    nodeId,
+  });
 
   try {
     const prompt = buildOneNodeAgentPrompt(node, input);
@@ -359,6 +370,7 @@ export async function runOneNodeAgentWorkflow(
         diagnostics: nodeOutputResult.diagnostics,
         timestamp,
         store: options.store,
+        emitEvent: options.emitEvent,
         error: {
           code: "WorkflowRuntimeError.invalidNodeOutput",
           message: "Agent node output failed validation before workflow completion.",
@@ -375,6 +387,7 @@ export async function runOneNodeAgentWorkflow(
         diagnostics: workflowOutputResult.diagnostics,
         timestamp,
         store: options.store,
+        emitEvent: options.emitEvent,
         error: {
           code: "WorkflowRuntimeError.invalidWorkflowOutput",
           message: "Workflow output failed validation before completion.",
@@ -400,7 +413,12 @@ export async function runOneNodeAgentWorkflow(
       piSessionId: executorResult.piSessionId,
     };
 
-    events.push({ type: "node.completed", runId: run.id, nodeAttemptId: nodeAttempt.id, output: executorResult.output });
+    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+      type: "node.completed",
+      runId: run.id,
+      nodeAttemptId: nodeAttempt.id,
+      output: executorResult.output,
+    });
 
     run.status = "completed";
     run.current = { nodeId, status: "completed" };
@@ -408,7 +426,11 @@ export async function runOneNodeAgentWorkflow(
     run.completedAt = completedAt;
     run.updatedAt = completedAt;
 
-    events.push({ type: "workflow.completed", runId: run.id, output: executorResult.output });
+    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+      type: "workflow.completed",
+      runId: run.id,
+      output: executorResult.output,
+    });
     await persistWorkflowRun(options.store, run);
 
     return { ok: true, run, nodeAttempt, events, output: executorResult.output };
@@ -420,6 +442,7 @@ export async function runOneNodeAgentWorkflow(
       diagnostics: [],
       timestamp,
       store: options.store,
+      emitEvent: options.emitEvent,
       error: errorSummaryFromCaught(caught),
     });
   }
@@ -484,6 +507,7 @@ async function failRunningWorkflow(options: {
   diagnostics: WorkflowDiagnostic[];
   timestamp: () => string;
   store?: WorkflowRunStore;
+  emitEvent?: WorkflowEventEmitter;
   error: WorkflowErrorSummary;
 }): Promise<OneNodeAgentWorkflowFailure> {
   const failedAt = options.timestamp();
@@ -494,13 +518,17 @@ async function failRunningWorkflow(options: {
   options.run.current = { nodeId: options.nodeAttempt.nodeId, status: "failed" };
   options.run.failedAt = failedAt;
   options.run.updatedAt = failedAt;
-  options.events.push({
+  await emitWorkflowRuntimeEvent(options.events, options.emitEvent, {
     type: "node.failed",
     runId: options.run.id,
     nodeAttemptId: options.nodeAttempt.id,
     error: options.error,
   });
-  options.events.push({ type: "workflow.failed", runId: options.run.id, error: options.error });
+  await emitWorkflowRuntimeEvent(options.events, options.emitEvent, {
+    type: "workflow.failed",
+    runId: options.run.id,
+    error: options.error,
+  });
   await persistWorkflowRun(options.store, options.run);
 
   return {
@@ -519,6 +547,15 @@ function runtimeFailure(
   error: WorkflowErrorSummary,
 ): OneNodeAgentWorkflowFailure {
   return { ok: false, events, diagnostics, error };
+}
+
+async function emitWorkflowRuntimeEvent(
+  events: WorkflowRuntimeEvent[],
+  emitEvent: WorkflowEventEmitter | undefined,
+  event: WorkflowRuntimeEvent,
+): Promise<void> {
+  events.push(event);
+  await emitEvent?.(event);
 }
 
 async function persistWorkflowRun(store: WorkflowRunStore | undefined, run: WorkflowRun): Promise<void> {

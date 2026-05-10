@@ -11,7 +11,7 @@ import {
   SqliteWorkflowRunStore,
   validateOneNodeAgentWorkflowPath,
 } from "../index.js";
-import type { AgentNodeDefinition, WorkflowDefinition } from "../index.js";
+import type { AgentNodeDefinition, WorkflowDefinition, WorkflowRuntimeEvent } from "../index.js";
 
 function cloneMinimalWorkflow(): WorkflowDefinition {
   return structuredClone(minimalOneNodePiboAgentWorkflowFixture) as WorkflowDefinition;
@@ -150,6 +150,50 @@ describe("one-node agent workflow runtime path", () => {
       result.events.map((event) => event.type),
       ["workflow.started", "node.started", "node.completed", "workflow.completed"],
     );
+  });
+
+  it("emits workflow and node trace events as runtime boundaries are crossed", async () => {
+    const emittedEvents: WorkflowRuntimeEvent[] = [];
+
+    const result = await runOneNodeAgentWorkflow(minimalOneNodePiboAgentWorkflowFixture, "Trace this run.", {
+      ownerScope: "user:trace",
+      now: () => "2026-05-10T23:07:00.000Z",
+      createRunId: () => "wfr_trace",
+      createNodeAttemptId: () => "wna_trace",
+      emitEvent: async (event) => {
+        emittedEvents.push(event);
+      },
+      agentExecutor: () => ({ output: "Traced workflow output." }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(emittedEvents, result.events);
+    assert.deepEqual(
+      emittedEvents.map((event) => event.type),
+      ["workflow.started", "node.started", "node.completed", "workflow.completed"],
+    );
+    assert.deepEqual(emittedEvents[0], {
+      type: "workflow.started",
+      runId: "wfr_trace",
+      workflowId: minimalOneNodePiboAgentWorkflowFixture.id,
+    });
+    assert.deepEqual(emittedEvents[1], {
+      type: "node.started",
+      runId: "wfr_trace",
+      nodeAttemptId: "wna_trace",
+      nodeId: "answer",
+    });
+    assert.deepEqual(emittedEvents[2], {
+      type: "node.completed",
+      runId: "wfr_trace",
+      nodeAttemptId: "wna_trace",
+      output: "Traced workflow output.",
+    });
+    assert.deepEqual(emittedEvents[3], {
+      type: "workflow.completed",
+      runId: "wfr_trace",
+      output: "Traced workflow output.",
+    });
   });
 
   it("persists workflow run identity, status, cursor, input, and output", async () => {
