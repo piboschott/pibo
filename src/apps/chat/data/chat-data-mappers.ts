@@ -75,6 +75,7 @@ function outputPayloadFromV2Row(row: EventLogRow, attributes: PiboJsonObject): P
 	if (!piboSessionId) return undefined;
 	const base = compactObject({ piboSessionId, eventId: row.event_id ?? undefined }) as { piboSessionId: string; eventId?: string };
 	if (row.type === "assistant_message") return { ...base, type: "assistant_message", text: row.preview_text ?? "" };
+	if (row.type === "message_queued") return { ...base, type: "message_queued", text: stringAttribute(attributes, "inlineText") ?? row.preview_text ?? "", source: stringAttribute(attributes, "source") ?? "user", queuedMessages: numberAttribute(attributes, "queuedMessages") ?? 1 } as PiboOutputEvent;
 	if (row.type === "message_started") return { ...base, type: "message_started", text: row.preview_text ?? "" };
 	if (row.type === "message_finished") return { ...base, type: "message_finished" };
 	if (row.type === "thinking_started") return { ...base, type: "thinking_started" };
@@ -93,6 +94,7 @@ export function roomFromRow(row: RoomRow): PiboRoom { const metadata = parseJson
 export function parseJsonObject(value: string): PiboJsonObject { try { const parsed = JSON.parse(value) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as PiboJsonObject : {}; } catch { return {}; } }
 export function stringAttribute(attributes: PiboJsonObject, key: string): string | undefined { const value = attributes[key]; return typeof value === "string" ? value : undefined; }
 function booleanAttribute(attributes: PiboJsonObject, key: string): boolean | undefined { const value = attributes[key]; return typeof value === "boolean" ? value : undefined; }
+function numberAttribute(attributes: PiboJsonObject, key: string): number | undefined { const value = attributes[key]; return typeof value === "number" ? value : undefined; }
 export function nextSessionSequence(store: PiboDataStore, sessionId: string): number { const row = store.db.prepare("SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_sequence FROM event_log WHERE session_id = ?").get(sessionId) as { next_sequence: number }; return row.next_sequence; }
 export function compactObject(value: Record<string, unknown>): PiboJsonObject { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as PiboJsonObject; }
 export function previewForPayload(payload: unknown): string | undefined { if (typeof payload === "object" && payload && "text" in payload && typeof payload.text === "string") return payload.text.slice(0, 512); if (typeof payload === "string") return payload.slice(0, 512); return undefined; }
