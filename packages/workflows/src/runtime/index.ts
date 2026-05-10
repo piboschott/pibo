@@ -17,12 +17,96 @@ import { validateNodeOutput, validateWorkflow, validateWorkflowInput, validateWo
 export type OneNodeAgentExecutorContext = {
   workflow: WorkflowDefinition;
   run: WorkflowRun;
+  nodeAttemptId?: NodeAttemptId;
   nodeId: string;
   node: AgentNodeDefinition;
   input: WorkflowValue;
   prompt: string;
   profileId: string;
   routing?: AgentNodeDefinition["routing"];
+};
+
+export type PiboRoutingJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | PiboRoutingJsonValue[]
+  | { [key: string]: PiboRoutingJsonValue };
+
+export type PiboRoutingJsonObject = { [key: string]: PiboRoutingJsonValue };
+
+export type PiboWorkflowSession = {
+  id: string;
+  piSessionId?: string;
+  profile: string;
+  ownerScope?: string;
+  parentId?: string;
+  workspace?: string;
+  metadata?: PiboRoutingJsonObject;
+};
+
+export type PiboWorkflowSessionCreateInput = {
+  channel: string;
+  kind: string;
+  profile: string;
+  ownerScope?: string;
+  parentId?: string;
+  workspace?: string;
+  title?: string;
+  metadata?: PiboRoutingJsonObject;
+};
+
+export type PiboWorkflowMessageEvent = {
+  type: "message";
+  piboSessionId: string;
+  id?: string;
+  text: string;
+  source?: "user" | "ui" | "service" | "actor";
+};
+
+export type PiboWorkflowAssistantMessageEvent = {
+  type: "assistant_message";
+  piboSessionId: string;
+  eventId?: string;
+  text: string;
+};
+
+export type PiboWorkflowSessionErrorEvent = {
+  type: "session_error";
+  piboSessionId: string;
+  eventId?: string;
+  error: string;
+};
+
+export type PiboWorkflowOutputEvent = PiboWorkflowAssistantMessageEvent | PiboWorkflowSessionErrorEvent | {
+  type: string;
+  piboSessionId: string;
+  eventId?: string;
+};
+
+export type PiboWorkflowSessionStatus = {
+  piboSessionId: string;
+  enabledTools?: string[];
+  activeTools?: string[];
+};
+
+export type PiboWorkflowSessionRouting = {
+  createSession(input: PiboWorkflowSessionCreateInput): PiboWorkflowSession;
+  emit(event: PiboWorkflowMessageEvent): Promise<unknown> | unknown;
+  subscribe(listener: (event: PiboWorkflowOutputEvent) => void): () => void;
+  getSessionRuntimeStatus?(piboSessionId: string): PiboWorkflowSessionStatus | undefined;
+};
+
+export type PiboSessionRoutingAgentExecutorOptions = {
+  routing: PiboWorkflowSessionRouting;
+  workspace?: string;
+  timeoutMs?: number;
+  createMessageId?: () => string;
+  channel?: string;
+  kind?: string;
+  title?: string | ((context: OneNodeAgentExecutorContext) => string | undefined);
+  metadata?: PiboRoutingJsonObject | ((context: OneNodeAgentExecutorContext) => PiboRoutingJsonObject | undefined);
 };
 
 export type OneNodeAgentExecutorResult = {
@@ -65,6 +149,53 @@ export type OneNodeAgentWorkflowFailure = {
 };
 
 export type OneNodeAgentWorkflowResult = OneNodeAgentWorkflowSuccess | OneNodeAgentWorkflowFailure;
+
+export function createPiboSessionRoutingAgentExecutor(
+  options: PiboSessionRoutingAgentExecutorOptions,
+): OneNodeAgentExecutor {
+  return async (context) => {
+    const session = options.routing.createSession({
+      channel: options.channel ?? context.routing?.channel ?? "pibo.workflows",
+      kind: options.kind ?? "workflow-agent",
+      profile: context.profileId,
+      ownerScope: context.routing?.ownerScope ?? context.run.ownerScope,
+      parentId: context.routing?.parentSessionId,
+      workspace: options.workspace,
+      title: resolveExecutorTitle(options.title, context),
+      metadata: {
+        ...resolveExecutorMetadata(options.metadata, context),
+        workflowRunId: context.run.id,
+        workflowId: context.workflow.id,
+        workflowVersion: context.workflow.version,
+        workflowNodeId: context.nodeId,
+        ...(context.nodeAttemptId ? { workflowNodeAttemptId: context.nodeAttemptId } : {}),
+        ...(context.routing?.projectId ? { projectId: context.routing.projectId } : {}),
+        ...(context.routing?.roomId ? { chatRoomId: context.routing.roomId } : {}),
+      },
+    });
+    const messageId = options.createMessageId?.() ?? createId("wfm");
+    const reply = await emitMessageAndWaitForPiboReply(
+      options.routing,
+      {
+        type: "message",
+        piboSessionId: session.id,
+        id: messageId,
+        text: context.prompt,
+        source: "actor",
+      },
+      options.timeoutMs,
+    );
+    const status = options.routing.getSessionRuntimeStatus?.(session.id);
+
+    return {
+      output: reply.text,
+      piboSessionId: session.id,
+      piSessionId: session.piSessionId,
+      effectiveProfile: session.profile || context.profileId,
+      effectiveTools: status?.enabledTools ?? status?.activeTools,
+    };
+  };
+}
 
 export function validateOneNodeAgentWorkflowPath(definition: WorkflowDefinition): ValidationResult {
   const diagnostics: WorkflowDiagnostic[] = [...validateWorkflow(definition).diagnostics];
@@ -207,6 +338,7 @@ export async function runOneNodeAgentWorkflow(
     const executorResult = await options.agentExecutor({
       workflow: definition,
       run,
+      nodeAttemptId: nodeAttempt.id,
       nodeId,
       node,
       input,
@@ -284,6 +416,58 @@ export async function runOneNodeAgentWorkflow(
       error: errorSummaryFromCaught(caught),
     });
   }
+}
+
+function resolveExecutorTitle(
+  title: PiboSessionRoutingAgentExecutorOptions["title"],
+  context: OneNodeAgentExecutorContext,
+): string | undefined {
+  return typeof title === "function" ? title(context) : title;
+}
+
+function resolveExecutorMetadata(
+  metadata: PiboSessionRoutingAgentExecutorOptions["metadata"],
+  context: OneNodeAgentExecutorContext,
+): PiboRoutingJsonObject {
+  const resolved = typeof metadata === "function" ? metadata(context) : metadata;
+  return resolved ?? {};
+}
+
+function emitMessageAndWaitForPiboReply(
+  routing: PiboWorkflowSessionRouting,
+  event: PiboWorkflowMessageEvent,
+  timeoutMs = 120000,
+): Promise<PiboWorkflowAssistantMessageEvent> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    let unsubscribe = () => {};
+    const finish = (result: PiboWorkflowAssistantMessageEvent | Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribe();
+      if (result instanceof Error) {
+        reject(result);
+      } else {
+        resolve(result);
+      }
+    };
+
+    timeout = setTimeout(() => {
+      finish(new Error(`Timed out waiting for assistant reply from Pibo session "${event.piboSessionId}"`));
+    }, timeoutMs);
+    unsubscribe = routing.subscribe((output) => {
+      if (output.piboSessionId !== event.piboSessionId || output.eventId !== event.id) return;
+      if (output.type === "assistant_message") {
+        finish(output as PiboWorkflowAssistantMessageEvent);
+      } else if (output.type === "session_error") {
+        finish(new Error((output as PiboWorkflowSessionErrorEvent).error));
+      }
+    });
+
+    Promise.resolve(routing.emit(event)).catch(finish);
+  });
 }
 
 function failRunningWorkflow(options: {

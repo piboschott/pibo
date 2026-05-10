@@ -2,17 +2,112 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  createPiboSessionRoutingAgentExecutor,
   minimalOneNodePiboAgentWorkflowFixture,
   runOneNodeAgentWorkflow,
   validateOneNodeAgentWorkflowPath,
 } from "../index.js";
-import type { WorkflowDefinition } from "../index.js";
+import type { AgentNodeDefinition, WorkflowDefinition } from "../index.js";
 
 function cloneMinimalWorkflow(): WorkflowDefinition {
   return structuredClone(minimalOneNodePiboAgentWorkflowFixture) as WorkflowDefinition;
 }
 
 describe("one-node agent workflow runtime path", () => {
+  it("runs a minimal pibo-agent workflow through normal Pibo session routing", async () => {
+    const createdSessions: unknown[] = [];
+    const emittedMessages: unknown[] = [];
+    const listeners = new Set<(event: { type: string; piboSessionId: string; eventId?: string; text?: string }) => void>();
+    const routing = {
+      createSession(input: {
+        channel: string;
+        kind: string;
+        profile: string;
+        ownerScope?: string;
+        parentId?: string;
+        metadata?: Record<string, unknown>;
+      }) {
+        createdSessions.push(input);
+        return { id: "ps_workflow_agent", piSessionId: "pi_workflow_agent", profile: input.profile };
+      },
+      emit(event: { type: "message"; piboSessionId: string; id?: string; text: string; source?: string }) {
+        emittedMessages.push(event);
+        queueMicrotask(() => {
+          for (const listener of listeners) {
+            listener({
+              type: "assistant_message",
+              piboSessionId: event.piboSessionId,
+              eventId: event.id,
+              text: "Workflow response from routed Pibo session.",
+            });
+          }
+        });
+      },
+      subscribe(listener: (event: { type: string; piboSessionId: string; eventId?: string; text?: string }) => void) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getSessionRuntimeStatus(piboSessionId: string) {
+        assert.equal(piboSessionId, "ps_workflow_agent");
+        return { piboSessionId, enabledTools: ["read", "bash"] };
+      },
+    };
+
+    const definition = cloneMinimalWorkflow();
+    (definition.nodes.answer as AgentNodeDefinition).routing = {
+      parentSessionId: "ps_parent",
+      ownerScope: "user:routing",
+      roomId: "room_routing",
+      channel: "chat",
+    };
+
+    const result = await runOneNodeAgentWorkflow(definition, "Use routing.", {
+      ownerScope: "user:fallback",
+      now: () => "2026-05-10T22:57:00.000Z",
+      createRunId: () => "wfr_routing",
+      createNodeAttemptId: () => "wna_routing",
+      agentExecutor: createPiboSessionRoutingAgentExecutor({
+        routing,
+        createMessageId: () => "msg_routing",
+        title: "Workflow agent node",
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.output, "Workflow response from routed Pibo session.");
+    assert.deepEqual(createdSessions, [
+      {
+        channel: "chat",
+        kind: "workflow-agent",
+        profile: "pibo-agent",
+        ownerScope: "user:routing",
+        parentId: "ps_parent",
+        workspace: undefined,
+        title: "Workflow agent node",
+        metadata: {
+          workflowRunId: "wfr_routing",
+          workflowId: definition.id,
+          workflowVersion: definition.version,
+          workflowNodeId: "answer",
+          workflowNodeAttemptId: "wna_routing",
+          chatRoomId: "room_routing",
+        },
+      },
+    ]);
+    assert.deepEqual(emittedMessages, [
+      {
+        type: "message",
+        piboSessionId: "ps_workflow_agent",
+        id: "msg_routing",
+        text: "Answer the user request using normal Pibo Runtime routing: Use routing.",
+        source: "actor",
+      },
+    ]);
+    assert.equal(result.nodeAttempt.metadata?.piboSessionId, "ps_workflow_agent");
+    assert.equal(result.nodeAttempt.metadata?.piSessionId, "pi_workflow_agent");
+    assert.deepEqual(result.nodeAttempt.metadata?.runtime?.tools, ["read", "bash"]);
+  });
+
   it("runs a minimal pibo-agent workflow from input to completion", async () => {
     const result = await runOneNodeAgentWorkflow(minimalOneNodePiboAgentWorkflowFixture, "Explain workflow runs.", {
       ownerScope: "user:test",

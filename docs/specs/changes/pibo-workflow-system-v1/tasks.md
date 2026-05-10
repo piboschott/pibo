@@ -23,7 +23,7 @@
 ## 3. Requirement: Workflow is a first-class runtime unit
 
 - [x] 3.1 Implement a one-node `agent` workflow path.
-- [ ] 3.2 Ensure the node launches through normal Pibo session routing.
+- [x] 3.2 Ensure the node launches through normal Pibo session routing.
 - [ ] 3.3 Persist workflow run id, workflow id, version, status, current node, input, and output.
 - [ ] 3.4 Emit workflow start, node start, node complete, and workflow complete trace events.
 - [ ] 3.5 Test a single-prompt workflow from start to completion.
