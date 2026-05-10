@@ -197,12 +197,13 @@ export type HumanNodeDefinition = BaseNodeDefinition & {
 
 export type AdapterRef = {
   kind: "adapter";
+  language: "typescript";
   id: RegistryRefId;
 };
 
 export type AdapterNodeDefinition = BaseNodeDefinition & {
   kind: "adapter";
-  handler: AdapterRef | RegistryRefId;
+  handler: AdapterRef;
   mode: "deterministic";
 };
 
@@ -229,7 +230,7 @@ export type GuardRef = {
 export type EdgeAdapterDefinition = {
   kind: "edgeAdapter";
   output: WorkflowPort;
-  transform: RegistryRefId;
+  transform: AdapterRef;
 };
 
 export type EdgeMapDefinition = {

@@ -38,7 +38,7 @@
 
 ## 5. Requirement: Interface adapters are explicit
 
-- [ ] 5.1 Add registered TypeScript adapter refs for `edgeAdapter` and visible `adapter` nodes.
+- [x] 5.1 Add registered TypeScript adapter refs for `edgeAdapter` and visible `adapter` nodes.
 - [ ] 5.2 Reject incompatible edges without registered adapter refs.
 - [ ] 5.3 Implement adapter resolution through the Workflow Registry.
 - [ ] 5.4 Validate adapter output before target node execution.

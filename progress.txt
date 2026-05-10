@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Use `adapterRef(...)` for registered deterministic TypeScript adapters in workflow IR; pass those refs to `edgeAdapter(...)` for edge-local adapters and to visible `adapter` node `handler` fields.
 - Two-node direct-edge tests should validate the workflow definition, call `recordWorkflowEdgeTransfer`, then use `transferResult.targetInput` as the downstream node attempt input.
 - Use `recordWorkflowEdgeTransfer` when a direct edge transfer should update the run cursor, emit `edge.transferred`, and persist the run; keep `transferWorkflowEdgeData` pure for validation/payload creation.
 - Direct edge runtime transfer is exposed as `transferWorkflowEdgeData`; it creates an immutable `EdgeTransfer` from a completed source attempt output only after validating source output and target input ports.
@@ -264,4 +265,16 @@
   - `recordWorkflowEdgeTransfer` already provides the target node input as `transferResult.targetInput`; use that value directly when constructing a downstream `NodeAttempt` in tests.
   - Direct JSON two-node fixtures can reuse the same `json(...)` port object for source output and target input so existing direct compatibility validation proves the schemas match.
   - Story 4.5 is test-only; a full graph runner that automatically starts node B belongs to later node dispatch/orchestration stories.
+---
+
+## 2026-05-10 23:34 UTC - 5.1
+- Added explicit registered TypeScript `AdapterRef` IR objects and helper APIs (`adapterRef`, `edgeAdapter`, `isAdapterRef`, `adapterRefId`) for edge adapters and visible adapter nodes.
+- Updated adapter fixtures and validation tests to store adapter refs instead of bare strings for both `edgeAdapter.transform` and adapter node `handler`.
+- Marked task `5.1` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- Files changed: `packages/workflows/src/types/index.ts`, `packages/workflows/src/api/index.ts`, `packages/workflows/src/fixtures/index.ts`, `packages/workflows/src/testing/ports.test.ts`, `packages/workflows/src/testing/validation.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Adapter refs now carry `{ kind: "adapter", language: "typescript", id }`, so future registry resolution should read `ref.id` instead of accepting raw adapter id strings from workflow IR.
+  - The `edgeAdapter(...)` authoring helper keeps the edge adapter shape consistent while preserving the output port contract for later adapter-output validation.
+  - Story 5.1 is authoring/type surface only; adapter registry lookup, incompatible-edge rejection, and adapter output runtime validation remain in stories 5.2-5.4.
 ---

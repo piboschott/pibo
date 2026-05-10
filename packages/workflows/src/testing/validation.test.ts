@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  adapterRef,
   minimalOneNodePiboAgentWorkflowFixture,
   mixedNodeWorkflowFixture,
   requiredWorkflowFixtures,
@@ -398,7 +399,7 @@ describe("workflow definition validation", () => {
         to: { nodeId: "next" },
         adapter: {
           kind: "edgeAdapter",
-          transform: "fixture.adapters.answerToNext",
+          transform: adapterRef("fixture.adapters.answerToNext"),
           output: {
             kind: "json",
             schema: {

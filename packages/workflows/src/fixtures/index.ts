@@ -1,3 +1,4 @@
+import { adapterRef, edgeAdapter } from "../api/index.js";
 import type {
   AdapterHandler,
   CodeNodeHandler,
@@ -187,11 +188,7 @@ export const adapterWorkflowFixture: WorkflowDefinition = {
       from: { nodeId: "collect" },
       to: { nodeId: "summarize" },
       kind: "data",
-      adapter: {
-        kind: "edgeAdapter",
-        output: topicInputPortJson,
-        transform: workflowFixtureRegistryRefs.adapters.textToTopic,
-      },
+      adapter: edgeAdapter(adapterRef(workflowFixtureRegistryRefs.adapters.textToTopic), topicInputPortJson),
     },
   },
   metadata: {
@@ -318,7 +315,7 @@ export const mixedNodeWorkflowFixture: WorkflowDefinition = {
     },
     normalize: {
       kind: "adapter",
-      handler: workflowFixtureRegistryRefs.adapters.decisionToSummary,
+      handler: adapterRef(workflowFixtureRegistryRefs.adapters.decisionToSummary),
       mode: "deterministic",
       input: reviewDecisionPortJson,
       output: normalizedSummaryPortJson,
@@ -357,11 +354,7 @@ export const mixedNodeWorkflowFixture: WorkflowDefinition = {
       from: { nodeId: "normalize" },
       to: { nodeId: "child-summary" },
       kind: "data",
-      adapter: {
-        kind: "edgeAdapter",
-        output: textInputPort,
-        transform: workflowFixtureRegistryRefs.adapters.draftToSummary,
-      },
+      adapter: edgeAdapter(adapterRef(workflowFixtureRegistryRefs.adapters.draftToSummary), textInputPort),
     },
   },
   state: {

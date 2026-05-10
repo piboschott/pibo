@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { isJsonPort, isTextPort, json, text } from "../index.js";
-import type { JsonSchema, WorkflowPort } from "../index.js";
+import { adapterRef, adapterRefId, edgeAdapter, isAdapterRef, isJsonPort, isTextPort, json, text } from "../index.js";
+import type { AdapterNodeDefinition, JsonSchema, WorkflowPort } from "../index.js";
 
 const articleSchema: JsonSchema = {
   type: "object",
@@ -40,5 +40,34 @@ describe("workflow port authoring helpers", () => {
     assert.equal(isJsonPort(ports[0]), false);
     assert.equal(isTextPort(ports[1]), false);
     assert.equal(isJsonPort(ports[1]), true);
+  });
+
+  it("creates registered TypeScript adapter refs for edge adapters and visible adapter nodes", () => {
+    const ref = adapterRef("adapters.textToArticle");
+
+    assert.deepEqual(ref, {
+      kind: "adapter",
+      language: "typescript",
+      id: "adapters.textToArticle",
+    });
+    assert.equal(isAdapterRef(ref), true);
+    assert.equal(isAdapterRef("adapters.textToArticle"), false);
+    assert.equal(adapterRefId(ref), "adapters.textToArticle");
+
+    assert.deepEqual(edgeAdapter(ref, json(articleSchema)), {
+      kind: "edgeAdapter",
+      transform: ref,
+      output: json(articleSchema),
+    });
+
+    const node: AdapterNodeDefinition = {
+      kind: "adapter",
+      handler: ref,
+      mode: "deterministic",
+      input: text(),
+      output: json(articleSchema),
+    };
+
+    assert.deepEqual(node.handler, ref);
   });
 });
