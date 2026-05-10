@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- One-node agent runtime execution is exposed from `packages/workflows/src/runtime/index.ts` as `runOneNodeAgentWorkflow`; keep Pibo session routing injected through `agentExecutor` until the dedicated routing story wires it to normal session routing.
 - Use `validateWorkflowInput`, `validateNodeOutput`, and `validateWorkflowOutput` at runtime boundaries; they all delegate to shared port/schema value validation and emit JSONPath-like `WorkflowInterfaceError.*` diagnostics.
 - Call `validateWorkflowInput(definition, input)` before starting workflow execution; it validates text ports as strings and JSON ports against the V1 schema subset with JSONPath-like diagnostics.
 - Workflow validation code should emit `WorkflowDiagnostic` objects with `WorkflowInterfaceError.*` codes and JSONPath-like `path` values instead of throwing, then aggregate through `ValidationResult`.
@@ -129,4 +130,16 @@
   - Direct `validateWorkflowPortValue` tests are useful for adapter-like boundary coverage before story 5.4 adds adapter-specific runtime validation helpers.
   - JSON schemas used in runtime value tests still pass through schema subset validation first, so const-only properties need an explicit supported `type`.
   - Keep interface value tests separate from definition schema tests so future runtime-boundary changes have focused regression coverage.
+---
+
+## 2026-05-10 22:55 UTC - 3.1
+- Implemented a focused one-node `agent` workflow runtime path with `validateOneNodeAgentWorkflowPath` and `runOneNodeAgentWorkflow`.
+- Added injected `agentExecutor` support, minimal `{{input}}` prompt substitution, run/node attempt facts, runtime metadata capture, in-memory workflow/node lifecycle events, and input/node-output/workflow-output validation around execution.
+- Marked task `3.1` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test`.
+- Files changed: `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/testing/runtime-one-node-agent.test.ts`, `packages/workflows/src/index.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Story 3.1 intentionally keeps normal Pibo session routing behind an injected executor; story 3.2 can wire this seam to the routed runtime without changing the one-node validation/output boundary.
+  - The minimal one-node path emits `WorkflowRuntimeEvent` records in memory, but trace-store integration is still pending for story 3.4.
+  - `promptTemplate` support here only substitutes `{{input}}` for the minimal fixture path; full prompt rendering with state and builders belongs to section 8.
 ---
