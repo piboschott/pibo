@@ -343,35 +343,40 @@ async function detectHost(): Promise<string> {
 export interface WorkerInfo {
 	id: string;
 	name: string;
+	role: "worker" | "dev" | string;
 	status: string;
 	ports: string;
 	createdAt: string;
 }
 
-export async function listWorkers(): Promise<WorkerInfo[]> {
-	const { stdout } = await execFileAsync("docker", [
-		"ps",
-		"--filter",
-		`label=${LABEL_ROLE}=worker`,
-		"--format",
-		"{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Labels}}",
-	]);
-
-	if (!stdout.trim()) return [];
-
-	const lines = stdout.trim().split("\n");
+export async function listWorkers(options: { includeDev?: boolean } = {}): Promise<WorkerInfo[]> {
+	const roles = options.includeDev === false ? ["worker"] : ["worker", "dev"];
 	const workers: WorkerInfo[] = [];
 
-	for (const line of lines) {
-		const [containerId, name, status, ports, labelsStr] = line.split("\t");
-		const createdMatch = labelsStr?.match(/pibo\.compute\.createdAt=([^,]+)/);
-		workers.push({
-			id: containerId ?? "",
-			name: name ?? "",
-			status: status ?? "",
-			ports: ports ?? "",
-			createdAt: createdMatch ? createdMatch[1] : "unknown",
-		});
+	for (const role of roles) {
+		const { stdout } = await execFileAsync("docker", [
+			"ps",
+			"--filter",
+			`label=${LABEL_ROLE}=${role}`,
+			"--format",
+			"{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Labels}}",
+		]);
+
+		if (!stdout.trim()) continue;
+
+		const lines = stdout.trim().split("\n");
+		for (const line of lines) {
+			const [containerId, name, status, ports, labelsStr] = line.split("\t");
+			const createdMatch = labelsStr?.match(/pibo\.compute\.createdAt=([^,]+)/);
+			workers.push({
+				id: containerId ?? "",
+				name: name ?? "",
+				role,
+				status: status ?? "",
+				ports: ports ?? "",
+				createdAt: createdMatch ? createdMatch[1] : "unknown",
+			});
+		}
 	}
 
 	return workers;
@@ -386,8 +391,8 @@ export async function releaseWorker(id: string): Promise<void> {
 	await execFileAsync("docker", ["rm", id]);
 }
 
-export async function reapWorkers(maxAgeMinutes: number): Promise<string[]> {
-	const workers = await listWorkers();
+export async function reapWorkers(maxAgeMinutes: number, options: { includeDev?: boolean } = {}): Promise<string[]> {
+	const workers = await listWorkers({ includeDev: options.includeDev === true });
 	const now = Date.now();
 	const removed: string[] = [];
 

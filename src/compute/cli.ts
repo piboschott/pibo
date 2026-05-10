@@ -160,11 +160,11 @@ Rebuilds from the current workspace and refreshes compute image hashes.
 
 	program
 		.command("list")
-		.description("List running Pibo worker containers")
+		.description("List running Pibo worker and dev-worker containers")
 		.addHelpText(
 			"after",
 			`
-Shows each worker's name, status, mapped ports, and creation time.
+Shows each worker's name, role, status, mapped ports, and creation time.
 `,
 		)
 		.action(async () => {
@@ -173,9 +173,9 @@ Shows each worker's name, status, mapped ports, and creation time.
 				console.log("No worker containers running.");
 				return;
 			}
-			console.log("NAME\t\tSTATUS\t\tPORTS\t\tCREATED");
+			console.log("NAME\t\tROLE\t\tSTATUS\t\tPORTS\t\tCREATED");
 			for (const w of workers) {
-				console.log(`${w.name}\t${w.status}\t${w.ports}\t${w.createdAt}`);
+				console.log(`${w.name}\t${w.role}\t${w.status}\t${w.ports}\t${w.createdAt}`);
 			}
 		});
 
@@ -199,15 +199,16 @@ Use the name or id shown by:
 		.command("reap")
 		.description("Remove old worker containers")
 		.option("--max-age-minutes <n>", "Remove workers older than this many minutes", "60")
+		.option("--include-dev", "Also remove old dev-worker containers")
 		.addHelpText(
 			"after",
 			`
-Defaults to 60 minutes.
+Defaults to 60 minutes and one-time workers only. Use --include-dev to reap dev workers too.
 `,
 		)
-		.action(async (options: { maxAgeMinutes: string }) => {
+		.action(async (options: { maxAgeMinutes: string; includeDev?: boolean }) => {
 			const maxAge = Number(options.maxAgeMinutes);
-			const removed = await reapWorkers(maxAge);
+			const removed = await reapWorkers(maxAge, { includeDev: options.includeDev === true });
 			if (removed.length === 0) {
 				console.log("No old workers to reap.");
 			} else {
