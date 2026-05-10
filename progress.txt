@@ -118,3 +118,15 @@
   - Workflow output validation can reuse the same final `$.output` path convention as definition validation while reporting concrete value failures like `$.output.status`.
   - Nodes without declared output ports currently validate as OK; future runtime stories should decide whether node kinds must declare outputs before edge compatibility checks enforce downstream contracts.
 ---
+
+## 2026-05-10 22:52 UTC - 2.5
+- Added dedicated interface value tests for valid and invalid text/JSON workflow inputs, workflow outputs, node outputs, and direct port output validation.
+- Covered JSON boundary failures for text passed to JSON ports, missing/extra properties, nested array item type errors, enum/const mismatches, nullable unions, and integer fields.
+- Marked task `2.5` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test`.
+- Files changed: `packages/workflows/src/testing/interface-values.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Direct `validateWorkflowPortValue` tests are useful for adapter-like boundary coverage before story 5.4 adds adapter-specific runtime validation helpers.
+  - JSON schemas used in runtime value tests still pass through schema subset validation first, so const-only properties need an explicit supported `type`.
+  - Keep interface value tests separate from definition schema tests so future runtime-boundary changes have focused regression coverage.
+---
