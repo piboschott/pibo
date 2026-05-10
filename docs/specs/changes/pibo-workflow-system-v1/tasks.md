@@ -10,7 +10,7 @@
 - [x] 1.2 Add TypeScript types for workflow definitions, ports, nodes, edges, registered adapters, run state, human actions, and XState projection.
 - [x] 1.3 Add schema validation for workflow definitions using the OpenAI Structured Outputs / tool-calling JSON Schema subset.
 - [x] 1.4 Add fixtures for minimal one-node `pibo-agent`, mixed-node, adapter, human-wait, registry, debug-serialization, nested workflow, and bounded back-edge/review-loop definitions.
-- [ ] 1.5 Add tests that reject malformed definitions.
+- [x] 1.5 Add tests that reject malformed definitions.
 
 ## 2. Requirement: Workflow interfaces support text and JSON
 
