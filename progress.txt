@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Two-node direct-edge tests should validate the workflow definition, call `recordWorkflowEdgeTransfer`, then use `transferResult.targetInput` as the downstream node attempt input.
 - Use `recordWorkflowEdgeTransfer` when a direct edge transfer should update the run cursor, emit `edge.transferred`, and persist the run; keep `transferWorkflowEdgeData` pure for validation/payload creation.
 - Direct edge runtime transfer is exposed as `transferWorkflowEdgeData`; it creates an immutable `EdgeTransfer` from a completed source attempt output only after validating source output and target input ports.
 - Direct workflow edge compatibility is conservative: text ports match text ports, and JSON ports match only when their semantic schema contracts are equivalent; otherwise use an explicit edge adapter or adapter node.
@@ -251,4 +252,16 @@
   - Keep pure edge transfer validation/payload creation (`transferWorkflowEdgeData`) separate from run/event side effects (`recordWorkflowEdgeTransfer`) so future graph runtime code can choose the correct boundary.
   - Edge transfer event recording should only happen after transfer validation succeeds; failed transfers should return diagnostics without invoking event emitters or changing the run cursor.
   - The existing `WorkflowRun.current` cursor can represent an edge boundary with `{ edgeId, status }`, and `SqliteWorkflowRunStore` already persists `current_edge_id` through the serialized cursor.
+---
+
+## 2026-05-10 23:29 UTC - 4.5
+- Added a two-node direct-edge runtime test where node A completes with JSON output, `recordWorkflowEdgeTransfer` records the transfer, and node B starts from the transferred JSON object as its input.
+- Verified the test workflow definition is valid, the transfer emits `edge.transferred`, the run cursor advances to the edge, and the downstream input validates against node B's JSON port.
+- Marked task `4.5` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- Files changed: `packages/workflows/src/testing/runtime-edge-transfer.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - `recordWorkflowEdgeTransfer` already provides the target node input as `transferResult.targetInput`; use that value directly when constructing a downstream `NodeAttempt` in tests.
+  - Direct JSON two-node fixtures can reuse the same `json(...)` port object for source output and target input so existing direct compatibility validation proves the schemas match.
+  - Story 4.5 is test-only; a full graph runner that automatically starts node B belongs to later node dispatch/orchestration stories.
 ---

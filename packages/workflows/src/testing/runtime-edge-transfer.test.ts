@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { json, recordWorkflowEdgeTransfer, text, transferWorkflowEdgeData } from "../index.js";
+import {
+  json,
+  recordWorkflowEdgeTransfer,
+  text,
+  transferWorkflowEdgeData,
+  validateWorkflow,
+  validateWorkflowPortValue,
+} from "../index.js";
 import type {
   NodeAttempt,
   WorkflowDefinition,
   WorkflowRun,
   WorkflowRuntimeEvent,
   WorkflowRunStore,
+  WorkflowValue,
 } from "../index.js";
 
 function createTwoNodeWorkflow(): WorkflowDefinition {
@@ -61,6 +69,67 @@ function createRun(): WorkflowRun {
   };
 }
 
+function createJsonTwoNodeWorkflow(): WorkflowDefinition {
+  const articlePort = json({
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      summary: { type: "string" },
+    },
+    required: ["title", "summary"],
+    additionalProperties: false,
+  });
+
+  return {
+    id: "test.two-node-json-transfer",
+    version: "1.0.0",
+    title: "Two node JSON transfer test workflow",
+    input: text(),
+    output: text(),
+    initial: "compose",
+    final: "publish",
+    nodes: {
+      compose: {
+        kind: "agent",
+        runtime: "pibo",
+        profile: { kind: "fixed", id: "pibo-agent" },
+        input: text(),
+        output: articlePort,
+      },
+      publish: {
+        kind: "agent",
+        runtime: "pibo",
+        profile: { kind: "fixed", id: "pibo-agent" },
+        input: articlePort,
+        output: text(),
+      },
+    },
+    edges: {
+      "compose-to-publish": {
+        id: "compose-to-publish",
+        from: { nodeId: "compose" },
+        to: { nodeId: "publish" },
+        kind: "data",
+      },
+    },
+  };
+}
+
+function createJsonRun(): WorkflowRun {
+  return {
+    id: "wfr_json_edge_transfer",
+    workflowId: "test.two-node-json-transfer",
+    workflowVersion: "1.0.0",
+    ownerScope: "user:test",
+    status: "running",
+    current: { nodeId: "compose", status: "running" },
+    input: "Write an article summary.",
+    state: { global: {} },
+    createdAt: "2026-05-10T23:30:00.000Z",
+    updatedAt: "2026-05-10T23:30:00.000Z",
+  };
+}
+
 function createSourceAttempt(overrides: Partial<NodeAttempt> = {}): NodeAttempt {
   return {
     id: "wna_draft",
@@ -78,6 +147,74 @@ function createSourceAttempt(overrides: Partial<NodeAttempt> = {}): NodeAttempt 
 }
 
 describe("workflow edge data transfer", () => {
+  it("feeds node A JSON output into node B input in a two-node workflow", async () => {
+    const definition = createJsonTwoNodeWorkflow();
+    const definitionValidation = validateWorkflow(definition);
+    assert.equal(definitionValidation.ok, true);
+
+    const run = createJsonRun();
+    const nodeAOutput: WorkflowValue = {
+      title: "Workflow edges",
+      summary: "A completed node can feed validated JSON into the next node.",
+    };
+    const sourceAttempt: NodeAttempt = {
+      id: "wna_compose",
+      workflowRunId: run.id,
+      nodeId: "compose",
+      attempt: 1,
+      kind: "agent",
+      status: "completed",
+      input: run.input,
+      output: nodeAOutput,
+      startedAt: "2026-05-10T23:30:01.000Z",
+      completedAt: "2026-05-10T23:30:02.000Z",
+    };
+
+    const transferResult = await recordWorkflowEdgeTransfer(
+      definition,
+      run,
+      "compose-to-publish",
+      sourceAttempt,
+      {
+        now: () => "2026-05-10T23:30:03.000Z",
+        createEdgeTransferId: () => "wet_compose_to_publish",
+      },
+    );
+
+    assert.equal(transferResult.ok, true);
+    assert.deepEqual(transferResult.targetInput, nodeAOutput);
+    assert.deepEqual(transferResult.transfer.payload, nodeAOutput);
+    assert.deepEqual(run.current, { edgeId: "compose-to-publish", status: "running" });
+    assert.deepEqual(transferResult.events, [
+      {
+        type: "edge.transferred",
+        runId: run.id,
+        edgeTransferId: "wet_compose_to_publish",
+        edgeId: "compose-to-publish",
+      },
+    ]);
+
+    const targetInputPort = definition.nodes.publish.input;
+    assert.ok(targetInputPort);
+    const targetInputValidation = validateWorkflowPortValue(targetInputPort, transferResult.targetInput, {
+      path: "$.nodes.publish.input",
+    });
+    assert.equal(targetInputValidation.ok, true);
+
+    const targetAttempt: NodeAttempt = {
+      id: "wna_publish",
+      workflowRunId: run.id,
+      nodeId: "publish",
+      attempt: 1,
+      kind: "agent",
+      status: "running",
+      input: transferResult.targetInput,
+      startedAt: "2026-05-10T23:30:04.000Z",
+    };
+
+    assert.deepEqual(targetAttempt.input, nodeAOutput);
+  });
+
   it("creates a transferred edge payload from a completed source node output", () => {
     const definition = createTwoNodeWorkflow();
     const result = transferWorkflowEdgeData(definition, createRun(), "draft-to-review", createSourceAttempt(), {
