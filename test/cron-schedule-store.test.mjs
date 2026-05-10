@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 import { computeNextRunAt, parseFriendlySchedule } from '../dist/cron/schedule.js';
 import { PiboCronStore } from '../dist/cron/store.js';
+
+const execFileAsync = promisify(execFile);
+const cliPath = new URL('../dist/bin/pibo.js', import.meta.url).pathname;
 
 test('cron at schedule returns future date once', () => {
   const now = new Date('2026-05-09T08:00:00.000Z');
@@ -41,4 +49,46 @@ test('cron store persists, filters owner scope, and reserves a due run once', ()
   assert.equal(updated.enabled, false);
   assert.equal(updated.state.lastPiboSessionId, 'ps_test');
   store.close();
+});
+
+test('cron CLI requires explicit owner scope for job creation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pibo-cron-cli-'));
+  const storePath = join(root, 'cron.sqlite');
+  try {
+    await assert.rejects(
+      execFileAsync('node', [cliPath, 'cron', '--store', storePath, 'add', '--personal', '--daily', '09:10', '--prompt', 'do it'], {
+        env: { ...process.env, PIBO_OWNER_SCOPE: 'user:env-fallback' },
+      }),
+      /--owner-scope is required for cron operations/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('cron CLI uses explicit owner scope as personal target default', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pibo-cron-cli-'));
+  const storePath = join(root, 'cron.sqlite');
+  try {
+    const result = await execFileAsync('node', [
+      cliPath,
+      'cron',
+      '--store',
+      storePath,
+      '--owner-scope',
+      'user:test',
+      'add',
+      '--personal',
+      '--daily',
+      '09:10',
+      '--prompt',
+      'do it',
+      '--json',
+    ]);
+    const job = JSON.parse(result.stdout);
+    assert.equal(job.ownerScope, 'user:test');
+    assert.deepEqual(job.target, { kind: 'personal', principalId: 'user:test' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
