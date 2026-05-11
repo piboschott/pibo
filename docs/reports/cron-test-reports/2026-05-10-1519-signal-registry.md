@@ -240,3 +240,11 @@ Begründung: `npm test` baut alles inklusive Web-UIs und startet alle Tests. Das
 - `test/chat-signals-api.test.mjs`: mittlere Breite, aber noch entwicklungsfreundlich; guter API-Integrationscheck.
 - Fehlendes Frontend-Subset: pure Signal-State-Transformationen in `App.tsx` sind aktuell nur über breitere App-Pfade indirekt geschützt.
 - Browser-/Deployment-Checks sind für diesen Bereich erst nach UI-Änderungen nötig, nicht für Registry-/API-Kernarbeit.
+
+## Umgesetzt am 2026-05-11 14:03 Europe/Berlin
+
+- Bereich: Kleiner Registry-Unit-Subset für UI-relevante Signal-Phasen.
+- Geänderte Dateien: `test/signal-registry.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/signal-registry.test.mjs`.
+- Ergebnis: 21/21 Tests bestanden; abgedeckt sind Tool-, Subagent-, Yielded-Run-, Compaction- und Running-vs-Queued-Phasen.
+- Verbleibende offene Punkte: Pruning-Randfälle, Chat-Signal-SSE-Negativfälle, SSE-Cleanup und UI-Patch-Transformationslogik bleiben offen.

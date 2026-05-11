@@ -87,6 +87,51 @@ test("yielded run keeps session tree active and completion removes active run", 
 	assert.equal(snapshot.sessions.root.activeRuns.length, 0);
 });
 
+test("signal session phase reflects active work kind", async (t) => {
+	await t.test("tool calls use tools phase", () => {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "pibo_output", event: { type: "tool_execution_started", piboSessionId: "root", toolCallId: "tc1", toolName: "bash" } });
+
+		assert.equal(registry.snapshotTree("root").sessions.root.phase, "tools");
+	});
+
+	await t.test("subagent sessions use subagent phase", () => {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "pibo_output", event: { type: "subagent_session", piboSessionId: "root", childPiboSessionId: "child", subagentName: "explorer", toolName: "pibo_subagent_explorer" } });
+
+		assert.equal(registry.snapshotTree("root").sessions.root.phase, "subagent");
+	});
+
+	await t.test("yielded runs use run phase", () => {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "run_changed", run: run("run_1", "running") });
+
+		assert.equal(registry.snapshotTree("root").sessions.root.phase, "run");
+	});
+
+	await t.test("compaction uses compaction phase", () => {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "pibo_output", event: { type: "compaction_start", piboSessionId: "root", reason: "context-window" } });
+
+		assert.equal(registry.snapshotTree("root").sessions.root.phase, "compaction");
+	});
+
+	await t.test("running status outranks queued phase", () => {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "queue_changed", piboSessionId: "root", queuedMessages: 1 });
+		registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: true, queuedMessages: 1 });
+
+		const root = registry.snapshotTree("root").sessions.root;
+		assert.equal(root.localStatus, "running");
+		assert.equal(root.phase, "prompting");
+	});
+});
+
 test("failed yielded run does not mark session as runtime error", () => {
 	const registry = createPiboSignalRegistry();
 	registry.project({ type: "session_created", session: session("root") });
