@@ -1,0 +1,126 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-security-observability-testing-rollout",
+  "description": "Cross-cutting security boundaries, privacy-aware events/diagnostics, fixture coverage, validation gates, rollout phases, and rollback behavior for Workflow System V1.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Enforce workflow security boundaries",
+      "description": "As a security reviewer, I want workflows to obey existing Pibo boundaries so that workflows do not create a privileged path.",
+      "acceptanceCriteria": [
+        "Validation, capability validation, executor policy resolution, and runtime execution enforce session, tool, compute-worker, auth, profile, project ownership, and environment policies",
+        "Code nodes and adapters use registered trusted handlers only",
+        "Security tests verify workflows cannot bypass profile, tool, skill, context, session routing, or compute-worker policies",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement structured diagnostics and error families",
+      "description": "As a developer, I want diagnostics and errors to be actionable so that implementation failures are easy to fix.",
+      "acceptanceCriteria": [
+        "Workflow diagnostic shape includes code, message, optional path, nodeId, edgeId, severity, and hint",
+        "Error families include definition, graph, interface, execution, retry-exhausted, adapter, and node-executor errors",
+        "Diagnostics reveal enough to fix errors without leaking hidden payloads in normal UI",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Emit minimum workflow event contract",
+      "description": "As an operator, I want workflow records and events to reconstruct current run status for CLI and Chat Web.",
+      "acceptanceCriteria": [
+        "Workflow events include workflow started, workflow waiting, workflow completed, workflow failed, node started, node completed, node failed, edge transferred, and checkpoint created at minimum",
+        "Events drive trace, UI, CLI/debug, XState projection, and audit views",
+        "Unauthorized data is not exposed through event projections",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add required workflow fixtures",
+      "description": "As a QA engineer, I want deterministic fixtures so that the implementation can be verified repeatably.",
+      "acceptanceCriteria": [
+        "Fixtures include one-node agent, mixed nodes, adapter, human wait, registry/plugin, debug serialization, nested workflow, and bounded review loop",
+        "Fixtures cover all node kinds, port types, adapters, guards, joins, state policies, loops, waits, and registry refs",
+        "Fixture snapshots are deterministic where serialization or projection is expected",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add validation and persistence test suites",
+      "description": "As a QA engineer, I want automated tests so that V1 runtime invariants are protected.",
+      "acceptanceCriteria": [
+        "Validation suite accepts valid fixtures and rejects malformed definitions with structured diagnostics",
+        "Persistence suite covers completed, failed, waiting, resumed, retry-scheduled, cancelled, nested child failure, stale lease reclaim, and restart-after-boundary cases",
+        "AI-output eval verifies schema-bound Agent outputs validate or fail before completion/downstream transfer",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Add manual release validation checklist",
+      "description": "As an operator, I want manual checks before rollout so that core user flows are verified end to end.",
+      "acceptanceCriteria": [
+        "Manual checklist includes npm run typecheck, workflow tests, persistence tests, one-node pibo-agent workflow, adapter composition workflow, and bounded review loop",
+        "Manual results are recorded in validation report or equivalent release artifact",
+        "No V1 release is considered complete until all checks pass",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement workflow execution rollback switch",
+      "description": "As an operator, I want rollback to preserve normal sessions so that workflow failures do not break core Pibo usage.",
+      "acceptanceCriteria": [
+        "Feature flag or equivalent operational switch disables workflow execution",
+        "Rollback ignores workflow metadata in session routing while preserving normal Pibo Sessions",
+        "Persisted workflow records remain inspectable after rollback",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Document rollout phases and V1 non-goals",
+      "description": "As an engineering lead, I want clear gates and scope boundaries so that implementation does not creep.",
+      "acceptanceCriteria": [
+        "Rollout gates cover MVP, v1.1, v1.2, and v2.0 or equivalent feature-completeness phases",
+        "Docs state V1 excludes new cross-user permission model, general audit/compliance product, production distributed scheduler readiness, marketplace approval/sandboxing, and full visual editor",
+        "Docs live under docs/ according to project documentation structure",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

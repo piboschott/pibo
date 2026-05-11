@@ -1,0 +1,112 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-authoring-api-registry",
+  "description": "TypeScript workflow authoring API, object and builder definitions, deterministic canonical IR, registry resolution, plugin registration, and structured validation diagnostics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement public workflow authoring API surface",
+      "description": "As a TypeScript workflow author, I want stable helpers so that I can define and validate workflows in code.",
+      "acceptanceCriteria": [
+        "Export setupWorkflow, workflow, defineWorkflow, provideWorkflow, text, json, template, fixedProfile, validateWorkflow, compileWorkflow, serializeWorkflowForDebug, projectToXState, and resolveWorkflowDefinition or style-equivalent names",
+        "Export registerWorkflow, registerWorkflowHandler, registerWorkflowAdapter, registerWorkflowGuard, registerWorkflowHumanAction, and registerPluginWorkflows or style-equivalent registration helpers",
+        "API does not expose runtime-kernel internals as authoring primitives",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Normalize builder and object definitions to equivalent IR",
+      "description": "As an agent editing workflow code, I want object definitions and builder definitions to produce the same normalized shape so that either style is safe.",
+      "acceptanceCriteria": [
+        "workflow(id) builder supports a one-node Agent workflow in under 15 lines",
+        "defineWorkflow(id, definition) object style supports the same workflow semantics",
+        "Equivalent object and builder definitions serialize to equivalent deterministic canonical IR in snapshot tests",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Scope setupWorkflow without persisting closures",
+      "description": "As a framework developer, I want setupWorkflow to scope dependencies by id so that run records remain serializable and auditable.",
+      "acceptanceCriteria": [
+        "setupWorkflow scopes types, profiles, handlers, guards, adapters, prompt assets, human actions, and capability metadata",
+        "Persisted workflow definitions and run records store ids/refs instead of inline closures",
+        "provideWorkflow can override implementations for tests/deployments while preserving id/version/hash auditability",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement Workflow Registry reference resolution",
+      "description": "As a plugin developer, I want registry hooks so that plugins can publish workflows and implementation refs.",
+      "acceptanceCriteria": [
+        "Workflow Registry registers and resolves workflow definitions, code handlers, adapters, guards, prompt builders/assets, human actions, routing hints, capability declarations, and custom merge handlers",
+        "registerPluginWorkflows(pluginId, register) can add at least one workflow, handler, adapter, guard, prompt asset, and human action",
+        "Runtime starts workflows from registry-resolved workflow id and version",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Reject missing or invalid registry references during validation",
+      "description": "As a QA engineer, I want invalid references rejected before execution so that workflows fail early with actionable errors.",
+      "acceptanceCriteria": [
+        "Validation rejects unknown workflow ids, handler ids, adapter ids, guard ids, prompt assets, human actions, and statically resolvable profile/tool/skill refs",
+        "Diagnostics include code, severity, path or node/edge id when applicable, and fix hint for top V1 authoring failures",
+        "Negative tests cover missing ids and unsupported definitions",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Add deterministic debug serialization metadata",
+      "description": "As a QA engineer, I want deterministic serialization so that workflow definitions can be snapshot-tested.",
+      "acceptanceCriteria": [
+        "serializeWorkflowForDebug outputs stable ordering for workflow metadata, nodes, edges, ports, and registry refs",
+        "IR metadata supports useWhen, notFor, examples, tags, routing hints, prompt asset refs, version, definition hash, and migration metadata when needed",
+        "Debug serialization is documented as not being a V1 workflow file import/export product surface",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add port utility types for workflow and node values",
+      "description": "As a TypeScript workflow author, I want utility types tied to ports so that handler inputs and outputs are typed.",
+      "acceptanceCriteria": [
+        "Expose utility types equivalent to WorkflowInputFrom, WorkflowOutputFrom, NodeInputFrom, NodeOutputFrom, and WorkflowSnapshotFrom",
+        "Utility types infer values from text and JSON ports without requiring XState types in authoring code",
+        "Type-level tests or compile fixtures validate expected inference",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-xstate-projection-inspection",
+  "description": "XState as deterministic projection, visualization, simulation, inspection, and local orchestration support while Pibo IR and kernel records remain authoritative.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add deterministic XState machine projection",
+      "description": "As a future editor implementer, I want projection metadata so that UI can display Pibo workflow concepts.",
+      "acceptanceCriteria": [
+        "projectToXState maps workflow definition to XState-compatible machine config",
+        "Projection maps nodes to states/invoked actors, edges to transitions, guards to named guards, human waits to waiting states, retry delays to delay states, nested workflows to child actors/machines, and completion/failure/cancel to terminal states",
+        "Projection preserves node ids, edge ids, guards, waits, final states, actor refs, tags, descriptions, metadata, and UI hints needed for display",
+        "Deterministic snapshot tests cover representative fixtures",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Reconstruct UI snapshot from kernel records",
+      "description": "As a runtime engineer, I want UI state recoverable without XState snapshots so that Pibo persistence remains authoritative.",
+      "acceptanceCriteria": [
+        "Snapshot kinds kernel, xstate, and ui are distinguished and versioned when persisted",
+        "UI snapshot reconstruction works from workflow run, node attempts, events, waits, wakeups, and checkpoints when XState snapshot is deleted",
+        "XState context is a projection of global/local/edge state, not a replacement for workflow state records",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Define Pibo-owned actor interface",
+      "description": "As a runtime engineer, I want a Pibo actor contract so that public runtime code does not depend on raw XState internals.",
+      "acceptanceCriteria": [
+        "Define actor interface with start, send, stop, getSnapshot, optional persist, optional restore, and optional inspect",
+        "Actor kinds cover agent, code, workflow, adapter, and human",
+        "XState actors may implement the interface internally, but public workflow runtime APIs expose the Pibo-owned contract",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Emit workflow inspection events",
+      "description": "As a developer, I want inspection events so that I can debug actor transitions and child outputs.",
+      "acceptanceCriteria": [
+        "Inspection event types include actor created, event sent, transition, snapshot, action, child output, wait entered, and wait resumed",
+        "Events include runId, actorId, nodeId, edgeId, childRunId, and payload summaries where applicable and authorized",
+        "Inspection tests verify required event families emit for fixtures",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Render Workflow/XState visualization data safely",
+      "description": "As a user, I want a visual workflow state view so that I understand running, waiting, failed, and complete states.",
+      "acceptanceCriteria": [
+        "Chat Web consumes projection config, current machine snapshot, actor/child hierarchy, guard/action names, tags, descriptions, and metadata",
+        "Projection and UI snapshots do not expose raw private payloads unless the caller is authorized for debug",
+        "V1 UI does not edit raw XState JSON and full workflow editing is deferred",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Keep XState out of durable execution truth",
+      "description": "As a runtime engineer, I want XState to be optional for recovery so that workflow persistence remains Pibo-owned.",
+      "acceptanceCriteria": [
+        "Kernel snapshots and workflow records remain recovery and audit truth",
+        "Durable retry/wakeup behavior is driven by workflow store records, not process-local XState timers only",
+        "Deep nested parallel statecharts, history states, SCXML-like semantics, and implicit eventless transition cascades beyond simple compiler-generated transitions are deferred in V1",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

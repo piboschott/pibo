@@ -1,0 +1,131 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-node-executors-agent-runtime",
+  "description": "Executor contracts for Agent, TypeScript code, nested workflow, adapter, and human nodes, with Agent nodes routed through normal Pibo Runtime and strict policy boundaries.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement shared node executor dispatch contract",
+      "description": "As a workflow author, I want all V1 node kinds supported through a common attempt model so that execution is inspectable.",
+      "acceptanceCriteria": [
+        "Runtime dispatches node kinds agent, code, workflow, adapter, and human",
+        "Each executor validates input before work and output after work",
+        "Each executor returns structured result, commands, patches, or diagnostics through the shared node attempt model",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement Agent executor through normal Pibo Runtime",
+      "description": "As a workflow author, I want Agent nodes to use pibo-agent or another fixed Agent Designer profile so that behavior matches normal sessions.",
+      "acceptanceCriteria": [
+        "Agent node requires runtime pibo and fixed profile selection in V1",
+        "Executor resolves fixed Agent Designer profile and rejects unknown profile",
+        "Executor creates or attaches to a routed Pibo Session through normal Pibo session routing",
+        "Executor records piboSessionId, optional piSessionId, trace links, effective profile, tools, skills, context, and routing metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement Agent prompt construction and structured output validation",
+      "description": "As an agent profile owner, I want prompts and outputs handled consistently so that Agent nodes remain policy-bound.",
+      "acceptanceCriteria": [
+        "Agent executor builds final prompt from promptTemplate, promptBuilder, or prompt asset",
+        "Fixed prompts and prompt builders both record final prompts subject to existing trace/privacy rules",
+        "Agent executor collects text or structured output and validates declared output port before completion/downstream transfer",
+        "Capability validation checks structured-output support or declared fallback when possible",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement registered TypeScript code executor",
+      "description": "As a developer, I want code nodes to call registered handlers so that logic is testable and not arbitrary hidden code.",
+      "acceptanceCriteria": [
+        "Code node uses language typescript and a registered handler id",
+        "Handler receives scoped context with input, global, local, edge, emit, and command capabilities",
+        "Executor enforces declared reads/writes and rejects undeclared state writes",
+        "Inline code and arbitrary shell/script nodes are not implemented as V1 primitives",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement nested workflow executor",
+      "description": "As a workflow author, I want nested workflows so that reusable workflows compose without sharing internal state by default.",
+      "acceptanceCriteria": [
+        "Nested executor resolves child workflow id/version and creates a child workflow run",
+        "Child input is validated against child input port and child output maps to parent node output",
+        "Parent/child run ids, checkpoint namespace, and events are linked",
+        "Child global/local state stays isolated unless explicit export is configured",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement adapter executor and edge adapter attempts",
+      "description": "As a developer, I want deterministic adapters so that interface transformations are visible and testable.",
+      "acceptanceCriteria": [
+        "Adapter nodes and edge adapters resolve registered TypeScript adapter handlers",
+        "Executor validates source payload, runs deterministic transform, validates adapter output against declared output and target input, and persists adapter attempt/errors",
+        "Hidden agent-assisted adapters are not implemented in V1",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Integrate Human executor with durable waits",
+      "description": "As a reviewer, I want human nodes to pause reliably so that actions can resume workflows later.",
+      "acceptanceCriteria": [
+        "Human executor creates durable wait tokens through the runtime kernel before returning control",
+        "Human executor exposes available actions and validates resume/action payloads",
+        "Human executor routes approval, rejection, timeout, cancellation, invalid resume, and normal resume through declared edges when present",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Enforce environment and capability policies for executors",
+      "description": "As a security reviewer, I want node execution to obey Pibo boundaries so that workflows do not grant extra power.",
+      "acceptanceCriteria": [
+        "Environment policy supports inherit, host, worktree, docker-worker, and remote with default inherit",
+        "Effective environment is stored on run or node attempt and passed through scoped executor context",
+        "Capability validation checks profile existence, tool/skill/context availability, session resume, timeout, budget, isolation, environment policy, and known concurrency limits when possible",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

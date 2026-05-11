@@ -1,0 +1,115 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-runtime-kernel-persistence",
+  "description": "Durable workflow runtime kernel backed by pibo-workflows.sqlite with boundary persistence, replay/resume, leases, retries, cancellation, checkpoints, and inspectable facts.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create workflow-specific SQLite store schema",
+      "description": "As a runtime engineer, I want a separate workflow store so that normal session stores remain unchanged.",
+      "acceptanceCriteria": [
+        "Create pibo-workflows.sqlite or equivalent configured store for workflow execution facts only",
+        "Add logical tables for definition snapshots, runs, events, node attempts, edge transfers, checkpoints, wakeups, wait tokens, and human actions",
+        "Do not duplicate full Pibo/Pi transcripts, spans, tool calls, or session records into the workflow DB",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Persist workflow run lifecycle boundaries",
+      "description": "As an operator, I want completed, failed, waiting, retry-scheduled, and cancelled runs inspectable from persisted records.",
+      "acceptanceCriteria": [
+        "Workflow statuses include pending, running, waiting, failed, completed, and cancelled",
+        "Runtime persists workflow start, failure, cancellation, checkpoint, and completion events/facts",
+        "Inspection reconstructs current workflow status from persisted workflow facts",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement node attempts and boundary events",
+      "description": "As a developer, I want node attempts to be first-class so that retries and idempotency are testable.",
+      "acceptanceCriteria": [
+        "Node attempt statuses include pending, leased, running, waiting, retry_scheduled, failed, completed, skipped, and cancelled or equivalent persisted/projection representation for skipped",
+        "Runtime persists node attempt start, node attempt result, and error details",
+        "Node attempts use deterministic idempotency keys derived from run id, namespace/path, node id, attempt number, and loop iteration where applicable",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement durable execution loop and rehydration",
+      "description": "As an engineer, I want workflow resume after restart so that completed node work is not re-run.",
+      "acceptanceCriteria": [
+        "Runtime executes only compiled plans",
+        "Execution loop claims runnable work, loads state/checkpoint, leases attempts, executes nodes, validates output, persists results, applies state, evaluates edges, creates transfers, enqueues next attempts, checkpoints, and emits events",
+        "Kernel rehydrates from run, latest checkpoint, node attempts, edge transfers, wakeups, and wait tokens without requiring XState snapshots",
+        "Crash tests cover restart after workflow start, node completion, edge transfer, wait token creation, retry scheduling, and workflow completion",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement leases and stale lease reclaim",
+      "description": "As a runtime engineer, I want leases to prevent duplicate active ownership so that two workers do not run the same attempt.",
+      "acceptanceCriteria": [
+        "Runnable selection requires no active lease owned by another worker",
+        "Leases include leaseId, ownerId, acquiredAt, and expiresAt",
+        "Long-running attempts heartbeat when supported and expired leases are reclaimable",
+        "Lease tests cover active exclusion, heartbeat update, stale reclaim, and idempotent retry boundary",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement retries, wakeups, and durable backoff",
+      "description": "As an operator, I want retry backoff and wakeups to survive restart so that long-running workflows continue correctly.",
+      "acceptanceCriteria": [
+        "Retry policies support fixed, linear, exponential, and none or accepted equivalents",
+        "Retry inheritance order is node/adapter policy, then workflow policy, then system default",
+        "Wakeups store kind, available time, correlation id, payload, and run/attempt linkage",
+        "Restart tests cover retry-scheduled runs and wakeup resume",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement cancellation propagation",
+      "description": "As an operator, I want cancellation to stop active work and child runs so that workflow shutdown is auditable.",
+      "acceptanceCriteria": [
+        "Cancellation propagates to active attempts, child Pibo Sessions when allowed, and nested workflow runs",
+        "Runtime records cancellation event and final cancelled status",
+        "Cancellation does not bypass environment or isolation policies",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-human-actions-cli-project-ui",
+  "description": "Durable human wait tokens, human action APIs, CLI/debug workflow controls, Projects tab status/actions, and a Workflow/XState visualization tab without V1 editing.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist human wait tokens and action records",
+      "description": "As a reviewer, I want approval/input waits to survive restart so that my pending decision is not lost.",
+      "acceptanceCriteria": [
+        "Human node or requestHumanInput command creates workflow_wait_tokens row before returning control",
+        "Wait token statuses represent pending/open, resolved, expired, and cancelled states or accepted equivalents",
+        "Accepted actions write workflow_human_actions, resolve token, emit events, and schedule wakeup/resume with correlation id and payload",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement built-in and registry-backed human actions",
+      "description": "As a developer, I want custom human actions to use the same token model so that future actions do not require a new runtime path.",
+      "acceptanceCriteria": [
+        "Built-in action kinds include approve, reject, resume, and cancel",
+        "Additional action kinds register through registerWorkflowHumanAction",
+        "Runtime validates token status, action availability, schema, expiry, actor, and run ownership before applying action",
+        "Negative tests cover invalid payload, expired token, already-resolved token, unauthorized/invalid actor, and missing run",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add CLI/debug workflow control commands",
+      "description": "As an operator, I want CLI/debug controls so that I can inspect and manage workflows without UI dependence.",
+      "acceptanceCriteria": [
+        "CLI/debug exposes workflow list, validate, run, inspect, approve, reject, resume, and cancel commands or equivalents in existing CLI style",
+        "Approve/reject/resume/cancel operate on the same persisted wait token model used by UI",
+        "V1 does not add an XState CLI command",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Expose workflow status and human actions in Projects tab",
+      "description": "As a Pibo user, I want to see why a workflow is waiting or failed so that I know the next action.",
+      "acceptanceCriteria": [
+        "Projects tab lists pending human actions for associated workflow/project/session",
+        "Project UI shows workflow id, status, current node/state, node statuses, final output where permitted, validation errors, waiting reason, and available actions",
+        "Project UI submits action payloads with actor metadata",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add dedicated Workflow/XState visualization tab",
+      "description": "As a user, I want a workflow visualization so that I can understand current runtime state.",
+      "acceptanceCriteria": [
+        "Dedicated Web UI Workflow/XState tab renders visualization from projection data and current runtime snapshot",
+        "The tab uses Pibo/XState projection and does not edit raw XState JSON",
+        "Full visual workflow creation/editing is explicitly deferred in V1",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Route human action outcomes through runtime edges",
+      "description": "As a workflow author, I want human outcomes to route predictably so that approval, rejection, resume, timeout, and cancellation are modeled.",
+      "acceptanceCriteria": [
+        "Runtime routes approval, rejection, timeout, cancellation, invalid resume, and normal resume through declared normal/error/resume edges when present",
+        "Resume payloads validate against the human node schema before workflow execution continues",
+        "Executor results distinguish approved, rejected, submitted, and timed_out decisions when applicable",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

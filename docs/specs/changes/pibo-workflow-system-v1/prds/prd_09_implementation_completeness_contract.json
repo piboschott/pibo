@@ -1,0 +1,323 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-implementation-completeness-contract",
+  "description": "Second-pass implementation completeness contract consolidating every mandatory Workflow System V1 requirement into Ralph-sized implementation and validation stories.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create packages/workflows module layout",
+      "description": "As an implementation agent, I need the required package structure so that all workflow capabilities have clear homes.",
+      "acceptanceCriteria": [
+        "Create packages/workflows with submodules or direct equivalents for api, registry, types, validation, graph, compiler, runtime, store, xstate, fixtures, and testing",
+        "Each submodule owns the responsibility described in the completeness contract",
+        "Package exports are minimal and do not expose runtime internals through authoring APIs",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Define public authoring API and utility types",
+      "description": "As a framework developer, I need the complete authoring API so that TypeScript workflows can be created, registered, validated, compiled, serialized, projected, and resolved.",
+      "acceptanceCriteria": [
+        "Expose setupWorkflow, workflow, defineWorkflow, provideWorkflow, registerWorkflow, registerWorkflowHandler, registerWorkflowAdapter, registerWorkflowGuard, registerWorkflowHumanAction, registerPluginWorkflows, text, json, template, fixedProfile, validateWorkflow, compileWorkflow, serializeWorkflowForDebug, projectToXState, and resolveWorkflowDefinition or equivalent names",
+        "Expose utility types tied to workflow and node ports for input, output, and snapshot values",
+        "The API supports both object-first and builder definitions",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement canonical JSON-serializable Workflow IR",
+      "description": "As a reviewer, I need the canonical IR complete so that definitions can be validated, compiled, debugged, snapshotted, and projected.",
+      "acceptanceCriteria": [
+        "WorkflowDefinition includes id, version, optional name/description, input, output, nodes, edges, initial, final, state, retry, ui, and metadata fields",
+        "IR is JSON-serializable and stores refs/ids instead of inline closures",
+        "IR is not marketed as V1 workflow YAML/JSON file import/export product support",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement final/completion semantics and V1 ports",
+      "description": "As a workflow author, I need explicit start and completion rules so that workflow output is deterministic.",
+      "acceptanceCriteria": [
+        "initial or builder startAt defines one or more entry nodes",
+        "final or builder doneFrom defines terminal node(s) or output mapping",
+        "Terminal node output becomes workflow output unless a final mapper is declared",
+        "Workflow output validates against text or JSON output port before run completion",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement all V1 node definition shapes",
+      "description": "As an implementation agent, I need all node kinds in the IR so that workflow definitions can represent V1 behavior.",
+      "acceptanceCriteria": [
+        "Node definitions support agent, code, workflow, adapter, and human kinds",
+        "Agent nodes require kind agent, runtime pibo, and fixed profile selection in V1",
+        "Code nodes reference registered TypeScript handlers; nested workflow nodes reference workflow id/version; adapter nodes reference registered adapters; human nodes define prompt/schema/timeout",
+        "Base nodes support label, input, output, reads, and writes",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement edge, adapter, join, merge, and retry IR",
+      "description": "As a framework developer, I need complete edge semantics so that composition, routing, state, and retries are explicit.",
+      "acceptanceCriteria": [
+        "Edges support id, from, to, kind, event, condition/guard, join, map, adapter, state mapping, and UI metadata",
+        "Edge adapters use kind edgeAdapter with declared output port and registered transform ref",
+        "Join policies include all_success, one_success, none_failed_min_one_success, and all_done",
+        "Merge policies include replace, append, shallowMerge, and custom handler",
+        "Retry policies include maxAttempts, backoff, and optional retryOn with node/adapter > workflow > system default inheritance",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement Workflow Registry completeness",
+      "description": "As a plugin developer, I need registry resolution for all implementation refs so that runtime never executes unknown code.",
+      "acceptanceCriteria": [
+        "Registry registers/resolves workflows, code handlers, adapter handlers, guard handlers, prompt builders, prompt assets, human actions, routing hints, runtime capabilities, custom merge handlers, and plugin-provided capabilities",
+        "registerPluginWorkflows supports plugin registration",
+        "Validation fails missing statically resolvable refs before execution",
+        "Runtime DB stores workflow id, version, definition hash, optional compiled snapshot, and facts while TypeScript source stays in code/registry",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement structured validation diagnostics and rejection rules",
+      "description": "As a QA engineer, I need validation to reject invalid workflows with actionable diagnostics.",
+      "acceptanceCriteria": [
+        "Validation returns diagnostics with code, message, optional path/nodeId/edgeId, severity, and hint",
+        "Error families cover definition, graph, interface, execution, retry-exhausted, adapter, and node-executor errors",
+        "Validator rejects malformed ids, missing refs, invalid port payloads, unsupported JSON schemas, incompatible edges, missing handlers/adapters/guards/profiles/workflows, ambiguous joins/guards, undeclared writes, merge conflicts, unbounded cycles, and unbounded back-edges",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Implement graph store and compiler execution plan",
+      "description": "As a runtime developer, I need graph utilities and compiled plans so that runtime executes normalized workflows only.",
+      "acceptanceCriteria": [
+        "Graph store provides stable node/edge ids, has/get/set/update/drop methods, successors, predecessors, inEdges, outEdges, export, copy, and project or equivalents",
+        "Graph serialization is deterministic and mutation utilities support debug/test payloads",
+        "Compiler produces execution plan with definition identity, normalized nodes/edges, initial/terminal nodes, loop metadata, join metadata, state policy, queue seeds, checkpoint namespaces, and XState projection metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Implement durable runtime kernel statuses and loop",
+      "description": "As a runtime developer, I need boundary-persistent execution so that workflows resume safely after restart.",
+      "acceptanceCriteria": [
+        "Runtime executes only compiled plans",
+        "Workflow statuses include pending, running, waiting, failed, completed, and cancelled",
+        "Node attempt statuses include pending, leased, running, waiting, retry_scheduled, failed, completed, skipped, and cancelled or equivalent skipped projection",
+        "Execution loop persists workflow start, node attempt start/result, edge transfer, wait, retry scheduling, failure, cancellation, checkpoint, and completion at transactional boundaries",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Implement runnable rules, guards, retries, leases, and idempotency",
+      "description": "As a runtime engineer, I need deterministic scheduling rules so that workers do not duplicate or lose work.",
+      "acceptanceCriteria": [
+        "Node is runnable only when input exists, dependencies are satisfied, guards allow execution, loop policy permits another iteration, availableAt is due, and no active lease is owned by another worker",
+        "Guard results affecting durable routing are persisted or diagnosed",
+        "Retry decisions are deterministic over policy, attempt, error, and time with fixed/linear/exponential/none backoff support",
+        "Leases prevent duplicate active ownership, heartbeat when supported, expire, and can be reclaimed",
+        "Node attempts use deterministic idempotency keys",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Implement workflow store logical records",
+      "description": "As a storage engineer, I need the workflow DB schema so that every runtime fact is inspectable and replayable.",
+      "acceptanceCriteria": [
+        "Store uses pibo-workflows.sqlite or equivalent workflow-specific store for workflow execution facts only",
+        "Logical records include workflow_definition_snapshots, workflow_runs, workflow_events, workflow_node_attempts, workflow_edge_transfers, workflow_checkpoints, workflow_wakeups, workflow_wait_tokens, and workflow_human_actions with required fields or equivalents",
+        "Store links workflow runs to owner scope, parent run/attempt, Pibo session, project, environment, status, input/output/state/current, and timestamps",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Implement all node executors against shared attempt model",
+      "description": "As a runtime developer, I need complete executor contracts so that every node kind behaves consistently.",
+      "acceptanceCriteria": [
+        "Agent executor resolves fixed profile, obeys policy, routes through normal Pibo Runtime, builds prompts, validates output, records session/trace/effective metadata, and supports cancellation/timeout where possible",
+        "Code executor loads registered handler, provides scoped context, enforces reads/writes, validates output/patches, and rejects undeclared writes",
+        "Nested workflow executor creates child run, waits for completion/failure, maps output, links parent/child events, and isolates child state by default",
+        "Adapter executor resolves deterministic adapter, validates source/output/target, and persists adapter attempts/errors",
+        "Human executor creates durable waits, validates actions, records decisions, and routes outcomes",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Implement commands, waits, wakeups, and human actions",
+      "description": "As a workflow author, I need executor commands and waits to be durable so that external and human interactions survive restart.",
+      "acceptanceCriteria": [
+        "Commands include goto, update, resume, requestHumanInput, emitArtifact, cancel, complete, fail, and handoff or equivalents and are persisted before application",
+        "Command rules validate targets, state writes, resume values, artifacts, completion output, errors, and dynamic routing permission",
+        "Wait kinds include human input, child workflow completion, timeout, external signal, scheduled retry, and Pibo Runtime response or equivalents",
+        "Human actions include approve, reject, resume, cancel, custom registry actions, schema validation, and wakeup correlation data",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Implement CLI/debug and Project UI surfaces",
+      "description": "As a full-stack developer, I need the required operator and user surfaces so that workflows can be inspected and controlled.",
+      "acceptanceCriteria": [
+        "CLI/debug exposes workflow list, validate, run, inspect, approve, reject, resume, and cancel equivalents; No XState CLI command is added in V1",
+        "Project UI shows workflow-backed sessions/runs, workflow id/version/status, current node/state, node status list, final output where permitted, diagnostics, waiting reason, and human actions",
+        "Dedicated Workflow/XState Web UI tab visualizes from Pibo/XState projection",
+        "Full visual workflow creation/editing is not included in V1",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Implement XState projection and inspection contract",
+      "description": "As a UI/runtime engineer, I need XState integration without making it durable truth.",
+      "acceptanceCriteria": [
+        "Projection maps workflow definition, run status, nodes, all node kinds, edges, guards, waits, retry delays, state projection, and terminal states to XState-compatible config/snapshots",
+        "Snapshot kinds kernel, xstate, and ui are distinguished and versioned when persisted",
+        "Define PiboWorkflowActor interface with start/send/stop/getSnapshot and optional persist/restore/inspect",
+        "Inspection events cover exact families including @pibo.workflow.actor.created, @pibo.workflow.event.sent, @pibo.workflow.transition, @pibo.workflow.snapshot, @pibo.workflow.action, @pibo.workflow.child.output, @pibo.workflow.wait.entered, and @pibo.workflow.wait.resumed",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Implement execution environment and capability validation",
+      "description": "As a security reviewer, I need environment and capability checks so that workflow execution respects isolation.",
+      "acceptanceCriteria": [
+        "Workflow/node environment policy supports inherit, host, worktree, docker-worker, and remote with inherit default",
+        "Effective environment is stored for audit/debug and passed to executors through scoped context",
+        "Cleanup/cancellation accounts for environment-owned resources",
+        "Capability validation checks profile existence, tools/skills/context availability, structured output support or fallback, session resume, timeout, budget, isolation, environment policy, and known concurrency limits when possible",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Preserve compatibility with Pibo sessions and related capabilities",
+      "description": "As a Pibo user, I need normal sessions to keep working so that workflows are additive.",
+      "acceptanceCriteria": [
+        "Normal Pibo Sessions work without workflow configuration",
+        "simple-chat can be treated as a workflow wrapper when workflow selection is enabled",
+        "Workflow runs link to Pibo Sessions and Project Sessions",
+        "pibo-event-contract includes workflow run, node, transition, wait, failure, and completion events",
+        "Advanced LangGraph-style channels, generalized Pregel/superstep runtime, and pending writes for partial supersteps remain deferred from V1",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Add required fixtures and automated tests",
+      "description": "As a QA engineer, I need complete fixtures and tests so that every V1 contract has a pass/fail gate.",
+      "acceptanceCriteria": [
+        "Fixtures include minimal one-node pibo-agent, mixed workflow, adapter edge, human wait/resume, registry/plugin, debug serialization, nested workflow, and bounded back-edge/review-loop workflows",
+        "Tests cover malformed definitions, ports, edges, adapters, all node kinds, profile resolution, prompts, state isolation/merge conflicts, bounded loops, XState snapshots, persistence statuses, restart boundaries, stale leases, nested child failure, and UI/CLI control",
+        "Required checks include npm run typecheck, workflow unit tests, workflow persistence/restart tests, manual one-node pibo-agent workflow, manual adapter composition, and manual bounded review/fix loop",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Add task traceability and release gate documentation",
+      "description": "As a reviewer, I need task traceability so that incomplete implementations can be rejected.",
+      "acceptanceCriteria": [
+        "Document completion gates for Foundation, Interfaces, First-class runtime unit, Edges, Adapters, Node kinds, Agent profile/routing, Prompts, State/backtracking, XState, Persistence, UI/Inspection, Documentation, and Validation task groups",
+        "Release gates cover MVP, V1 core, V1 product, V1 release, and V2 candidates",
+        "Implementation can be rejected when any MUST item in the completeness contract is missing",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

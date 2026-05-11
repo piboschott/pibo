@@ -1,0 +1,133 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-interfaces-composition-state",
+  "description": "Typed workflow interfaces, edge composition, explicit adapters, guards, joins, state isolation, merge policies, and bounded loops/backtracking.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement text and JSON workflow ports",
+      "description": "As a workflow author, I want explicit text and JSON ports so that workflow contracts are validated.",
+      "acceptanceCriteria": [
+        "WorkflowPort supports kind text and kind json with schema and optional description",
+        "Validate workflow input, node output, adapter output, edge transfer payloads, and workflow output at boundaries",
+        "JSON schemas enforce the Structured Outputs/tool-calling subset including object roots, no root anyOf, required object fields, and additionalProperties false on objects",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Validate direct edge compatibility and edge kinds",
+      "description": "As a workflow author, I want edges to pass only when source and target contracts are compatible so that composition is safe.",
+      "acceptanceCriteria": [
+        "Edges identify source and target node/port refs",
+        "Direct compatible text-to-text and JSON-to-compatible-JSON edges pass validation",
+        "Text input to JSON port, invalid JSON output, and incompatible direct edges without adapter fail validation",
+        "Edge kinds data, control, error, and resume have tests for payload transfer, recovery routing, and durable resume routing",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement explicit edge adapters and visible adapter nodes",
+      "description": "As a developer, I want adapter refs for mismatched interfaces so that transformations are deterministic and testable.",
+      "acceptanceCriteria": [
+        "Incompatible edges can pass only with an explicit registered edgeAdapter or visible adapter node",
+        "Adapter output is validated against declared output and target input before downstream execution",
+        "Missing adapter refs and adapter output validation failures produce structured diagnostics",
+        "sourceOutputAdapter, targetInputAdapter, declarative mapping DSLs, and hidden agent-assisted adapters are not implemented in V1",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add guards and deterministic outgoing edge selection",
+      "description": "As a workflow author, I want guarded routing so that data can move along declared branches without ambiguous execution.",
+      "acceptanceCriteria": [
+        "Edges may include guard or condition refs resolved through the Workflow Registry",
+        "Multiple matching outgoing guarded edges require explicit priority/order or fail validation",
+        "Guard results that affect durable routing are persisted or diagnosed when runtime-only",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement fan-in join policies",
+      "description": "As a workflow author, I want explicit join policies so that fan-in behavior is predictable.",
+      "acceptanceCriteria": [
+        "Join policies include all_success, one_success, none_failed_min_one_success, and all_done",
+        "Default ambiguous fan-in is all_success",
+        "Join decisions are computed from persisted upstream attempt statuses including skipped nodes according to policy",
+        "Join decisions emit workflow events or structured diagnostics when they affect routing",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Enforce global/local/edge state isolation",
+      "description": "As an operator, I want state and edge payloads to be inspectable and isolated so that one node cannot read another node local state accidentally.",
+      "acceptanceCriteria": [
+        "Runtime treats edge payloads as immutable transfer records",
+        "Local node state is invisible to other nodes unless explicitly mapped to edge payload or global state",
+        "State read/write declarations prevent undeclared access or mutation in handlers where statically or runtime detectable",
+        "State isolation tests verify node B cannot read node A local state without explicit exposure",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement merge policies and conflict detection",
+      "description": "As a workflow author, I want controlled global state writes so that concurrent updates do not corrupt state.",
+      "acceptanceCriteria": [
+        "Merge policies include replace, append, shallowMerge, and custom registered handler",
+        "Default merge policy is replace",
+        "Concurrent writes to the same global path fail unless a merge policy exists",
+        "Custom merge policy handlers must resolve to registered deterministic handlers",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Reject unbounded cycles and support bounded backtracking",
+      "description": "As a workflow author, I want review/fix loops so that agent work can iterate without unbounded execution.",
+      "acceptanceCriteria": [
+        "Free cycles and unbounded back-edges fail validation",
+        "Guarded back-edges or retry policies with maxAttempts pass validation",
+        "Runtime records loop attempt counts and exhaustion diagnostics",
+        "Positive and negative tests cover bounded review/fix loop behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

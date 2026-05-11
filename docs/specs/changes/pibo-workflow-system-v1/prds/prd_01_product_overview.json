@@ -1,0 +1,127 @@
+{
+  "project": "Pibo Workflow System V1",
+  "branchName": "ralph/pibo-workflow-system-v1-product-overview",
+  "description": "End-to-end Pibo Workflow System V1 product skeleton: first-class typed workflows backed by normal Pibo Runtime, durable state, CLI/UI inspection, and explicit V1 boundaries.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create workflows package and one-node Agent workflow definition",
+      "description": "As a developer, I need a minimal workflow definition so that Pibo can validate and run a normal Pibo Runtime agent as the smallest workflow unit.",
+      "acceptanceCriteria": [
+        "Create packages/workflows with modules for api, registry, types, validation, graph, compiler, runtime, store, xstate, fixtures, and testing or direct equivalents",
+        "Add a one-node Agent workflow fixture with id, version, input, output, initial node, and profile pibo-agent",
+        "Validate the fixture and reject missing required workflow fields with structured diagnostics",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Persist workflow run identity and status facts",
+      "description": "As an operator, I need workflow runs to record identity and status so that runs are inspectable independently of normal session history.",
+      "acceptanceCriteria": [
+        "Workflow run records include workflow id, version, definition hash, owner scope, status, input, output, cursor/current state, timestamps, and failure details when applicable",
+        "Workflow run records link to related Pibo Session id when an Agent node creates or attaches to a session",
+        "Normal Pibo/Pi session traces remain in existing stores and are not moved into pibo-workflows.sqlite",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Validate schema-bound inputs and outputs at workflow boundaries",
+      "description": "As a workflow author, I want invalid JSON input and output rejected so that bad data cannot complete or flow downstream.",
+      "acceptanceCriteria": [
+        "Workflow start validates input against text or JSON input port before execution",
+        "Workflow completion validates final output against the workflow output port before marking completed",
+        "Invalid JSON input and invalid JSON output produce diagnostics with code, message, severity, and path/node/edge when applicable",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Record typed edge transfer for composed workflows",
+      "description": "As a Pibo user, I want output from one node to feed another node automatically so that I do not manually copy and paste data between sessions.",
+      "acceptanceCriteria": [
+        "Two-node fixture transfers node A output to node B input through a validated edge",
+        "Each transfer records source node attempt, target node, edge id, payload or payload reference, status, and timestamp",
+        "Inspection can show the edge transfer for debugging",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add durable human approval workflow path",
+      "description": "As a reviewer, I want workflow approval gates to survive restart so that human decisions are durable and auditable.",
+      "acceptanceCriteria": [
+        "Human node or command creates a persisted wait token before returning control",
+        "Approve, reject, resume, and cancel actions validate token state and payload before changing workflow state",
+        "Restart inspection shows pending waits and available actions from persisted records",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Expose core CLI/debug workflow operations",
+      "description": "As an operator, I want CLI/debug commands so that I can list, validate, run, inspect, approve, reject, resume, and cancel workflows.",
+      "acceptanceCriteria": [
+        "CLI/debug exposes workflow list, validate, run, inspect, approve, reject, resume, and cancel commands or existing-style equivalents",
+        "Commands read the same persisted workflow run and wait-token records used by UI",
+        "Command output includes run status, node statuses, validation errors, final output when available, and human actions when waiting",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Show workflow-backed runs in Project UI",
+      "description": "As a project reviewer, I want Chat Web/Projects UI to show workflow run status and actions so that I can monitor and control workflows.",
+      "acceptanceCriteria": [
+        "Project UI surface shows workflow id/version/status, node list, current status, final output, validation errors, and available human actions",
+        "UI explicitly does not include full visual workflow editor or workflow YAML/JSON import/export product surface in V1",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Add XState projection for visualization only",
+      "description": "As a product team, I want XState-backed visualization so that workflow state is visible without making XState persisted truth.",
+      "acceptanceCriteria": [
+        "Compiler or xstate module produces deterministic XState projection metadata from Pibo workflow IR",
+        "Kernel records remain authoritative for recovery and audit; XState snapshots are optional projections",
+        "Projection supports current run state for UI visualization",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
