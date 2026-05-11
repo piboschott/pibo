@@ -68,6 +68,38 @@ test("chat data ingest writes user messages idempotently", () => {
 	}
 });
 
+test("chat data ingest records repeated user messages without client transaction id", () => {
+	const store = new PiboDataStore(":memory:", { payloadRootDir: mkdtempSync(join(tmpdir(), "pibo-ingest-payloads-")) });
+	try {
+		const ingest = new ChatDataIngestService(store);
+		const session = makeSession({ id: "ps_repeated_user_message", piSessionId: "pi_repeated_user_message" });
+		const input = {
+			session,
+			roomId: "room_repeated_user_message",
+			actorId: "user:test",
+			text: "same intentional message",
+		};
+
+		const first = ingest.ingestUserMessageAccepted(input);
+		const second = ingest.ingestUserMessageAccepted(input);
+
+		assert.equal(first.duplicate, false);
+		assert.equal(second.duplicate, false);
+		assert.notEqual(second.messageId, first.messageId);
+
+		const events = store.eventLog.listEvents({ sessionId: session.id });
+		const messages = store.messages.listMessages(session.id);
+		assert.equal(events.length, 2);
+		assert.deepEqual(events.map((event) => event.idempotencyKey), [undefined, undefined]);
+		assert.deepEqual(events.map((event) => event.sessionSequence), [1, 2]);
+		assert.equal(messages.length, 2);
+		assert.deepEqual(messages.map((message) => message.sequence), [1, 2]);
+		assert.deepEqual(messages.map((message) => message.contentPreview), ["same intentional message", "same intentional message"]);
+	} finally {
+		store.close();
+	}
+});
+
 test("chat data ingest externalizes large user message payloads", () => {
 	const store = new PiboDataStore(":memory:", { payloadRootDir: mkdtempSync(join(tmpdir(), "pibo-ingest-payloads-")) });
 	try {
