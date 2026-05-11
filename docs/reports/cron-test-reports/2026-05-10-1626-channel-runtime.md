@@ -115,3 +115,11 @@ Wichtig: Der letzte Befehl ist nur sicher, wenn `dist` garantiert aktuell ist.
 ## Kurzfazit
 
 Die vorhandene Channel-Runtime-Suite ist schnell und sinnvoll, aber sie prüft bisher hauptsächlich den Happy Path von `createSession()` und einen Auth-Fehler. Der nächste Qualitätsgewinn liegt in sehr kleinen Lifecycle- und Context-Contract-Tests, nicht in einer breiteren End-to-End-Suite.
+
+## Umgesetzt am 2026-05-11 16:08 Europe/Berlin
+
+- Bereich: Lifecycle-Randfall für Plugin-Channels; expliziter Test der LIFO-Stop-Reihenfolge.
+- Geänderte Dateien: `test/channel-runtime.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1626-channel-runtime.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/channel-runtime.test.mjs`.
+- Ergebnis: Build erfolgreich; `test/channel-runtime.test.mjs` mit 3/3 bestandenen Tests.
+- Verbleibende offene Punkte: Start-Rollback bei Channel-Startfehlern, weitere Auth-Mode-Tests und Channel-Context-Session-Contract-Tests bleiben offen.
