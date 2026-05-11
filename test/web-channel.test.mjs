@@ -1874,6 +1874,7 @@ test("chat web app creates configured Project workflow sessions from the workflo
 		assert.equal(createdPayload.session.metadata.projectWorkflowVersion, "1.0.0");
 		assert.equal(createdPayload.session.metadata.workflowSessionKind, "main_workflow");
 		assert.equal(createdPayload.projectSession.workflowId, "standard-project");
+		assert.equal(createdPayload.projectSession.workflowVersion, "1.0.0");
 		assert.equal(createdPayload.projectSession.state, "configured");
 		assert.equal(createdPayload.projectSession.workflowRunId, undefined);
 		assert.equal(emitted.length, 0);

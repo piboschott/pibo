@@ -1372,6 +1372,7 @@ function createProjectChatSession(input: {
 		piboSessionId: session.id,
 		kind: "main",
 		workflowId: workflowSelection.id,
+		workflowVersion: workflowSelection.version,
 		title: session.title,
 		state: input.configuredWorkflow ? "configured" : undefined,
 	});

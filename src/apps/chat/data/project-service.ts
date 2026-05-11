@@ -6,6 +6,9 @@ import { piboHomePath } from "../../../core/pibo-home.js";
 
 export type PiboProjectWorkflowId = "simple-chat" | "standard-project" | string;
 export type PiboProjectSessionKind = "main" | "sub";
+export type PiboProjectWorkflowSessionState = "configured" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+export type PiboProjectLegacySessionState = "simple_chat" | "workflow";
+export type PiboProjectSessionState = PiboProjectWorkflowSessionState | PiboProjectLegacySessionState;
 
 export type PiboProject = {
 	id: string;
@@ -26,10 +29,11 @@ export type PiboProjectSession = {
 	piboSessionId: string;
 	kind: PiboProjectSessionKind;
 	workflowId: PiboProjectWorkflowId;
+	workflowVersion?: string;
 	workflowRunId?: string;
 	parentMainSessionId?: string;
 	title?: string;
-	state?: string;
+	state?: PiboProjectSessionState;
 	retryCount?: number;
 	maxRetries?: number;
 	archived?: boolean;
@@ -136,25 +140,27 @@ export class ChatProjectService {
 		return row ? projectSessionFromRow(row) : undefined;
 	}
 
-	addProjectSession(input: { projectId: string; piboSessionId: string; kind?: PiboProjectSessionKind; workflowId?: PiboProjectWorkflowId; workflowRunId?: string; parentMainSessionId?: string; title?: string; state?: string }): PiboProjectSession {
+	addProjectSession(input: { projectId: string; piboSessionId: string; kind?: PiboProjectSessionKind; workflowId?: PiboProjectWorkflowId; workflowVersion?: string; workflowRunId?: string; parentMainSessionId?: string; title?: string; state?: PiboProjectSessionState }): PiboProjectSession {
 		const now = new Date().toISOString();
 		const kind = input.kind ?? "main";
-		this.db.prepare(`INSERT INTO project_sessions (project_id, pibo_session_id, kind, workflow_id, workflow_run_id, parent_main_session_id, title, state, archived, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-			ON CONFLICT(pibo_session_id) DO UPDATE SET project_id = excluded.project_id, kind = excluded.kind, workflow_id = excluded.workflow_id, workflow_run_id = COALESCE(excluded.workflow_run_id, workflow_run_id), parent_main_session_id = excluded.parent_main_session_id, title = excluded.title, state = COALESCE(excluded.state, state), updated_at = excluded.updated_at`)
-			.run(input.projectId, input.piboSessionId, kind, input.workflowId ?? "simple-chat", input.workflowRunId ?? null, input.parentMainSessionId ?? null, input.title ?? null, input.state ?? "simple_chat", now, now);
+		const state = normalizeProjectSessionState(input.state);
+		this.db.prepare(`INSERT INTO project_sessions (project_id, pibo_session_id, kind, workflow_id, workflow_version, workflow_run_id, parent_main_session_id, title, state, archived, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+			ON CONFLICT(pibo_session_id) DO UPDATE SET project_id = excluded.project_id, kind = excluded.kind, workflow_id = excluded.workflow_id, workflow_version = COALESCE(excluded.workflow_version, workflow_version), workflow_run_id = COALESCE(excluded.workflow_run_id, workflow_run_id), parent_main_session_id = excluded.parent_main_session_id, title = excluded.title, state = COALESCE(excluded.state, state), updated_at = excluded.updated_at`)
+			.run(input.projectId, input.piboSessionId, kind, input.workflowId ?? "simple-chat", normalizeOptionalString(input.workflowVersion) ?? null, input.workflowRunId ?? null, input.parentMainSessionId ?? null, input.title ?? null, state, now, now);
 		if (kind === "main") {
 			this.db.prepare("UPDATE projects SET current_main_session_id = ?, updated_at = ? WHERE id = ?").run(input.piboSessionId, now, input.projectId);
 		}
 		return this.getProjectSession(input.piboSessionId)!;
 	}
 
-	linkWorkflowRunSession(input: { projectId: string; piboSessionId: string; workflowRunId: string; workflowId: PiboProjectWorkflowId; parentMainSessionId?: string; title?: string }): PiboProjectSession {
+	linkWorkflowRunSession(input: { projectId: string; piboSessionId: string; workflowRunId: string; workflowId: PiboProjectWorkflowId; workflowVersion?: string; parentMainSessionId?: string; title?: string }): PiboProjectSession {
 		return this.addProjectSession({
 			projectId: input.projectId,
 			piboSessionId: input.piboSessionId,
 			kind: input.parentMainSessionId ? "sub" : "main",
 			workflowId: input.workflowId,
+			workflowVersion: input.workflowVersion,
 			workflowRunId: input.workflowRunId,
 			parentMainSessionId: input.parentMainSessionId,
 			title: input.title,
@@ -190,6 +196,7 @@ export class ChatProjectService {
 				pibo_session_id TEXT PRIMARY KEY,
 				kind TEXT NOT NULL DEFAULT 'main',
 				workflow_id TEXT NOT NULL DEFAULT 'simple-chat',
+				workflow_version TEXT,
 				workflow_run_id TEXT,
 				parent_main_session_id TEXT,
 				title TEXT,
@@ -202,6 +209,14 @@ export class ChatProjectService {
 			);
 			CREATE INDEX IF NOT EXISTS project_sessions_project_id_idx ON project_sessions(project_id, archived, created_at);
 		`);
+		this.ensureProjectSessionWorkflowVersionColumn();
+	}
+
+	private ensureProjectSessionWorkflowVersionColumn(): void {
+		const columns = this.db.prepare("PRAGMA table_info(project_sessions)").all() as Array<{ name: string }>;
+		if (!columns.some((column) => column.name === "workflow_version")) {
+			this.db.exec("ALTER TABLE project_sessions ADD COLUMN workflow_version TEXT");
+		}
 	}
 
 	private assertNameAvailable(name: string, exceptId?: string): void {
@@ -234,10 +249,11 @@ type ProjectSessionRow = {
 	pibo_session_id: string;
 	kind: PiboProjectSessionKind;
 	workflow_id: string;
+	workflow_version: string | null;
 	workflow_run_id: string | null;
 	parent_main_session_id: string | null;
 	title: string | null;
-	state: string | null;
+	state: PiboProjectSessionState | null;
 	retry_count: number | null;
 	max_retries: number | null;
 	archived: number;
@@ -267,6 +283,7 @@ function projectSessionFromRow(row: ProjectSessionRow): PiboProjectSession {
 		piboSessionId: row.pibo_session_id,
 		kind: row.kind,
 		workflowId: row.workflow_id,
+		...(row.workflow_version ? { workflowVersion: row.workflow_version } : {}),
 		...(row.workflow_run_id ? { workflowRunId: row.workflow_run_id } : {}),
 		...(row.parent_main_session_id ? { parentMainSessionId: row.parent_main_session_id } : {}),
 		...(row.title ? { title: row.title } : {}),
@@ -295,6 +312,23 @@ function normalizeProjectFolder(value: unknown): string {
 	else if (folder.startsWith("~/")) folder = `${process.env.HOME ?? ""}${folder.slice(1)}`;
 	if (!isAbsolute(folder)) throw new Error("Project folder must be an absolute path, e.g. ~/code/my-project or /home/me/code/my-project");
 	return folder;
+}
+
+const PROJECT_SESSION_STATES = new Set<PiboProjectSessionState>([
+	"simple_chat",
+	"workflow",
+	"configured",
+	"running",
+	"waiting",
+	"completed",
+	"failed",
+	"cancelled",
+]);
+
+function normalizeProjectSessionState(value: PiboProjectSessionState | undefined): PiboProjectSessionState {
+	const state = value ?? "simple_chat";
+	if (!PROJECT_SESSION_STATES.has(state)) throw new Error(`Unsupported project session state: ${state}`);
+	return state;
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {

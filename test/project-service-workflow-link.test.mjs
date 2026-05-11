@@ -6,6 +6,60 @@ import test from "node:test";
 
 import { ChatProjectService } from "../dist/apps/chat/data/project-service.js";
 
+test("project workflow session records persist selection metadata before runs start", () => {
+	const tempRoot = mkdtempSync(join(tmpdir(), "pibo-project-workflow-record-"));
+	const service = new ChatProjectService(join(tempRoot, "web-projects.sqlite"));
+
+	try {
+		const project = service.createProject({
+			ownerScope: "user:workflow-record",
+			name: "Workflow Record Project",
+			projectFolder: join(tempRoot, "project"),
+			createFolder: true,
+		});
+
+		const configured = service.addProjectSession({
+			projectId: project.id,
+			piboSessionId: "ps_configured_workflow",
+			kind: "main",
+			workflowId: "standard-project",
+			workflowVersion: "1.0.0",
+			title: "Configured Standard Project",
+			state: "configured",
+		});
+
+		assert.equal(configured.projectId, project.id);
+		assert.equal(configured.piboSessionId, "ps_configured_workflow");
+		assert.equal(configured.title, "Configured Standard Project");
+		assert.equal(configured.workflowId, "standard-project");
+		assert.equal(configured.workflowVersion, "1.0.0");
+		assert.equal(configured.state, "configured");
+		assert.equal(configured.workflowRunId, undefined);
+
+		for (const state of ["running", "waiting", "completed", "failed", "cancelled"]) {
+			const stored = service.addProjectSession({
+				projectId: project.id,
+				piboSessionId: `ps_${state}`,
+				kind: "main",
+				workflowId: "standard-project",
+				workflowVersion: "1.0.0",
+				state,
+			});
+			assert.equal(stored.state, state);
+		}
+
+		assert.throws(() => service.addProjectSession({
+			projectId: project.id,
+			piboSessionId: "ps_invalid_state",
+			workflowId: "standard-project",
+			state: "paused",
+		}), /Unsupported project session state/);
+	} finally {
+		service.close();
+		rmSync(tempRoot, { recursive: true, force: true });
+	}
+});
+
 test("project sessions can link back to workflow run ids", () => {
 	const tempRoot = mkdtempSync(join(tmpdir(), "pibo-project-workflow-link-"));
 	const service = new ChatProjectService(join(tempRoot, "web-projects.sqlite"));
@@ -30,6 +84,7 @@ test("project sessions can link back to workflow run ids", () => {
 			piboSessionId: "ps_project_child",
 			workflowRunId: "wfr_project_child",
 			workflowId: "workflow.prd-review",
+			workflowVersion: "2.1.0",
 			parentMainSessionId: "ps_project_main",
 			title: "Workflow child session",
 		});
@@ -38,6 +93,7 @@ test("project sessions can link back to workflow run ids", () => {
 		assert.equal(linked.piboSessionId, "ps_project_child");
 		assert.equal(linked.kind, "sub");
 		assert.equal(linked.workflowId, "workflow.prd-review");
+		assert.equal(linked.workflowVersion, "2.1.0");
 		assert.equal(linked.workflowRunId, "wfr_project_child");
 		assert.equal(linked.parentMainSessionId, "ps_project_main");
 		assert.equal(linked.state, "workflow");

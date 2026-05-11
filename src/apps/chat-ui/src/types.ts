@@ -71,15 +71,20 @@ export type PiboProject = {
 	updatedAt: string;
 };
 
+export type PiboProjectWorkflowSessionState = "configured" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+export type PiboProjectLegacySessionState = "simple_chat" | "workflow";
+export type PiboProjectSessionState = PiboProjectWorkflowSessionState | PiboProjectLegacySessionState;
+
 export type PiboProjectSession = {
 	projectId: string;
 	piboSessionId: string;
 	kind: "main" | "sub";
 	workflowId: "simple-chat" | "standard-project" | string;
+	workflowVersion?: string;
 	workflowRunId?: string;
 	parentMainSessionId?: string;
 	title?: string;
-	state?: string;
+	state?: PiboProjectSessionState;
 	retryCount?: number;
 	maxRetries?: number;
 	archived?: boolean;

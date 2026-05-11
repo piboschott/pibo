@@ -12,6 +12,7 @@
 - Workflow session routing metadata uses the stable Pibo Session metadata key `workflowSessionKind` with values `main_workflow`, `nested_workflow`, `agent_node`, and `subagent`; Chat sidebar nodes expose it as `PiboWebSessionNode.workflowSessionKind`.
 - Published workflow versions use `hashWorkflowDefinition` plus `SqliteWorkflowRunStore.savePublishedWorkflowVersion`; saving the same body is idempotent, while changing a published `workflowId@version` body throws to preserve immutability.
 - Project workflow session creation should use the V2 `/api/chat/projects/:projectId/workflow-sessions` route and `workflow-versions` picker; keep legacy `/projects/:projectId/sessions` limited to `simple-chat`.
+- Project workflow session records keep selected workflow metadata in `project_sessions.workflow_id`, `workflow_version`, and constrained lifecycle `state`; configured sessions must not set `workflow_run_id` until Start.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -324,4 +325,26 @@
 - **Learnings for future iterations:**
   - Keep workflow catalog lifecycle state in separate records so future list/inspect APIs can derive source/status/actions without conflating draft, publish, archive, and tombstone behavior.
   - Delete/tombstone operations should add tombstone metadata only; historical run inspection continues to depend on definition snapshots and should not be coupled to live catalog cleanup.
+---
+## 2026-05-12 00:04 CEST - US-002
+- What was implemented
+  - Added Project workflow session record fields for selected workflow version alongside existing Project id, Pibo Session id, title/session name, workflow id, and configured state.
+  - Added constrained Project workflow session states: configured, running, waiting, completed, failed, and cancelled, while preserving legacy simple-chat/workflow states.
+  - Ensured configured Project workflow session creation stores `workflowVersion` and still leaves `workflowRunId` unset.
+- Files changed
+  - `src/apps/chat/data/project-service.ts`
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/types.ts`
+  - `test/project-service-workflow-link.test.mjs`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_03_project_session_selection_and_snapshots.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/project-service-workflow-link.test.mjs test/web-channel.test.mjs'` — passed, 53/53 tests.
+- Browser verification, if UI changed
+  - Not run; this story changed Project workflow session persistence/API data and tests only, with no visible UI behavior changes.
+- **Learnings for future iterations:**
+  - The Project workflow creation route already resolves published workflow picker options; pass the resolved version into `ChatProjectService.addProjectSession` so the durable Project record and Pibo Session metadata stay aligned.
+  - Keep legacy `simple_chat`/`workflow` state values available while adding V2 lifecycle states to avoid breaking existing Project/session rendering.
 ---
