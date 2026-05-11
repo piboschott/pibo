@@ -162,6 +162,14 @@ Der volle `npm test` bleibt sinnvoll für spätere Integrations-/Release-Phasen,
 - Ergebnis: Build und TypeScript-Check erfolgreich; Gateway-Tool-/Request-Subset grün mit 10/10 bestandenen Tests.
 - Verbleibende offene Punkte: Optional weitere Gateway-Tool-Varianten, z. B. erfolgreiche Queue ohne Reply, sowie zusätzliche Tool-Integration über echten Mock-TCP-Gateway.
 
+## Umgesetzt am 2026-05-11 13:19 Europe/Berlin
+
+- Bereich: Gateway-Tool-Variante für erfolgreiche Queue ohne Assistant-Reply.
+- Geänderte Dateien: `src/gateway/tool.ts`, `test/gateway-tool.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`.
+- Ausgeführte Kommandos: `node --test test/gateway-tool.test.mjs` (zunächst rot und reproduzierte den fehlenden Optional-Chain-Pfad); `npm run build`; `node --test test/gateway-tool.test.mjs`.
+- Ergebnis: Build erfolgreich; Gateway-Tool-Subset grün mit 3/3 bestandenen Tests. Abgesichert ist, dass `pibo_gateway_send` bei erfolgreichem Gateway-Queueing ohne Reply einen klaren Queue-Text und Details zurückgibt.
+- Verbleibende offene Punkte: Optional weitere Tool-Integration über echten Mock-TCP-Gateway oder zusätzliche Request-Framing-Varianten.
+
 ## Kurzfazit
 
 Das bestehende Gateway-Request-Subset ist schnell, sinnvoll granuliert und deckt zwei wichtige Korrelationseigenschaften ab. Die größte Testsystem-Lücke liegt nicht in Breite, sondern in den fehlenden negativen Pfaden und in der `dist/`-Abhängigkeit der Direktläufe. Mit wenigen zusätzlichen Mock-Gateway-Fällen würde dieser Bereich ein sehr gutes frühes Entwickler-Signal liefern.

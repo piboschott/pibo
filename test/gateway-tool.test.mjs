@@ -44,6 +44,30 @@ test("pibo gateway send tool returns assistant reply and gateway details", async
 	});
 });
 
+test("pibo gateway send tool reports queued messages without assistant reply", async () => {
+	const tool = createPiboGatewaySendTool(async () => {
+		return { response: okResponse };
+	});
+
+	const result = await tool.execute("tool-call-1", {
+		piboSessionId: "ps_target",
+		message: "hello target",
+	});
+
+	assert.deepEqual(result.content, [
+		{
+			type: "text",
+			text: 'Queued message for pibo gateway session "ps_target", but no assistant reply was returned.',
+		},
+	]);
+	assert.deepEqual(result.details, {
+		ok: true,
+		piboSessionId: "ps_target",
+		gatewayPayload: { queued: true },
+		reply: undefined,
+	});
+});
+
 test("pibo gateway send tool converts send failures into error details", async () => {
 	const tool = createPiboGatewaySendTool(async () => {
 		throw new Error("session failed");
