@@ -139,6 +139,51 @@ test("custom agent store persists selected built-in tools", () => {
 	store.close();
 });
 
+test("custom agent store persists thinking, fast, and built-in mode options", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	const agent = store.create({
+		ownerScope: "user:test",
+		displayName: "runtime-options",
+		thinkingLevel: "medium",
+		mainThinkingLevel: "high",
+		subagentThinkingLevel: "low",
+		fast: true,
+		mainFast: false,
+		subagentFast: true,
+		builtinTools: "none",
+	});
+
+	assert.equal(agent.thinkingLevel, "medium");
+	assert.equal(agent.mainThinkingLevel, "high");
+	assert.equal(agent.subagentThinkingLevel, "low");
+	assert.equal(agent.fast, true);
+	assert.equal(agent.mainFast, false);
+	assert.equal(agent.subagentFast, true);
+	assert.equal(agent.builtinTools, "none");
+
+	const updated = store.update(agent.id, {
+		thinkingLevel: "invalid",
+		mainThinkingLevel: "minimal",
+		subagentThinkingLevel: "xhigh",
+		fast: false,
+		mainFast: true,
+		subagentFast: "yes",
+		builtinTools: "selected",
+	});
+	assert.equal(updated.thinkingLevel, undefined);
+	assert.equal(updated.mainThinkingLevel, "minimal");
+	assert.equal(updated.subagentThinkingLevel, "xhigh");
+	assert.equal(updated.fast, false);
+	assert.equal(updated.mainFast, true);
+	assert.equal(updated.subagentFast, undefined);
+	assert.equal(updated.builtinTools, "selected");
+
+	assert.deepEqual(store.get(agent.id), updated);
+
+	store.close();
+});
+
 test("custom agent store persists selected registered Pi packages", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pibo-agent-store-pi-packages-"));
 	await withCwd(cwd, () => {
