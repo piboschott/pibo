@@ -329,6 +329,40 @@ test("run ack tool returns acknowledged snapshot details", async () => {
 	assert.equal(result.details.consumed, true);
 });
 
+test("run list status and cancel tools expose snapshots", async () => {
+	const tools = createRunToolsWithController({
+		listRuns(options) {
+			assert.deepEqual(options, { includeConsumed: true, includeDetached: true });
+			return [runSnapshot(undefined, { runId: "run_1" })];
+		},
+		getRunStatus(runId) {
+			return runSnapshot({ status: "running" }, { runId });
+		},
+		cancelRun(runId) {
+			return Promise.resolve(runSnapshot({ status: "cancelled", consumed: true }, { runId }));
+		},
+	});
+
+	const listed = await tools.pibo_run_list.execute("tool-call-1", {
+		includeConsumed: true,
+		includeDetached: true,
+	});
+	assert.match(listed.content[0].text, /Runs:/);
+	assert.equal(listed.details.runs.length, 1);
+	assert.equal(listed.details.runs[0].runId, "run_1");
+
+	const status = await tools.pibo_run_status.execute("tool-call-2", { runId: "run_1" });
+	assert.match(status.content[0].text, /Run run_1 status: running/);
+	assert.equal(status.details.runId, "run_1");
+	assert.equal(status.details.status, "running");
+
+	const cancelled = await tools.pibo_run_cancel.execute("tool-call-3", { runId: "run_1" });
+	assert.match(cancelled.content[0].text, /Cancelled run run_1/);
+	assert.equal(cancelled.details.runId, "run_1");
+	assert.equal(cancelled.details.status, "cancelled");
+	assert.equal(cancelled.details.consumed, true);
+});
+
 test("router coalesces generic run completion into a compact parent notification", async () => {
 	const router = new PiboSessionRouter({ persistSession: false });
 	const messages = [];

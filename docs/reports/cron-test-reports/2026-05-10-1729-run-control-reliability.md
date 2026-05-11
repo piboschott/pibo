@@ -162,6 +162,14 @@ npm test
 - Ergebnis: Grün; 16 Tests bestanden. Abgedeckt sind terminaler Read-Text mit Details, Wait-Timeout als normaler Zustand und Ack-Snapshot-Details.
 - Verbleibende offene Punkte: Weitere Tool-Oberflächen wie `pibo_run_list`/`status`/`cancel` können bei Bedarf noch separat abgesichert werden.
 
+## Umgesetzt am 2026-05-11 12:38 Europe/Berlin
+
+- Bereich: Weitere Tool-Oberflächen für `pibo_run_list`, `pibo_run_status` und `pibo_run_cancel`.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/runs.test.mjs`.
+- Ergebnis: Grün; 17 Tests bestanden. Abgedeckt sind Listenoptionen für konsumierte/detached Runs, Status-Text und Details sowie Cancel-Text mit konsumiertem Snapshot.
+- Verbleibende offene Punkte: Keine priorisierten kleinen Tool-Oberflächen aus diesem Report bleiben offen; weitere Persistenz- oder Router-Szenarien wären separate neue Verbesserungsbereiche.
+
 ## Fazit
 
 Das Run-Control-Testsubset ist aktuell eines der besseren granularen Subsets im Projekt: schnell, fokussiert und nah am Verhalten. Das größte Risiko liegt nicht in den In-Memory-Run-Zuständen, sondern an der Grenze zur Persistenz und Recovery. Genau dort sollten die nächsten Tests ergänzt werden, bevor größere Integrations- oder Deployment-Suites erweitert werden.
