@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -34,6 +34,24 @@ test("compaction prompt switches between library and custom prompt without losin
 		assert.equal(customMode.effectiveMode, "custom");
 		assert.match(customMode.custom.markdown, /Use this EXACT custom format:/);
 		assert.equal(getActivePiboCompactionPromptPath(cwd), customMode.custom.path);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("compaction prompt custom mode without custom markdown falls back to library", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-compaction-prompt-missing-custom-"));
+	try {
+		mkdirSync(join(cwd, ".pibo"));
+		writeFileSync(join(cwd, ".pibo/compaction-prompt.json"), `${JSON.stringify({ mode: "custom" }, null, 2)}\n`);
+
+		const snapshot = await readPiboCompactionPrompt(cwd);
+		assert.equal(snapshot.mode, "custom");
+		assert.equal(snapshot.effectiveMode, "library");
+		assert.equal(snapshot.custom.exists, false);
+		assert.equal(snapshot.custom.markdown, "");
+		assert.equal(snapshot.custom.updatedAt, undefined);
+		assert.equal(basename(getActivePiboCompactionPromptPath(cwd)), "pibo-compaction-prompt.md");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}

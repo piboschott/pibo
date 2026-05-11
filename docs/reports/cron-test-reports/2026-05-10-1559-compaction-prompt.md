@@ -109,3 +109,11 @@ npm test
 ## Gesamtbewertung
 
 Die vorhandenen Tests sind sinnvoll, schnell und gut isoliert, decken aber nur den Persistenz-/Parser-Rand ab. Für langfristige Sicherheit fehlt vor allem ein zweites granuläres Subset für die eigentliche Compaction-Zusammenstellung. Dieses Subset sollte kleiner bleiben als ein Gateway- oder Browser-Test und keine echten Modellaufrufe benötigen.
+
+## Umgesetzt am 2026-05-11 11:24 Europe/Berlin
+
+- Bereich: Granularer Core-Test für `mode: custom` ohne vorhandene `.pibo/compaction-prompt.md`.
+- Geänderte Dateien: `test/compaction-prompt.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1559-compaction-prompt.md`.
+- Ausgeführte Kommandos: `npm run build -- --pretty false`; `node --test test/compaction-prompt.test.mjs`.
+- Ergebnis: Build erfolgreich; Compaction-Prompt-Subset erfolgreich mit 3/3 Tests.
+- Verbleibende offene Punkte: Preservation-Test für ungültigen Custom-Save, Test für Custom-Mode-Dateierzeugung, Builder-/API-Subsets aus diesem Report.
