@@ -1883,8 +1883,10 @@ test("workflow builder draft loader opens starter and duplicated UI draft wrappe
 		assert.equal(starterPayload.draft.source, "ui");
 		assert.equal(starterPayload.draft.status, "draft");
 		assert.equal(starterPayload.draft.definition.id, "ui-starter-workflow");
-		assert.equal(starterPayload.draft.validationState, "warning");
+		assert.equal(starterPayload.draft.validationState, "error");
+		assert.equal(starterPayload.draft.validation.trigger, "draft_load");
 		assert.equal(starterPayload.draft.diagnostics[0].code, "WorkflowBuilderWarning.partialDraft");
+		assert.ok(starterPayload.draft.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowValidationError.emptyGraph"));
 		assert.equal(starterPayload.draft.definition.xstate, undefined);
 
 		const duplicateResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
@@ -1922,6 +1924,118 @@ test("workflow builder draft loader opens starter and duplicated UI draft wrappe
 			body: JSON.stringify({ version: "1.0.0" }),
 		});
 		assert.equal(unknownDuplicateResponse.status, 404);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("workflow validation pipeline runs on draft load, edit, validate, and publish boundaries", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	try {
+		const duplicateResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(duplicateResponse.status, 201);
+		const duplicatePayload = await duplicateResponse.json();
+		const draftId = duplicatePayload.draft.draftId;
+
+		const loadResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(loadResponse.status, 200);
+		const loadPayload = await loadResponse.json();
+		assert.equal(loadPayload.draft.validation.trigger, "draft_load");
+		assert.equal(loadPayload.draft.validation.ok, true);
+		assert.equal(loadPayload.draft.validationState, "valid");
+
+		const validDefinition = loadPayload.draft.definition;
+		for (const editTrigger of ["graph_edit", "node_edit", "edge_edit", "schema_edit", "prompt_edit", "state_edit"]) {
+			const patchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+				method: "PATCH",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({ definition: validDefinition, editTrigger }),
+			});
+			assert.equal(patchResponse.status, 200);
+			const patchPayload = await patchResponse.json();
+			assert.equal(patchPayload.validation.trigger, editTrigger);
+			assert.equal(patchPayload.validation.ok, true);
+			assert.equal(patchPayload.draft.validationState, "valid");
+		}
+
+		const rawPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ rawDefinitionText: JSON.stringify(validDefinition), editTrigger: "raw_ir_edit" }),
+		});
+		assert.equal(rawPatchResponse.status, 200);
+		const rawPatchPayload = await rawPatchResponse.json();
+		assert.equal(rawPatchPayload.validation.trigger, "raw_ir_edit");
+		assert.equal(rawPatchPayload.validation.ok, true);
+
+		const invalidDefinition = structuredClone(validDefinition);
+		invalidDefinition.nodes.agent.profile.id = "missing-workflow-profile";
+		const invalidPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ definition: invalidDefinition, editTrigger: "node_edit" }),
+		});
+		assert.equal(invalidPatchResponse.status, 200);
+		const invalidPatchPayload = await invalidPatchResponse.json();
+		assert.equal(invalidPatchPayload.validation.trigger, "node_edit");
+		assert.equal(invalidPatchPayload.validation.ok, false);
+		assert.equal(invalidPatchPayload.draft.validationState, "error");
+		assert.ok(invalidPatchPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowGraphError.unknownAgentProfileRef"));
+
+		const validateResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/validate`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ trigger: "prompt_edit" }),
+		});
+		assert.equal(validateResponse.status, 200);
+		const validatePayload = await validateResponse.json();
+		assert.equal(validatePayload.validation.trigger, "prompt_edit");
+		assert.equal(validatePayload.validation.ok, false);
+
+		const publishResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/publish`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ versionIntent: "patch" }),
+		});
+		assert.equal(publishResponse.status, 422);
+		const publishPayload = await publishResponse.json();
+		assert.equal(publishPayload.validation.trigger, "before_publish");
+		assert.equal(publishPayload.validation.blocksPublish, true);
+		assert.ok(publishPayload.diagnostics.some((diagnostic) => diagnostic.registryRef === "missing-workflow-profile"));
 	} finally {
 		await channel.stop?.();
 	}
@@ -2048,6 +2162,23 @@ test("chat web app creates configured Project workflow sessions from the workflo
 		assert.equal(createdPayload.projectSession.workflowVersion, "1.0.0");
 		assert.equal(createdPayload.projectSession.state, "configured");
 		assert.equal(createdPayload.projectSession.workflowRunId, undefined);
+		assert.equal(createdPayload.validation.trigger, "before_project_session_creation");
+		assert.equal(createdPayload.validation.ok, true);
+		assert.equal(emitted.length, 0);
+
+		const startValidationResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions/${encodeURIComponent(createdPayload.session.id)}/start`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({}),
+		});
+		assert.equal(startValidationResponse.status, 202);
+		const startValidationPayload = await startValidationResponse.json();
+		assert.equal(startValidationPayload.validation.trigger, "before_workflow_start");
+		assert.equal(startValidationPayload.validation.ok, true);
 		assert.equal(emitted.length, 0);
 
 		const legacyRejected = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/sessions`, {

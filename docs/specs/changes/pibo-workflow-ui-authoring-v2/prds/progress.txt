@@ -17,6 +17,7 @@
 - Project workflow session creation should use the V2 `/api/chat/projects/:projectId/workflow-sessions` route and `workflow-versions` picker; keep legacy `/projects/:projectId/sessions` limited to `simple-chat`.
 - Project workflow session records keep selected workflow metadata in `project_sessions.workflow_id`, `workflow_version`, and constrained lifecycle `state`; configured sessions must not set `workflow_run_id` until Start.
 - Chat Web API state that must survive multiple HTTP requests in tests should use durable storage; scaffold-only in-memory state needs a shared cache because the web-channel test harness may recreate `createChatWebApp` through `getWebApps`.
+- V2 validation triggers should preserve non-validation builder diagnostics while replacing stale validation diagnostics for each draft load, edit, validate, publish, Project create, or start boundary.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -465,4 +466,31 @@
 - **Learnings for future iterations:**
   - Project sidebar session trees need both the durable Project session roots and runtime-created descendants; child workflow/subagent sessions are real Pibo Sessions even when they do not have `project_sessions` rows.
   - UI markers should consume `PiboWebSessionNode.workflowSessionKind` directly and keep workflow graph nodes/edges/guards/adapters out of the sidebar tree.
+---
+## 2026-05-12 00:58 CEST - US-002
+- What was implemented
+  - Added V2 validation trigger metadata and structured validation summaries for workflow drafts.
+  - Ran validation on draft load, parsed draft edits, raw IR edits, explicit validate requests, publish attempts, Project workflow session creation, and the Project start boundary.
+  - Draft save now preserves invalid diagnostics while publish/start-boundary paths reject error diagnostics with `422` responses.
+  - Added Chat Web API coverage for all edit trigger names, invalid Agent profile diagnostics, publish blocking, Project creation validation, and start-boundary validation.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow validation pipeline|workflow builder draft loader|configured Project workflow sessions" test/web-channel.test.mjs'` — passed, 3/3 tests.
+  - `node --test test/web-channel.test.mjs` — passed locally, 56/56 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the authenticated builder shows `dev@pibo.local`, `error` validation state, `WorkflowValidationError.missingPort`, `WorkflowValidationError.emptyGraph`, and `WorkflowValidationError.missingInitialNode` while keeping the raw XState projection-only notice.
+  - Saved screenshot: `/tmp/ralph-v2-validation-pipeline.png` inside the container.
+- **Learnings for future iterations:**
+  - Validation routes can update draft diagnostics without bumping the draft revision; save/patch routes should bump the revision only when a valid parsed draft object replaces the previous object.
+  - The current start route is a validation boundary stub that returns accepted validation metadata; run creation and one-run enforcement remain for the Project start story.
 ---

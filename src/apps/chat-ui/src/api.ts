@@ -291,6 +291,36 @@ export type WorkflowDraftDiagnostic = {
 	hint?: string;
 };
 
+export type WorkflowValidationTrigger =
+	| "draft_load"
+	| "graph_edit"
+	| "node_edit"
+	| "edge_edit"
+	| "schema_edit"
+	| "prompt_edit"
+	| "state_edit"
+	| "raw_ir_edit"
+	| "before_publish"
+	| "before_project_session_creation"
+	| "before_workflow_start";
+
+export type WorkflowValidationSummary = {
+	trigger: WorkflowValidationTrigger;
+	checkedAt: string;
+	ok: boolean;
+	validationState: "valid" | "warning" | "error";
+	errorCount: number;
+	warningCount: number;
+	infoCount: number;
+	blocksPublish: boolean;
+	blocksRun: boolean;
+};
+
+export type WorkflowValidationResponse = {
+	validation: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
 export type WorkflowDraftDefinition = Record<string, unknown>;
 
 export type WorkflowDraftRecord = {
@@ -306,6 +336,7 @@ export type WorkflowDraftRecord = {
 	definition: WorkflowDraftDefinition;
 	diagnostics: WorkflowDraftDiagnostic[];
 	validationState: "unknown" | "valid" | "warning" | "error";
+	validation?: WorkflowValidationSummary;
 	revision: number;
 	createdAt: string;
 	updatedAt: string;
@@ -317,6 +348,32 @@ export type WorkflowDraftResponse = {
 
 export async function getWorkflowDraft(draftId: string): Promise<WorkflowDraftResponse> {
 	return requestJson<WorkflowDraftResponse>(`/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`);
+}
+
+export type WorkflowDraftMutationResponse = WorkflowDraftResponse & WorkflowValidationResponse;
+
+export async function patchWorkflowDraft(draftId: string, input: { definition?: WorkflowDraftDefinition; rawDefinitionText?: string; editTrigger: WorkflowValidationTrigger }): Promise<WorkflowDraftMutationResponse> {
+	return requestJson<WorkflowDraftMutationResponse>(`/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function postWorkflowDraftValidate(draftId: string, input: { trigger?: WorkflowValidationTrigger } = {}): Promise<WorkflowDraftMutationResponse> {
+	return requestJson<WorkflowDraftMutationResponse>(`/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/validate`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export async function postWorkflowDraftPublish(draftId: string, input: { versionIntent?: "patch" | "minor" | "major" } = {}): Promise<WorkflowDraftMutationResponse> {
+	return requestJson<WorkflowDraftMutationResponse>(`/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/publish`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
 }
 
 export type WorkflowDuplicateDraftResponse = WorkflowDraftResponse & {

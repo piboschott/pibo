@@ -30,8 +30,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Chat Web V2 validation triggers for draft load, draft edit/save, explicit validate, publish blocking, Project session creation, and start-boundary validation."
     },
     {
       "id": "US-003",
