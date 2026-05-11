@@ -132,6 +132,35 @@ test("job claims are exclusive, retry backs off, and exhausted retry moves to DL
 	}
 });
 
+test("recoverInterruptedRuns fails non-retryable expired runs and moves their jobs to DLQ", () => {
+	const store = new PiboReliabilityStore(":memory:");
+	try {
+		const run = store.createRun({
+			ownerPiboSessionId: "ps_parent",
+			toolName: "slow_tool",
+			completionPolicy: "tracked",
+			retryable: false,
+		});
+		const expiredAt = new Date(Date.now() - 1000).toISOString();
+		store.db.prepare("UPDATE pibo_jobs SET claim_expires_at = ? WHERE job_id = ?").run(expiredAt, run.jobId);
+
+		const recovered = store.recoverInterruptedRuns();
+
+		assert.equal(recovered.length, 1);
+		assert.equal(recovered[0].runId, run.runId);
+		assert.equal(recovered[0].status, "failed");
+		assert.equal(recovered[0].error, "Run was interrupted before completion and the tool is not retryable.");
+		assert.ok(recovered[0].completedAt);
+		assert.deepEqual(store.listJobs({ queue: "runs" }), []);
+		const dead = store.listDead({ queue: "runs" });
+		assert.equal(dead.length, 1);
+		assert.equal(dead[0].jobId, run.jobId);
+		assert.equal(dead[0].deadReason, "interrupted");
+	} finally {
+		store.close();
+	}
+});
+
 test("expired claim cannot ack and DLQ replay creates a new live job", () => {
 	const store = new PiboReliabilityStore(":memory:");
 	try {

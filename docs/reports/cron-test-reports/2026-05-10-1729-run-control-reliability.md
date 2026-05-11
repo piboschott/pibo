@@ -130,6 +130,14 @@ npm test
 - Ergebnis: Nach gezieltem Build grün; 12 Tests bestanden.
 - Verbleibende offene Punkte: Persistenz-/Recovery-Tests für `PiboRunRegistry({ store })` und `recoverInterruptedRuns()` bleiben offen.
 
+## Umgesetzt am 2026-05-11 11:34 Europe/Berlin
+
+- Bereich: `recoverInterruptedRuns()` für nicht retrybare Runs mit abgelaufenem Job-Claim.
+- Geänderte Dateien: `test/reliability-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/reliability-store.test.mjs`.
+- Ergebnis: Grün; 7 Tests bestanden.
+- Verbleibende offene Punkte: Retryable-Recovery (`queued`/reclaimbar), Store-gebundener Registry-Roundtrip und Tool-Oberflächen-Tests bleiben offen.
+
 ## Fazit
 
 Das Run-Control-Testsubset ist aktuell eines der besseren granularen Subsets im Projekt: schnell, fokussiert und nah am Verhalten. Das größte Risiko liegt nicht in den In-Memory-Run-Zuständen, sondern an der Grenze zur Persistenz und Recovery. Genau dort sollten die nächsten Tests ergänzt werden, bevor größere Integrations- oder Deployment-Suites erweitert werden.
