@@ -51,7 +51,7 @@
 - [x] 6.3 Implement `workflow` node dispatch for nested workflows.
 - [x] 6.4 Implement `human` node dispatch with durable wait tokens.
 - [x] 6.5 Persist node run status for each node kind.
-- [ ] 6.6 Test a mixed workflow with all five node kinds.
+- [x] 6.6 Test a mixed workflow with all five node kinds.
 
 ## 7. Requirement: Agent nodes select profiles, tools, skills, and routing like normal sessions
 
