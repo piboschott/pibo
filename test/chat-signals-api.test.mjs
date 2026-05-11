@@ -159,6 +159,30 @@ test("chat signal SSE sends snapshot then monotonic patches", async () => {
 });
 
 
+test("chat signal SSE rejects missing root session id", async () => {
+	const { channel, baseURL } = await startSignalWebHost();
+	try {
+		const response = await fetch(`${baseURL}/api/chat/signals/events`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(response.status, 400);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
+test("chat signal SSE enforces root ownership", async () => {
+	const { channel, baseURL, sessions, signals } = await startSignalWebHost();
+	try {
+		const session = createSession(sessions, "ps_signal_sse_owner");
+		signals.project({ type: "session_created", session });
+		const response = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-2" } });
+		assert.equal(response.status, 404);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
 test("chat bootstrap overlays live signal running status", async () => {
 	const { channel, baseURL, sessions, signals } = await startSignalWebHost();
 	try {

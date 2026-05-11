@@ -248,3 +248,11 @@ Begründung: `npm test` baut alles inklusive Web-UIs und startet alle Tests. Das
 - Ausgeführte Kommandos: `node --test test/signal-registry.test.mjs`.
 - Ergebnis: 21/21 Tests bestanden; abgedeckt sind Tool-, Subagent-, Yielded-Run-, Compaction- und Running-vs-Queued-Phasen.
 - Verbleibende offene Punkte: Pruning-Randfälle, Chat-Signal-SSE-Negativfälle, SSE-Cleanup und UI-Patch-Transformationslogik bleiben offen.
+
+## Umgesetzt am 2026-05-11 14:48 Europe/Berlin
+
+- Bereich: Kleine Chat-Signal-SSE-Negativtests für fehlende Root-Session und Owner-Scope-Enforcement.
+- Geänderte Dateien: `test/chat-signals-api.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/chat-signals-api.test.mjs`.
+- Ergebnis: 9/9 Tests bestanden; abgesichert ist, dass `/api/chat/signals/events` ohne `rootPiboSessionId` mit 400 antwortet und fremde Roots mit 404 ablehnt.
+- Verbleibende offene Punkte: Fehlende-Registry-503-Fälle, SSE-Cleanup/Unsubscribe, Pruning-Randfälle und UI-Patch-Transformationslogik bleiben offen.
