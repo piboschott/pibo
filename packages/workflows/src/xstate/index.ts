@@ -4,8 +4,10 @@ import type {
   NodeId,
   StateAccessPolicy,
   StatePath,
+  WorkflowDefinition,
   WorkflowId,
   WorkflowMetadata,
+  WorkflowNodeDefinition,
   WorkflowNodeUiMetadata,
   WorkflowSnapshotKind,
   WorkflowStateFieldDefinition,
@@ -41,6 +43,14 @@ export const WORKFLOW_XSTATE_RESUME_EVENT = "WORKFLOW.RESUME";
 export const WORKFLOW_XSTATE_CANCEL_EVENT = "WORKFLOW.CANCEL";
 export const WORKFLOW_XSTATE_FAIL_EVENT = "WORKFLOW.FAIL";
 
+export const WORKFLOW_XSTATE_ACTOR_SOURCES: Record<WorkflowNodeDefinition["kind"], string> = {
+  adapter: "pibo.workflow.actor.adapter",
+  agent: "pibo.workflow.actor.agent",
+  code: "pibo.workflow.actor.code",
+  human: "pibo.workflow.actor.human",
+  workflow: "pibo.workflow.actor.workflow",
+};
+
 export type CreateXStateProjectionContextShapeOptions = {
   global?: Record<StatePath, WorkflowStateFieldDefinition>;
   local?: Record<NodeId, StateAccessPolicy | undefined>;
@@ -73,6 +83,59 @@ export type CreateXStateMachineProjectionOptions = {
   metadata?: WorkflowMetadata;
   ui?: WorkflowUiMetadata;
 };
+
+export type WorkflowNodeXStateProjection = {
+  initial: string;
+  states: Record<string, XStateProjectionState>;
+  actors: Record<string, XStateProjectionActor>;
+  contextShape: XStateProjectionContextShape;
+};
+
+export function projectWorkflowNodesToXState(definition: WorkflowDefinition): WorkflowNodeXStateProjection {
+  const states: Record<string, XStateProjectionState> = {};
+  const actors: Record<string, XStateProjectionActor> = {};
+
+  for (const [nodeId, node] of Object.entries(definition.nodes).sort(([left], [right]) => left.localeCompare(right))) {
+    const actor = createXStateProjectionActorForNode(nodeId, node);
+    const state = createXStateProjectionStateForNode(nodeId, node, actor);
+    actors[actor.id] = actor;
+    states[state.id] = state;
+  }
+
+  return {
+    initial: xstateInitialStateIdForWorkflow(definition),
+    states,
+    actors,
+    contextShape: createXStateProjectionContextShape({
+      global: definition.state?.global,
+      local: Object.fromEntries(
+        Object.entries(definition.nodes)
+          .filter(([, node]) => node.state !== undefined)
+          .map(([nodeId, node]) => [nodeId, node.state]),
+      ),
+      edge: Object.fromEntries(
+        Object.entries(definition.edges)
+          .filter(([, edge]) => edge.state !== undefined)
+          .map(([edgeId, edge]) => [edgeId, edge.state]),
+      ),
+    }),
+  };
+}
+
+export function projectWorkflowToXStateProjection(definition: WorkflowDefinition): XStateMachineProjection {
+  const nodeProjection = projectWorkflowNodesToXState(definition);
+
+  return createXStateMachineProjection({
+    id: definition.id,
+    version: definition.version,
+    initial: nodeProjection.initial,
+    states: nodeProjection.states,
+    actors: nodeProjection.actors,
+    contextShape: nodeProjection.contextShape,
+    metadata: definition.metadata,
+    ui: definition.ui,
+  });
+}
 
 export function createXStateMachineProjection(options: CreateXStateMachineProjectionOptions): XStateMachineProjection {
   const contextShape = options.contextShape ?? createXStateProjectionContextShape();
@@ -216,8 +279,66 @@ function createTerminalStateMeta(kind: XStateProjectionTerminalKind): XStateProj
   };
 }
 
+export function createXStateProjectionActorForNode(
+  nodeId: NodeId,
+  node: WorkflowNodeDefinition,
+): XStateProjectionActor {
+  return {
+    id: xstateActorIdForNode(nodeId),
+    src: xstateActorSourceForNodeKind(node.kind),
+    nodeId,
+    kind: node.kind,
+    input: { kind: "nodeInput", nodeId },
+    childWorkflowId: node.kind === "workflow" ? node.workflowId : undefined,
+    childWorkflowVersion: node.kind === "workflow" ? node.workflowVersion : undefined,
+    metadata: node.metadata,
+  };
+}
+
+export function createXStateProjectionStateForNode(
+  nodeId: NodeId,
+  node: WorkflowNodeDefinition,
+  actor: XStateProjectionActor = createXStateProjectionActorForNode(nodeId, node),
+): XStateProjectionState {
+  const tags = [node.kind, ...(node.metadata?.tags ?? [])];
+
+  return {
+    id: xstateStateIdForNode(nodeId),
+    kind: "node",
+    nodeId,
+    type: "atomic",
+    actorId: actor.id,
+    invoke: {
+      id: actor.id,
+      src: actor.src,
+      input: actor.input,
+    },
+    tags,
+    meta: {
+      pibo: {
+        kind: "node",
+        nodeId,
+        nodeKind: node.kind,
+        actorId: actor.id,
+        description: node.description,
+        tags,
+        ui: node.ui,
+      },
+    },
+  };
+}
+
 export function xstateActorIdForNode(nodeId: NodeId): string {
   return `workflow.node.${nodeId}`;
+}
+
+export function xstateActorSourceForNodeKind(kind: WorkflowNodeDefinition["kind"]): string {
+  return WORKFLOW_XSTATE_ACTOR_SOURCES[kind];
+}
+
+export function xstateInitialStateIdForWorkflow(definition: WorkflowDefinition): string {
+  const initialNodeId = Array.isArray(definition.initial) ? definition.initial[0] : definition.initial;
+  return xstateStateIdForNode(initialNodeId);
 }
 
 export function xstateStateIdForNode(nodeId: NodeId): string {

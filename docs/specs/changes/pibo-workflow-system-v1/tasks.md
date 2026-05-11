@@ -84,7 +84,7 @@
 
 - [x] 10.1 Add `xstate` as a dependency.
 - [x] 10.2 Define the XState machine projection shape.
-- [ ] 10.3 Map nodes to states.
+- [x] 10.3 Map nodes to states.
 - [ ] 10.4 Map edges to transitions.
 - [ ] 10.5 Map guards, waits, failures, and final states.
 - [ ] 10.6 Add deterministic snapshot tests for machine projection.
