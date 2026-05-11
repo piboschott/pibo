@@ -139,3 +139,11 @@ npm run build && node --test \
 ## Bewertung
 
 Die Trace-Tests sind ungewöhnlich wertvoll, weil sie Performance-Annahmen wie Objektidentität und Payload-Begrenzung prüfen. Die größte Lücke liegt nicht in einer fehlenden großen E2E-Suite, sondern in drei kleinen Subsets: Trace-Order, Live-Reducer und Transcript/Echo-Vermeidung. Diese Subsets würden schnelle Entwicklung an Chat-Web-Traces deutlich sicherer machen.
+
+## Umgesetzt am 2026-05-11 16:19 Europe/Berlin
+
+- Bereich: Schmale Trace-Order-Suite mit expliziter Absicherung der Source-, Phase-, Live-Stream- und fehlende-Order-Fallback-Sortierung.
+- Geänderte Dateien: `src/shared/trace-order.ts`, `test/trace-order.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1739-trace-materialization.md`.
+- Ausgeführte Kommandos: `npm run build && node --test test/trace-order.test.mjs test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs`.
+- Ergebnis: 12 Tests bestanden; Build erfolgreich. `compareTraceOrder()` nutzt `sourceRank` jetzt als primäres Sortierkriterium, passend zu den dokumentierten Trace-Source-Rängen.
+- Verbleibende offene Punkte: Live-Reducer-Suite, Transcript/Echo-Materialisierung und weitere Versionierungs-/Page-Parameter-Fälle bleiben offen.

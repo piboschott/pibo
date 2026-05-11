@@ -109,13 +109,13 @@ export function compareTraceOrder(left?: TraceOrderKey, right?: TraceOrderKey): 
 	if (!left) return 1;
 	if (!right) return -1;
 	return (
+		left.sourceRank - right.sourceRank ||
 		left.turnSeq - right.turnSeq ||
 		(left.transcriptIndex ?? Number.MAX_SAFE_INTEGER) - (right.transcriptIndex ?? Number.MAX_SAFE_INTEGER) ||
 		(left.eventSequence ?? Number.MAX_SAFE_INTEGER) - (right.eventSequence ?? Number.MAX_SAFE_INTEGER) ||
 		(left.streamId ?? Number.MAX_SAFE_INTEGER) - (right.streamId ?? Number.MAX_SAFE_INTEGER) ||
 		(left.streamFrameIndex ?? Number.MAX_SAFE_INTEGER) - (right.streamFrameIndex ?? Number.MAX_SAFE_INTEGER) ||
 		(left.contentPartIndex ?? 0) - (right.contentPartIndex ?? 0) ||
-		left.phaseRank - right.phaseRank ||
-		left.sourceRank - right.sourceRank
+		left.phaseRank - right.phaseRank
 	);
 }
