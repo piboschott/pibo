@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { gunzipSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
+import { Readable } from "node:stream";
 import test from "node:test";
-import { responseJson, sendWebResponse } from "../dist/web/http.js";
+import {
+	MAX_WEB_REQUEST_BODY_BYTES,
+	nodeRequestToWebRequest,
+	PiboWebHttpError,
+	readJsonBody,
+	responseJson,
+	sendWebResponse,
+} from "../dist/web/http.js";
 
 async function withServer(handler, run) {
 	const server = createServer(handler);
@@ -70,4 +78,73 @@ test("sendWebResponse leaves small JSON responses uncompressed", async () => {
 		assert.equal(response.headers["content-encoding"], undefined);
 		assert.deepEqual(JSON.parse(body.toString("utf8")), { ok: true });
 	});
+});
+
+
+test("readJsonBody returns valid JSON objects", async () => {
+	const body = await readJsonBody(new Request("http://example.test", {
+		method: "POST",
+		body: JSON.stringify({ ok: true }),
+	}));
+
+	assert.deepEqual(body, { ok: true });
+});
+
+test("readJsonBody rejects empty, invalid, and primitive JSON bodies", async () => {
+	for (const body of ["", "not-json", "null", "true", "42", '"value"']) {
+		await assert.rejects(
+			() => readJsonBody(new Request("http://example.test", { method: "POST", body })),
+			(error) => error instanceof PiboWebHttpError && error.statusCode === 400,
+		);
+	}
+});
+
+test("nodeRequestToWebRequest preserves GET method, URL, and repeated headers without a body", async () => {
+	const incoming = Readable.from([]);
+	Object.assign(incoming, {
+		method: "GET",
+		url: "/api/items?limit=1",
+		headers: {
+			"x-single": "value",
+			"x-repeat": ["one", "two"],
+		},
+	});
+
+	const request = await nodeRequestToWebRequest(incoming, "http://example.test/base");
+
+	assert.equal(request.method, "GET");
+	assert.equal(request.url, "http://example.test/api/items?limit=1");
+	assert.equal(request.headers.get("x-single"), "value");
+	assert.equal(request.headers.get("x-repeat"), "one, two");
+	assert.equal(await request.text(), "");
+});
+
+test("nodeRequestToWebRequest preserves POST JSON bodies", async () => {
+	const incoming = Readable.from([Buffer.from('{"ok":true}')]);
+	Object.assign(incoming, {
+		method: "POST",
+		url: "/submit",
+		headers: { "content-type": "application/json" },
+	});
+
+	const request = await nodeRequestToWebRequest(incoming, "http://example.test");
+
+	assert.equal(request.method, "POST");
+	assert.equal(request.url, "http://example.test/submit");
+	assert.equal(request.headers.get("content-type"), "application/json");
+	assert.equal(await request.text(), '{"ok":true}');
+});
+
+test("nodeRequestToWebRequest rejects oversized request bodies", async () => {
+	const incoming = Readable.from([Buffer.alloc(MAX_WEB_REQUEST_BODY_BYTES + 1)]);
+	Object.assign(incoming, {
+		method: "POST",
+		url: "/too-large",
+		headers: {},
+	});
+
+	await assert.rejects(
+		() => nodeRequestToWebRequest(incoming, "http://example.test"),
+		(error) => error instanceof PiboWebHttpError && error.statusCode === 413,
+	);
 });
