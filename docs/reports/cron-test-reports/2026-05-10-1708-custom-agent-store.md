@@ -176,3 +176,11 @@ rg -n "agents|customAgents|agentStore|/agents" test/*.test.mjs
 rg -n "thinkingLevel|mainThinking|subagentThinking|mainFast|subagentFast|builtinTools|builtinToolNames|autoContextFiles|runControl|mainModel|subagentModel" test/*.test.mjs src/apps/chat/agent-store.ts src/apps/chat/agent-profiles.ts
 node --test test/agent-store.test.mjs test/agent-profiles.test.mjs
 ```
+
+## Umgesetzt am 2026-05-11 12:53 Europe/Berlin
+
+- Bereich: Store-Roundtrip für Thinking-/Fast-/Builtin-Mode-Optionen in Custom Agents.
+- Geänderte Dateien: `test/agent-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1708-custom-agent-store.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/agent-store.test.mjs`.
+- Ergebnis: Build erfolgreich; 8/8 Agent-Store-Tests bestanden. Der neue Test prüft create/update/get für `thinkingLevel`, `mainThinkingLevel`, `subagentThinkingLevel`, `fast`, `mainFast`, `subagentFast` und `builtinTools`, inklusive Sanitizing ungültiger Werte.
+- Verbleibende offene Punkte: Profil-Mapping-Contract, Cross-Owner-Namenssemantik, Migration-Snapshot und kleinere Web-Normalizer-Tests sind weiterhin offen.
