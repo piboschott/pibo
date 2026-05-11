@@ -47,6 +47,9 @@ export type EdgeTransferId = string;
 export type WorkflowCheckpointId = string;
 export type WorkflowWakeupId = string;
 export type WorkflowWaitTokenId = string;
+export type WorkflowEventId = string;
+export type WorkflowDefinitionSnapshotId = string;
+export type WorkflowHumanActionId = string;
 export type RegistryRefId = string;
 export type PromptTemplate = string;
 export type DurationSpec =
@@ -351,8 +354,9 @@ export type WorkflowDefinitionInput = Omit<WorkflowDefinition, "version"> & {
 };
 
 export type WorkflowDefinitionSnapshot = {
-  id: WorkflowId;
-  version: WorkflowVersion;
+  id: WorkflowDefinitionSnapshotId;
+  workflowId: WorkflowId;
+  workflowVersion: WorkflowVersion;
   hash: string;
   definition: WorkflowDefinition;
   createdAt: string;
@@ -680,6 +684,7 @@ export type WorkflowWakeup = {
   nodeAttemptId?: NodeAttemptId;
   kind: "retry" | "human" | "runtime" | "child_workflow";
   availableAt: string;
+  correlationId?: string;
   payload?: WorkflowValue;
   createdAt: string;
 };
@@ -699,6 +704,16 @@ export type WorkflowHumanActionDefinition = {
   input?: WorkflowPort;
   output?: WorkflowPort;
   handler?: RegistryRefId;
+};
+
+export type WorkflowHumanActionRecord = {
+  id: WorkflowHumanActionId;
+  workflowRunId: WorkflowRunId;
+  waitTokenId: WorkflowWaitTokenId;
+  kind: WorkflowHumanActionKind;
+  actor?: JsonObject;
+  payload?: WorkflowValue;
+  createdAt: string;
 };
 
 export type WorkflowWaitTokenStatus = "pending" | "resumed" | "expired" | "cancelled";
@@ -732,6 +747,17 @@ export type WorkflowRuntimeEvent =
   | { type: "wait.resumed"; runId: WorkflowRunId; waitTokenId: WorkflowWaitTokenId; payload?: WorkflowValue }
   | { type: "retry.scheduled"; runId: WorkflowRunId; nodeAttemptId: NodeAttemptId; availableAt: string }
   | { type: "checkpoint.created"; runId: WorkflowRunId; checkpointId: WorkflowCheckpointId };
+
+export type WorkflowEventRecord = {
+  id: WorkflowEventId;
+  workflowRunId: WorkflowRunId;
+  type: WorkflowRuntimeEvent["type"] | string;
+  nodeId?: NodeId;
+  edgeId?: EdgeId;
+  attemptId?: NodeAttemptId;
+  payload?: WorkflowRuntimeEvent | JsonObject;
+  createdAt: string;
+};
 
 export type WorkflowSnapshotKind = "kernel" | "xstate" | "ui";
 

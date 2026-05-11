@@ -3,14 +3,27 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type {
+  EdgeTransfer,
+  EdgeTransferId,
   NodeAttempt,
   NodeAttemptId,
   NodeAttemptStatus,
+  WorkflowCheckpoint,
+  WorkflowCheckpointId,
+  WorkflowDefinitionSnapshot,
+  WorkflowDefinitionSnapshotId,
+  WorkflowEventId,
+  WorkflowEventRecord,
   WorkflowExecutionEnvironment,
+  WorkflowHumanActionId,
+  WorkflowHumanActionRecord,
+  WorkflowHumanActionKind,
   WorkflowRun,
   WorkflowRunId,
   WorkflowRunStatus,
   WorkflowValue,
+  WorkflowWakeup,
+  WorkflowWakeupId,
   WorkflowWaitToken,
   WorkflowWaitTokenId,
   WorkflowWaitTokenStatus,
@@ -42,6 +55,18 @@ export type WorkflowRunStore = {
   getRun(id: WorkflowRunId): WorkflowRun | undefined | Promise<WorkflowRun | undefined>;
 };
 
+export type WorkflowDefinitionSnapshotStore = {
+  saveDefinitionSnapshot(snapshot: WorkflowDefinitionSnapshot): void | Promise<void>;
+  getDefinitionSnapshot(id: WorkflowDefinitionSnapshotId): WorkflowDefinitionSnapshot | undefined | Promise<WorkflowDefinitionSnapshot | undefined>;
+  listDefinitionSnapshots(filter?: WorkflowDefinitionSnapshotListFilter): WorkflowDefinitionSnapshot[] | Promise<WorkflowDefinitionSnapshot[]>;
+};
+
+export type WorkflowEventStore = {
+  saveEvent(event: WorkflowEventRecord): void | Promise<void>;
+  getEvent(id: WorkflowEventId): WorkflowEventRecord | undefined | Promise<WorkflowEventRecord | undefined>;
+  listEvents(filter?: WorkflowEventListFilter): WorkflowEventRecord[] | Promise<WorkflowEventRecord[]>;
+};
+
 export type WorkflowWaitTokenStore = {
   saveWaitToken(token: WorkflowWaitToken): void | Promise<void>;
   getWaitToken(id: WorkflowWaitTokenId): WorkflowWaitToken | undefined | Promise<WorkflowWaitToken | undefined>;
@@ -54,10 +79,50 @@ export type WorkflowNodeAttemptStore = {
   listNodeAttempts(filter?: WorkflowNodeAttemptListFilter): NodeAttempt[] | Promise<NodeAttempt[]>;
 };
 
+export type WorkflowEdgeTransferStore = {
+  saveEdgeTransfer(transfer: EdgeTransfer): void | Promise<void>;
+  getEdgeTransfer(id: EdgeTransferId): EdgeTransfer | undefined | Promise<EdgeTransfer | undefined>;
+  listEdgeTransfers(filter?: WorkflowEdgeTransferListFilter): EdgeTransfer[] | Promise<EdgeTransfer[]>;
+};
+
+export type WorkflowCheckpointStore = {
+  saveCheckpoint(checkpoint: WorkflowCheckpoint): void | Promise<void>;
+  getCheckpoint(id: WorkflowCheckpointId): WorkflowCheckpoint | undefined | Promise<WorkflowCheckpoint | undefined>;
+  listCheckpoints(filter?: WorkflowCheckpointListFilter): WorkflowCheckpoint[] | Promise<WorkflowCheckpoint[]>;
+};
+
+export type WorkflowWakeupStore = {
+  saveWakeup(wakeup: WorkflowWakeup): void | Promise<void>;
+  getWakeup(id: WorkflowWakeupId): WorkflowWakeup | undefined | Promise<WorkflowWakeup | undefined>;
+  listWakeups(filter?: WorkflowWakeupListFilter): WorkflowWakeup[] | Promise<WorkflowWakeup[]>;
+};
+
+export type WorkflowHumanActionStore = {
+  saveHumanAction(action: WorkflowHumanActionRecord): void | Promise<void>;
+  getHumanAction(id: WorkflowHumanActionId): WorkflowHumanActionRecord | undefined | Promise<WorkflowHumanActionRecord | undefined>;
+  listHumanActions(filter?: WorkflowHumanActionListFilter): WorkflowHumanActionRecord[] | Promise<WorkflowHumanActionRecord[]>;
+};
+
 export type WorkflowRunListFilter = {
   workflowId?: string;
   status?: WorkflowRunStatus;
   ownerScope?: string;
+  limit?: number;
+};
+
+export type WorkflowDefinitionSnapshotListFilter = {
+  workflowId?: string;
+  workflowVersion?: string;
+  hash?: string;
+  limit?: number;
+};
+
+export type WorkflowEventListFilter = {
+  workflowRunId?: WorkflowRunId;
+  type?: string;
+  nodeId?: string;
+  edgeId?: string;
+  attemptId?: NodeAttemptId;
   limit?: number;
 };
 
@@ -73,6 +138,35 @@ export type WorkflowNodeAttemptListFilter = {
   nodeId?: string;
   kind?: NodeAttempt["kind"];
   status?: NodeAttemptStatus;
+  limit?: number;
+};
+
+export type WorkflowEdgeTransferListFilter = {
+  workflowRunId?: WorkflowRunId;
+  edgeId?: string;
+  targetNodeId?: string;
+  status?: EdgeTransfer["status"];
+  limit?: number;
+};
+
+export type WorkflowCheckpointListFilter = {
+  workflowRunId?: WorkflowRunId;
+  namespace?: string;
+  limit?: number;
+};
+
+export type WorkflowWakeupListFilter = {
+  workflowRunId?: WorkflowRunId;
+  nodeAttemptId?: NodeAttemptId;
+  kind?: WorkflowWakeup["kind"];
+  correlationId?: string;
+  limit?: number;
+};
+
+export type WorkflowHumanActionListFilter = {
+  workflowRunId?: WorkflowRunId;
+  waitTokenId?: WorkflowWaitTokenId;
+  kind?: WorkflowHumanActionKind;
   limit?: number;
 };
 
@@ -103,6 +197,26 @@ type WorkflowRunRow = {
   completed_at: string | null;
   failed_at: string | null;
   cancelled_at: string | null;
+};
+
+type WorkflowDefinitionSnapshotRow = {
+  id: string;
+  workflow_id: string;
+  workflow_version: string;
+  definition_hash: string;
+  compiled_definition_json: string;
+  created_at: string;
+};
+
+type WorkflowEventRow = {
+  id: string;
+  workflow_run_id: string;
+  type: string;
+  node_id: string | null;
+  edge_id: string | null;
+  attempt_id: string | null;
+  payload_json: string | null;
+  created_at: string;
 };
 
 type WorkflowWaitTokenRow = {
@@ -147,7 +261,59 @@ type WorkflowNodeAttemptRow = {
   available_at: string | null;
 };
 
-export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTokenStore, WorkflowNodeAttemptStore {
+type WorkflowEdgeTransferRow = {
+  id: string;
+  workflow_run_id: string;
+  edge_id: string;
+  source_node_attempt_id: string;
+  target_node_id: string;
+  payload_json: string;
+  adapter_attempt_id: string | null;
+  status: EdgeTransfer["status"];
+  created_at: string;
+};
+
+type WorkflowCheckpointRow = {
+  id: string;
+  workflow_run_id: string;
+  namespace: string;
+  cursor_json: string;
+  state_json: string;
+  pending_json: string;
+  created_at: string;
+};
+
+type WorkflowWakeupRow = {
+  id: string;
+  workflow_run_id: string;
+  node_attempt_id: string | null;
+  kind: WorkflowWakeup["kind"];
+  available_at: string;
+  correlation_id: string | null;
+  payload_json: string | null;
+  created_at: string;
+};
+
+type WorkflowHumanActionRow = {
+  id: string;
+  workflow_run_id: string;
+  wait_token_id: string;
+  kind: WorkflowHumanActionKind;
+  actor_json: string | null;
+  payload_json: string | null;
+  created_at: string;
+};
+
+export class SqliteWorkflowRunStore implements
+  WorkflowRunStore,
+  WorkflowDefinitionSnapshotStore,
+  WorkflowEventStore,
+  WorkflowWaitTokenStore,
+  WorkflowNodeAttemptStore,
+  WorkflowEdgeTransferStore,
+  WorkflowCheckpointStore,
+  WorkflowWakeupStore,
+  WorkflowHumanActionStore {
   private readonly db: DatabaseSync;
 
   constructor(path: string) {
@@ -368,6 +534,62 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTok
     this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 
+  saveDefinitionSnapshot(snapshot: WorkflowDefinitionSnapshot): void {
+    this.db.prepare(`
+      INSERT INTO workflow_definition_snapshots (
+        id,
+        workflow_id,
+        workflow_version,
+        definition_hash,
+        compiled_definition_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_id = excluded.workflow_id,
+        workflow_version = excluded.workflow_version,
+        definition_hash = excluded.definition_hash,
+        compiled_definition_json = excluded.compiled_definition_json,
+        created_at = excluded.created_at
+    `).run(
+      snapshot.id,
+      snapshot.workflowId,
+      snapshot.workflowVersion,
+      snapshot.hash,
+      serialize(snapshot.definition),
+      snapshot.createdAt,
+    );
+  }
+
+  getDefinitionSnapshot(id: WorkflowDefinitionSnapshotId): WorkflowDefinitionSnapshot | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_definition_snapshots WHERE id = ?").get(id) as
+      | WorkflowDefinitionSnapshotRow
+      | undefined;
+    return row ? workflowDefinitionSnapshotFromRow(row) : undefined;
+  }
+
+  listDefinitionSnapshots(filter: WorkflowDefinitionSnapshotListFilter = {}): WorkflowDefinitionSnapshot[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowId !== undefined) {
+      clauses.push("workflow_id = ?");
+      values.push(filter.workflowId);
+    }
+    if (filter.workflowVersion !== undefined) {
+      clauses.push("workflow_version = ?");
+      values.push(filter.workflowVersion);
+    }
+    if (filter.hash !== undefined) {
+      clauses.push("definition_hash = ?");
+      values.push(filter.hash);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_definition_snapshots ${where} ORDER BY created_at DESC LIMIT ?`)
+      .all(...values, limit) as WorkflowDefinitionSnapshotRow[];
+    return rows.map(workflowDefinitionSnapshotFromRow);
+  }
+
   saveRun(run: WorkflowRun): void {
     this.db.prepare(`
       INSERT INTO workflow_runs (
@@ -476,11 +698,79 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTok
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const limit = Math.max(1, Math.min(filter.limit ?? 100, 1000));
+    const limit = listLimit(filter.limit);
     const rows = this.db
       .prepare(`SELECT * FROM workflow_runs ${where} ORDER BY updated_at DESC LIMIT ?`)
       .all(...values, limit) as WorkflowRunRow[];
     return rows.map(workflowRunFromRow);
+  }
+
+  saveEvent(event: WorkflowEventRecord): void {
+    this.db.prepare(`
+      INSERT INTO workflow_events (
+        id,
+        workflow_run_id,
+        type,
+        node_id,
+        edge_id,
+        attempt_id,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        type = excluded.type,
+        node_id = excluded.node_id,
+        edge_id = excluded.edge_id,
+        attempt_id = excluded.attempt_id,
+        payload_json = excluded.payload_json,
+        created_at = excluded.created_at
+    `).run(
+      event.id,
+      event.workflowRunId,
+      event.type,
+      event.nodeId ?? null,
+      event.edgeId ?? null,
+      event.attemptId ?? null,
+      serializeOptional(event.payload),
+      event.createdAt,
+    );
+  }
+
+  getEvent(id: WorkflowEventId): WorkflowEventRecord | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_events WHERE id = ?").get(id) as WorkflowEventRow | undefined;
+    return row ? workflowEventFromRow(row) : undefined;
+  }
+
+  listEvents(filter: WorkflowEventListFilter = {}): WorkflowEventRecord[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.type !== undefined) {
+      clauses.push("type = ?");
+      values.push(filter.type);
+    }
+    if (filter.nodeId !== undefined) {
+      clauses.push("node_id = ?");
+      values.push(filter.nodeId);
+    }
+    if (filter.edgeId !== undefined) {
+      clauses.push("edge_id = ?");
+      values.push(filter.edgeId);
+    }
+    if (filter.attemptId !== undefined) {
+      clauses.push("attempt_id = ?");
+      values.push(filter.attemptId);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_events ${where} ORDER BY created_at ASC, id ASC LIMIT ?`)
+      .all(...values, limit) as WorkflowEventRow[];
+    return rows.map(workflowEventFromRow);
   }
 
   saveNodeAttempt(nodeAttempt: NodeAttempt): void {
@@ -577,11 +867,203 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTok
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const limit = Math.max(1, Math.min(filter.limit ?? 100, 1000));
+    const limit = listLimit(filter.limit);
     const rows = this.db
       .prepare(`SELECT * FROM workflow_node_attempts ${where} ORDER BY started_at DESC, id DESC LIMIT ?`)
       .all(...values, limit) as WorkflowNodeAttemptRow[];
     return rows.map(workflowNodeAttemptFromRow);
+  }
+
+  saveEdgeTransfer(transfer: EdgeTransfer): void {
+    this.db.prepare(`
+      INSERT INTO workflow_edge_transfers (
+        id,
+        workflow_run_id,
+        edge_id,
+        source_node_attempt_id,
+        target_node_id,
+        payload_json,
+        adapter_attempt_id,
+        status,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        edge_id = excluded.edge_id,
+        source_node_attempt_id = excluded.source_node_attempt_id,
+        target_node_id = excluded.target_node_id,
+        payload_json = excluded.payload_json,
+        adapter_attempt_id = excluded.adapter_attempt_id,
+        status = excluded.status,
+        created_at = excluded.created_at
+    `).run(
+      transfer.id,
+      transfer.workflowRunId,
+      transfer.edgeId,
+      transfer.sourceNodeAttemptId,
+      transfer.targetNodeId,
+      serialize(transfer.payload),
+      transfer.adapterAttemptId ?? null,
+      transfer.status,
+      transfer.createdAt,
+    );
+  }
+
+  getEdgeTransfer(id: EdgeTransferId): EdgeTransfer | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_edge_transfers WHERE id = ?").get(id) as
+      | WorkflowEdgeTransferRow
+      | undefined;
+    return row ? workflowEdgeTransferFromRow(row) : undefined;
+  }
+
+  listEdgeTransfers(filter: WorkflowEdgeTransferListFilter = {}): EdgeTransfer[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.edgeId !== undefined) {
+      clauses.push("edge_id = ?");
+      values.push(filter.edgeId);
+    }
+    if (filter.targetNodeId !== undefined) {
+      clauses.push("target_node_id = ?");
+      values.push(filter.targetNodeId);
+    }
+    if (filter.status !== undefined) {
+      clauses.push("status = ?");
+      values.push(filter.status);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_edge_transfers ${where} ORDER BY created_at ASC, id ASC LIMIT ?`)
+      .all(...values, limit) as WorkflowEdgeTransferRow[];
+    return rows.map(workflowEdgeTransferFromRow);
+  }
+
+  saveCheckpoint(checkpoint: WorkflowCheckpoint): void {
+    this.db.prepare(`
+      INSERT INTO workflow_checkpoints (
+        id,
+        workflow_run_id,
+        namespace,
+        cursor_json,
+        state_json,
+        pending_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        namespace = excluded.namespace,
+        cursor_json = excluded.cursor_json,
+        state_json = excluded.state_json,
+        pending_json = excluded.pending_json,
+        created_at = excluded.created_at
+    `).run(
+      checkpoint.id,
+      checkpoint.workflowRunId,
+      checkpoint.namespace,
+      serialize(checkpoint.cursor),
+      serialize(checkpoint.globalState),
+      serialize({
+        pendingNodeIds: checkpoint.pendingNodeIds,
+        completedNodeIds: checkpoint.completedNodeIds,
+        edgePayloadRefs: checkpoint.edgePayloadRefs,
+      }),
+      checkpoint.createdAt,
+    );
+  }
+
+  getCheckpoint(id: WorkflowCheckpointId): WorkflowCheckpoint | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_checkpoints WHERE id = ?").get(id) as
+      | WorkflowCheckpointRow
+      | undefined;
+    return row ? workflowCheckpointFromRow(row) : undefined;
+  }
+
+  listCheckpoints(filter: WorkflowCheckpointListFilter = {}): WorkflowCheckpoint[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.namespace !== undefined) {
+      clauses.push("namespace = ?");
+      values.push(filter.namespace);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_checkpoints ${where} ORDER BY created_at DESC, id DESC LIMIT ?`)
+      .all(...values, limit) as WorkflowCheckpointRow[];
+    return rows.map(workflowCheckpointFromRow);
+  }
+
+  saveWakeup(wakeup: WorkflowWakeup): void {
+    this.db.prepare(`
+      INSERT INTO workflow_wakeups (
+        id,
+        workflow_run_id,
+        node_attempt_id,
+        kind,
+        available_at,
+        correlation_id,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        node_attempt_id = excluded.node_attempt_id,
+        kind = excluded.kind,
+        available_at = excluded.available_at,
+        correlation_id = excluded.correlation_id,
+        payload_json = excluded.payload_json,
+        created_at = excluded.created_at
+    `).run(
+      wakeup.id,
+      wakeup.workflowRunId,
+      wakeup.nodeAttemptId ?? null,
+      wakeup.kind,
+      wakeup.availableAt,
+      wakeup.correlationId ?? null,
+      serializeOptional(wakeup.payload),
+      wakeup.createdAt,
+    );
+  }
+
+  getWakeup(id: WorkflowWakeupId): WorkflowWakeup | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_wakeups WHERE id = ?").get(id) as WorkflowWakeupRow | undefined;
+    return row ? workflowWakeupFromRow(row) : undefined;
+  }
+
+  listWakeups(filter: WorkflowWakeupListFilter = {}): WorkflowWakeup[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.nodeAttemptId !== undefined) {
+      clauses.push("node_attempt_id = ?");
+      values.push(filter.nodeAttemptId);
+    }
+    if (filter.kind !== undefined) {
+      clauses.push("kind = ?");
+      values.push(filter.kind);
+    }
+    if (filter.correlationId !== undefined) {
+      clauses.push("correlation_id = ?");
+      values.push(filter.correlationId);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_wakeups ${where} ORDER BY available_at ASC, id ASC LIMIT ?`)
+      .all(...values, limit) as WorkflowWakeupRow[];
+    return rows.map(workflowWakeupFromRow);
   }
 
   saveWaitToken(token: WorkflowWaitToken): void {
@@ -658,16 +1140,86 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTok
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const limit = Math.max(1, Math.min(filter.limit ?? 100, 1000));
+    const limit = listLimit(filter.limit);
     const rows = this.db
       .prepare(`SELECT * FROM workflow_wait_tokens ${where} ORDER BY created_at DESC LIMIT ?`)
       .all(...values, limit) as WorkflowWaitTokenRow[];
     return rows.map(workflowWaitTokenFromRow);
   }
 
+  saveHumanAction(action: WorkflowHumanActionRecord): void {
+    this.db.prepare(`
+      INSERT INTO workflow_human_actions (
+        id,
+        workflow_run_id,
+        wait_token_id,
+        kind,
+        actor_json,
+        payload_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        wait_token_id = excluded.wait_token_id,
+        kind = excluded.kind,
+        actor_json = excluded.actor_json,
+        payload_json = excluded.payload_json,
+        created_at = excluded.created_at
+    `).run(
+      action.id,
+      action.workflowRunId,
+      action.waitTokenId,
+      action.kind,
+      serializeOptional(action.actor),
+      serializeOptional(action.payload),
+      action.createdAt,
+    );
+  }
+
+  getHumanAction(id: WorkflowHumanActionId): WorkflowHumanActionRecord | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_human_actions WHERE id = ?").get(id) as
+      | WorkflowHumanActionRow
+      | undefined;
+    return row ? workflowHumanActionFromRow(row) : undefined;
+  }
+
+  listHumanActions(filter: WorkflowHumanActionListFilter = {}): WorkflowHumanActionRecord[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.waitTokenId !== undefined) {
+      clauses.push("wait_token_id = ?");
+      values.push(filter.waitTokenId);
+    }
+    if (filter.kind !== undefined) {
+      clauses.push("kind = ?");
+      values.push(filter.kind);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = listLimit(filter.limit);
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_human_actions ${where} ORDER BY created_at ASC, id ASC LIMIT ?`)
+      .all(...values, limit) as WorkflowHumanActionRow[];
+    return rows.map(workflowHumanActionFromRow);
+  }
+
   close(): void {
     this.db.close();
   }
+}
+
+function workflowDefinitionSnapshotFromRow(row: WorkflowDefinitionSnapshotRow): WorkflowDefinitionSnapshot {
+  return {
+    id: row.id,
+    workflowId: row.workflow_id,
+    workflowVersion: row.workflow_version,
+    hash: row.definition_hash,
+    definition: parseJson(row.compiled_definition_json),
+    createdAt: row.created_at,
+  };
 }
 
 function workflowRunFromRow(row: WorkflowRunRow): WorkflowRun {
@@ -682,7 +1234,7 @@ function workflowRunFromRow(row: WorkflowRunRow): WorkflowRun {
     ...(row.parent_node_attempt_id ? { parentNodeAttemptId: row.parent_node_attempt_id } : {}),
     ...(row.pibo_session_id ? { piboSessionId: row.pibo_session_id } : {}),
     ...(row.project_id ? { projectId: row.project_id } : {}),
-    ...(row.environment_json ? { environment: parseJson(row.environment_json) } : {}),
+    ...(row.environment_json ? { environment: parseJson<WorkflowExecutionEnvironment>(row.environment_json) } : {}),
     status: row.status,
     current: parseJson(row.current_json),
     input: parseJson(row.input_json) as WorkflowValue,
@@ -694,6 +1246,19 @@ function workflowRunFromRow(row: WorkflowRunRow): WorkflowRun {
     ...(row.completed_at ? { completedAt: row.completed_at } : {}),
     ...(row.failed_at ? { failedAt: row.failed_at } : {}),
     ...(row.cancelled_at ? { cancelledAt: row.cancelled_at } : {}),
+  };
+}
+
+function workflowEventFromRow(row: WorkflowEventRow): WorkflowEventRecord {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    type: row.type,
+    ...(row.node_id ? { nodeId: row.node_id } : {}),
+    ...(row.edge_id ? { edgeId: row.edge_id } : {}),
+    ...(row.attempt_id ? { attemptId: row.attempt_id } : {}),
+    ...(row.payload_json ? { payload: parseJson(row.payload_json) } : {}),
+    createdAt: row.created_at,
   };
 }
 
@@ -736,6 +1301,66 @@ function workflowNodeAttemptFromRow(row: WorkflowNodeAttemptRow): NodeAttempt {
     ...(row.failed_at ? { failedAt: row.failed_at } : {}),
     ...(row.available_at ? { availableAt: row.available_at } : {}),
   };
+}
+
+function workflowEdgeTransferFromRow(row: WorkflowEdgeTransferRow): EdgeTransfer {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    edgeId: row.edge_id,
+    sourceNodeAttemptId: row.source_node_attempt_id,
+    targetNodeId: row.target_node_id,
+    status: row.status,
+    payload: parseJson(row.payload_json) as WorkflowValue,
+    ...(row.adapter_attempt_id ? { adapterAttemptId: row.adapter_attempt_id } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function workflowCheckpointFromRow(row: WorkflowCheckpointRow): WorkflowCheckpoint {
+  const pending = parseJson<Partial<Pick<WorkflowCheckpoint, "pendingNodeIds" | "completedNodeIds" | "edgePayloadRefs">>>(
+    row.pending_json,
+  );
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    namespace: row.namespace,
+    cursor: parseJson(row.cursor_json),
+    globalState: parseJson(row.state_json),
+    pendingNodeIds: pending.pendingNodeIds ?? [],
+    completedNodeIds: pending.completedNodeIds ?? [],
+    edgePayloadRefs: pending.edgePayloadRefs ?? [],
+    createdAt: row.created_at,
+  };
+}
+
+function workflowWakeupFromRow(row: WorkflowWakeupRow): WorkflowWakeup {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    ...(row.node_attempt_id ? { nodeAttemptId: row.node_attempt_id } : {}),
+    kind: row.kind,
+    availableAt: row.available_at,
+    ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
+    ...(row.payload_json ? { payload: parseJson(row.payload_json) as WorkflowValue } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function workflowHumanActionFromRow(row: WorkflowHumanActionRow): WorkflowHumanActionRecord {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    waitTokenId: row.wait_token_id,
+    kind: row.kind,
+    ...(row.actor_json ? { actor: parseJson(row.actor_json) } : {}),
+    ...(row.payload_json ? { payload: parseJson(row.payload_json) as WorkflowValue } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function listLimit(limit: number | undefined): number {
+  return Math.max(1, Math.min(limit ?? 100, 1000));
 }
 
 function serialize(value: unknown): string {

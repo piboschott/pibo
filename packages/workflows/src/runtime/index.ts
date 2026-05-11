@@ -31,6 +31,7 @@ import type {
   WorkflowDiagnostic,
   WorkflowErrorSummary,
   WorkflowEventEmitter,
+  WorkflowEventRecord,
   WorkflowGlobalStateReader,
   WorkflowRegistry,
   WorkflowRun,
@@ -40,7 +41,13 @@ import type {
   WorkflowWaitToken,
   WorkflowWaitTokenId,
 } from "../types/index.js";
-import type { WorkflowNodeAttemptStore, WorkflowRunStore, WorkflowWaitTokenStore } from "../store/index.js";
+import type {
+  WorkflowEdgeTransferStore,
+  WorkflowEventStore,
+  WorkflowNodeAttemptStore,
+  WorkflowRunStore,
+  WorkflowWaitTokenStore,
+} from "../store/index.js";
 import {
   resolveWorkflowAdapter,
   resolveWorkflowDefinition,
@@ -680,7 +687,7 @@ export async function dispatchWorkflowAgentNode(
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -809,7 +816,7 @@ export async function dispatchWorkflowAgentNode(
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "node.completed",
       runId: run.id,
       nodeAttemptId: nodeAttempt.id,
@@ -908,7 +915,7 @@ export async function dispatchWorkflowCodeNode(
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -962,7 +969,7 @@ export async function dispatchWorkflowCodeNode(
       global: createStateReader("global", run.state.global, codeNode, nodeId),
       local: createStateReader("local", run.state.local?.[nodeId] ?? {}, codeNode, nodeId),
       edge: createEdgePayloadReader(options.edgePayloads ?? {}),
-      emit: (event) => emitWorkflowRuntimeEvent(events, options.emitEvent, event),
+      emit: (event) => emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, event),
       command: async (command) => {
         emittedCommands.push(command);
         await options.commandEmitter?.(command);
@@ -1011,7 +1018,7 @@ export async function dispatchWorkflowCodeNode(
         await options.commandEmitter?.(command);
       }
       if (command.kind === "emitEvent") {
-        await emitWorkflowRuntimeEvent(events, options.emitEvent, command.event);
+        await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, command.event);
       }
     }
 
@@ -1023,7 +1030,7 @@ export async function dispatchWorkflowCodeNode(
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "node.completed",
       runId: run.id,
       nodeAttemptId: nodeAttempt.id,
@@ -1128,7 +1135,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -1283,7 +1290,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "node.completed",
       runId: run.id,
       nodeAttemptId: nodeAttempt.id,
@@ -1381,7 +1388,7 @@ export async function dispatchWorkflowHumanNode(
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -1438,7 +1445,7 @@ export async function dispatchWorkflowHumanNode(
   run.current = { nodeId, status: "waiting" };
   run.updatedAt = waitCreatedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "wait.created",
     runId: run.id,
     waitTokenId: waitToken.id,
@@ -1523,7 +1530,7 @@ export async function dispatchWorkflowAdapterNode(
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -1598,7 +1605,7 @@ export async function dispatchWorkflowAdapterNode(
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "node.completed",
       runId: run.id,
       nodeAttemptId: nodeAttempt.id,
@@ -1998,7 +2005,8 @@ export async function recordWorkflowEdgeTransfer(
 
   run.current = { edgeId, status: run.status };
   run.updatedAt = result.transfer.createdAt;
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await persistWorkflowEdgeTransfer(options.store, result.transfer);
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "edge.transferred",
     runId: run.id,
     edgeTransferId: result.transfer.id,
@@ -2139,7 +2147,7 @@ export async function runOneNodeAgentWorkflow(
     updatedAt: createdAt,
   };
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "workflow.started",
     runId: run.id,
     workflowId: definition.id,
@@ -2158,7 +2166,7 @@ export async function runOneNodeAgentWorkflow(
     ...localStateSnapshotForNode(run, nodeId),
   };
 
-  await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
     type: "node.started",
     runId: run.id,
     nodeAttemptId: nodeAttempt.id,
@@ -2275,7 +2283,7 @@ export async function runOneNodeAgentWorkflow(
       ...(executorResult.piSessionId ? { piSessionId: executorResult.piSessionId } : {}),
     };
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "node.completed",
       runId: run.id,
       nodeAttemptId: nodeAttempt.id,
@@ -2291,7 +2299,7 @@ export async function runOneNodeAgentWorkflow(
     run.completedAt = completedAt;
     run.updatedAt = completedAt;
 
-    await emitWorkflowRuntimeEvent(events, options.emitEvent, {
+    await emitWorkflowRuntimeEvent(events, options.store, options.emitEvent, {
       type: "workflow.completed",
       runId: run.id,
       output: executorResult.output,
@@ -2629,7 +2637,7 @@ async function failNodeDispatch(options: {
   options.run.current = { nodeId: options.nodeAttempt.nodeId, status: "failed" };
   options.run.failedAt = failedAt;
   options.run.updatedAt = failedAt;
-  await emitWorkflowRuntimeEvent(options.events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(options.events, options.store, options.emitEvent, {
     type: "node.failed",
     runId: options.run.id,
     nodeAttemptId: options.nodeAttempt.id,
@@ -2825,13 +2833,13 @@ async function failRunningWorkflow(options: {
   options.run.current = { nodeId: options.nodeAttempt.nodeId, status: "failed" };
   options.run.failedAt = failedAt;
   options.run.updatedAt = failedAt;
-  await emitWorkflowRuntimeEvent(options.events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(options.events, options.store, options.emitEvent, {
     type: "node.failed",
     runId: options.run.id,
     nodeAttemptId: options.nodeAttempt.id,
     error: options.error,
   });
-  await emitWorkflowRuntimeEvent(options.events, options.emitEvent, {
+  await emitWorkflowRuntimeEvent(options.events, options.store, options.emitEvent, {
     type: "workflow.failed",
     runId: options.run.id,
     error: options.error,
@@ -2866,10 +2874,12 @@ function edgeTransferFailure(
 
 async function emitWorkflowRuntimeEvent(
   events: WorkflowRuntimeEvent[],
+  store: WorkflowRunStore | undefined,
   emitEvent: WorkflowEventEmitter | undefined,
   event: WorkflowRuntimeEvent,
 ): Promise<void> {
   events.push(event);
+  await persistWorkflowEvent(store, event);
   await emitEvent?.(event);
 }
 
@@ -2888,10 +2898,69 @@ async function persistWorkflowNodeAttempt(
   await store.saveNodeAttempt(nodeAttempt);
 }
 
+async function persistWorkflowEdgeTransfer(
+  store: WorkflowRunStore | undefined,
+  transfer: EdgeTransfer,
+): Promise<void> {
+  if (!hasWorkflowEdgeTransferStore(store)) {
+    return;
+  }
+
+  await store.saveEdgeTransfer(transfer);
+}
+
+async function persistWorkflowEvent(
+  store: WorkflowRunStore | undefined,
+  event: WorkflowRuntimeEvent,
+): Promise<void> {
+  if (!hasWorkflowEventStore(store)) {
+    return;
+  }
+
+  await store.saveEvent(createWorkflowEventRecord(event));
+}
+
 function hasWorkflowNodeAttemptStore(
   store: WorkflowRunStore | undefined,
 ): store is WorkflowRunStore & Pick<WorkflowNodeAttemptStore, "saveNodeAttempt"> {
   return typeof (store as { saveNodeAttempt?: unknown } | undefined)?.saveNodeAttempt === "function";
+}
+
+function hasWorkflowEdgeTransferStore(
+  store: WorkflowRunStore | undefined,
+): store is WorkflowRunStore & Pick<WorkflowEdgeTransferStore, "saveEdgeTransfer"> {
+  return typeof (store as { saveEdgeTransfer?: unknown } | undefined)?.saveEdgeTransfer === "function";
+}
+
+function hasWorkflowEventStore(
+  store: WorkflowRunStore | undefined,
+): store is WorkflowRunStore & Pick<WorkflowEventStore, "saveEvent"> {
+  return typeof (store as { saveEvent?: unknown } | undefined)?.saveEvent === "function";
+}
+
+function createWorkflowEventRecord(event: WorkflowRuntimeEvent): WorkflowEventRecord {
+  return {
+    id: createId("wev"),
+    workflowRunId: event.runId,
+    type: event.type,
+    ...workflowEventForeignKeys(event),
+    payload: event,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function workflowEventForeignKeys(event: WorkflowRuntimeEvent): Pick<WorkflowEventRecord, "nodeId" | "edgeId" | "attemptId"> {
+  const keys: Pick<WorkflowEventRecord, "nodeId" | "edgeId" | "attemptId"> = {};
+  if ("nodeId" in event) {
+    keys.nodeId = event.nodeId;
+  }
+  if ("edgeId" in event) {
+    keys.edgeId = event.edgeId;
+  }
+  if ("nodeAttemptId" in event) {
+    keys.attemptId = event.nodeAttemptId;
+  }
+  return keys;
 }
 
 async function resolveAgentProfileForRuntime(options: {
