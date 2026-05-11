@@ -195,6 +195,35 @@ test("turn-end reminders can repeat until a tracked run is acknowledged", () => 
 	assert.equal(registry.hasPendingNotification("parent"), true);
 });
 
+function createRunToolsWithController(overrides = {}) {
+	const controller = {
+		startToolRun() {
+			throw new Error("not used");
+		},
+		listRuns() {
+			throw new Error("not used");
+		},
+		getRunStatus() {
+			throw new Error("not used");
+		},
+		waitForRun() {
+			throw new Error("not used");
+		},
+		readRun() {
+			throw new Error("not used");
+		},
+		cancelRun() {
+			throw new Error("not used");
+		},
+		ackRun() {
+			throw new Error("not used");
+		},
+		...overrides,
+	};
+	const tools = createRunToolDefinitions([], controller);
+	return Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+}
+
 test("run tools start yieldable tools with explicit completion policy", async () => {
 	let observed;
 	const [startTool] = createRunToolDefinitions(
@@ -249,6 +278,55 @@ test("run tools start yieldable tools with explicit completion policy", async ()
 	assert.deepEqual(observed.params, { message: "do background work" });
 	assert.equal(observed.completionPolicy, "detached");
 	assert.equal(result.details.runId, "run_1");
+});
+
+test("run read tool returns terminal text and full details", async () => {
+	const tools = createRunToolsWithController({
+		readRun(runId) {
+			return runSnapshot(
+				{ status: "completed", consumed: true, result: { text: "done", details: { ok: true } } },
+				{ runId },
+			);
+		},
+	});
+
+	const result = await tools.pibo_run_read.execute("tool-call-1", { runId: "run_1" });
+
+	assert.equal(result.content[0].text, "done");
+	assert.equal(result.details.runId, "run_1");
+	assert.equal(result.details.status, "completed");
+	assert.deepEqual(result.details.result.details, { ok: true });
+});
+
+test("run wait tool reports timeout as non-error state", async () => {
+	const tools = createRunToolsWithController({
+		waitForRun(runId, timeoutMs) {
+			assert.equal(timeoutMs, 5);
+			return Promise.resolve(runSnapshot({ timedOut: true }, { runId }));
+		},
+	});
+
+	const result = await tools.pibo_run_wait.execute("tool-call-1", { runId: "run_1", timeoutMs: 5 });
+
+	assert.match(result.content[0].text, /wait timed out/);
+	assert.equal(result.details.runId, "run_1");
+	assert.equal(result.details.status, "running");
+	assert.equal(result.details.timedOut, true);
+});
+
+test("run ack tool returns acknowledged snapshot details", async () => {
+	const tools = createRunToolsWithController({
+		ackRun(runId) {
+			return runSnapshot({ status: "completed", consumed: true }, { runId });
+		},
+	});
+
+	const result = await tools.pibo_run_ack.execute("tool-call-1", { runId: "run_1" });
+
+	assert.match(result.content[0].text, /Acknowledged run run_1/);
+	assert.equal(result.details.runId, "run_1");
+	assert.equal(result.details.status, "completed");
+	assert.equal(result.details.consumed, true);
 });
 
 test("router coalesces generic run completion into a compact parent notification", async () => {
