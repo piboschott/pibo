@@ -162,6 +162,14 @@ node --test test/agent-store.test.mjs test/agent-profiles.test.mjs
 - Ergebnis: Grün; 9/9 Agent-Store-Tests bestanden. Der neue Test dokumentiert, dass identische `displayName`/`profileName`-Werte auch bei unterschiedlichem `ownerScope` abgelehnt werden, und prüft, dass dabei kein Agent für den zweiten Owner angelegt wird.
 - Verbleibende offene Punkte: Profil-Mapping-Contract, Migration-Snapshot und kleinere Web-Normalizer-Tests sind weiterhin offen.
 
+## Umgesetzt am 2026-05-11 14:33 Europe/Berlin
+
+- Bereich: Migration-Snapshot für alte `chat_agents`-Tabellen ohne neuere Optionsspalten.
+- Geänderte Dateien: `test/agent-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1708-custom-agent-store.md`.
+- Ausgeführte Kommandos: `node --test test/agent-store.test.mjs`.
+- Ergebnis: Grün; 10/10 Agent-Store-Tests bestanden. Abgesichert ist, dass Migrationen stabile Defaults für `autoContextFiles`, MCP-/Pi-Package-Listen, Built-in-Tool-Namen, Model-/Thinking-/Fast-Felder, `archivedAt` und `runControl` liefern.
+- Verbleibende offene Punkte: Profil-Mapping-Contract und kleinere Web-Normalizer-Tests bleiben offen.
+
 ## Betrachtete Dateien und Kommandos
 
 Gelesen/analysiert:
