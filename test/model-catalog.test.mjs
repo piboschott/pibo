@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildModelCatalogFromRegistry } from "../dist/apps/chat/model-catalog.js";
+import { buildModelCatalogFromRegistry, loadModelCatalogWithServices } from "../dist/apps/chat/model-catalog.js";
 
 test("model catalog groups models by provider and carries auth state", () => {
 	const catalog = buildModelCatalogFromRegistry({
@@ -58,4 +58,12 @@ test("model catalog groups models by provider and carries auth state", () => {
 			},
 		],
 	});
+});
+
+test("load model catalog returns empty providers when service creation fails", async () => {
+	const catalog = await loadModelCatalogWithServices(async () => {
+		throw new Error("registry unavailable");
+	}, "/tmp/pibo-model-catalog-test");
+
+	assert.deepEqual(catalog, { providers: [] });
 });

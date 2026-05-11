@@ -254,6 +254,14 @@ Diese Subsets sind deutlich gezielter als `npm test`, weil sie Modell-Auswahl, P
 - Ergebnis: Grün; 7/7 Tests bestanden. Abgedeckt sind `profile.model` vor Rollen-Pins, `mainModel` vor Main-Defaults, `subagentModel` vor Subagent-Defaults sowie Klonen von Session- und Default-Quellen.
 - Verbleibende offene Punkte: Model-Katalog-Fehlerpfad und UI-/Backend-Parität bleiben offen.
 
+## Umgesetzt am 2026-05-11 14:14 Europe/Berlin
+
+- Bereich: Testbarer `loadModelCatalog`-Fehlerpfad über kleine Dependency-Injection-Hülle und granularer Fallback-Test für Service-Initialisierungsfehler.
+- Geänderte Dateien: `src/apps/chat/model-catalog.ts`, `test/model-catalog.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1458-model-selection-defaults.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/model-catalog.test.mjs`.
+- Ergebnis: Build erfolgreich; Model-Catalog-Subset grün mit 2/2 bestandenen Tests. Abgesichert ist, dass der Katalog-Fallback `{ providers: [] }` die Chat-Bootstrap-Antwort bei Service-Initialisierungsfehlern stabil hält.
+- Verbleibende offene Punkte: UI-/Backend-Parität für Modell-/Thinking-/Fast-Badges bleibt offen.
+
 ## Kurzfazit
 
 Die vorhandenen Tests treffen die Kernidee des Bereichs gut: Modell-Defaults werden produktseitig gewählt und pro Session als `activeModel` eingefroren. Der aktuelle granulare Check zeigt aber eine konkrete Drift: `test/model-defaults.test.mjs` ist mit dem erweiterten Defaults-Shape nicht synchron. Außerdem fehlen kleine Tests für Fast-Mode, rollen-spezifische Thinking-Defaults und UI-/Backend-Parität. Diese Lücken lassen sich mit wenigen fokussierten Unit-Tests schließen, bevor größere Chat-Web- oder Runtime-Suites nötig werden.
