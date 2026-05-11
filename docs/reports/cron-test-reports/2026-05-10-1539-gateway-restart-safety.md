@@ -109,3 +109,14 @@ npm run build && node --test test/gateway-restart-safety.test.mjs
 2. Einen kleinen Web-Channel-Status-Test ergänzen, entweder in `test/web-channel.test.mjs` oder als neues fokussiertes `test/gateway-status-web-channel.test.mjs`.
 3. Den Deploy-Script-Policy-Test auf weitere direkte Restart-/Kill-Varianten ausweiten.
 4. In der Testdokumentation oder im README der Reports festhalten, dass diese Suite bei Source-Änderungen nur nach Build aussagekräftig ist, solange sie aus `dist/` importiert.
+
+## Umgesetzt am 2026-05-11 13:08 Europe/Berlin
+
+- Bereich: Deploy-Script-Policy-Test gegen weitere direkte Restart-/Stop-/Kill-Varianten gehärtet, ohne gedruckte CLI-Hinweise zu verbieten.
+- Geänderte Dateien:
+  - `test/gateway-restart-safety.test.mjs`
+  - `docs/reports/cron-test-reports/2026-05-10-1539-gateway-restart-safety.md`
+- Ausgeführte Kommandos:
+  - `node --test --test-name-pattern "deploy scripts" test/gateway-restart-safety.test.mjs`
+- Ergebnis: 2 Tests bestanden.
+- Verbleibende offene Punkte: CLI-Restart-Command-Subset, `/gateway/status`-Producer-Subset und Mode-Resolution-Subset bleiben offen.
