@@ -7,6 +7,7 @@
 - Prompt asset edits should create managed revisions and pin revision IDs/content hashes in published workflow versions and snapshots.
 - V2 workflow HTTP contracts are documented under Chat Web routes: catalog/lifecycle APIs use `/api/chat/workflows`, while Project workflow session APIs use `/api/chat/projects/:projectId/workflow-sessions`.
 - Use `createWorkflowDiagnosticReport` from `@pasko70/pibo-workflows` validation exports for V2 diagnostic grouping across Workflow Library, Builder, Project session creation, run start, and runtime failure surfaces.
+- Workflow session routing metadata uses the stable Pibo Session metadata key `workflowSessionKind` with values `main_workflow`, `nested_workflow`, `agent_node`, and `subagent`; Chat sidebar nodes expose it as `PiboWebSessionNode.workflowSessionKind`.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -164,4 +165,32 @@
 - **Learnings for future iterations:**
   - Shared V2 diagnostic grouping belongs in the workflow validation exports so API and UI stories can consume the same grouped report shape instead of rebuilding grouping per surface.
   - Missing registered capability diagnostics should set `registryRef`; state diagnostics should set `statePath` when the offending state key is known.
+---
+## 2026-05-11 23:21 CEST - US-001
+- What was implemented
+  - Added a stable V2 `workflowSessionKind` metadata enum for workflow-related Pibo Sessions: `main_workflow`, `nested_workflow`, `agent_node`, and `subagent`.
+  - Stamped Project main workflow sessions, workflow Agent-node sessions, and subagent sessions with the enum while preserving legacy subagent lookup metadata.
+  - Exposed the enum on Chat Web sidebar session nodes for future Project view routing.
+- Files changed
+  - `src/sessions/workflow-session-kind.ts`
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat/trace.ts`
+  - `src/apps/chat-ui/src/types.ts`
+  - `src/core/session-router.ts`
+  - `packages/workflows/src/runtime/index.ts`
+  - `packages/workflows/src/testing/runtime-agent-node.test.ts`
+  - `packages/workflows/src/testing/runtime-one-node-agent.test.ts`
+  - `test/subagents.test.mjs`
+  - `test/workflow-session-kind.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_07_project_run_inspection_sidebar_and_human_actions.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace/packages/workflows && npm run typecheck && npm test'` — passed, 129/129 tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/workflow-session-kind.test.mjs test/subagents.test.mjs'` — passed, 11/11 tests.
+- Browser verification, if UI changed
+  - Not run; this story added session metadata and typed API/sidebar data only, with no visible UI behavior changes.
+- **Learnings for future iterations:**
+  - Preserve legacy subagent metadata lookup paths when adding new session metadata keys; otherwise existing thread-keyed subagent sessions can be duplicated.
+  - Project sidebar routing should consume real `PiboWebSessionNode.workflowSessionKind` values instead of inferring from logical workflow node ids.
 ---

@@ -150,6 +150,7 @@ describe("workflow agent node dispatch", () => {
         workspace: undefined,
         title: "Agent node dispatch",
         metadata: {
+          workflowSessionKind: "agent_node",
           workflowRunId: "wfr_agent",
           workflowId: definition.id,
           workflowVersion: definition.version,
@@ -438,6 +439,7 @@ describe("workflow agent node dispatch", () => {
         workspace: undefined,
         title: undefined,
         metadata: {
+          workflowSessionKind: "agent_node",
           workflowRunId: "wfr_agent",
           workflowId: definition.id,
           workflowVersion: definition.version,

@@ -9,6 +9,8 @@ import type {
 
 export type { PiboTraceNode, PiboTraceNodeType, PiboTraceNodeStatus, PiboTraceSource, PiboTraceOrderKey, PiboWebSessionStatus };
 
+export type PiboWorkflowSessionKind = "main_workflow" | "nested_workflow" | "agent_node" | "subagent";
+
 export type PiboWebSessionNode = {
 	piboSessionId: string;
 	piSessionId: string;
@@ -17,6 +19,7 @@ export type PiboWebSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	subtitle?: string;
 	archived?: boolean;
@@ -32,6 +35,7 @@ export type PiboWebDerivedSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	status: "idle" | "running" | "error";
 	lastActivityAt?: string;

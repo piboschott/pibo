@@ -10,6 +10,7 @@ import { buildTraceViewFromEvents } from "../../shared/trace-engine.js";
 import type { PiboSessionTraceView, PiboTraceNode } from "../../shared/trace-types.js";
 import type { ChatWebSessionIndexItem, ChatWebStoredPiboEvent } from "./read-model.js";
 import { isChatWebSessionArchived } from "./session-metadata.js";
+import { workflowSessionKindFromMetadata, type PiboWorkflowSessionKind } from "../../sessions/workflow-session-kind.js";
 
 export type PiboWebSessionStatus = "idle" | "running" | "error";
 
@@ -18,6 +19,7 @@ export type PiboWebDerivedSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	status: PiboWebSessionStatus;
 	lastActivityAt?: string;
@@ -31,6 +33,7 @@ export type PiboWebSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	subtitle?: string;
 	archived?: boolean;
@@ -143,6 +146,7 @@ export async function buildSessionNodes(
 			profile: session.profile,
 			activeModel: session.activeModel,
 			subagentName: stringValue(session.metadata?.subagentName),
+			workflowSessionKind: workflowSessionKindFromMetadata(session.metadata),
 			title: createSessionTitle(session, metadata),
 			subtitle: session.id,
 			archived: isChatWebSessionArchived(session),
@@ -172,6 +176,7 @@ export async function buildSessionNodes(
 			piboSessionId: node.piboSessionId,
 			profile: node.profile,
 			subagentName: node.subagentName,
+			workflowSessionKind: node.workflowSessionKind,
 			title: node.title,
 			status: node.status,
 			lastActivityAt: node.lastActivityAt,

@@ -93,6 +93,7 @@ describe("one-node agent workflow runtime path", () => {
         workspace: undefined,
         title: "Workflow agent node",
         metadata: {
+          workflowSessionKind: "agent_node",
           workflowRunId: "wfr_routing",
           workflowId: definition.id,
           workflowVersion: definition.version,
@@ -173,6 +174,7 @@ describe("one-node agent workflow runtime path", () => {
       {
         projectId: "project_workflow_link",
         piboSessionId: "ps_project_workflow_agent",
+        workflowSessionKind: "agent_node",
         workflowRunId: "wfr_project_link",
         workflowId: definition.id,
         workflowVersion: definition.version,
@@ -329,6 +331,7 @@ describe("one-node agent workflow runtime path", () => {
         workspace: undefined,
         title: "Registered pibo-agent workflow",
         metadata: {
+          workflowSessionKind: "agent_node",
           workflowRunId: "wfr_pibo_agent_profile",
           workflowId: definition.id,
           workflowVersion: definition.version,
@@ -464,6 +467,7 @@ describe("one-node agent workflow runtime path", () => {
           workspace: undefined,
           title: "Single prompt workflow",
           metadata: {
+            workflowSessionKind: "agent_node",
             workflowRunId: "wfr_single_prompt",
             workflowId: definition.id,
             workflowVersion: definition.version,

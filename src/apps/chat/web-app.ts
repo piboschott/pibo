@@ -32,6 +32,7 @@ import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStream
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView, type PiboWebSessionNode, type PiboWebSessionStatus } from "./trace.js";
 import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
 import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadata.js";
+import { withWorkflowSessionKind } from "../../sessions/workflow-session-kind.js";
 import {
 	CustomAgentStore,
 	createDefaultCustomAgentStore,
@@ -1294,11 +1295,11 @@ function createProjectChatSession(input: {
 		profile: input.profile,
 		ownerScope: input.webSession.ownerScope,
 		workspace: input.project.projectFolder,
-		metadata: {
+		metadata: withWorkflowSessionKind({
 			projectId: input.project.id,
 			projectSessionKind: "main",
 			projectWorkflowId: workflowId,
-		},
+		}, "main_workflow"),
 	});
 	input.state.projectService.addProjectSession({
 		projectId: input.project.id,
