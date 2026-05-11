@@ -7,16 +7,20 @@ import {
   createWorkflowRegistry,
   hasWorkflowAdapter,
   hasWorkflowAgentProfile,
+  hasWorkflowPromptBuilder,
   mixedNodeWorkflowFixture,
+  promptBuilderRef,
   registerWorkflowAdapter,
   registerWorkflowAgentProfile,
+  registerWorkflowPromptBuilder,
   resolveWorkflowAdapter,
   resolveWorkflowAgentProfile,
+  resolveWorkflowPromptBuilder,
   validateWorkflow,
   workflowFixtureProviders,
   workflowFixtureRegistryRefs,
 } from "../index.js";
-import type { AdapterHandler, WorkflowDefinition } from "../index.js";
+import type { AdapterHandler, PromptBuilderHandler, WorkflowDefinition } from "../index.js";
 
 describe("workflow registry adapter resolution", () => {
   it("registers and resolves Agent Designer profiles by fixed profile id", () => {
@@ -59,6 +63,44 @@ describe("workflow registry adapter resolution", () => {
     assert.equal(resolveWorkflowAdapter(registry, "fixture.adapters.duplicate")?.value, second);
   });
 
+  it("registers and resolves TypeScript prompt builders by prompt builder ref", async () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+    const ref = promptBuilderRef(workflowFixtureRegistryRefs.promptBuilders.draftPrompt);
+
+    assert.equal(hasWorkflowPromptBuilder(registry, ref), true);
+
+    const entry = resolveWorkflowPromptBuilder(registry, ref);
+    assert.ok(entry);
+    assert.equal(entry.id, workflowFixtureRegistryRefs.promptBuilders.draftPrompt);
+
+    const result = await entry.value({
+      input: { topic: "Registry prompt builders" },
+      state: { global: {} },
+      global: { get: () => undefined },
+      local: { get: () => undefined },
+      edge: { get: () => undefined, all: () => ({}) },
+      node: mixedNodeWorkflowFixture.nodes.draft as Extract<WorkflowDefinition["nodes"][string], { kind: "agent" }>,
+      nodeId: "draft",
+    });
+    assert.equal(result, "Write a draft from the workflow plan for: Registry prompt builders");
+  });
+
+  it("rejects duplicate prompt builder registrations unless override is explicit", () => {
+    const registry = createWorkflowRegistry();
+    const first: PromptBuilderHandler = ({ input }) => `first:${String(input)}`;
+    const second: PromptBuilderHandler = ({ input }) => ({ prompt: `second:${String(input)}` });
+
+    registerWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate", first);
+    assert.throws(
+      () => registerWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate", second),
+      /already registered/,
+    );
+
+    const entry = registerWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate", second, { override: true });
+    assert.equal(entry.value, second);
+    assert.equal(resolveWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate")?.value, second);
+  });
+
   it("validates fixed Agent Designer profile refs against the Workflow Registry when one is provided", () => {
     const registry = createWorkflowRegistry(workflowFixtureProviders);
 
@@ -98,6 +140,44 @@ describe("workflow registry adapter resolution", () => {
           diagnostic.code === "WorkflowGraphError.unknownAdapterRef" &&
           diagnostic.edgeId === "collect-to-summarize" &&
           diagnostic.path === "$.edges.collect-to-summarize.adapter.transform.id",
+      ),
+    );
+  });
+
+  it("validates agent prompt builder refs against the Workflow Registry when one is provided", () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+
+    assert.equal(validateWorkflow(mixedNodeWorkflowFixture, { registry }).ok, true);
+
+    const missingRegistryResult = validateWorkflow(mixedNodeWorkflowFixture, { registry: createWorkflowRegistry() });
+
+    assert.equal(missingRegistryResult.ok, false);
+    assert.ok(
+      missingRegistryResult.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "WorkflowGraphError.unknownPromptBuilderRef" &&
+          diagnostic.nodeId === "draft" &&
+          diagnostic.path === "$.nodes.draft.promptBuilder.id",
+      ),
+    );
+  });
+
+  it("rejects agent nodes that declare both promptTemplate and promptBuilder", () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+    const definition = structuredClone(mixedNodeWorkflowFixture) as WorkflowDefinition;
+    const draftNode = definition.nodes.draft;
+    assert.equal(draftNode.kind, "agent");
+    if (draftNode.kind === "agent") {
+      draftNode.promptTemplate = "Also draft {{input.topic}}";
+    }
+
+    const result = validateWorkflow(definition, { registry });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "WorkflowGraphError.ambiguousAgentPromptSource" && diagnostic.nodeId === "draft",
       ),
     );
   });

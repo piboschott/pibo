@@ -1,4 +1,4 @@
-import { adapterRef, edgeAdapter } from "../api/index.js";
+import { adapterRef, edgeAdapter, promptBuilderRef } from "../api/index.js";
 import type {
   AdapterHandler,
   CodeNodeHandler,
@@ -303,7 +303,7 @@ export const mixedNodeWorkflowFixture: WorkflowDefinition = {
       profile: { kind: "fixed", id: "pibo-agent" },
       input: planPortJson,
       output: draftPortJson,
-      promptBuilder: workflowFixtureRegistryRefs.promptBuilders.draftPrompt,
+      promptBuilder: promptBuilderRef(workflowFixtureRegistryRefs.promptBuilders.draftPrompt),
     },
     review: {
       kind: "human",

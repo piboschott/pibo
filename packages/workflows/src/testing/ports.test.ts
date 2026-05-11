@@ -14,6 +14,9 @@ import {
   isTextPort,
   json,
   onlySelection,
+  promptBuilderRef,
+  promptBuilderRefId,
+  isPromptBuilderRef,
   text,
 } from "../index.js";
 import type { AdapterNodeDefinition, JsonSchema, WorkflowPort } from "../index.js";
@@ -62,6 +65,20 @@ describe("workflow port authoring helpers", () => {
     assert.deepEqual(onlySelection(["read", "bash"]), { kind: "only", ids: ["read", "bash"] });
     assert.deepEqual(excludeSelection(["dangerous-tool"]), { kind: "exclude", ids: ["dangerous-tool"] });
     assert.deepEqual(extendSelection(["workflow-skill"]), { kind: "extend", ids: ["workflow-skill"] });
+  });
+
+  it("creates registered TypeScript prompt builder refs for agent nodes", () => {
+    const ref = promptBuilderRef("promptBuilders.articleDraft");
+
+    assert.deepEqual(ref, {
+      kind: "promptBuilder",
+      language: "typescript",
+      id: "promptBuilders.articleDraft",
+    });
+    assert.equal(isPromptBuilderRef(ref), true);
+    assert.equal(isPromptBuilderRef("promptBuilders.articleDraft"), false);
+    assert.equal(promptBuilderRefId(ref), "promptBuilders.articleDraft");
+    assert.equal(promptBuilderRefId("promptBuilders.legacyString"), "promptBuilders.legacyString");
   });
 
   it("creates registered TypeScript adapter refs for edge adapters and visible adapter nodes", () => {

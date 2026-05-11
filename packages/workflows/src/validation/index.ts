@@ -2,6 +2,7 @@ import type {
   AdapterRef,
   JsonSchema,
   JsonSchemaTypeName,
+  PromptBuilderRef,
   ValidationResult,
   WorkflowDefinition,
   WorkflowDiagnostic,
@@ -49,7 +50,7 @@ export type WorkflowValueValidationOptions = {
 };
 
 export type WorkflowValidationOptions = {
-  registry?: Partial<Pick<WorkflowRegistry, "adapters" | "handlers" | "profiles">>;
+  registry?: Partial<Pick<WorkflowRegistry, "adapters" | "handlers" | "profiles" | "promptBuilders">>;
 };
 
 type SchemaValidationContext = {
@@ -96,6 +97,7 @@ export function validateWorkflowDefinitionSchemas(
   for (const [nodeId, node] of Object.entries(definition.nodes)) {
     validateNodeSchemas(nodeId, node, diagnostics);
     validateWorkflowAgentNodeRuntimeSelection(nodeId, node, diagnostics, options);
+    validateWorkflowAgentNodePromptBuilderRef(nodeId, node, diagnostics, options);
     validateWorkflowCodeNodeRef(nodeId, node, diagnostics, options);
     validateWorkflowAdapterNodeRef(nodeId, node, diagnostics, options);
   }
@@ -457,6 +459,77 @@ function validateWorkflowAgentNodeRuntimeSelection(
     path: `$.nodes.${nodeId}.profile.id`,
     hint: "Register the Agent Designer profile with registerWorkflowAgentProfile/createWorkflowRegistry before validating or executing this workflow, or update the node to use a registered fixed profile id.",
   });
+}
+
+function validateWorkflowAgentNodePromptBuilderRef(
+  nodeId: string,
+  node: WorkflowNodeDefinition,
+  diagnostics: WorkflowDiagnostic[],
+  options: WorkflowValidationOptions,
+): void {
+  if (node.kind !== "agent") {
+    return;
+  }
+
+  if (node.promptTemplate !== undefined && node.promptBuilder !== undefined) {
+    diagnostics.push({
+      code: "WorkflowGraphError.ambiguousAgentPromptSource",
+      message: `Workflow agent node '${nodeId}' declares both promptTemplate and promptBuilder.`,
+      severity: "error",
+      nodeId,
+      path: `$.nodes.${nodeId}`,
+      hint: "Declare exactly one prompt source for variable prompts: use promptTemplate for fixed templates or promptBuilder for a registered TypeScript prompt builder.",
+    });
+  }
+
+  if (node.promptBuilder === undefined) {
+    return;
+  }
+
+  const builderId = getPromptBuilderRefId(node.promptBuilder);
+  if (!builderId) {
+    diagnostics.push({
+      code: "WorkflowGraphError.invalidPromptBuilderRef",
+      message: `Workflow agent node '${nodeId}' must use a registered TypeScript prompt builder ref when promptBuilder is declared.`,
+      severity: "error",
+      nodeId,
+      path: `$.nodes.${nodeId}.promptBuilder`,
+      hint: "Use promptBuilderRef('prompt.builder.id') or a non-empty registered prompt builder id.",
+    });
+    return;
+  }
+
+  if (!options.registry?.promptBuilders || options.registry.promptBuilders.has(builderId)) {
+    return;
+  }
+
+  diagnostics.push({
+    code: "WorkflowGraphError.unknownPromptBuilderRef",
+    message: `Workflow agent node '${nodeId}' references prompt builder '${builderId}', but it is not registered in the Workflow Registry.`,
+    severity: "error",
+    nodeId,
+    path: getPromptBuilderRefPath(node.promptBuilder, nodeId),
+    hint: "Register the prompt builder with registerWorkflowPromptBuilder/createWorkflowRegistry before validating or executing this workflow, or update the node to use a registered prompt builder id.",
+  });
+}
+
+function getPromptBuilderRefId(ref: PromptBuilderRef): string | undefined {
+  if (typeof ref === "string") {
+    return ref.length > 0 ? ref : undefined;
+  }
+
+  if (!isRecord(ref)) {
+    return undefined;
+  }
+
+  const id = ref.id;
+  return ref.kind === "promptBuilder" && ref.language === "typescript" && typeof id === "string" && id.length > 0
+    ? id
+    : undefined;
+}
+
+function getPromptBuilderRefPath(ref: PromptBuilderRef, nodeId: string): string {
+  return typeof ref === "string" ? `$.nodes.${nodeId}.promptBuilder` : `$.nodes.${nodeId}.promptBuilder.id`;
 }
 
 function validateWorkflowCodeNodeRef(

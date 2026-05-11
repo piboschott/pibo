@@ -4,6 +4,7 @@ import type {
   EdgeAdapterDefinition,
   JsonSchema,
   JsonWorkflowPort,
+  PromptBuilderRef,
   RegistryRefId,
   SelectionPolicy,
   TextWorkflowPort,
@@ -63,6 +64,31 @@ export function adapterRefId(ref: AdapterRef): RegistryRefId {
 
 export function edgeAdapter(transform: AdapterRef, output: WorkflowPort): EdgeAdapterDefinition {
   return { kind: "edgeAdapter", transform, output };
+}
+
+/**
+ * Reference a registered TypeScript prompt builder by id.
+ *
+ * Prompt builder refs are stored in workflow IR; the Workflow Registry owns
+ * the executable handler that turns workflow input/state/edge data into the
+ * final prompt text sent to a Pibo Runtime-backed agent node.
+ */
+export function promptBuilderRef(id: RegistryRefId): PromptBuilderRef {
+  return { kind: "promptBuilder", language: "typescript", id };
+}
+
+export function isPromptBuilderRef(value: unknown): value is Exclude<PromptBuilderRef, string> {
+  return (
+    isRecord(value) &&
+    value.kind === "promptBuilder" &&
+    value.language === "typescript" &&
+    typeof value.id === "string" &&
+    value.id.length > 0
+  );
+}
+
+export function promptBuilderRefId(ref: PromptBuilderRef): RegistryRefId {
+  return typeof ref === "string" ? ref : ref.id;
 }
 
 /**

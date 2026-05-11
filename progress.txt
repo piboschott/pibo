@@ -1,5 +1,6 @@
 ## Codebase Patterns
 - Agent `promptTemplate` rendering supports `{{input.path}}`, `{{global.path}}`, `{{state.global.path}}`, `{{state.path}}` as a global-state shortcut, and current-node `{{local.path}}` / `{{state.local.path}}`; unresolved placeholders are preserved in the final prompt.
+- Agent `promptBuilder` refs should use `promptBuilderRef("id")` for registered TypeScript prompt builders; registry-backed validation checks `promptBuilders`, rejects unknown refs, and rejects nodes declaring both `promptTemplate` and `promptBuilder`.
 - For runtime tests that must prove fixed Agent Designer profile selection, create `createWorkflowRegistry(workflowFixtureProviders)`, validate with `{ registry }`, and bridge to runtime with a `profileResolver` that calls `resolveWorkflowAgentProfile`.
 - Registry-backed profile validation is opt-in through `validateWorkflow(definition, { registry })`; register fixed Agent Designer profiles with `registerWorkflowAgentProfile` or `WorkflowProviders.profiles` before validating agent-node workflows against a full registry.
 - Agent runtime metadata should be created from resolved profile plus executor result: executor-returned effective tools/skills/context win, otherwise use `ResolvedAgentProfile` capability lists; always persist selected profile and effective routing metadata on the node attempt.
@@ -493,4 +494,17 @@
   - Prompt rendering happens immediately before the agent executor/session-routing seam, so both `dispatchWorkflowAgentNode` and `runOneNodeAgentWorkflow` should pass the current `run.state` and node id into the same renderer.
   - Preserve unresolved `{{...}}` placeholders instead of replacing them with empty strings so template typos remain visible until a later validation story adds diagnostics.
   - Story 8.1 is limited to fixed `promptTemplate` rendering; registered `promptBuilder` resolution/execution remains for stories 8.2/8.3.
+---
+
+## 2026-05-11 00:44 UTC - 8.2
+- Defined the Agent node `promptBuilder` contract with explicit `PromptBuilderRef`, `PromptBuilderContext`, `PromptBuilderResult`, and generic `PromptBuilderHandler` types.
+- Added public `promptBuilderRef(...)` helpers plus Workflow Registry prompt-builder resolution helpers and registry-backed validation for unknown prompt builders.
+- Added validation that rejects ambiguous Agent prompt sources when a node declares both `promptTemplate` and `promptBuilder`.
+- Documented the prompt builder contract in the workflow authoring design and marked task `8.2` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Files changed: `packages/workflows/src/types/index.ts`, `packages/workflows/src/api/index.ts`, `packages/workflows/src/registry/index.ts`, `packages/workflows/src/validation/index.ts`, `packages/workflows/src/fixtures/index.ts`, `packages/workflows/src/testing/ports.test.ts`, `packages/workflows/src/testing/registry.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/design-authoring-api.md`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; `npm run typecheck`; container `/workspace` `npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- **Learnings for future iterations:**
+  - `PromptBuilderHandler` now receives scoped readers (`global`, `local`, `edge`) plus the Agent node, node id, state, and optional run/workflow; story 8.3 should use this contract when executing registered prompt builders.
+  - Prompt builders may return either a prompt string or `{ prompt, metadata }`, so execution code should normalize the result before passing final text to the agent executor.
+  - Keep prompt source validation definition-time: `promptTemplate` and `promptBuilder` are mutually exclusive, and unknown builder ids are checked only when a registry with `promptBuilders` is supplied.
 ---

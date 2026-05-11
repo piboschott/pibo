@@ -177,9 +177,42 @@ type AgentNodeDefinition = BaseNodeDefinition & {
   context?: ContextSelectionPolicy;
   routing?: SessionRoutingPolicy;
   promptTemplate?: string;
-  promptBuilder?: HandlerRef;
+  promptBuilder?: PromptBuilderRef;
 };
 ```
+
+Prompt builder contract:
+
+```ts
+type PromptBuilderRef =
+  | string
+  | { kind: "promptBuilder"; language: "typescript"; id: string };
+
+type PromptBuilderContext<I = WorkflowValue> = {
+  input: I;
+  state: WorkflowRunState;
+  global: WorkflowGlobalStateReader;
+  local: NodeLocalStateReader;
+  edge: EdgePayloadReader;
+  node: AgentNodeDefinition;
+  nodeId: string;
+  run?: WorkflowRun;
+  workflow?: WorkflowDefinition;
+};
+
+type PromptBuilderResult = string | { prompt: string; metadata?: Record<string, JsonValue> };
+
+type PromptBuilderHandler<I = WorkflowValue> =
+  (ctx: PromptBuilderContext<I>) => PromptBuilderResult | Promise<PromptBuilderResult>;
+```
+
+Prompt builder rules:
+
+- `promptTemplate` and `promptBuilder` are mutually exclusive prompt sources.
+- Prompt builders are registered TypeScript handlers referenced by id in persisted workflow IR.
+- The builder input contract is the Agent node's declared `input` port.
+- The builder output contract is final prompt text; returning an object allows future runtime metadata without changing the prompt contract.
+- Builder context exposes workflow input, global state, current-node local state, and edge payload readers; state writes are out of scope for prompt builders.
 
 Selection policies:
 

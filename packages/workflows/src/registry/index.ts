@@ -5,6 +5,7 @@ import type {
   CodeNodeHandler,
   GuardHandler,
   PromptBuilderHandler,
+  PromptBuilderRef,
   RegistryRefId,
   WorkflowDefinition,
   WorkflowHumanActionDefinition,
@@ -196,6 +197,21 @@ export function resolveWorkflowAdapter(
 
 export function hasWorkflowAdapter(registry: Pick<WorkflowRegistry, "adapters">, ref: AdapterRef | RegistryRefId): boolean {
   return resolveWorkflowAdapter(registry, ref) !== undefined;
+}
+
+export function resolveWorkflowPromptBuilder(
+  registry: Pick<WorkflowRegistry, "promptBuilders">,
+  ref: PromptBuilderRef,
+): WorkflowRegistryEntry<PromptBuilderHandler> | undefined {
+  return registry.promptBuilders.get(getPromptBuilderRefId(ref));
+}
+
+export function hasWorkflowPromptBuilder(registry: Pick<WorkflowRegistry, "promptBuilders">, ref: PromptBuilderRef): boolean {
+  return resolveWorkflowPromptBuilder(registry, ref) !== undefined;
+}
+
+function getPromptBuilderRefId(ref: PromptBuilderRef): RegistryRefId {
+  return typeof ref === "string" ? ref : ref.id;
 }
 
 function registerRegistryEntry<TValue>(

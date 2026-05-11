@@ -85,6 +85,14 @@ export type AgentProfileSelection = {
   id: string;
 };
 
+export type PromptBuilderRef =
+  | RegistryRefId
+  | {
+      kind: "promptBuilder";
+      language: "typescript";
+      id: RegistryRefId;
+    };
+
 export type AgentProfileDefinition = {
   aliases?: string[];
   tools?: string[];
@@ -189,7 +197,7 @@ export type AgentNodeDefinition = BaseNodeDefinition & {
   context?: ContextSelectionPolicy;
   routing?: SessionRoutingPolicy;
   promptTemplate?: PromptTemplate;
-  promptBuilder?: RegistryRefId;
+  promptBuilder?: PromptBuilderRef;
 };
 
 export type TypeScriptCodeNodeDefinition = BaseNodeDefinition & {
@@ -499,13 +507,28 @@ export type GuardContext = {
 
 export type GuardHandler = (ctx: GuardContext) => boolean | Promise<boolean>;
 
-export type PromptBuilderContext = {
-  input: WorkflowValue;
+export type PromptBuilderResult =
+  | string
+  | {
+      prompt: string;
+      metadata?: Record<string, JsonValue>;
+    };
+
+export type PromptBuilderContext<I = WorkflowValue> = {
+  input: I;
   state: WorkflowRunState;
-  node: WorkflowNodeDefinition;
+  global: WorkflowGlobalStateReader;
+  local: NodeLocalStateReader;
+  edge: EdgePayloadReader;
+  node: AgentNodeDefinition;
+  nodeId: NodeId;
+  run?: WorkflowRun;
+  workflow?: WorkflowDefinition;
 };
 
-export type PromptBuilderHandler = (ctx: PromptBuilderContext) => string | Promise<string>;
+export type PromptBuilderHandler<I = WorkflowValue> = (
+  ctx: PromptBuilderContext<I>,
+) => PromptBuilderResult | Promise<PromptBuilderResult>;
 
 export type WorkflowExecutionEnvironment = {
   kind: "host" | "worktree" | "docker" | "remote";
