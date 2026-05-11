@@ -247,6 +247,31 @@ describe("workflow definition validation", () => {
     findDiagnostic(result, "WorkflowGraphError.unknownGuardRef", (diagnostic) => diagnostic.path === "$.loops.0.guard.handler");
   });
 
+  it("rejects free graph cycles that are not bounded by an explicit loop policy", () => {
+    const definition = structuredClone(boundedReviewLoopWorkflowFixture) as WorkflowDefinition;
+    delete definition.loops;
+
+    const result = validateWorkflow(definition);
+
+    assert.equal(result.ok, false);
+    findDiagnostic(
+      result,
+      "WorkflowGraphError.unboundedCycle",
+      (diagnostic) => diagnostic.edgeId === "revise-to-draft" && diagnostic.path === "$.edges.revise-to-draft",
+    );
+  });
+
+  it("rejects cycles when a loop policy has maxAttempts but no valid guard", () => {
+    const definition = structuredClone(boundedReviewLoopWorkflowFixture) as WorkflowDefinition;
+    definition.loops = [{ edgeId: "revise-to-draft", maxAttempts: 3 }];
+
+    const result = validateWorkflow(definition);
+
+    assert.equal(result.ok, false);
+    findDiagnostic(result, "WorkflowGraphError.unboundedBackEdge", (diagnostic) => diagnostic.path === "$.loops.0");
+    findDiagnostic(result, "WorkflowGraphError.unboundedCycle", (diagnostic) => diagnostic.edgeId === "revise-to-draft");
+  });
+
   it("rejects agent nodes that do not select the V1 Pibo Runtime", () => {
     const definition = withDefinitionMutation((draft) => {
       draft.nodes.answer = {

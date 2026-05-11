@@ -111,6 +111,7 @@ export function validateWorkflowDefinitionSchemas(
 
   validateWorkflowGlobalStateWriteConflicts(definition, diagnostics);
   validateWorkflowLoopPolicies(definition, diagnostics, options);
+  validateWorkflowCycles(definition, diagnostics);
 
   for (const [edgeId, edge] of Object.entries(definition.edges)) {
     validateWorkflowEdgeNodeRefs(definition, edgeId, edge, diagnostics);
@@ -566,6 +567,99 @@ function validateWorkflowLoopPolicies(
       });
     }
   }
+}
+
+function validateWorkflowCycles(
+  definition: Pick<WorkflowDefinition, "nodes" | "edges" | "loops">,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  const boundedLoopEdgeIds = collectBoundedLoopEdgeIds(definition);
+  const adjacency = new Map<string, Array<{ edgeId: string; targetNodeId: string }>>();
+
+  for (const nodeId of Object.keys(definition.nodes)) {
+    adjacency.set(nodeId, []);
+  }
+
+  for (const [edgeId, edge] of Object.entries(definition.edges)) {
+    if (boundedLoopEdgeIds.has(edgeId)) {
+      continue;
+    }
+
+    if (!Object.hasOwn(definition.nodes, edge.from.nodeId) || !Object.hasOwn(definition.nodes, edge.to.nodeId)) {
+      continue;
+    }
+
+    adjacency.get(edge.from.nodeId)?.push({ edgeId, targetNodeId: edge.to.nodeId });
+  }
+
+  const visitState = new Map<string, "visiting" | "visited">();
+  const pathNodes: string[] = [];
+  const pathEdges: string[] = [];
+  const reportedCycles = new Set<string>();
+
+  const visit = (nodeId: string): void => {
+    visitState.set(nodeId, "visiting");
+    pathNodes.push(nodeId);
+
+    for (const { edgeId, targetNodeId } of adjacency.get(nodeId) ?? []) {
+      const targetState = visitState.get(targetNodeId);
+      if (targetState === "visiting") {
+        const cycleStartIndex = pathNodes.indexOf(targetNodeId);
+        const cycleEdgeIds = cycleStartIndex >= 0 ? [...pathEdges.slice(cycleStartIndex), edgeId] : [edgeId];
+        const cycleKey = [...cycleEdgeIds].sort().join("\u0000");
+        if (reportedCycles.has(cycleKey)) {
+          continue;
+        }
+
+        reportedCycles.add(cycleKey);
+        const cycleNodeIds = cycleStartIndex >= 0 ? [...pathNodes.slice(cycleStartIndex), targetNodeId] : [nodeId, targetNodeId];
+        diagnostics.push({
+          code: "WorkflowGraphError.unboundedCycle",
+          message: `Workflow contains an unbounded cycle through nodes '${cycleNodeIds.join(" -> ")}'.`,
+          severity: "error",
+          edgeId,
+          path: `$.edges.${edgeId}`,
+          hint: `Declare one cycle edge as a guarded loop policy with maxAttempts, for example loops: [{ edgeId: '${edgeId}', maxAttempts: 3, guard: ... }].`,
+        });
+        continue;
+      }
+
+      if (targetState === "visited") {
+        continue;
+      }
+
+      pathEdges.push(edgeId);
+      visit(targetNodeId);
+      pathEdges.pop();
+    }
+
+    pathNodes.pop();
+    visitState.set(nodeId, "visited");
+  };
+
+  for (const nodeId of Object.keys(definition.nodes)) {
+    if (!visitState.has(nodeId)) {
+      visit(nodeId);
+    }
+  }
+}
+
+function collectBoundedLoopEdgeIds(definition: Pick<WorkflowDefinition, "edges" | "loops">): Set<string> {
+  const edgeIds = new Set<string>();
+
+  for (const loop of definition.loops ?? []) {
+    const edge = definition.edges[loop.edgeId];
+    const guard = loop.guard ?? edge?.guard;
+    if (edge && Number.isInteger(loop.maxAttempts) && loop.maxAttempts > 0 && isValidGuardRef(guard)) {
+      edgeIds.add(loop.edgeId);
+    }
+  }
+
+  return edgeIds;
+}
+
+function isValidGuardRef(guard: GuardRef | undefined): guard is GuardRef {
+  return isRecord(guard) && typeof guard.handler === "string" && guard.handler.length > 0;
 }
 
 function validateWorkflowEdgeGuardRef(
