@@ -87,7 +87,7 @@
 - [x] 10.3 Map nodes to states.
 - [x] 10.4 Map edges to transitions.
 - [x] 10.5 Map guards, waits, failures, and final states.
-- [ ] 10.6 Add deterministic snapshot tests for machine projection.
+- [x] 10.6 Add deterministic snapshot tests for machine projection.
 - [ ] 10.7 Expose machine projection to the Web UI Workflow/XState tab and internal tests; do not add an XState CLI command.
 
 ## 11. Requirement: Workflow runs persist and trace execution

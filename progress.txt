@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- XState projection snapshot tests should compare normalized full projections for representative fixtures against `packages/workflows/src/testing/__snapshots__/xstate-projection.snap.json`; normalize object keys but preserve transition arrays so snapshot diffs catch semantic projection changes.
 - XState guard/wait/failure/final projection is deterministic: edge/loop guards populate the flat `guards` index, human nodes become `wait` states with durable wait actions/timeouts, node invoke failures target failed or retry-delay states, and `definition.final` nodes add completion transitions to `workflow.completed`.
 - XState workflow projection composes `projectWorkflowNodesToXState` and `projectWorkflowEdgesToXState` inside `projectWorkflowToXStateProjection`: map each workflow node to `node.<id>` plus `workflow.node.<id>` actor metadata, then layer edge transitions/actions without changing node ids.
 - XState projection data is Pibo-owned and versioned (`kind`, `schemaVersion`) with both a machine-config view and flat indexes for states/transitions/actors/guards/actions/delays; keep context shape projection-only with `durableTruth: "kernel"` and `exposesPrivatePayloads: false`.
@@ -719,4 +720,16 @@
   - XState projection keeps runtime durability explicit by using named actions/delays (`enterWait`, `resumeWait`, `recordFailure`, `scheduleRetry`) instead of relying on in-memory XState effects.
   - Final workflow nodes are projected separately from normal edges so guarded outgoing transitions can remain ordered before fallback completion transitions.
   - Human wait and retry delay projections need `after` support on `XStateProjectionState` so machine config and flat projection indexes stay aligned.
+---
+
+## 2026-05-11 02:00 UTC - 10.6
+- Added deterministic XState machine projection snapshot coverage for minimal one-node, mixed-node, human-wait, and bounded review-loop workflow fixtures.
+- Snapshot assertions normalize object keys while preserving transition arrays, and compare full `projectWorkflowToXStateProjection` output against a committed JSON snapshot.
+- Marked task `10.6` complete in the workflow-system task list because no `prd_*.json` files exist in this worktree.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; root `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test`.
+- Files changed: `packages/workflows/src/testing/xstate-projection-snapshots.test.ts`, `packages/workflows/src/testing/__snapshots__/xstate-projection.snap.json`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Full XState projection snapshots are large but useful for catching accidental changes across states, transitions, actors, guards, actions, delays, context shape, and machine config metadata.
+  - Keep snapshot normalization local to the test: object keys are sorted for deterministic file diffs, while arrays remain ordered to protect edge/final transition order.
+  - Snapshot fixtures should cover representative graph features rather than every fixture; current coverage includes one-node, mixed node kinds, human timeout waits, and bounded retry/back-edge policy.
 ---
