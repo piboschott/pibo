@@ -161,6 +161,19 @@ test("context files web app links plugin files into managed revisions and restor
 		assert.equal(updated.response.status, 200);
 		assert.equal(updated.data.file.linkState, "linked-dirty");
 
+		const conflict = await getJson(`${baseURL}/api/context-files/${encodeURIComponent(managedKey)}`, {
+			method: "PUT",
+			headers: authHeaders(baseURL),
+			body: JSON.stringify({
+				markdown: "# Concurrent Edit\n",
+				expectedVersion: linked.data.file.version,
+			}),
+		});
+		assert.equal(conflict.response.status, 409);
+		assert.equal(conflict.data.error, "Context file changed before save");
+		assert.equal(conflict.data.file.version, updated.data.file.version);
+		assert.equal(conflict.data.file.markdown, "# Customized\n");
+
 		const pluginRead = await getJson(`${baseURL}/api/context-files/plugin-doc`, {
 			headers: { "x-test-user": "user-1" },
 		});
