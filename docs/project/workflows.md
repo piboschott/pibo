@@ -33,7 +33,7 @@ Primary authoring helpers:
 
 Definitions should stay serializable. TypeScript closures belong in the Workflow Registry, not in persisted workflow IR.
 
-For starter TypeScript examples, see `docs/project/workflow-definition-examples.md`.
+For starter TypeScript examples, see `docs/project/workflow-definition-examples.md`. For explicit interface adapter examples, see `docs/project/workflow-interface-adapters.md`.
 
 ## Runtime nodes
 
@@ -54,7 +54,7 @@ All runtime boundaries validate inputs before execution and validate outputs bef
 Workflows move data only through declared ports and edges:
 
 - Direct edges are allowed only when source and target ports are compatible.
-- Incompatible edges require an explicit registered adapter.
+- Incompatible edges require an explicit registered adapter, either as an edge adapter or as a visible `adapter` node.
 - Edge payloads are immutable once transferred.
 - Workflow global state is persisted and must be declared before node reads/writes.
 - Node local state is scoped to the current node by default.
@@ -107,4 +107,4 @@ Additional V1 rules:
 
 Keep current operator/developer docs under `docs/project/`. Keep implementation plans, validation reports, and historical specs under `docs/plans/`, `docs/reports/`, and `docs/specs/` respectively.
 
-Planned follow-up documentation should cover interface adapter examples, XState projection details, and registry/plugin registration patterns.
+Planned follow-up documentation should cover XState projection details and registry/plugin registration patterns.

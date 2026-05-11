@@ -946,3 +946,14 @@
   - Code-node handler examples must return `{ output: ... }`, not a bare output payload, because runtime handlers use the `CodeNodeResult` contract.
   - Examples for registry-backed validation should pass a `WorkflowRegistry`; examples without a registry demonstrate structural/schema validation only.
 ---
+
+## 2026-05-11 03:46 UTC - 13.3
+- Documented workflow interface adapters with edge-adapter and visible `adapter` node examples, including registry registration, validation expectations, placement guidance, and implementation references.
+- Linked the adapter documentation from the canonical workflow overview and marked task `13.3` complete.
+- Quality checks: `npm run typecheck`; `npm --prefix packages/workflows test`.
+- Files changed: `docs/project/workflow-interface-adapters.md`, `docs/project/workflows.md`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - Adapter documentation should distinguish edge-local `edgeAdapter(adapterRef(...), outputPort)` mappings from visible `adapter` nodes that produce node attempts and are easier to inspect.
+  - Workflow docs should keep executable adapter handlers behind Workflow Registry registration examples instead of embedding closures in workflow definitions.
+  - Current adapter runtime behavior is well covered by `runtime-edge-transfer.test.ts` for edge adapters and `runtime-mixed-node-workflow.test.ts` for visible adapter nodes.
+---
