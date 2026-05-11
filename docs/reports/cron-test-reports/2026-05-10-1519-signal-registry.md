@@ -256,3 +256,11 @@ Begründung: `npm test` baut alles inklusive Web-UIs und startet alle Tests. Das
 - Ausgeführte Kommandos: `node --test test/chat-signals-api.test.mjs`.
 - Ergebnis: 9/9 Tests bestanden; abgesichert ist, dass `/api/chat/signals/events` ohne `rootPiboSessionId` mit 400 antwortet und fremde Roots mit 404 ablehnt.
 - Verbleibende offene Punkte: Fehlende-Registry-503-Fälle, SSE-Cleanup/Unsubscribe, Pruning-Randfälle und UI-Patch-Transformationslogik bleiben offen.
+
+## Umgesetzt am 2026-05-11 15:23 Europe/Berlin
+
+- Bereich: Kleine Chat-Signal-API-Negativtests für fehlende Signal-Registry-Funktionen.
+- Geänderte Dateien: `test/chat-signals-api.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/chat-signals-api.test.mjs`.
+- Ergebnis: 10/10 Tests bestanden; abgesichert ist, dass Tree-Snapshot- und SSE-Endpunkt bei fehlender Signal-Registry mit 503 antworten.
+- Verbleibende offene Punkte: SSE-Cleanup/Unsubscribe, Pruning-Randfälle und UI-Patch-Transformationslogik bleiben offen.

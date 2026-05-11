@@ -24,7 +24,8 @@ function createFakeAuthService() {
 	};
 }
 
-async function startSignalWebHost() {
+async function startSignalWebHost(options = {}) {
+	const { exposeSignalRegistry = true } = options;
 	const sessions = new InMemoryPiboSessionStore();
 	const signals = createPiboSignalRegistry();
 	const storageDir = mkdtempSync(join(tmpdir(), "pibo-chat-signals-"));
@@ -48,9 +49,11 @@ async function startSignalWebHost() {
 		getGatewayActions: () => [],
 		getProfiles: () => [{ name: "test-profile", description: "Test", aliases: [] }],
 		getCapabilityCatalog: () => ({ nativeTools: [], skills: [], subagents: [], contextFiles: [], packages: [], piboTools: [], mcpServers: [] }),
-		snapshotSignalSession: (id) => signals.snapshotSession(id),
-		snapshotSignalTree: (id) => signals.snapshotTree(id),
-		subscribeSignalTree: (id, listener) => signals.subscribe(id, listener),
+		...(exposeSignalRegistry ? {
+			snapshotSignalSession: (id) => signals.snapshotSession(id),
+			snapshotSignalTree: (id) => signals.snapshotTree(id),
+			subscribeSignalTree: (id, listener) => signals.subscribe(id, listener),
+		} : {}),
 		getWebApps() {
 			return [createChatWebApp({ dataStorePath, agentStorePath })];
 		},
@@ -177,6 +180,22 @@ test("chat signal SSE enforces root ownership", async () => {
 		signals.project({ type: "session_created", session });
 		const response = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-2" } });
 		assert.equal(response.status, 404);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
+test("chat signal routes return 503 when registry functions are unavailable", async () => {
+	const { channel, baseURL, sessions } = await startSignalWebHost({ exposeSignalRegistry: false });
+	try {
+		const session = createSession(sessions, "ps_signal_registry_unavailable");
+
+		const snapshot = await fetch(`${baseURL}/api/chat/signals/tree/${session.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(snapshot.status, 503);
+
+		const sse = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(sse.status, 503);
 	} finally {
 		await channel.stop?.();
 	}
