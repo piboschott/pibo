@@ -2,17 +2,38 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { WorkflowRun, WorkflowRunId, WorkflowRunStatus, WorkflowValue } from "../types/index.js";
+import type {
+  WorkflowRun,
+  WorkflowRunId,
+  WorkflowRunStatus,
+  WorkflowValue,
+  WorkflowWaitToken,
+  WorkflowWaitTokenId,
+  WorkflowWaitTokenStatus,
+} from "../types/index.js";
 
 export type WorkflowRunStore = {
   saveRun(run: WorkflowRun): void | Promise<void>;
   getRun(id: WorkflowRunId): WorkflowRun | undefined | Promise<WorkflowRun | undefined>;
 };
 
+export type WorkflowWaitTokenStore = {
+  saveWaitToken(token: WorkflowWaitToken): void | Promise<void>;
+  getWaitToken(id: WorkflowWaitTokenId): WorkflowWaitToken | undefined | Promise<WorkflowWaitToken | undefined>;
+  listWaitTokens(filter?: WorkflowWaitTokenListFilter): WorkflowWaitToken[] | Promise<WorkflowWaitToken[]>;
+};
+
 export type WorkflowRunListFilter = {
   workflowId?: string;
   status?: WorkflowRunStatus;
   ownerScope?: string;
+  limit?: number;
+};
+
+export type WorkflowWaitTokenListFilter = {
+  workflowRunId?: WorkflowRunId;
+  status?: WorkflowWaitTokenStatus;
+  humanNodeId?: string;
   limit?: number;
 };
 
@@ -43,7 +64,23 @@ type WorkflowRunRow = {
   cancelled_at: string | null;
 };
 
-export class SqliteWorkflowRunStore implements WorkflowRunStore {
+type WorkflowWaitTokenRow = {
+  id: string;
+  workflow_run_id: string;
+  node_attempt_id: string | null;
+  human_node_id: string | null;
+  actions_json: string;
+  prompt: string;
+  schema_json: string | null;
+  status: WorkflowWaitTokenStatus;
+  resume_payload_json: string | null;
+  resume_payload_present: number;
+  created_at: string;
+  expires_at: string | null;
+  resumed_at: string | null;
+};
+
+export class SqliteWorkflowRunStore implements WorkflowRunStore, WorkflowWaitTokenStore {
   private readonly db: DatabaseSync;
 
   constructor(path: string) {
@@ -91,6 +128,29 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore {
         ON workflow_runs(owner_scope, updated_at);
       CREATE INDEX IF NOT EXISTS idx_workflow_runs_current_node
         ON workflow_runs(current_node_id, updated_at);
+
+      CREATE TABLE IF NOT EXISTS workflow_wait_tokens (
+        id TEXT PRIMARY KEY,
+        workflow_run_id TEXT NOT NULL,
+        node_attempt_id TEXT,
+        human_node_id TEXT,
+        actions_json TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        schema_json TEXT,
+        status TEXT NOT NULL,
+        resume_payload_json TEXT,
+        resume_payload_present INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        resumed_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_workflow_wait_tokens_run
+        ON workflow_wait_tokens(workflow_run_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_workflow_wait_tokens_status
+        ON workflow_wait_tokens(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_workflow_wait_tokens_node
+        ON workflow_wait_tokens(human_node_id, created_at);
     `);
   }
 
@@ -203,6 +263,84 @@ export class SqliteWorkflowRunStore implements WorkflowRunStore {
     return rows.map(workflowRunFromRow);
   }
 
+  saveWaitToken(token: WorkflowWaitToken): void {
+    this.db.prepare(`
+      INSERT INTO workflow_wait_tokens (
+        id,
+        workflow_run_id,
+        node_attempt_id,
+        human_node_id,
+        actions_json,
+        prompt,
+        schema_json,
+        status,
+        resume_payload_json,
+        resume_payload_present,
+        created_at,
+        expires_at,
+        resumed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        workflow_run_id = excluded.workflow_run_id,
+        node_attempt_id = excluded.node_attempt_id,
+        human_node_id = excluded.human_node_id,
+        actions_json = excluded.actions_json,
+        prompt = excluded.prompt,
+        schema_json = excluded.schema_json,
+        status = excluded.status,
+        resume_payload_json = excluded.resume_payload_json,
+        resume_payload_present = excluded.resume_payload_present,
+        expires_at = excluded.expires_at,
+        resumed_at = excluded.resumed_at
+    `).run(
+      token.id,
+      token.workflowRunId,
+      token.nodeAttemptId ?? null,
+      token.humanNodeId ?? null,
+      serialize(token.actions),
+      token.prompt,
+      serializeOptional(token.schema),
+      token.status,
+      token.resumePayload === undefined ? null : serialize(token.resumePayload),
+      token.resumePayload === undefined ? 0 : 1,
+      token.createdAt,
+      token.expiresAt ?? null,
+      token.resumedAt ?? null,
+    );
+  }
+
+  getWaitToken(id: WorkflowWaitTokenId): WorkflowWaitToken | undefined {
+    const row = this.db.prepare("SELECT * FROM workflow_wait_tokens WHERE id = ?").get(id) as
+      | WorkflowWaitTokenRow
+      | undefined;
+    return row ? workflowWaitTokenFromRow(row) : undefined;
+  }
+
+  listWaitTokens(filter: WorkflowWaitTokenListFilter = {}): WorkflowWaitToken[] {
+    const clauses: string[] = [];
+    const values: Array<string | number> = [];
+
+    if (filter.workflowRunId !== undefined) {
+      clauses.push("workflow_run_id = ?");
+      values.push(filter.workflowRunId);
+    }
+    if (filter.status !== undefined) {
+      clauses.push("status = ?");
+      values.push(filter.status);
+    }
+    if (filter.humanNodeId !== undefined) {
+      clauses.push("human_node_id = ?");
+      values.push(filter.humanNodeId);
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 1000));
+    const rows = this.db
+      .prepare(`SELECT * FROM workflow_wait_tokens ${where} ORDER BY created_at DESC LIMIT ?`)
+      .all(...values, limit) as WorkflowWaitTokenRow[];
+    return rows.map(workflowWaitTokenFromRow);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -230,6 +368,23 @@ function workflowRunFromRow(row: WorkflowRunRow): WorkflowRun {
     ...(row.completed_at ? { completedAt: row.completed_at } : {}),
     ...(row.failed_at ? { failedAt: row.failed_at } : {}),
     ...(row.cancelled_at ? { cancelledAt: row.cancelled_at } : {}),
+  };
+}
+
+function workflowWaitTokenFromRow(row: WorkflowWaitTokenRow): WorkflowWaitToken {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    ...(row.node_attempt_id ? { nodeAttemptId: row.node_attempt_id } : {}),
+    ...(row.human_node_id ? { humanNodeId: row.human_node_id } : {}),
+    actions: parseJson(row.actions_json),
+    prompt: row.prompt,
+    ...(row.schema_json ? { schema: parseJson(row.schema_json) } : {}),
+    status: row.status,
+    ...(row.resume_payload_present ? { resumePayload: parseJson(row.resume_payload_json ?? "null") as WorkflowValue } : {}),
+    createdAt: row.created_at,
+    ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+    ...(row.resumed_at ? { resumedAt: row.resumed_at } : {}),
   };
 }
 
