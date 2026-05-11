@@ -1,6 +1,7 @@
 ## Codebase Patterns
 - Workflow catalog persistence uses explicit `SqliteWorkflowRunStore` entities for UI identities, drafts, published versions, archive states, and delete tombstones; tombstones must not remove definition snapshots needed by historical run inspection.
 - Workflow profile picker APIs should compose active custom Agent Designer profiles from `CustomAgentStore` with global `channelContext.getProfiles()` entries, while using archived custom profile rows only to produce diagnostics for already-referenced drafts.
+- Workflow capability picker UI should use select-only registered refs, nullable metadata fields, and selected-ref diagnostics instead of manual text entry paths.
 - Chat Web top-level product tabs need coordinated updates in `src/apps/chat-ui/src/App.tsx` for `ChatAppRoute`, navigation, and rendering, plus `src/apps/chat-ui/src/main.tsx` for URL parsing and the TanStack route tree.
 - In the `pibo-dev-WorkflowsV2` browser worker, pass `--fresh-profile` to every `browser-use` command when the default `PIBo` Chrome profile is already locked by another browser process.
 - When resolving PRD decision stories, update the focused PRD plus `README.md`, `tasks.md`, and `09-implementation-completeness-contract.md` if they repeat the same TBD or baseline contract.
@@ -378,4 +379,33 @@
 - **Learnings for future iterations:**
   - The web-channel test harness can recreate `createChatWebApp` through `getWebApps`, so multi-request API state should be durable; this scaffold uses a shared temporary cache until the PRD 02 persistent draft store story lands.
   - `pkill -f "runWebGatewayServer"` can kill the detached restart shell when the same command line contains `runWebGatewayServer`; avoid self-matching patterns or skip kill when no gateway node process is running.
+---
+## 2026-05-12 00:28 CEST - US-002
+- What was implemented
+  - Added the authenticated `/api/chat/workflows/pickers/handlers` picker for registered code handler refs.
+  - Added a Workflows Builder Code node editor with a select-only registered handler picker, handler metadata cards, nullable `inputSchema`/`outputSchema` display, and missing-ref diagnostics.
+  - Added Web API coverage for the handler picker and workflow package coverage for `WorkflowGraphError.unknownHandlerRef` validation.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `packages/workflows/src/testing/registry.test.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm --prefix packages/workflows test -- src/testing/registry.test.ts'` — passed, 135/135 workflow package tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/web-channel.test.mjs'` — passed, 53/53 web-channel tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container gateway from the rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows?handlerRef=missing.handlers.inline`.
+  - Verified the Code node editor shows only a registered handler select, lists `fixture.handlers.makePlan`, `fixture.handlers.reviseDraft`, and `fixture.handlers.summarizeDecision`, displays `id`, `displayName`, `description`, `inputSchema`, and `outputSchema`, and shows `WorkflowGraphError.unknownHandlerRef` for a missing ref.
+  - Opened `/apps/chat/workflows?handlerRef=fixture.handlers.makePlan` and verified the selected handler summary with nullable schema fields.
+  - Saved screenshots inside the container: `/tmp/ralph-v2-code-handler-picker.png` and `/tmp/ralph-v2-code-handler-picker-selected.png`.
+- **Learnings for future iterations:**
+  - Handler pickers should mirror the Agent profile picker boundary: registered select-only options, missing refs as diagnostics, and no manual executable-code entry path.
+  - The container gateway node process can appear with command name `MainThread`; filters that only match `comm == node` can miss the old gateway during restarts.
 ---

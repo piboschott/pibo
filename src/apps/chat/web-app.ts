@@ -342,6 +342,21 @@ type WorkflowProfilePickerResponse = {
 	diagnostics: WorkflowPickerDiagnostic[];
 };
 
+type WorkflowHandlerPickerOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+	inputSchema: PiboJsonObject | null;
+	outputSchema: PiboJsonObject | null;
+};
+
+type WorkflowHandlerPickerResponse = {
+	kind: "handlers";
+	options: WorkflowHandlerPickerOption[];
+	selectedHandlerId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
 type WorkflowVersionPickerOption = {
 	id: string;
 	version: string;
@@ -1905,6 +1920,56 @@ function buildWorkflowProfilePicker(
 		kind: "profiles",
 		options,
 		...(activeSelection ? { selectedProfileId: activeSelection } : {}),
+		diagnostics,
+	};
+}
+
+const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
+	{
+		id: "fixture.handlers.makePlan",
+		displayName: "Make plan",
+		description: "Registered code handler that turns a topic payload into a step plan.",
+		inputSchema: null,
+		outputSchema: null,
+	},
+	{
+		id: "fixture.handlers.reviseDraft",
+		displayName: "Revise draft",
+		description: "Registered code handler that applies review feedback to a draft payload.",
+		inputSchema: null,
+		outputSchema: null,
+	},
+	{
+		id: "fixture.handlers.summarizeDecision",
+		displayName: "Summarize decision",
+		description: "Registered code handler that normalizes a review decision into a workflow summary.",
+		inputSchema: null,
+		outputSchema: null,
+	},
+];
+
+function buildWorkflowHandlerPicker(selectedHandlerId?: string): WorkflowHandlerPickerResponse {
+	const options = [...WORKFLOW_HANDLER_PICKER_OPTIONS]
+		.sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+	const normalizedSelection = selectedHandlerId?.trim() || undefined;
+	const activeSelection = normalizedSelection && options.some((option) => option.id === normalizedSelection)
+		? normalizedSelection
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedSelection && !activeSelection) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownHandlerRef",
+			message: `Code node references handler '${normalizedSelection}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.nodes.code.handler",
+			registryRef: normalizedSelection,
+			hint: "Select a registered handler from the code node picker before publishing or running this workflow.",
+		});
+	}
+	return {
+		kind: "handlers",
+		options,
+		...(activeSelection ? { selectedHandlerId: activeSelection } : {}),
 		diagnostics,
 	};
 }
@@ -4082,6 +4147,11 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						context,
 						webSession,
 						url.searchParams.get("selectedProfileId") ?? undefined,
+					));
+				}
+				if (pickerKind === "handlers") {
+					return responseJson(buildWorkflowHandlerPicker(
+						url.searchParams.get("selectedHandlerId") ?? undefined,
 					));
 				}
 				if (pickerKind === "workflow-versions") {

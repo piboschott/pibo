@@ -1822,6 +1822,52 @@ test("workflow profile picker excludes archived custom agents and reports archiv
 	}
 });
 
+test("workflow handler picker lists registered handlers and reports missing refs", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	try {
+		const picker = await fetch(`${baseURL}/api/chat/workflows/pickers/handlers`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(picker.status, 200);
+		const pickerPayload = await picker.json();
+		assert.equal(pickerPayload.kind, "handlers");
+		assert.deepEqual(pickerPayload.options.map((option) => option.id), [
+			"fixture.handlers.makePlan",
+			"fixture.handlers.reviseDraft",
+			"fixture.handlers.summarizeDecision",
+		]);
+		assert.equal(pickerPayload.options[0].displayName, "Make plan");
+		assert.equal(Object.hasOwn(pickerPayload.options[0], "inputSchema"), true);
+		assert.equal(Object.hasOwn(pickerPayload.options[0], "outputSchema"), true);
+		assert.equal(pickerPayload.options[0].inputSchema, null);
+		assert.equal(pickerPayload.options[0].outputSchema, null);
+
+		const selectedHandler = await fetch(`${baseURL}/api/chat/workflows/pickers/handlers?selectedHandlerId=fixture.handlers.makePlan`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(selectedHandler.status, 200);
+		const selectedPayload = await selectedHandler.json();
+		assert.equal(selectedPayload.selectedHandlerId, "fixture.handlers.makePlan");
+		assert.deepEqual(selectedPayload.diagnostics, []);
+
+		const missingHandler = await fetch(`${baseURL}/api/chat/workflows/pickers/handlers?selectedHandlerId=missing.handlers.inline`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(missingHandler.status, 200);
+		const missingPayload = await missingHandler.json();
+		assert.equal(missingPayload.selectedHandlerId, undefined);
+		assert.equal(missingPayload.diagnostics[0].code, "WorkflowGraphError.unknownHandlerRef");
+		assert.equal(missingPayload.diagnostics[0].registryRef, "missing.handlers.inline");
+		assert.equal(missingPayload.diagnostics[0].path, "$.nodes.code.handler");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow builder draft loader opens starter and duplicated UI draft wrappers", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

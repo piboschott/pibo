@@ -232,6 +232,28 @@ export async function getWorkflowProfilePicker(selectedProfileId?: string): Prom
 	return requestJson<WorkflowProfilePickerResponse>(`/api/chat/workflows/pickers/profiles${suffix}`);
 }
 
+export type WorkflowHandlerPickerOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+	inputSchema: Record<string, unknown> | null;
+	outputSchema: Record<string, unknown> | null;
+};
+
+export type WorkflowHandlerPickerResponse = {
+	kind: "handlers";
+	options: WorkflowHandlerPickerOption[];
+	selectedHandlerId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+export async function getWorkflowHandlerPicker(selectedHandlerId?: string): Promise<WorkflowHandlerPickerResponse> {
+	const params = new URLSearchParams();
+	if (selectedHandlerId) params.set("selectedHandlerId", selectedHandlerId);
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowHandlerPickerResponse>(`/api/chat/workflows/pickers/handlers${suffix}`);
+}
+
 export type WorkflowVersionPickerOption = {
 	id: string;
 	version: string;

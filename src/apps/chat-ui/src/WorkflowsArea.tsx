@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, BookOpenText, Brain, CheckCheck, CopyPlus, Layers, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, Layers, Loader2, RefreshCw } from "lucide-react";
 import {
 	getWorkflowDraft,
+	getWorkflowHandlerPicker,
 	getWorkflowProfilePicker,
 	postWorkflowDuplicateDraft,
 	type WorkflowDraftRecord,
+	type WorkflowHandlerPickerOption,
+	type WorkflowHandlerPickerResponse,
 	type WorkflowProfilePickerOption,
 	type WorkflowProfilePickerResponse,
 } from "./api";
@@ -151,6 +154,7 @@ function WorkflowBuilderLanding() {
 				description="Use the Workflow Library draft row or Duplicate to draft action. The builder route will load a draft wrapper around Pibo Workflow IR, not raw XState source."
 			/>
 			<WorkflowBuilderAgentNodeEditor />
+			<WorkflowBuilderCodeNodeEditor />
 		</div>
 	);
 }
@@ -372,9 +376,117 @@ function WorkflowBuilderAgentNodeEditor() {
 	);
 }
 
+function WorkflowBuilderCodeNodeEditor() {
+	const [selectedHandlerId, setSelectedHandlerId] = useState(readInitialHandlerRef);
+	const [picker, setPicker] = useState<WorkflowHandlerPickerResponse | undefined>();
+	const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading");
+	const [errorMessage, setErrorMessage] = useState<string | undefined>();
+
+	useEffect(() => {
+		let cancelled = false;
+		setLoadState("loading");
+		setErrorMessage(undefined);
+		getWorkflowHandlerPicker(selectedHandlerId || undefined)
+			.then((response) => {
+				if (cancelled) return;
+				setPicker(response);
+				setLoadState("loaded");
+			})
+			.catch((error: unknown) => {
+				if (cancelled) return;
+				setErrorMessage(error instanceof Error ? error.message : "Failed to load workflow handler picker");
+				setLoadState("error");
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [selectedHandlerId]);
+
+	const selectedOption = useMemo(
+		() => picker?.options.find((option) => option.id === picker.selectedHandlerId),
+		[picker],
+	);
+	const diagnostics = picker?.diagnostics ?? [];
+
+	return (
+		<div className="flex w-full flex-col gap-4 rounded-sm border border-slate-800 bg-[#101d22]/70 p-4">
+			<div className="flex items-start justify-between gap-3">
+				<div>
+					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#11a4d4]">
+						<Code2 size={13} />
+						Code node editor
+					</div>
+					<p className="mt-2 text-xs leading-5 text-slate-500">
+						Select a registered Workflow Registry handler ref. The UI stores only the handler id on the Pibo Workflow IR node and never opens inline TypeScript, JavaScript, shell, or eval code.
+					</p>
+				</div>
+				<button
+					type="button"
+					className="inline-flex items-center gap-1 rounded-sm border border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+					onClick={() => void refreshHandlerPicker(selectedHandlerId, setPicker, setLoadState, setErrorMessage)}
+					disabled={loadState === "loading"}
+				>
+					{loadState === "loading" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+					Refresh
+				</button>
+			</div>
+
+			<label className="grid gap-2 text-xs font-semibold text-slate-300">
+				<span>Registered code handler</span>
+				<select
+					aria-label="Registered code handler"
+					className="rounded-sm border border-slate-700 bg-[#151f24] px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-[#11a4d4] disabled:opacity-60"
+					value={picker?.selectedHandlerId ?? ""}
+					onChange={(event) => setSelectedHandlerId(event.target.value)}
+					disabled={loadState === "loading" || loadState === "error"}
+				>
+					<option value="">Select a registered handler ref</option>
+					{picker?.options.map((option) => (
+						<option key={option.id} value={option.id}>{handlerOptionLabel(option)}</option>
+					))}
+				</select>
+			</label>
+
+			{loadState === "error" ? (
+				<div className="rounded-sm border border-red-900/70 bg-red-950/40 p-3 text-xs leading-5 text-red-200" role="alert">
+					{errorMessage ?? "Failed to load workflow handler picker."}
+				</div>
+			) : null}
+
+			{selectedOption ? <HandlerSelectionSummary option={selectedOption} /> : null}
+
+			{diagnostics.length ? (
+				<div className="grid gap-2" aria-label="Code handler diagnostics">
+					{diagnostics.map((diagnostic) => (
+						<div key={`${diagnostic.code}:${diagnostic.registryRef}`} className="rounded-sm border border-amber-700/70 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">
+							<div className="flex items-center gap-2 font-bold text-amber-200"><AlertTriangle size={13} />{diagnostic.code}</div>
+							<div className="mt-1">{diagnostic.message}</div>
+							<div className="mt-1 text-amber-200/80">{diagnostic.hint}</div>
+						</div>
+					))}
+				</div>
+			) : null}
+
+			<div className="grid gap-3" aria-label="Registered handler picker options">
+				<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Registered handler refs</div>
+				{picker?.options.map((option) => <HandlerOptionCard key={option.id} option={option} />)}
+			</div>
+
+			<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-[11px] leading-5 text-slate-500">
+				Missing handler refs return structured <code className="rounded bg-slate-900 px-1 text-slate-300">WorkflowGraphError.unknownHandlerRef</code> diagnostics and block publish/run paths once executable validation is invoked.
+			</div>
+		</div>
+	);
+}
+
 function readInitialProfileRef(): string {
 	if (typeof window === "undefined") return "";
 	return new URL(window.location.href).searchParams.get("profileRef") ?? "";
+}
+
+function readInitialHandlerRef(): string {
+	if (typeof window === "undefined") return "";
+	return new URL(window.location.href).searchParams.get("handlerRef") ?? "";
 }
 
 async function refreshProfilePicker(
@@ -390,6 +502,23 @@ async function refreshProfilePicker(
 		setLoadState("loaded");
 	} catch (error) {
 		setErrorMessage(error instanceof Error ? error.message : "Failed to load workflow profile picker");
+		setLoadState("error");
+	}
+}
+
+async function refreshHandlerPicker(
+	selectedHandlerId: string,
+	setPicker: (picker: WorkflowHandlerPickerResponse | undefined) => void,
+	setLoadState: (state: "loading" | "loaded" | "error") => void,
+	setErrorMessage: (message: string | undefined) => void,
+): Promise<void> {
+	setLoadState("loading");
+	setErrorMessage(undefined);
+	try {
+		setPicker(await getWorkflowHandlerPicker(selectedHandlerId || undefined));
+		setLoadState("loaded");
+	} catch (error) {
+		setErrorMessage(error instanceof Error ? error.message : "Failed to load workflow handler picker");
 		setLoadState("error");
 	}
 }
@@ -411,6 +540,56 @@ function ProfileSelectionSummary({ option }: { option: WorkflowProfilePickerOpti
 			</div>
 		</div>
 	);
+}
+
+function handlerOptionLabel(option: WorkflowHandlerPickerOption): string {
+	return `${option.displayName} (${option.id})`;
+}
+
+function HandlerSelectionSummary({ option }: { option: WorkflowHandlerPickerOption }) {
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
+			<div className="font-semibold text-slate-200">Selected handler: {option.displayName}</div>
+			<div className="mt-1 font-mono text-[11px] text-slate-300">{option.id}</div>
+			{option.description ? <div className="mt-2 text-slate-500">{option.description}</div> : null}
+			<div className="mt-3 grid gap-2 md:grid-cols-2">
+				<HandlerSchemaPreview label="inputSchema" schema={option.inputSchema} />
+				<HandlerSchemaPreview label="outputSchema" schema={option.outputSchema} />
+			</div>
+		</div>
+	);
+}
+
+function HandlerOptionCard({ option }: { option: WorkflowHandlerPickerOption }) {
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
+			<div className="flex flex-wrap items-start justify-between gap-2">
+				<div>
+					<div className="font-semibold text-slate-200">{option.displayName}</div>
+					<div className="mt-1 font-mono text-[11px] text-slate-300">{option.id}</div>
+				</div>
+				<WorkflowPill label="registered handler" />
+			</div>
+			{option.description ? <div className="mt-2 text-slate-500">{option.description}</div> : null}
+			<div className="mt-3 grid gap-2 md:grid-cols-2">
+				<HandlerSchemaPreview label="inputSchema" schema={option.inputSchema} />
+				<HandlerSchemaPreview label="outputSchema" schema={option.outputSchema} />
+			</div>
+		</div>
+	);
+}
+
+function HandlerSchemaPreview({ label, schema }: { label: string; schema: Record<string, unknown> | null }) {
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#101d22] p-2">
+			<div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+			<pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-slate-300">{formatNullableSchema(schema)}</pre>
+		</div>
+	);
+}
+
+function formatNullableSchema(schema: Record<string, unknown> | null): string {
+	return schema ? JSON.stringify(schema, null, 2) : "null";
 }
 
 function WorkflowPill({ label }: { label: string }) {

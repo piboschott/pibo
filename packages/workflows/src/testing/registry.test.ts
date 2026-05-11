@@ -121,6 +121,29 @@ describe("workflow registry adapter resolution", () => {
     assert.equal(resolveWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate")?.value, second);
   });
 
+  it("validates code node handler refs against the Workflow Registry when one is provided", () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+
+    assert.equal(validateWorkflow(adapterWorkflowFixture, { registry }).ok, true);
+
+    const missingHandlerRegistry = createWorkflowRegistry({
+      adapters: workflowFixtureProviders.adapters,
+      profiles: workflowFixtureProviders.profiles,
+    });
+    const missingRegistryResult = validateWorkflow(adapterWorkflowFixture, { registry: missingHandlerRegistry });
+
+    assert.equal(missingRegistryResult.ok, false);
+    assert.ok(
+      missingRegistryResult.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "WorkflowGraphError.unknownHandlerRef" &&
+          diagnostic.nodeId === "summarize" &&
+          diagnostic.registryRef === workflowFixtureRegistryRefs.handlers.summarizeDecision &&
+          diagnostic.path === "$.nodes.summarize.handler",
+      ),
+    );
+  });
+
   it("validates fixed Agent Designer profile refs against the Workflow Registry when one is provided", () => {
     const registry = createWorkflowRegistry(workflowFixtureProviders);
 
