@@ -165,6 +165,14 @@ npm test
 3. In der Entwicklerdokumentation oder im Testnamen klarstellen, dass der aktuelle Einzeltest gegen `dist` läuft und daher einen Build voraussetzt.
 4. Falls Source-basierte schnelle Unit-Tests gewünscht sind, ein bewusstes Muster für `tsx`-basierte Test-Imports etablieren, statt einzelne Tests ad hoc umzustellen.
 
+## Umgesetzt am 2026-05-11 12:49 Europe/Berlin
+
+- Bereich: CLI-Discovery für `pibo tui:routed --help` mit Exit-Code 0 und sichtbaren Local-Routed-Optionen.
+- Geänderte Dateien: `src/cli.ts`, `test/local-routed-tui-cli.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1549-local-routed-tui.md`.
+- Ausgeführte Kommandos: `npm run --silent dev -- tui:routed --help` zur Reproduktion; `npm run build`; `node --test test/local-routed-tui-cli.test.mjs`.
+- Ergebnis: Vorher reproduziert mit `unknown option '--help'` und Exit-Code 1; nach gezielter Help-Option für den `tui:routed`-Subcommand ist der neue CLI-Discovery-Test grün.
+- Verbleibende offene Punkte: Extension-Fehlerpfade, `execution_result`-Rendering, `session_error`-Cleanup und Client-Eventfilter/Close-Idempotenz bleiben offen.
+
 ## Gesamtbewertung
 
 Der Local-Routed-TUI-Bereich hat bereits eine starke, schnelle und fachlich gut geschnittene Unit-Suite. Die größten Verbesserungen liegen nicht in breiteren Tests, sondern in wenigen zusätzlichen Randfalltests und in einer klareren Trennung zwischen `dist`-basiertem Release-Test und schnellem Source-nahen Entwicklungs-Subset. Der konkrete Fund zu `tui:routed --help` ist ein kleines, aber wichtiges CLI-Discovery-Risiko, weil die Projektregel Agenten ausdrücklich zur schrittweisen Hilfe-Navigation anleitet.
