@@ -62,7 +62,7 @@ export function createPiboGatewaySendTool(
 				ok: true,
 				piboSessionId: params.piboSessionId,
 				gatewayPayload: response.payload,
-				reply: result?.reply.text,
+				reply: result?.reply?.text,
 			};
 
 			return {
