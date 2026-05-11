@@ -110,6 +110,31 @@ test("sendGatewayEvent ignores responses with a different request id", async () 
 	}
 });
 
+test("sendGatewayMessageAndWaitForReply rejects when the gateway rejects the message", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: false,
+				error: { message: "session is not accepting input" },
+			})}\n`,
+		);
+	});
+
+	try {
+		await assert.rejects(
+			sendGatewayMessageAndWaitForReply(
+				{ type: "message", piboSessionId: "receiver", text: "hello", source: "actor" },
+				{ port: gateway.port },
+			),
+			/session is not accepting input/,
+		);
+	} finally {
+		await gateway.close();
+	}
+});
+
 test("sendGatewayMessageAndWaitForReply resolves only the correlated assistant reply", async () => {
 	const gateway = await withMockGateway((frame, socket) => {
 		socket.write(

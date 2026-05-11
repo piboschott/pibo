@@ -122,6 +122,14 @@ Der volle `npm test` bleibt sinnvoll für spätere Integrations-/Release-Phasen,
 - Ergebnis: Build erfolgreich; Gateway-Request-Subset grün mit 4/4 bestandenen Tests.
 - Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Gateway-Reject, Session-Error und fragmentierte Frames.
 
+## Umgesetzt am 2026-05-11 11:13 Europe/Berlin
+
+- Bereich: Negativer Gateway-Request-Pfad für `sendGatewayMessageAndWaitForReply`, wenn der Gateway die Nachricht mit `ok: false` ablehnt.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `npm run build`; `node --test test/gateway-request.test.mjs`
+- Ergebnis: Build erfolgreich; Gateway-Request-Subset grün mit 5/5 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Session-Error, vorhandene Event-ID und fragmentierte Frames.
+
 ## Kurzfazit
 
 Das bestehende Gateway-Request-Subset ist schnell, sinnvoll granuliert und deckt zwei wichtige Korrelationseigenschaften ab. Die größte Testsystem-Lücke liegt nicht in Breite, sondern in den fehlenden negativen Pfaden und in der `dist/`-Abhängigkeit der Direktläufe. Mit wenigen zusätzlichen Mock-Gateway-Fällen würde dieser Bereich ein sehr gutes frühes Entwickler-Signal liefern.
