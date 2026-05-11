@@ -157,3 +157,20 @@ test("pibo mcp call reports available tools when the fixture rejects an unknown 
     );
   });
 });
+
+test("pibo mcp call rejects invalid JSON before contacting the fixture server", async () => {
+  await withFixtureConfig(async ({ cwd, env }) => {
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "mcp", "call", "fixture", "echo", '{"text":'], { cwd, env }),
+      (error) => {
+        assert.equal(error.code, 1);
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /INVALID_JSON_ARGUMENTS/);
+        assert.match(error.stderr, /Invalid JSON in tool arguments/);
+        assert.match(error.stderr, /Parse error:/);
+        assert.match(error.stderr, /Use valid JSON/);
+        return true;
+      },
+    );
+  });
+});
