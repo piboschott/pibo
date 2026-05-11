@@ -246,6 +246,14 @@ Diese Subsets sind deutlich gezielter als `npm test`, weil sie Modell-Auswahl, P
 4. Prüfen, ob `loadModelCatalog` durch Dependency Injection oder einen kleinen Wrapper testbar gemacht werden sollte, ohne echte Pi-Services zu initialisieren.
 5. UI-Resolverlogik für Modell-/Thinking-/Fast-Badges aus `App.tsx` extrahieren und mit Backend-Prioritäten abgleichen.
 
+## Umgesetzt am 2026-05-11 12:58 Europe/Berlin
+
+- Bereich: `session-model-source-of-truth` Profil-Pin- und Clone-Fälle.
+- Geänderte Dateien: `test/session-model-source-of-truth.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1458-model-selection-defaults.md`.
+- Ausgeführte Kommandos: `node --test test/session-model-source-of-truth.test.mjs`.
+- Ergebnis: Grün; 7/7 Tests bestanden. Abgedeckt sind `profile.model` vor Rollen-Pins, `mainModel` vor Main-Defaults, `subagentModel` vor Subagent-Defaults sowie Klonen von Session- und Default-Quellen.
+- Verbleibende offene Punkte: Model-Katalog-Fehlerpfad und UI-/Backend-Parität bleiben offen.
+
 ## Kurzfazit
 
 Die vorhandenen Tests treffen die Kernidee des Bereichs gut: Modell-Defaults werden produktseitig gewählt und pro Session als `activeModel` eingefroren. Der aktuelle granulare Check zeigt aber eine konkrete Drift: `test/model-defaults.test.mjs` ist mit dem erweiterten Defaults-Shape nicht synchron. Außerdem fehlen kleine Tests für Fast-Mode, rollen-spezifische Thinking-Defaults und UI-/Backend-Parität. Diese Lücken lassen sich mit wenigen fokussierten Unit-Tests schließen, bevor größere Chat-Web- oder Runtime-Suites nötig werden.
