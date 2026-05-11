@@ -1243,6 +1243,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
       severity: "error",
       nodeId,
       path: `$.nodes.${nodeId}.workflowId`,
+      registryRef: workflowNode.workflowId,
       hint: "Register the child workflow definition before dispatching the nested workflow node.",
     });
   }

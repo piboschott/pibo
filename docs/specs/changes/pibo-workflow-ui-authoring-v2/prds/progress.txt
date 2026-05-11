@@ -6,6 +6,7 @@
 - Workflow Builder canvas state should remain a projection; persist saved layout through existing `WorkflowDefinition.ui.layout` and `WorkflowDefinition.ui.positions`.
 - Prompt asset edits should create managed revisions and pin revision IDs/content hashes in published workflow versions and snapshots.
 - V2 workflow HTTP contracts are documented under Chat Web routes: catalog/lifecycle APIs use `/api/chat/workflows`, while Project workflow session APIs use `/api/chat/projects/:projectId/workflow-sessions`.
+- Use `createWorkflowDiagnosticReport` from `@pasko70/pibo-workflows` validation exports for V2 diagnostic grouping across Workflow Library, Builder, Project session creation, run start, and runtime failure surfaces.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -139,4 +140,28 @@
 - **Learnings for future iterations:**
   - Keep the exact workflow API route contract in PRD 09 Section 4.3 and reference it from focused PRDs instead of repeating divergent endpoint lists.
   - Snapshot stories should treat the base and effective `WorkflowDefinition` bodies plus hashes and prompt asset pins as the durable inspection boundary for deleted-definition runs.
+---
+## 2026-05-11 23:10 CEST - US-001
+- What was implemented
+  - Added a shared V2 workflow diagnostic report helper that groups diagnostics by workflow, node, edge, schema path, state path, registry ref, and severity.
+  - Extended workflow diagnostics with optional workflow, state-path, and registry-ref metadata and annotated validation/runtime missing-ref diagnostics.
+  - Added workflow package tests for the shared diagnostic consumer set, grouping behavior, and registry-ref annotations.
+- Files changed
+  - `packages/workflows/src/validation/diagnostics.ts`
+  - `packages/workflows/src/validation/index.ts`
+  - `packages/workflows/src/types/index.ts`
+  - `packages/workflows/src/runtime/index.ts`
+  - `packages/workflows/src/testing/validation.test.ts`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm --prefix packages/workflows run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm --prefix packages/workflows test -- src/testing/validation.test.ts'` — passed, 129/129 workflow package tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this was a workflow package/type/test change with no UI behavior changes.
+- **Learnings for future iterations:**
+  - Shared V2 diagnostic grouping belongs in the workflow validation exports so API and UI stories can consume the same grouped report shape instead of rebuilding grouping per surface.
+  - Missing registered capability diagnostics should set `registryRef`; state diagnostics should set `statePath` when the offending state key is known.
 ---

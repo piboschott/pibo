@@ -369,8 +369,11 @@ export type WorkflowDiagnostic = {
   message: string;
   severity: DiagnosticSeverity;
   path?: string;
+  workflowId?: WorkflowId;
   nodeId?: NodeId;
   edgeId?: EdgeId;
+  statePath?: StatePath;
+  registryRef?: RegistryRefId;
   hint?: string;
 };
 

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   adapterRef,
   boundedReviewLoopWorkflowFixture,
+  createWorkflowDiagnosticReport,
   createWorkflowRegistry,
   minimalOneNodePiboAgentWorkflowFixture,
   mixedNodeWorkflowFixture,
@@ -12,6 +13,7 @@ import {
   validateWorkflow,
   validateWorkflowInput,
   validateWorkflowOutput,
+  V2_WORKFLOW_DIAGNOSTIC_CONSUMERS,
   workflowFixtureProviders,
 } from "../index.js";
 import type { JsonSchema, ValidationResult, WorkflowDefinition, WorkflowDiagnostic } from "../index.js";
@@ -35,6 +37,76 @@ function withDefinitionMutation(mutator: (definition: WorkflowDefinition) => voi
   mutator(definition);
   return definition;
 }
+
+describe("workflow diagnostic reports", () => {
+  it("groups V2 diagnostics by workflow, node, edge, schema path, state path, registry ref, and severity", () => {
+    const diagnostics: WorkflowDiagnostic[] = [
+      {
+        code: "WorkflowGraphError.unknownAgentProfileRef",
+        message: "Agent profile is missing.",
+        severity: "error",
+        nodeId: "draft",
+        path: "$.nodes.draft.profile.id",
+        registryRef: "profile.archived",
+      },
+      {
+        code: "WorkflowInterfaceError.valueTypeMismatch",
+        message: "Adapter output is invalid.",
+        severity: "warning",
+        edgeId: "draft-to-review",
+        path: "$.edges.draft-to-review.adapter.output.schema.type",
+      },
+      {
+        code: "WorkflowStateError.unknownGlobalStatePath",
+        message: "State path is missing.",
+        severity: "error",
+        nodeId: "draft",
+        path: "$.nodes.draft.state.reads.0",
+        statePath: "global.reviewGoal",
+      },
+    ];
+
+    const report = createWorkflowDiagnosticReport(diagnostics, {
+      workflowId: "workflow.review",
+      consumers: ["workflow-builder"],
+      generatedAt: "2026-05-11T21:15:00.000Z",
+    });
+
+    assert.equal(report.hasErrors, true);
+    assert.deepEqual(report.consumers, ["workflow-builder"]);
+    assert.equal(report.generatedAt, "2026-05-11T21:15:00.000Z");
+    assert.deepEqual(report.groups.workflow.map((group) => group.key), ["workflow.review"]);
+    assert.deepEqual(report.groups.node.map((group) => `${group.key}:${group.count}:${group.severity}`), ["draft:2:error"]);
+    assert.deepEqual(report.groups.edge.map((group) => group.key), ["draft-to-review"]);
+    assert.deepEqual(report.groups.schemaPath.map((group) => group.key), ["$.edges.draft-to-review.adapter.output.schema.type"]);
+    assert.deepEqual(report.groups.statePath.map((group) => group.key), ["global.reviewGoal"]);
+    assert.deepEqual(report.groups.registryRef.map((group) => group.key), ["profile.archived"]);
+    assert.deepEqual(report.groups.severity.map((group) => `${group.key}:${group.count}`), ["error:2", "warning:1"]);
+  });
+
+  it("uses the shared V2 consumer set and registry ref annotations from validation", () => {
+    const registry = createWorkflowRegistry();
+    const definition = withDefinitionMutation((draft) => {
+      const node = draft.nodes.answer;
+      assert.equal(node.kind, "agent");
+      if (node.kind === "agent") {
+        node.profile = { kind: "fixed", id: "profile.missing" };
+      }
+    });
+
+    const result = validateWorkflow(definition, { registry });
+    const diagnostic = findDiagnostic(
+      result,
+      "WorkflowGraphError.unknownAgentProfileRef",
+      (item) => item.registryRef === "profile.missing",
+    );
+    const report = createWorkflowDiagnosticReport(result.diagnostics, { workflowId: definition.id });
+
+    assert.equal(diagnostic.path, "$.nodes.answer.profile.id");
+    assert.deepEqual(report.consumers, [...V2_WORKFLOW_DIAGNOSTIC_CONSUMERS]);
+    assert.deepEqual(report.groups.registryRef.map((group) => group.key), ["profile.missing"]);
+  });
+});
 
 describe("workflow input validation", () => {
   it("accepts valid text and JSON workflow inputs", () => {
