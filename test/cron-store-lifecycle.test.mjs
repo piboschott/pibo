@@ -21,6 +21,37 @@ function baseJobInput(overrides = {}) {
   };
 }
 
+test('cron store validates required job fields before persisting', () => {
+  const store = createStore();
+  try {
+    assert.throws(
+      () => store.createJob(baseJobInput({ ownerScope: '  ' })),
+      /ownerScope is required/,
+    );
+    assert.throws(
+      () => store.createJob(baseJobInput({ profile: '  ' })),
+      /profile is required/,
+    );
+    assert.throws(
+      () => store.createJob(baseJobInput({ prompt: '  ' })),
+      /prompt is required/,
+    );
+    assert.throws(
+      () => store.createJob(baseJobInput({ target: { kind: 'room', roomId: '  ' } })),
+      /target\.roomId is required/,
+    );
+    assert.throws(
+      () => store.createJob(baseJobInput({
+        schedule: { kind: 'at', at: '2026-05-09T07:00:00.000Z' },
+      }), new Date('2026-05-09T07:30:00.000Z')),
+      /schedule has no future run/,
+    );
+    assert.equal(store.listJobs({ includeDisabled: true }).length, 0);
+  } finally {
+    store.close();
+  }
+});
+
 test('cron store completes recurring runs and schedules the next tick', () => {
   const store = createStore();
   try {

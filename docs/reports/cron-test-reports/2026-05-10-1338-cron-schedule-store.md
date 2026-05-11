@@ -129,3 +129,11 @@ Die vorhandene Cron-Testdatei ist sinnvoll und schnell, aber noch eher ein kombi
 - Ausgeführte Kommandos: `npm run build && node --test test/cron-schedule.test.mjs`
 - Ergebnis: Build erfolgreich; 6 Cron-Schedule-Tests bestanden.
 - Verbleibende offene Punkte: Store-Lifecycle-, Chat-Cron-API- und Cron-Service-Subsets aus diesem Report sind weiterhin offen.
+
+## Umgesetzt am 2026-05-11 15:53 Europe/Berlin
+
+- Bereich: Cron-Store-Validierung für Pflichtfelder und abgelaufene One-Shot-Schedules.
+- Geänderte Dateien: `test/cron-store-lifecycle.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1338-cron-schedule-store.md`
+- Ausgeführte Kommandos: `node --test test/cron-store-lifecycle.test.mjs`
+- Ergebnis: Grün; 5 Cron-Store-Lifecycle-Tests bestanden.
+- Verbleibende offene Punkte: Chat-Cron-API- und Cron-Service-Subsets aus diesem Report sind weiterhin offen; weitere Store-Lifecycle-Fälle können bei Bedarf separat ergänzt werden.
