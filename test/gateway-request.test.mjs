@@ -135,6 +135,50 @@ test("sendGatewayMessageAndWaitForReply rejects when the gateway rejects the mes
 	}
 });
 
+test("sendGatewayMessageAndWaitForReply rejects on the correlated session error", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: true,
+				payload: {
+					type: "message_queued",
+					piboSessionId: frame.event.piboSessionId,
+					eventId: frame.event.id,
+					queuedMessages: 1,
+					text: frame.event.text,
+					source: frame.event.source,
+				},
+			})}\n`,
+		);
+		socket.write(
+			`${JSON.stringify({
+				type: "event",
+				event: "router",
+				payload: {
+					type: "session_error",
+					piboSessionId: frame.event.piboSessionId,
+					eventId: frame.event.id,
+					error: "model call failed",
+				},
+			})}\n`,
+		);
+	});
+
+	try {
+		await assert.rejects(
+			sendGatewayMessageAndWaitForReply(
+				{ type: "message", piboSessionId: "receiver", text: "hello", source: "actor" },
+				{ port: gateway.port },
+			),
+			/model call failed/,
+		);
+	} finally {
+		await gateway.close();
+	}
+});
+
 test("sendGatewayMessageAndWaitForReply preserves an existing event id for reply correlation", async () => {
 	const callerEventId = "caller-event-id";
 	const gateway = await withMockGateway((frame, socket) => {

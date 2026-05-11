@@ -138,6 +138,14 @@ Der volle `npm test` bleibt sinnvoll für spätere Integrations-/Release-Phasen,
 - Ergebnis: Gateway-Request-Subset grün mit 6/6 bestandenen Tests.
 - Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Session-Error und fragmentierte Frames.
 
+## Umgesetzt am 2026-05-11 12:04 Europe/Berlin
+
+- Bereich: Negativer Gateway-Request-Pfad für ein korreliertes `session_error`-Router-Event nach erfolgreicher Gateway-Response.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `node --test test/gateway-request.test.mjs`
+- Ergebnis: Gateway-Request-Subset grün mit 7/7 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Framing-Fälle aus dem Report, insbesondere fragmentierte NDJSON-Frames.
+
 ## Kurzfazit
 
 Das bestehende Gateway-Request-Subset ist schnell, sinnvoll granuliert und deckt zwei wichtige Korrelationseigenschaften ab. Die größte Testsystem-Lücke liegt nicht in Breite, sondern in den fehlenden negativen Pfaden und in der `dist/`-Abhängigkeit der Direktläufe. Mit wenigen zusätzlichen Mock-Gateway-Fällen würde dieser Bereich ein sehr gutes frühes Entwickler-Signal liefern.
