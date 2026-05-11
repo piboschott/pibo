@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { loadPiboModelDefaults, savePiboModelDefaults, selectRequestedModelProfile, selectRequestedThinkingLevel } from "../dist/core/model-defaults.js";
+import { loadPiboModelDefaults, savePiboModelDefaults, selectRequestedFastMode, selectRequestedModelProfile, selectRequestedThinkingLevel } from "../dist/core/model-defaults.js";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 
 test("model defaults persist and roundtrip", () => {
@@ -51,13 +51,64 @@ test("model selection prefers hard pin, then role override, then defaults", () =
 	assert.deepEqual(selectRequestedModelProfile(pinned, defaults), { provider: "moonshotai", id: "kimi-k2.6" });
 });
 
-test("thinking selection prefers profile override, then default", () => {
-	const defaults = { thinking: "medium" };
-	const defaultProfile = new InitialSessionContextBuilder("default-thinking").createSession();
-	const overridden = new InitialSessionContextBuilder("overridden-thinking")
+test("thinking selection prefers role override, profile override, then defaults", () => {
+	const defaults = {
+		thinking: "medium",
+		mainThinking: "high",
+		subagentThinking: "low",
+	};
+	const mainDefault = new InitialSessionContextBuilder("main-default-thinking").createSession();
+	const subagentDefault = new InitialSessionContextBuilder("subagent-default-thinking")
+		.withParentSessionId("parent")
+		.createSession();
+	const profileOverride = new InitialSessionContextBuilder("profile-thinking")
 		.withThinkingLevel("xhigh")
 		.createSession();
+	const mainOverride = new InitialSessionContextBuilder("main-thinking")
+		.withThinkingLevel("low")
+		.withMainThinkingLevel("minimal")
+		.createSession();
+	const subagentOverride = new InitialSessionContextBuilder("subagent-thinking")
+		.withParentSessionId("parent")
+		.withThinkingLevel("low")
+		.withSubagentThinkingLevel("minimal")
+		.createSession();
 
-	assert.equal(selectRequestedThinkingLevel(defaultProfile, defaults), "medium");
-	assert.equal(selectRequestedThinkingLevel(overridden, defaults), "xhigh");
+	assert.equal(selectRequestedThinkingLevel(mainDefault, defaults), "high");
+	assert.equal(selectRequestedThinkingLevel(subagentDefault, defaults), "low");
+	assert.equal(selectRequestedThinkingLevel(profileOverride, defaults), "xhigh");
+	assert.equal(selectRequestedThinkingLevel(mainOverride, defaults), "minimal");
+	assert.equal(selectRequestedThinkingLevel(subagentOverride, defaults), "minimal");
+	assert.equal(selectRequestedThinkingLevel(mainDefault, { thinking: "medium" }), "medium");
+});
+
+test("fast mode selection preserves explicit false and role-specific priority", () => {
+	const defaults = {
+		fast: true,
+		mainFast: false,
+		subagentFast: false,
+	};
+	const mainDefault = new InitialSessionContextBuilder("main-default-fast").createSession();
+	const subagentDefault = new InitialSessionContextBuilder("subagent-default-fast")
+		.withParentSessionId("parent")
+		.createSession();
+	const profileOverride = new InitialSessionContextBuilder("profile-fast")
+		.withFastMode(false)
+		.createSession();
+	const mainOverride = new InitialSessionContextBuilder("main-fast")
+		.withFastMode(true)
+		.withMainFastMode(false)
+		.createSession();
+	const subagentOverride = new InitialSessionContextBuilder("subagent-fast")
+		.withParentSessionId("parent")
+		.withFastMode(true)
+		.withSubagentFastMode(false)
+		.createSession();
+
+	assert.equal(selectRequestedFastMode(mainDefault, defaults), false);
+	assert.equal(selectRequestedFastMode(subagentDefault, defaults), false);
+	assert.equal(selectRequestedFastMode(profileOverride, { fast: true }), false);
+	assert.equal(selectRequestedFastMode(mainOverride, defaults), false);
+	assert.equal(selectRequestedFastMode(subagentOverride, defaults), false);
+	assert.equal(selectRequestedFastMode(mainDefault, { fast: true }), true);
 });

@@ -249,3 +249,11 @@ Diese Subsets sind deutlich gezielter als `npm test`, weil sie Modell-Auswahl, P
 ## Kurzfazit
 
 Die vorhandenen Tests treffen die Kernidee des Bereichs gut: Modell-Defaults werden produktseitig gewählt und pro Session als `activeModel` eingefroren. Der aktuelle granulare Check zeigt aber eine konkrete Drift: `test/model-defaults.test.mjs` ist mit dem erweiterten Defaults-Shape nicht synchron. Außerdem fehlen kleine Tests für Fast-Mode, rollen-spezifische Thinking-Defaults und UI-/Backend-Parität. Diese Lücken lassen sich mit wenigen fokussierten Unit-Tests schließen, bevor größere Chat-Web- oder Runtime-Suites nötig werden.
+
+## Umgesetzt am 2026-05-11 12:08 Europe/Berlin
+
+- Bereich: Fast-Mode-Auswahl und rollen-spezifische Thinking-Auswahl in `test/model-defaults.test.mjs`.
+- Geänderte Dateien: `test/model-defaults.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1458-model-selection-defaults.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/model-defaults.test.mjs`.
+- Ergebnis: 4/4 Tests bestanden; abgedeckt sind `mainFast`/`subagentFast` vor globalem `fast`, explizites `false` vor default-`true`, sowie `mainThinking`/`subagentThinking` und Profil-/Rollen-Overrides vor globalem `thinking`.
+- Verbleibende offene Punkte: Sanitizing-Matrix, `session-model-source-of-truth` Profil-Pin-/Clone-Fälle, Model-Katalog-Fehlerpfad und UI-/Backend-Parität bleiben offen.
