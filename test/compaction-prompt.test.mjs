@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -52,6 +52,32 @@ test("compaction prompt custom mode without custom markdown falls back to librar
 		assert.equal(snapshot.custom.markdown, "");
 		assert.equal(snapshot.custom.updatedAt, undefined);
 		assert.equal(basename(getActivePiboCompactionPromptPath(cwd)), "pibo-compaction-prompt.md");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("compaction prompt invalid custom save preserves previous valid custom prompt", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pibo-compaction-prompt-preserve-custom-"));
+	try {
+		const library = await readPiboCompactionPrompt(cwd);
+		const validMarkdown = library.library.markdown.replace("Use this EXACT format:", "Use this EXACT preserved format:");
+		const saved = await savePiboCustomCompactionPrompt(validMarkdown, cwd);
+		const previousUpdatedAt = saved.custom.updatedAt;
+		const previousFile = readFileSync(saved.custom.path, "utf-8");
+
+		await assert.rejects(
+			() => savePiboCustomCompactionPrompt("<system-prompt>only one section</system-prompt>", cwd),
+			/missing <summary-prompt> section/,
+		);
+
+		const after = await readPiboCompactionPrompt(cwd);
+		assert.equal(after.mode, "custom");
+		assert.equal(after.effectiveMode, "custom");
+		assert.equal(after.custom.updatedAt, previousUpdatedAt);
+		assert.equal(after.custom.markdown, previousFile);
+		assert.match(after.custom.markdown, /Use this EXACT preserved format:/);
+		assert.equal(getActivePiboCompactionPromptPath(cwd), saved.custom.path);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
