@@ -74,3 +74,34 @@ test("chat cron API rejects personal cron targets for another principal", async 
 		/Personal cron target must belong to the current user/,
 	);
 });
+
+test("chat cron API requires write access before creating room cron targets", async () => {
+	const options = makeOptions(postCronJob({
+		headers: { origin: "http://chat.local", "content-type": "application/json" },
+		body: { target: { kind: "room", roomId: "room-42" } },
+	}));
+	const accessCalls = [];
+	options.roomService.requireRoomAccess = (roomId, principalId, action) => {
+		accessCalls.push([roomId, principalId, action]);
+		return {
+			id: roomId,
+			name: "Room 42",
+			ownerScope: "user:current",
+			type: "chat",
+			createdAt: "2026-05-11T00:00:00.000Z",
+			updatedAt: "2026-05-11T00:00:00.000Z",
+			metadata: {},
+		};
+	};
+
+	try {
+		const response = await handleChatCronApiRequest(options);
+		const body = await response.json();
+
+		assert.equal(response.status, 201);
+		assert.deepEqual(accessCalls, [["room-42", "user:current", "write"]]);
+		assert.deepEqual(body.job.target, { kind: "room", roomId: "room-42" });
+	} finally {
+		options.cronStore.close();
+	}
+});
