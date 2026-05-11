@@ -519,7 +519,7 @@ describe("one-node agent workflow runtime path", () => {
     }
   });
 
-  it("persists initial global workflow state across restart", async () => {
+  it("persists initial global and local workflow state across restart", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "pibo-workflows-state-test-"));
     const dbPath = join(tempRoot, "pibo-workflows.sqlite");
     const store = new SqliteWorkflowRunStore(dbPath);
@@ -529,33 +529,42 @@ describe("one-node agent workflow runtime path", () => {
         projectGoal: { schema: { type: "string" } },
       },
     };
-    (definition.nodes.answer as AgentNodeDefinition).promptTemplate = "Goal: {{global.projectGoal}}. Input: {{input}}";
+    (definition.nodes.answer as AgentNodeDefinition).promptTemplate =
+      "Goal: {{global.projectGoal}}. Local: {{local.previousDraft}}. Input: {{input}}";
 
     try {
       const result = await runOneNodeAgentWorkflow(definition, "Persist global state.", {
         ownerScope: "user:state",
         initialGlobalState: { projectGoal: "Ship workflow state" },
+        initialLocalState: { answer: { previousDraft: "Outline v1" } },
         now: () => "2026-05-11T00:15:00.000Z",
         createRunId: () => "wfr_global_state",
         createNodeAttemptId: () => "wna_global_state",
         store,
         agentExecutor: (context) => {
-          assert.equal(context.prompt, "Goal: Ship workflow state. Input: Persist global state.");
+          assert.equal(context.prompt, "Goal: Ship workflow state. Local: Outline v1. Input: Persist global state.");
           assert.deepEqual(context.run.state.global, { projectGoal: "Ship workflow state" });
+          assert.deepEqual(context.run.state.local?.answer, { previousDraft: "Outline v1" });
           return { output: "Global state persisted." };
         },
       });
 
       assert.equal(result.ok, true);
       assert.deepEqual(result.run.state.global, { projectGoal: "Ship workflow state" });
+      assert.deepEqual(result.run.state.local?.answer, { previousDraft: "Outline v1" });
+      assert.deepEqual(result.nodeAttempt.localState, { previousDraft: "Outline v1" });
+      assert.deepEqual(store.getNodeAttempt("wna_global_state")?.localState, { previousDraft: "Outline v1" });
       store.close();
 
       const reopened = new SqliteWorkflowRunStore(dbPath);
       const persisted = reopened.getRun("wfr_global_state");
+      const persistedNodeAttempt = reopened.getNodeAttempt("wna_global_state");
       reopened.close();
 
       assert.ok(persisted);
       assert.deepEqual(persisted.state.global, { projectGoal: "Ship workflow state" });
+      assert.deepEqual(persisted.state.local?.answer, { previousDraft: "Outline v1" });
+      assert.deepEqual(persistedNodeAttempt?.localState, { previousDraft: "Outline v1" });
       assert.equal(persisted.status, "completed");
     } finally {
       try {

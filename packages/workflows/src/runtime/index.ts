@@ -13,6 +13,7 @@ import type {
   NestedWorkflowNodeDefinition,
   NodeAttempt,
   NodeAttemptId,
+  NodeId,
   NodeLocalStateReader,
   PromptBuilderRef,
   PromptBuilderResult,
@@ -192,6 +193,7 @@ export type OneNodeAgentWorkflowOptions = {
   registry?: Pick<WorkflowRegistry, "promptBuilders">;
   ownerScope?: string;
   initialGlobalState?: Record<string, JsonValue>;
+  initialLocalState?: Record<NodeId, Record<string, JsonValue>>;
   now?: () => Date | string;
   createRunId?: () => WorkflowRunId;
   createNodeAttemptId?: () => NodeAttemptId;
@@ -569,6 +571,7 @@ export async function dispatchWorkflowAgentNode(
     status: "running",
     input,
     startedAt,
+    ...localStateSnapshotForNode(run, nodeId),
   };
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
@@ -692,6 +695,7 @@ export async function dispatchWorkflowAgentNode(
     nodeAttempt.status = "completed";
     nodeAttempt.output = executorResult.output;
     nodeAttempt.completedAt = completedAt;
+    Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
     nodeAttempt.metadata = {
       ...nodeAttempt.metadata,
       runtime: runtimeMetadata,
@@ -794,6 +798,7 @@ export async function dispatchWorkflowCodeNode(
     status: "running",
     input,
     startedAt,
+    ...localStateSnapshotForNode(run, nodeId),
     metadata: { handlerId: codeNode.handler },
   };
   run.current = { nodeId, status: "running" };
@@ -909,7 +914,7 @@ export async function dispatchWorkflowCodeNode(
     const completedAt = timestamp();
     nodeAttempt.status = "completed";
     nodeAttempt.output = handlerResult.output;
-    nodeAttempt.localState = run.state.local?.[nodeId];
+    Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
     nodeAttempt.completedAt = completedAt;
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
@@ -1009,6 +1014,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
     status: "running",
     input,
     startedAt,
+    ...localStateSnapshotForNode(run, nodeId),
     metadata: {
       workflowId: workflowNode.workflowId,
       ...(workflowNode.workflowVersion ? { workflowVersion: workflowNode.workflowVersion } : {}),
@@ -1169,6 +1175,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
     nodeAttempt.status = "completed";
     nodeAttempt.output = executorResult.output;
     nodeAttempt.completedAt = completedAt;
+    Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
 
@@ -1265,6 +1272,7 @@ export async function dispatchWorkflowHumanNode(
     status: "running",
     input,
     startedAt,
+    ...localStateSnapshotForNode(run, nodeId),
   };
   run.current = { nodeId, status: "running" };
   run.updatedAt = startedAt;
@@ -1320,6 +1328,7 @@ export async function dispatchWorkflowHumanNode(
   await options.store.saveWaitToken(waitToken);
 
   nodeAttempt.status = "waiting";
+  Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
   nodeAttempt.metadata = { waitTokenId: waitToken.id };
   run.status = "waiting";
   run.current = { nodeId, status: "waiting" };
@@ -1404,6 +1413,7 @@ export async function dispatchWorkflowAdapterNode(
     status: "running",
     input,
     startedAt,
+    ...localStateSnapshotForNode(run, nodeId),
     metadata: { adapterId: adapterNode.handler.id },
   };
   run.current = { nodeId, status: "running" };
@@ -1479,6 +1489,7 @@ export async function dispatchWorkflowAdapterNode(
     nodeAttempt.status = "completed";
     nodeAttempt.output = adapterResult.output;
     nodeAttempt.completedAt = completedAt;
+    Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
     nodeAttempt.metadata = { adapterId: adapterNode.handler.id };
     run.current = { nodeId, status: run.status };
     run.updatedAt = completedAt;
@@ -2019,7 +2030,7 @@ export async function runOneNodeAgentWorkflow(
     status: "running",
     current: { nodeId, status: "running" },
     input,
-    state: { global: initialGlobalState },
+    state: createInitialWorkflowRunState(initialGlobalState, options.initialLocalState),
     createdAt,
     updatedAt: createdAt,
   };
@@ -2040,6 +2051,7 @@ export async function runOneNodeAgentWorkflow(
     status: "running",
     input,
     startedAt: timestamp(),
+    ...localStateSnapshotForNode(run, nodeId),
   };
 
   await emitWorkflowRuntimeEvent(events, options.emitEvent, {
@@ -2151,6 +2163,7 @@ export async function runOneNodeAgentWorkflow(
     nodeAttempt.status = "completed";
     nodeAttempt.output = executorResult.output;
     nodeAttempt.completedAt = completedAt;
+    Object.assign(nodeAttempt, localStateSnapshotForNode(run, nodeId));
     nodeAttempt.metadata = {
       ...nodeAttempt.metadata,
       runtime: runtimeMetadata,
@@ -2194,6 +2207,41 @@ export async function runOneNodeAgentWorkflow(
       error: errorSummaryFromCaught(caught),
     });
   }
+}
+
+function createInitialWorkflowRunState(
+  global: Record<string, JsonValue>,
+  local?: Record<NodeId, Record<string, JsonValue>>,
+): WorkflowRun["state"] {
+  const localState = cloneLocalStateMap(local);
+  return localState ? { global: { ...global }, local: localState } : { global: { ...global } };
+}
+
+function localStateSnapshotForNode(run: WorkflowRun, nodeId: string): Pick<NodeAttempt, "localState"> {
+  const localState = cloneLocalStateForNode(run, nodeId);
+  return localState ? { localState } : {};
+}
+
+function cloneLocalStateForNode(run: WorkflowRun, nodeId: string): Record<string, JsonValue> | undefined {
+  const localState = run.state.local?.[nodeId];
+  return localState === undefined ? undefined : structuredClone(localState) as Record<string, JsonValue>;
+}
+
+function cloneLocalStateMap(
+  local: Record<NodeId, Record<string, JsonValue>> | undefined,
+): Record<NodeId, Record<string, JsonValue>> | undefined {
+  if (!local) {
+    return undefined;
+  }
+
+  const entries = Object.entries(local);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(
+    entries.map(([nodeId, nodeState]) => [nodeId, structuredClone(nodeState) as Record<string, JsonValue>]),
+  );
 }
 
 function createStateReader(
