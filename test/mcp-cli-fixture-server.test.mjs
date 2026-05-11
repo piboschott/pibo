@@ -174,3 +174,44 @@ test("pibo mcp call rejects invalid JSON before contacting the fixture server", 
     );
   });
 });
+
+test("pibo mcp info reports connection failures for an unreachable configured server", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pibo-mcp-unreachable-server-"));
+  try {
+    const configPath = join(cwd, "mcp_servers.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          unreachable: {
+            command: "/path/does/not/exist",
+            args: [],
+          },
+        },
+      }),
+    );
+
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "mcp", "info", "unreachable"], {
+        cwd,
+        env: {
+          ...process.env,
+          MCP_NO_DAEMON: "1",
+          MCP_TIMEOUT: "2",
+          MCP_CONFIG_PATH: configPath,
+        },
+      }),
+      (error) => {
+        assert.equal(error.code, 3);
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /SERVER_CONNECTION_FAILED/);
+        assert.match(error.stderr, /Failed to connect to server "unreachable"/);
+        assert.match(error.stderr, /spawn \/path\/does\/not\/exist ENOENT/);
+        assert.match(error.stderr, /Command not found/);
+        return true;
+      },
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
