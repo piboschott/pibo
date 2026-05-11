@@ -136,3 +136,11 @@ Vollständige Suite erst später im Flow, weil `npm test` vorher baut und zusät
 3. Das gewünschte Delete-Verhalten von `PiboDataSessionStore` explizit entscheiden und mit einem Test festhalten.
 4. Einen schmalen Router-Test für Subagent-Session-Reuse mit Parent-`chatRoomId` hinzufügen.
 5. `session-router-store` langfristig in schnellere pure Store-/Operationstests und wenige echte Runtime-Integrationstests aufteilen.
+
+## Umgesetzt am 2026-05-11 15:39 Europe/Berlin
+
+- Bereich: Gemeinsamer Store-Contract für Null-/Unset-Semantik und `activeModel`-Filter über In-Memory- und SQLite-Session-Stores.
+- Geänderte Dateien: `test/session-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1508-pibo-session-store.md`.
+- Ausgeführte Kommandos: `npm run build && node --test test/session-store.test.mjs`; `node --test test/session-store.test.mjs`.
+- Ergebnis: Grün; 7 Tests bestanden. Abgedeckt sind `parentId`/`originId`/`workspace`/`title`-Clearing, `activeModel`-Setzen/Clearing sowie `find({ activeModel })`, `find({ activeModel: null })` und `find({ parentId: null })` für beide Stores.
+- Verbleibende offene Punkte: `PiboDataSessionStore`-Contract-Matrix, Duplicate-`piSessionId`-Update-Verhalten, Delete-Vertrag, SQLite-Legacy-Schema-Migration und Router-Subagent-Session-Reuse bleiben offen.
