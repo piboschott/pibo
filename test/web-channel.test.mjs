@@ -51,6 +51,7 @@ async function startWebHostChannel(options = {}) {
 	const agentStorePath = join(storageDir, "agents.sqlite");
 	const dataStorePath = join(storageDir, "pibo-chat-v2.sqlite");
 	const dataPayloadRootDir = join(storageDir, "payloads");
+	const projectStorePath = join(storageDir, "projects.sqlite");
 	const channel = createWebHostChannel({ port: 0, announce: false, ...options.web });
 
 	await channel.start({
@@ -124,6 +125,7 @@ async function startWebHostChannel(options = {}) {
 				agentStorePath,
 				dataStorePath,
 				dataPayloadRootDir,
+				projectStorePath,
 			})];
 		},
 	});
@@ -1815,6 +1817,77 @@ test("workflow profile picker excludes archived custom agents and reports archiv
 		assert.equal(selectedPayload.selectedProfileId, undefined);
 		assert.equal(selectedPayload.diagnostics[0].code, "WorkflowGraphError.archivedAgentProfileRef");
 		assert.equal(selectedPayload.diagnostics[0].registryRef, "workflow-reviewer");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app creates configured Project workflow sessions from the workflow catalog without starting a run", async () => {
+	const { channel, baseURL, emitted, storageDir } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	try {
+		const projectResponse = await fetch(`${baseURL}/api/chat/projects`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({
+				name: "Workflow Project",
+				projectFolder: join(storageDir, "workflow-project"),
+				createFolder: true,
+			}),
+		});
+		assert.equal(projectResponse.status, 201);
+		const projectPayload = await projectResponse.json();
+
+		const pickerResponse = await fetch(`${baseURL}/api/chat/workflows/pickers/workflow-versions`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(pickerResponse.status, 200);
+		const pickerPayload = await pickerResponse.json();
+		assert.equal(pickerPayload.kind, "workflow-versions");
+		assert.ok(pickerPayload.options.some((option) => option.id === "standard-project" && option.version === "1.0.0"));
+
+		const createdResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({
+				profile: "pibo-agent",
+				workflowId: "standard-project",
+				workflowVersion: "1.0.0",
+				title: "Configured Standard Project",
+			}),
+		});
+		assert.equal(createdResponse.status, 201);
+		const createdPayload = await createdResponse.json();
+		assert.equal(createdPayload.session.title, "Configured Standard Project");
+		assert.equal(createdPayload.session.metadata.projectWorkflowId, "standard-project");
+		assert.equal(createdPayload.session.metadata.projectWorkflowVersion, "1.0.0");
+		assert.equal(createdPayload.session.metadata.workflowSessionKind, "main_workflow");
+		assert.equal(createdPayload.projectSession.workflowId, "standard-project");
+		assert.equal(createdPayload.projectSession.state, "configured");
+		assert.equal(createdPayload.projectSession.workflowRunId, undefined);
+		assert.equal(emitted.length, 0);
+
+		const legacyRejected = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ workflowId: "standard-project" }),
+		});
+		assert.equal(legacyRejected.status, 400);
 	} finally {
 		await channel.stop?.();
 	}

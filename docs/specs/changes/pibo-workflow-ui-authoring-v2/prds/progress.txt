@@ -10,6 +10,7 @@
 - Use `createWorkflowDiagnosticReport` from `@pasko70/pibo-workflows` validation exports for V2 diagnostic grouping across Workflow Library, Builder, Project session creation, run start, and runtime failure surfaces.
 - Workflow session routing metadata uses the stable Pibo Session metadata key `workflowSessionKind` with values `main_workflow`, `nested_workflow`, `agent_node`, and `subagent`; Chat sidebar nodes expose it as `PiboWebSessionNode.workflowSessionKind`.
 - Published workflow versions use `hashWorkflowDefinition` plus `SqliteWorkflowRunStore.savePublishedWorkflowVersion`; saving the same body is idempotent, while changing a published `workflowId@version` body throws to preserve immutability.
+- Project workflow session creation should use the V2 `/api/chat/projects/:projectId/workflow-sessions` route and `workflow-versions` picker; keep legacy `/projects/:projectId/sessions` limited to `simple-chat`.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -273,4 +274,31 @@
   - Saved screenshot: `/tmp/ralph-v2-workflows-tab-shell.png` inside the container.
 - **Learnings for future iterations:**
   - Completeness-contract stories may be satisfied by earlier focused PRD implementations; still rerun the required checks and update only the relevant PRD story when marking them complete.
+---
+## 2026-05-11 23:52 CEST - US-002
+- What was implemented
+  - Added an authenticated V2 workflow-version picker for Project workflow session creation.
+  - Added `/api/chat/projects/:projectId/workflow-sessions` to create a configured workflow-backed Project session without starting a workflow run.
+  - Added a Projects main-content creation panel that selects a published workflow version from the global catalog and saves a configured session.
+  - Preserved the legacy Project Session creation route as `simple-chat`-only.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `src/apps/chat-ui/src/App.tsx`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/web-channel.test.mjs'` — passed, 51/51 tests.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/projects`.
+  - Verified the Projects main content shows `Create workflow Project session`, a `Workflow version` picker with `Standard Project (standard-project@1.0.0)`, and the `Save configured session` action.
+  - Clicked the save action and confirmed the UI showed a `Workflow Runs` entry for `standard-project` in `configured` state with no run id displayed.
+  - Saved screenshot: `/tmp/ralph-v2-project-workflow-session-create.png` inside the container.
+- **Learnings for future iterations:**
+  - Project workflow creation UI should live in the main Project content area, not only in the left Project Sessions sidebar.
+  - The V2 route can create configured Project sessions before the snapshot/start stories exist, while the legacy sessions route stays compatible with V1 `simple-chat` behavior.
 ---

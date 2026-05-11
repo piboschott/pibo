@@ -165,6 +165,21 @@ export async function postProjectSession(projectId: string, input: { profile?: s
 	});
 }
 
+export type CreateProjectWorkflowSessionInput = {
+	profile?: string;
+	workflowId: string;
+	workflowVersion: string;
+	title?: string;
+};
+
+export async function postProjectWorkflowSession(projectId: string, input: CreateProjectWorkflowSessionInput): Promise<CreateSessionData> {
+	return requestJson<CreateSessionData>(`/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
 export async function patchProjectSession(piboSessionId: string, input: { title?: string | null; archived?: boolean }): Promise<{ session: PiboSession }> {
 	return requestJson<{ session: PiboSession }>(`/api/chat/project-sessions/${encodeURIComponent(piboSessionId)}`, {
 		method: "PATCH",
@@ -215,6 +230,32 @@ export async function getWorkflowProfilePicker(selectedProfileId?: string): Prom
 	if (selectedProfileId) params.set("selectedProfileId", selectedProfileId);
 	const suffix = params.size ? `?${params.toString()}` : "";
 	return requestJson<WorkflowProfilePickerResponse>(`/api/chat/workflows/pickers/profiles${suffix}`);
+}
+
+export type WorkflowVersionPickerOption = {
+	id: string;
+	version: string;
+	title: string;
+	description?: string;
+	source: "code" | "ui";
+	status: "published";
+	tags: string[];
+};
+
+export type WorkflowVersionPickerResponse = {
+	kind: "workflow-versions";
+	options: WorkflowVersionPickerOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+export async function getWorkflowVersionPicker(input: { selectedWorkflowId?: string; selectedWorkflowVersion?: string } = {}): Promise<WorkflowVersionPickerResponse> {
+	const params = new URLSearchParams();
+	if (input.selectedWorkflowId) params.set("selectedWorkflowId", input.selectedWorkflowId);
+	if (input.selectedWorkflowVersion) params.set("selectedWorkflowVersion", input.selectedWorkflowVersion);
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowVersionPickerResponse>(`/api/chat/workflows/pickers/workflow-versions${suffix}`);
 }
 
 export type CronScheduleInput =

@@ -253,6 +253,8 @@ type ChatProjectDeleteBody = {
 type ChatProjectSessionCreateBody = {
 	profile?: unknown;
 	workflowId?: unknown;
+	workflowVersion?: unknown;
+	title?: unknown;
 };
 
 type ChatProjectSessionPatchBody = {
@@ -335,6 +337,24 @@ type WorkflowProfilePickerResponse = {
 	kind: "profiles";
 	options: WorkflowProfilePickerOption[];
 	selectedProfileId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowVersionPickerOption = {
+	id: string;
+	version: string;
+	title: string;
+	description?: string;
+	source: "code" | "ui";
+	status: "published";
+	tags: string[];
+};
+
+type WorkflowVersionPickerResponse = {
+	kind: "workflow-versions";
+	options: WorkflowVersionPickerOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
 	diagnostics: WorkflowPickerDiagnostic[];
 };
 
@@ -1328,35 +1348,66 @@ function createProjectChatSession(input: {
 	project: PiboProject;
 	profile: string;
 	workflowId?: string;
+	workflowVersion?: string;
+	title?: string;
+	configuredWorkflow?: boolean;
 }): PiboSession {
-	const workflowId = normalizeProjectWorkflowId(input.workflowId);
+	const workflowSelection = resolveProjectWorkflowSelection(input.workflowId, input.workflowVersion);
 	const session = input.context.channelContext.createSession({
 		channel: CHAT_WEB_CHANNEL,
 		kind: "chat",
 		profile: input.profile,
 		ownerScope: input.webSession.ownerScope,
 		workspace: input.project.projectFolder,
+		...(input.title ? { title: input.title } : {}),
 		metadata: withWorkflowSessionKind({
 			projectId: input.project.id,
 			projectSessionKind: "main",
-			projectWorkflowId: workflowId,
+			projectWorkflowId: workflowSelection.id,
+			projectWorkflowVersion: workflowSelection.version,
 		}, "main_workflow"),
 	});
 	input.state.projectService.addProjectSession({
 		projectId: input.project.id,
 		piboSessionId: session.id,
 		kind: "main",
-		workflowId,
+		workflowId: workflowSelection.id,
 		title: session.title,
+		state: input.configuredWorkflow ? "configured" : undefined,
 	});
 	input.state.sessionQuery.upsertSession(session);
 	return session;
 }
 
+function resolveProjectWorkflowSelection(workflowIdValue: unknown, workflowVersionValue?: unknown): WorkflowVersionPickerOption {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const workflowVersion = normalizeProjectWorkflowVersion(workflowVersionValue);
+	const options = buildProjectWorkflowVersionOptions();
+	const selected = options.find((option) => (
+		option.id === workflowId && (workflowVersion === undefined || option.version === workflowVersion)
+	));
+	if (!selected) {
+		throw new PiboWebHttpError(`Unknown workflow version: ${workflowId}${workflowVersion ? `@${workflowVersion}` : ""}`, 400);
+	}
+	return selected;
+}
+
+function normalizeLegacyProjectWorkflowId(value: unknown): string {
+	const workflowId = normalizeProjectWorkflowId(value);
+	if (workflowId !== "simple-chat") throw new PiboWebHttpError("Only the simple-chat workflow is available in V1", 400);
+	return workflowId;
+}
+
 function normalizeProjectWorkflowId(value: unknown): string {
 	if (value === undefined || value === null || value === "") return "simple-chat";
-	if (value !== "simple-chat") throw new PiboWebHttpError("Only the simple-chat workflow is available in V1", 400);
-	return value;
+	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Workflow id must be a string", 400);
+	return value.trim();
+}
+
+function normalizeProjectWorkflowVersion(value: unknown): string | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Workflow version must be a string", 400);
+	return value.trim();
 }
 
 function normalizeProjectPath(value: unknown): string {
@@ -1789,6 +1840,55 @@ function buildWorkflowProfilePicker(
 		...(activeSelection ? { selectedProfileId: activeSelection } : {}),
 		diagnostics,
 	};
+}
+
+function buildWorkflowVersionPicker(selectedWorkflowId?: string, selectedWorkflowVersion?: string): WorkflowVersionPickerResponse {
+	const options = buildProjectWorkflowVersionOptions();
+	const normalizedWorkflowId = selectedWorkflowId?.trim() || undefined;
+	const normalizedWorkflowVersion = selectedWorkflowVersion?.trim() || undefined;
+	const selected = normalizedWorkflowId
+		? options.find((option) => option.id === normalizedWorkflowId && (!normalizedWorkflowVersion || option.version === normalizedWorkflowVersion))
+		: options[0];
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedWorkflowId && !selected) {
+		diagnostics.push({
+			code: "WorkflowCatalogError.unknownWorkflowVersion",
+			message: `Workflow version '${normalizedWorkflowId}${normalizedWorkflowVersion ? `@${normalizedWorkflowVersion}` : ""}' is not available for Project session creation.`,
+			severity: "error",
+			path: "$.workflow",
+			registryRef: normalizedWorkflowVersion ? `${normalizedWorkflowId}@${normalizedWorkflowVersion}` : normalizedWorkflowId,
+			hint: "Select a published workflow version from the global workflow catalog.",
+		});
+	}
+	return {
+		kind: "workflow-versions",
+		options,
+		...(selected ? { selectedWorkflowId: selected.id, selectedWorkflowVersion: selected.version } : {}),
+		diagnostics,
+	};
+}
+
+function buildProjectWorkflowVersionOptions(): WorkflowVersionPickerOption[] {
+	return [
+		{
+			id: "standard-project",
+			version: "1.0.0",
+			title: "Standard Project",
+			description: "Configured workflow-backed Project session for feature, bugfix, and review work. Creation saves the configuration without starting a run.",
+			source: "code",
+			status: "published",
+			tags: ["project", "workflow"],
+		},
+		{
+			id: "simple-chat",
+			version: "1.0.0",
+			title: "Simple Chat",
+			description: "Baseline Project chat workflow that preserves the existing one-session chat behavior.",
+			source: "code",
+			status: "published",
+			tags: ["project", "chat"],
+		},
+	];
 }
 
 function agentsSelectingPiPackage(state: ChatWebAppState, packageId: string): CustomAgentDefinition[] {
@@ -3643,13 +3743,35 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 			}
 
+			if (projectResource && projectResource.child === "workflow-sessions" && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectSessionCreateBody>(request);
+				const project = state.projectService.requireProject(projectResource.projectId);
+				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
+				const workflowSelection = resolveProjectWorkflowSelection(body.workflowId, body.workflowVersion);
+				const session = createProjectChatSession({
+					state,
+					context,
+					webSession,
+					project,
+					profile,
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					title: normalizeSessionTitle(body.title) ?? undefined,
+					configuredWorkflow: true,
+				});
+				return responseJson({ session, projectSession: state.projectService.getProjectSession(session.id), workflow: workflowSelection }, { status: 201 });
+			}
+
 			if (projectResource && projectResource.child === "sessions" && request.method === "POST") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<ChatProjectSessionCreateBody>(request);
 				const project = state.projectService.requireProject(projectResource.projectId);
 				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
-				const session = createProjectChatSession({ state, context, webSession, project, profile, workflowId: normalizeProjectWorkflowId(body.workflowId) });
+				const workflowId = normalizeLegacyProjectWorkflowId(body.workflowId);
+				const session = createProjectChatSession({ state, context, webSession, project, profile, workflowId });
 				return responseJson({ session, projectSession: state.projectService.getProjectSession(session.id) }, { status: 201 });
 			}
 
@@ -3715,15 +3837,21 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			const pickerKind = workflowPickerKind(url.pathname);
 			if (pickerKind && request.method === "GET") {
 				const webSession = await requireSession(request, context);
-				if (pickerKind !== "profiles") {
-					throw new PiboWebHttpError(`Workflow picker '${pickerKind}' is not implemented`, 501);
+				if (pickerKind === "profiles") {
+					return responseJson(buildWorkflowProfilePicker(
+						state,
+						context,
+						webSession,
+						url.searchParams.get("selectedProfileId") ?? undefined,
+					));
 				}
-				return responseJson(buildWorkflowProfilePicker(
-					state,
-					context,
-					webSession,
-					url.searchParams.get("selectedProfileId") ?? undefined,
-				));
+				if (pickerKind === "workflow-versions") {
+					return responseJson(buildWorkflowVersionPicker(
+						url.searchParams.get("selectedWorkflowId") ?? undefined,
+						url.searchParams.get("selectedWorkflowVersion") ?? undefined,
+					));
+				}
+				throw new PiboWebHttpError(`Workflow picker '${pickerKind}' is not implemented`, 501);
 			}
 
 			if ((url.pathname === `${CHAT_WEB_API_PREFIX}/agent-catalog` || url.pathname === `${CHAT_WEB_API_PREFIX}/catalog`) && request.method === "GET") {
