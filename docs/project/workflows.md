@@ -33,7 +33,7 @@ Primary authoring helpers:
 
 Definitions should stay serializable. TypeScript closures belong in the Workflow Registry, not in persisted workflow IR.
 
-For starter TypeScript examples, see `docs/project/workflow-definition-examples.md`. For explicit interface adapter examples, see `docs/project/workflow-interface-adapters.md`.
+For starter TypeScript examples, see `docs/project/workflow-definition-examples.md`. For explicit interface adapter examples, see `docs/project/workflow-interface-adapters.md`. For projection semantics, see `docs/project/workflow-xstate-projection.md`.
 
 ## Runtime nodes
 
@@ -91,6 +91,8 @@ XState is a deterministic projection and visualization layer, not durable execut
 
 The projection maps workflow nodes, edges, guards, waits, retry/failure states, final states, actors, actions, delays, and node statuses into a compact UI model. Consumers should use `projectWorkflowToXStateProjection(...)` and `createWorkflowXStateUiModel(...)` rather than reading private runtime internals.
 
+See `docs/project/workflow-xstate-projection.md` for the detailed projection semantics, stable id scheme, snapshot-kind rules, UI model behavior, and consumer restrictions.
+
 ## Security and privacy rules
 
 Workflow execution must not bypass existing Pibo auth, owner scope, project/session routing, tool, skill, context, profile, or compute-worker policies.
@@ -107,4 +109,4 @@ Additional V1 rules:
 
 Keep current operator/developer docs under `docs/project/`. Keep implementation plans, validation reports, and historical specs under `docs/plans/`, `docs/reports/`, and `docs/specs/` respectively.
 
-Planned follow-up documentation should cover XState projection details and registry/plugin registration patterns.
+Planned follow-up documentation should cover registry/plugin registration patterns.

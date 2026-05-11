@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- XState workflow docs should treat the kernel snapshot/workflow store as authoritative; `xstate` and `ui` snapshots are optional reconstructable caches, and normal UI should consume `createWorkflowXStateUiModel(...)`.
 - Minimal workflow definition docs should use the public `@pasko70/pibo-workflows` helpers and keep executable behavior behind Workflow Registry refs so examples match serializable IR rules.
 - Canonical current workflow capability docs live under `docs/project/` (for example `docs/project/workflows.md`); keep historical PRDs/design docs under `docs/specs/changes/pibo-workflow-system-v1/`.
 - Workflow/XState V1 UI is inspection-only: surface creation/visual editing/raw XState editing as explicitly deferred, and keep workflow definitions TypeScript-owned through the Workflow Registry.
@@ -956,4 +957,15 @@
   - Adapter documentation should distinguish edge-local `edgeAdapter(adapterRef(...), outputPort)` mappings from visible `adapter` nodes that produce node attempts and are easier to inspect.
   - Workflow docs should keep executable adapter handlers behind Workflow Registry registration examples instead of embedding closures in workflow definitions.
   - Current adapter runtime behavior is well covered by `runtime-edge-transfer.test.ts` for edge adapters and `runtime-mixed-node-workflow.test.ts` for visible adapter nodes.
+---
+
+## 2026-05-11 03:51 UTC - 13.4
+- Documented XState-backed projection semantics, including projection identity/versioning, kernel-authoritative snapshot rules, stable id mapping, node/edge/guard/action/delay projection behavior, human waits, retry/failure/terminal semantics, UI model behavior, inspection events, and consumer restrictions.
+- Linked the new canonical projection doc from the workflow overview and marked task `13.4` complete.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test`.
+- Files changed: `docs/project/workflow-xstate-projection.md`, `docs/project/workflows.md`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- **Learnings for future iterations:**
+  - XState projection docs should describe public helpers and stable ids from `packages/workflows/src/xstate/index.ts`, not raw XState internals.
+  - The UI model derives active states from `WorkflowMachineSnapshot` status/current cursor, so docs should point consumers to `createWorkflowXStateUiModel(...)` rather than exposing projection maps directly.
+  - The projection advertises `kernel`, `xstate`, and `ui` snapshot kinds, but only `kernel` is durable truth; avoid documenting XState snapshots as a recovery dependency.
 ---
