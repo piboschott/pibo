@@ -84,6 +84,21 @@ test("custom agent store archives and deletes agents", () => {
 	store.close();
 });
 
+test("custom agent names are globally unique across owners", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	store.create({ ownerScope: "user:first", displayName: "shared-agent" });
+
+	assert.throws(
+		() => store.create({ ownerScope: "user:second", displayName: "shared-agent" }),
+		/Agent name "shared-agent" already exists/,
+	);
+	assert.deepEqual(store.list("user:first").map((agent) => agent.profileName), ["shared-agent"]);
+	assert.deepEqual(store.list("user:second"), []);
+
+	store.close();
+});
+
 test("custom agent store persists automatic context file setting", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const store = new CustomAgentStore(path);
