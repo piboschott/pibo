@@ -99,6 +99,21 @@ test("disposing an owner cancels running runs and resolves waiters", async () =>
 	assert.equal(registry.list("parent", { includeConsumed: true }).length, 1);
 });
 
+test("cancel wins over a late complete", () => {
+	const registry = new PiboRunRegistry();
+	const run = startRun(registry);
+
+	const cancelled = registry.cancel("parent", run.runId);
+	assert.equal(cancelled.status, "cancelled");
+	assert.equal(cancelled.consumed, true);
+
+	assert.equal(registry.complete(run.runId, { text: "late result" }), undefined);
+	const status = registry.status("parent", run.runId);
+	assert.equal(status.status, "cancelled");
+	assert.equal(status.consumed, true);
+	assert.equal(registry.read("parent", run.runId).result, undefined);
+});
+
 test("registry prunes detached terminal and consumed tracked runs only", () => {
 	const registry = new PiboRunRegistry({
 		consumedTerminalTtlMs: 0,

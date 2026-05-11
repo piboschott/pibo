@@ -122,6 +122,14 @@ npm test
 3. Anschließend einen Cancel-vs-late-complete-Test in `test/runs.test.mjs` hinzufügen.
 4. Die Tool-Oberflächen (`pibo_run_read/wait/ack`) separat testen, aber klein halten; keine Gateway- oder Runtime-Prozesse dafür starten.
 
+## Umgesetzt am 2026-05-11 10:17 Europe/Berlin
+
+- Bereich: Run-Registry-Idempotenz für `cancel` gegen spätes `complete`.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/runs.test.mjs` (zunächst fehlgeschlagen, weil `dist/` fehlte), `npm run build`, `node --test test/runs.test.mjs`.
+- Ergebnis: Nach gezieltem Build grün; 12 Tests bestanden.
+- Verbleibende offene Punkte: Persistenz-/Recovery-Tests für `PiboRunRegistry({ store })` und `recoverInterruptedRuns()` bleiben offen.
+
 ## Fazit
 
 Das Run-Control-Testsubset ist aktuell eines der besseren granularen Subsets im Projekt: schnell, fokussiert und nah am Verhalten. Das größte Risiko liegt nicht in den In-Memory-Run-Zuständen, sondern an der Grenze zur Persistenz und Recovery. Genau dort sollten die nächsten Tests ergänzt werden, bevor größere Integrations- oder Deployment-Suites erweitert werden.
