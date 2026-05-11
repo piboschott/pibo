@@ -61,6 +61,7 @@ import { PiboToolsView } from "./context/PiboToolsView";
 import { McpToolsView } from "./context/McpToolsView";
 import { CronArea } from "./CronArea";
 import { RalphArea } from "./RalphArea";
+import { WorkflowsArea } from "./WorkflowsArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
 import {
@@ -77,13 +78,14 @@ import {
 	traceSummaryQueriesForSession,
 } from "./cache";
 
-type Area = "sessions" | "projects" | "cron" | "ralph" | "agents" | "context" | "settings";
+type Area = "sessions" | "projects" | "workflows" | "cron" | "ralph" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
 type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
 	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
+	| { area: "workflows" }
 	| { area: "agents" }
 	| { area: "cron" }
 	| { area: "ralph" }
@@ -449,6 +451,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 					return;
 				}
 				void navigate({ to: "/projects", search: sessionViewSearch, replace });
+				return;
+			}
+			if (target.area === "workflows") {
+				void navigate({ to: "/workflows", replace });
 				return;
 			}
 			if (target.area === "agents") {
@@ -1396,7 +1402,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
 					<nav className="flex gap-1 flex-wrap">
-					{(["sessions", "projects", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
+					{(["sessions", "projects", "workflows", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
 							type="button"
@@ -1435,7 +1441,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 			<div
 				className={`min-h-0 ${
-					(area === "agents" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
+					(area === "agents" || area === "workflows" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
 						(area === "sessions" || area === "projects") && showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-1"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-1"
@@ -1459,6 +1465,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onAgentsChanged={() => void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { selectSession: false })}
 						creatingSession={creatingSession || selectedRoomArchived}
 					/>
+				) : area === "workflows" ? (
+					<WorkflowsArea />
 				) : area === "projects" ? (
 					<ProjectsArea
 						baseBootstrap={bootstrap}

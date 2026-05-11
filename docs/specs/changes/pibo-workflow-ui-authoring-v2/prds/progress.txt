@@ -1,0 +1,38 @@
+## Codebase Patterns
+- Chat Web top-level product tabs need coordinated updates in `src/apps/chat-ui/src/App.tsx` for `ChatAppRoute`, navigation, and rendering, plus `src/apps/chat-ui/src/main.tsx` for URL parsing and the TanStack route tree.
+- In the `pibo-dev-WorkflowsV2` browser worker, pass `--fresh-profile` to every `browser-use` command when the default `PIBo` Chrome profile is already locked by another browser process.
+
+## 2026-05-11 22:37 CEST - US-001
+- What was implemented
+  - Added the authenticated Chat Web Workflows main-nav tab and `/apps/chat/workflows` route.
+  - Added a Workflows product surface with Workflow Library and Workflow Builder entry/empty-state panels.
+- Files changed
+  - `src/apps/chat-ui/src/App.tsx`
+  - `src/apps/chat-ui/src/main.tsx`
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run chat-ui:build'` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows`.
+  - Verified the main nav contains `workflows`, the Workflows nav item is active, and the page contains `Workflow Library` and `Workflow Builder`.
+  - Saved screenshot: `/tmp/ralph-v2-workflows-surface.png` inside the container.
+- **Learnings for future iterations:**
+  - `pkill -f "runWebGatewayServer"` can leave a stale gateway process or kill the wrapper shell; check node PIDs and kill the stale process explicitly if port `4789` remains in use.
+  - Existing browser targets may keep the persistent `PIBo` Chrome profile locked; `browser-use --fresh-profile --session ralph-v2 ...` avoided the lock for this verification.
+---
+## 2026-05-11 22:39 CEST - US-001 validation addendum
+- What was implemented
+  - No code changes in this addendum; recorded the full regression test result after the initial progress entry.
+- Files changed
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm test'` — passed, 310/310 tests.
+- Browser verification, if UI changed
+  - Browser verification remains as recorded in the US-001 entry above.
+- **Learnings for future iterations:**
+  - Full `npm test` includes `npm run build`, Chat UI build, Context Files UI build, and the Node test suite.
+---
