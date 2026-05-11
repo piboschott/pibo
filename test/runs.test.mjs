@@ -3,6 +3,7 @@ import test from "node:test";
 import { PiboRunRegistry } from "../dist/runs/registry.js";
 import { createRunToolDefinitions } from "../dist/runs/tools.js";
 import { PiboSessionRouter } from "../dist/core/session-router.js";
+import { PiboReliabilityStore } from "../dist/reliability/store.js";
 
 function startRun(registry, options = {}) {
 	return registry.startToolRun({
@@ -112,6 +113,34 @@ test("cancel wins over a late complete", () => {
 	assert.equal(status.status, "cancelled");
 	assert.equal(status.consumed, true);
 	assert.equal(registry.read("parent", run.runId).result, undefined);
+});
+
+test("registry restores consumed terminal runs from the reliability store", () => {
+	const store = new PiboReliabilityStore(":memory:");
+	try {
+		const registry = new PiboRunRegistry({ store });
+		const run = startRun(registry);
+
+		assert.equal(registry.createNotification("parent").running[0].runId, run.runId);
+		registry.complete(run.runId, { text: "stored result", details: { ok: true } });
+		assert.equal(registry.createNotification("parent").completed[0].runId, run.runId);
+
+		const consumed = registry.read("parent", run.runId);
+		assert.equal(consumed.consumed, true);
+		assert.deepEqual(consumed.result, { text: "stored result", details: { ok: true } });
+
+		const restored = new PiboRunRegistry({ store });
+		assert.deepEqual(restored.list("parent"), []);
+
+		const [snapshot] = restored.list("parent", { includeConsumed: true });
+		assert.equal(snapshot.runId, run.runId);
+		assert.equal(snapshot.status, "completed");
+		assert.equal(snapshot.consumed, true);
+		assert.equal(restored.hasPendingNotification("parent"), false);
+		assert.deepEqual(restored.read("parent", run.runId).result, { text: "stored result", details: { ok: true } });
+	} finally {
+		store.close();
+	}
 });
 
 test("registry prunes detached terminal and consumed tracked runs only", () => {

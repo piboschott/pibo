@@ -146,6 +146,14 @@ npm test
 - Ergebnis: Grün; 8 Tests bestanden.
 - Verbleibende offene Punkte: Store-gebundener Registry-Roundtrip und Tool-Oberflächen-Tests bleiben offen.
 
+## Umgesetzt am 2026-05-11 12:19 Europe/Berlin
+
+- Bereich: Store-gebundener Registry-Roundtrip für konsumierte terminale Runs.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/runs.test.mjs`.
+- Ergebnis: Grün; 13 Tests bestanden. Abgedeckt ist, dass `PiboRunRegistry({ store })` einen completed+read Run inklusive `consumed: true`, Resultat und unterdrückter Notification wiederherstellt.
+- Verbleibende offene Punkte: Tool-Oberflächen-Tests für `pibo_run_read`/`wait`/`ack` bleiben offen.
+
 ## Fazit
 
 Das Run-Control-Testsubset ist aktuell eines der besseren granularen Subsets im Projekt: schnell, fokussiert und nah am Verhalten. Das größte Risiko liegt nicht in den In-Memory-Run-Zuständen, sondern an der Grenze zur Persistenz und Recovery. Genau dort sollten die nächsten Tests ergänzt werden, bevor größere Integrations- oder Deployment-Suites erweitert werden.
