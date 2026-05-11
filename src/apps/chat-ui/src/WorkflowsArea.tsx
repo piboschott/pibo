@@ -6,6 +6,7 @@ import {
 	getWorkflowHandlerPicker,
 	getWorkflowProfilePicker,
 	postWorkflowDuplicateDraft,
+	postWorkflowNextDraft,
 	type WorkflowDraftRecord,
 	type WorkflowHandlerPickerOption,
 	type WorkflowHandlerPickerResponse,
@@ -15,18 +16,33 @@ import {
 
 const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
 const STARTER_DRAFT_ID = "v2-starter-draft";
-const PUBLISHED_WORKFLOW_ROWS = [
+const PUBLISHED_WORKFLOW_ROWS: Array<{
+	id: string;
+	version: string;
+	title: string;
+	description: string;
+	source: "code" | "ui";
+}> = [
 	{
 		id: "standard-project",
 		version: "1.0.0",
 		title: "Standard Project",
 		description: "Code-registered workflow available for duplicate-to-draft authoring.",
+		source: "code",
 	},
 	{
 		id: "simple-chat",
 		version: "1.0.0",
 		title: "Simple Chat",
 		description: "Baseline chat workflow available for draft loading checks.",
+		source: "code",
+	},
+	{
+		id: "ui-review-workflow",
+		version: "2.0.0",
+		title: "UI Review Workflow",
+		description: "UI-authored published workflow fixture. Editing creates the active next-version draft instead of mutating this version.",
+		source: "ui",
 	},
 ];
 
@@ -74,7 +90,9 @@ export function WorkflowsArea({ draftId }: { draftId?: string }) {
 
 function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 	const [duplicatingKey, setDuplicatingKey] = useState<string | undefined>();
+	const [editingKey, setEditingKey] = useState<string | undefined>();
 	const [errorMessage, setErrorMessage] = useState<string | undefined>();
+	const busy = Boolean(duplicatingKey || editingKey);
 
 	const duplicateWorkflow = async (workflowId: string, version: string) => {
 		const key = `${workflowId}@${version}`;
@@ -86,6 +104,19 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 		} catch (error) {
 			setErrorMessage(error instanceof Error ? error.message : "Failed to duplicate workflow into a draft");
 			setDuplicatingKey(undefined);
+		}
+	};
+
+	const editPublishedWorkflow = async (workflowId: string, version: string) => {
+		const key = `${workflowId}@${version}`;
+		setEditingKey(key);
+		setErrorMessage(undefined);
+		try {
+			const result = await postWorkflowNextDraft(workflowId, { version });
+			openBuilderPath(result.builderPath);
+		} catch (error) {
+			setErrorMessage(error instanceof Error ? error.message : "Failed to create next-version draft");
+			setEditingKey(undefined);
 		}
 	};
 
@@ -118,19 +149,41 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 						<div key={key} className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-4">
 							<div className="flex items-start justify-between gap-3">
 								<div className="min-w-0">
-									<div className="font-semibold text-slate-100">{workflow.title}</div>
+									<div className="flex flex-wrap items-center gap-2">
+										<div className="font-semibold text-slate-100">{workflow.title}</div>
+										<WorkflowPill label={`${workflow.source} source`} />
+										<WorkflowPill label="published" />
+									</div>
 									<div className="mt-1 font-mono text-[11px] text-slate-500">{workflow.id}@{workflow.version}</div>
 									<p className="mt-2 text-xs leading-5 text-slate-500">{workflow.description}</p>
+									{workflow.source === "ui" ? (
+										<p className="mt-2 text-[11px] leading-5 text-emerald-300">
+											Edit creates or reuses the active next-version draft. Published {workflow.version} remains immutable.
+										</p>
+									) : null}
 								</div>
-								<button
-									type="button"
-									className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-									onClick={() => void duplicateWorkflow(workflow.id, workflow.version)}
-									disabled={Boolean(duplicatingKey)}
-								>
-									{duplicatingKey === key ? <Loader2 size={13} className="animate-spin" /> : <CopyPlus size={13} />}
-									Duplicate to draft
-								</button>
+								<div className="flex shrink-0 flex-col gap-2">
+									{workflow.source === "ui" ? (
+										<button
+											type="button"
+											className="inline-flex items-center justify-center gap-1 rounded-sm border border-[#11a4d4]/50 px-3 py-1.5 text-xs font-semibold text-[#8bdcf4] transition hover:border-[#11a4d4] hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+											onClick={() => void editPublishedWorkflow(workflow.id, workflow.version)}
+											disabled={busy}
+										>
+											{editingKey === key ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
+											Edit published
+										</button>
+									) : null}
+									<button
+										type="button"
+										className="inline-flex items-center justify-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+										onClick={() => void duplicateWorkflow(workflow.id, workflow.version)}
+										disabled={busy}
+									>
+										{duplicatingKey === key ? <Loader2 size={13} className="animate-spin" /> : <CopyPlus size={13} />}
+										Duplicate to draft
+									</button>
+								</div>
 							</div>
 						</div>
 					);
@@ -228,6 +281,7 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 				<WorkflowFact label="Draft id" value={draft.draftId} />
 				<WorkflowFact label="Workflow id" value={draft.workflowId} />
 				<WorkflowFact label="Base workflow" value={draft.baseWorkflowId && draft.baseWorkflowVersion ? `${draft.baseWorkflowId}@${draft.baseWorkflowVersion}` : "new UI draft"} />
+				<WorkflowFact label="Next version path" value={draft.targetWorkflowVersion ?? "not assigned yet"} />
 				<WorkflowFact label="Version intent" value={draft.versionIntent} />
 			</div>
 

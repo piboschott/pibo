@@ -1927,6 +1927,72 @@ test("workflow builder draft loader opens starter and duplicated UI draft wrappe
 	}
 });
 
+test("workflow published edit creates or reuses one next-version draft", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	try {
+		const createResponse = await fetch(`${baseURL}/api/chat/workflows/ui-review-workflow/drafts`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ version: "2.0.0" }),
+		});
+		assert.equal(createResponse.status, 201);
+		const createPayload = await createResponse.json();
+		assert.equal(createPayload.reused, false);
+		assert.equal(createPayload.draft.workflowId, "ui-review-workflow");
+		assert.equal(createPayload.draft.baseWorkflowId, "ui-review-workflow");
+		assert.equal(createPayload.draft.baseWorkflowVersion, "2.0.0");
+		assert.equal(createPayload.draft.targetWorkflowVersion, "2.0.1");
+		assert.equal(createPayload.draft.definition.id, "ui-review-workflow");
+		assert.equal(createPayload.draft.definition.version, "2.0.1");
+		assert.equal(createPayload.draft.diagnostics[0].code, "WorkflowBuilderInfo.nextVersionDraft");
+		assert.match(createPayload.builderPath, /^\/apps\/chat\/workflows\/drafts\/draft_ui-review-workflow_2-0-0_next_/);
+
+		const reuseResponse = await fetch(`${baseURL}/api/chat/workflows/ui-review-workflow/drafts`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ version: "2.0.0" }),
+		});
+		assert.equal(reuseResponse.status, 200);
+		const reusePayload = await reuseResponse.json();
+		assert.equal(reusePayload.reused, true);
+		assert.equal(reusePayload.draft.draftId, createPayload.draft.draftId);
+		assert.equal(reusePayload.draft.targetWorkflowVersion, "2.0.1");
+
+		const loadedResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(createPayload.draft.draftId)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(loadedResponse.status, 200);
+		const loadedPayload = await loadedResponse.json();
+		assert.equal(loadedPayload.draft.draftId, createPayload.draft.draftId);
+		assert.equal(loadedPayload.draft.definition.xstate, undefined);
+
+		const codeEditResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/drafts`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(codeEditResponse.status, 409);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app creates configured Project workflow sessions from the workflow catalog without starting a run", async () => {
 	const { channel, baseURL, emitted, storageDir } = await startWebHostChannel({
 		auth: createFakeAuthService(),

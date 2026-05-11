@@ -301,6 +301,7 @@ export type WorkflowDraftRecord = {
 	baseWorkflowId?: string;
 	baseWorkflowVersion?: string;
 	baseDefinitionHash?: string;
+	targetWorkflowVersion?: string;
 	versionIntent: "patch" | "minor" | "major";
 	definition: WorkflowDraftDefinition;
 	diagnostics: WorkflowDraftDiagnostic[];
@@ -324,6 +325,19 @@ export type WorkflowDuplicateDraftResponse = WorkflowDraftResponse & {
 
 export async function postWorkflowDuplicateDraft(workflowId: string, input: { version?: string } = {}): Promise<WorkflowDuplicateDraftResponse> {
 	return requestJson<WorkflowDuplicateDraftResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}/duplicate`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
+export type WorkflowNextDraftResponse = WorkflowDraftResponse & {
+	builderPath: string;
+	reused: boolean;
+};
+
+export async function postWorkflowNextDraft(workflowId: string, input: { version?: string } = {}): Promise<WorkflowNextDraftResponse> {
+	return requestJson<WorkflowNextDraftResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}/drafts`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(input),
