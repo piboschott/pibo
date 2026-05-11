@@ -173,6 +173,14 @@ npm test
 - Ergebnis: Vorher reproduziert mit `unknown option '--help'` und Exit-Code 1; nach gezielter Help-Option für den `tui:routed`-Subcommand ist der neue CLI-Discovery-Test grün.
 - Verbleibende offene Punkte: Extension-Fehlerpfade, `execution_result`-Rendering, `session_error`-Cleanup und Client-Eventfilter/Close-Idempotenz bleiben offen.
 
+## Umgesetzt am 2026-05-11 14:08 Europe/Berlin
+
+- Bereich: Extension-Fehlerpfad-Subset für abgelehnte `sendMessage`- und `sendExecution`-Requests.
+- Geänderte Dateien: `test/local-routed-tui.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1549-local-routed-tui.md`.
+- Ausgeführte Kommandos: `node --test test/local-routed-tui.test.mjs` (zunächst wegen fehlender `node_modules/@mariozechner/pi-coding-agent`-Installation fehlgeschlagen), `npm install`, danach erneut `node --test test/local-routed-tui.test.mjs`.
+- Ergebnis: 9/9 Local-Routed-TUI-Tests bestanden; neue Abdeckung stellt sicher, dass fehlgeschlagene geroutete Nachrichten und Slash-Commands eine sichtbare Error-Message erzeugen und der Input weiter als `handled` gilt.
+- Verbleibende offene Punkte: `execution_result`-Rendering, `session_error`-Cleanup, Client-Eventfilter/Close-Idempotenz und Source-vs-Dist-Entwicklungs-Subset bleiben offen.
+
 ## Gesamtbewertung
 
 Der Local-Routed-TUI-Bereich hat bereits eine starke, schnelle und fachlich gut geschnittene Unit-Suite. Die größten Verbesserungen liegen nicht in breiteren Tests, sondern in wenigen zusätzlichen Randfalltests und in einer klareren Trennung zwischen `dist`-basiertem Release-Test und schnellem Source-nahen Entwicklungs-Subset. Der konkrete Fund zu `tui:routed --help` ist ein kleines, aber wichtiges CLI-Discovery-Risiko, weil die Projektregel Agenten ausdrücklich zur schrittweisen Hilfe-Navigation anleitet.

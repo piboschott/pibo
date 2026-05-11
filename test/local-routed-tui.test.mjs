@@ -213,6 +213,43 @@ test("local routed TUI extension routes input through the local client", async (
 	assert.equal(client.closeCount, 1);
 });
 
+test("local routed TUI reports rejected routed requests and keeps input handled", async () => {
+	const client = createFakeClient();
+	const statuses = new Map();
+	const fake = createFakeExtensionApi();
+	const ctx = createFakeExtensionContext(statuses);
+
+	client.sendMessage = (text) => {
+		client.sentMessages.push(text);
+		return Promise.reject(new Error("message transport down"));
+	};
+	client.sendExecution = (action, params) => {
+		client.sentExecutions.push({ action, params });
+		return Promise.reject(new Error("execution transport down"));
+	};
+
+	createLocalRoutedTuiExtension(client)(fake.api);
+	await fake.handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+
+	const messageResult = await fake.handlers.get("input")(
+		{ type: "input", text: "Bitte sende trotz Fehler", source: "interactive" },
+		ctx,
+	);
+	assert.deepEqual(messageResult, { action: "handled" });
+	assert.deepEqual(client.sentMessages, ["Bitte sende trotz Fehler"]);
+	assert.match(fake.messages.at(-1).content, /Local routed request failed: message transport down/);
+	assert.equal(fake.messages.at(-1).details.role, "error");
+
+	const commandResult = await fake.handlers.get("input")(
+		{ type: "input", text: "/status", source: "interactive" },
+		ctx,
+	);
+	assert.deepEqual(commandResult, { action: "handled" });
+	assert.deepEqual(client.sentExecutions, [{ action: "status", params: undefined }]);
+	assert.match(fake.messages.at(-1).content, /Local routed request failed: execution transport down/);
+	assert.equal(fake.messages.at(-1).details.role, "error");
+});
+
 test("local routed TUI streams assistant deltas into a live widget", async () => {
 	const client = createFakeClient();
 	const statuses = new Map();
