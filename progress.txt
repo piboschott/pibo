@@ -656,3 +656,13 @@
   - Code node handlers only receive node-scoped local state through `ctx.local`; foreign node local state can exist in `run.state.local` without being visible to the downstream handler.
   - Bounded review/fix loop coverage can combine registry-backed validation, guard handler evaluation, back-edge transfer, and retry policy helpers until the orchestration kernel automates loop execution.
 ---
+
+## 2026-05-11 01:34 UTC - 10.1
+- Added `xstate` as a runtime dependency of the standalone workflow package and committed the package-local lockfile so future XState projection work can install reproducibly.
+- Marked task `10.1` complete in the workflow-system task list because the referenced JSON PRDs are absent and progress is tracked in `tasks.md`.
+- Files changed: `packages/workflows/package.json`, `packages/workflows/package-lock.json`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; `npm run typecheck`; container `/workspace` `npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test && npm run typecheck`.
+- **Learnings for future iterations:**
+  - The workflows package is still standalone rather than a root npm workspace, so package-specific runtime dependencies belong in `packages/workflows/package.json` with a package-local `package-lock.json`.
+  - Adding XState for story 10.1 should not introduce projection code yet; projection shape/state mapping belongs to the following 10.2+ stories.
+---

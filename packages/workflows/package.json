@@ -17,5 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "xstate": "^5.31.1"
+  }
 }
