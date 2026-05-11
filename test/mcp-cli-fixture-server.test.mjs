@@ -141,3 +141,19 @@ test("pibo mcp can discover and call a stdio fixture server", async () => {
     assert.equal(call.stdout.trim(), "echo: hi");
   });
 });
+
+test("pibo mcp call reports available tools when the fixture rejects an unknown tool", async () => {
+  await withFixtureConfig(async ({ cwd, env }) => {
+    await assert.rejects(
+      execFileAsync("node", [cliPath, "mcp", "call", "fixture", "missing", "{}"], { cwd, env }),
+      (error) => {
+        assert.equal(error.code, 2);
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /TOOL_NOT_FOUND/);
+        assert.match(error.stderr, /Tool "missing" not found in server "fixture"/);
+        assert.match(error.stderr, /Available tools: echo, nested\/read/);
+        return true;
+      },
+    );
+  });
+});
