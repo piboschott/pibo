@@ -319,6 +319,48 @@ test("sendGatewayMessageAndWaitForReply resolves only the correlated assistant r
 	}
 });
 
+test("sendGatewayMessageAndWaitForReply handles response and reply in one TCP chunk", async () => {
+	const gateway = await withMockGateway((frame, socket) => {
+		socket.write(
+			`${JSON.stringify({
+				type: "res",
+				id: frame.id,
+				ok: true,
+				payload: {
+					type: "message_queued",
+					piboSessionId: frame.event.piboSessionId,
+					eventId: frame.event.id,
+					queuedMessages: 1,
+					text: frame.event.text,
+					source: frame.event.source,
+				},
+			})}\n${JSON.stringify({
+				type: "event",
+				event: "router",
+				payload: {
+					type: "assistant_message",
+					piboSessionId: frame.event.piboSessionId,
+					eventId: frame.event.id,
+					text: "same chunk reply",
+				},
+			})}\n`,
+		);
+	});
+
+	try {
+		const result = await sendGatewayMessageAndWaitForReply(
+			{ type: "message", piboSessionId: "receiver", text: "hello", source: "actor" },
+			{ port: gateway.port },
+		);
+
+		assert.equal(result.response.ok, true);
+		assert.equal(result.reply.text, "same chunk reply");
+		assert.equal(result.reply.eventId, gateway.receivedFrames[0].event.id);
+	} finally {
+		await gateway.close();
+	}
+});
+
 test("sendGatewayMessageAndWaitForReply tolerates reply before response", async () => {
 	const gateway = await withMockGateway((frame, socket) => {
 		socket.write(

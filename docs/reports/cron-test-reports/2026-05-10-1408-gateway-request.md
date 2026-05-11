@@ -170,6 +170,14 @@ Der volle `npm test` bleibt sinnvoll für spätere Integrations-/Release-Phasen,
 - Ergebnis: Build erfolgreich; Gateway-Tool-Subset grün mit 3/3 bestandenen Tests. Abgesichert ist, dass `pibo_gateway_send` bei erfolgreichem Gateway-Queueing ohne Reply einen klaren Queue-Text und Details zurückgibt.
 - Verbleibende offene Punkte: Optional weitere Tool-Integration über echten Mock-TCP-Gateway oder zusätzliche Request-Framing-Varianten.
 
+## Umgesetzt am 2026-05-11 13:33 Europe/Berlin
+
+- Bereich: Zusätzliche Request-Framing-Variante für mehrere NDJSON-Frames in einem TCP-Chunk.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`.
+- Ausgeführte Kommandos: `node --test test/gateway-request.test.mjs`.
+- Ergebnis: Gateway-Request-Subset grün mit 9/9 bestandenen Tests. Abgesichert ist, dass `sendGatewayMessageAndWaitForReply` Gateway-Response und korrelierte Assistant-Reply aus demselben Datenchunk verarbeitet.
+- Verbleibende offene Punkte: Optional weitere Gateway-Tool-Integration über echten Mock-TCP-Gateway; keine priorisierte Framing-Lücke aus diesem Report bleibt offen.
+
 ## Kurzfazit
 
 Das bestehende Gateway-Request-Subset ist schnell, sinnvoll granuliert und deckt zwei wichtige Korrelationseigenschaften ab. Die größte Testsystem-Lücke liegt nicht in Breite, sondern in den fehlenden negativen Pfaden und in der `dist/`-Abhängigkeit der Direktläufe. Mit wenigen zusätzlichen Mock-Gateway-Fällen würde dieser Bereich ein sehr gutes frühes Entwickler-Signal liefern.
