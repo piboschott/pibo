@@ -80,6 +80,69 @@ test("sendWebResponse leaves small JSON responses uncompressed", async () => {
 	});
 });
 
+test("sendWebResponse does not compress 204 responses", async () => {
+	await withServer((request, response) => {
+		void sendWebResponse(response, new Response(null, {
+			status: 204,
+			headers: { "content-type": "application/json; charset=utf-8" },
+		}));
+	}, async (baseURL) => {
+		const { response, body } = await rawGet(baseURL, { "accept-encoding": "gzip" });
+		assert.equal(response.statusCode, 204);
+		assert.equal(response.headers["content-encoding"], undefined);
+		assert.equal(body.length, 0);
+	});
+});
+
+test("sendWebResponse preserves existing content-encoding", async () => {
+	await withServer((request, response) => {
+		void sendWebResponse(response, responseJson(
+			{ payload: "x".repeat(2048) },
+			{ headers: { "content-encoding": "identity" } },
+		));
+	}, async (baseURL) => {
+		const { response, body } = await rawGet(baseURL, { "accept-encoding": "gzip" });
+		assert.equal(response.statusCode, 200);
+		assert.equal(response.headers["content-encoding"], "identity");
+		assert.deepEqual(JSON.parse(body.toString("utf8")), { payload: "x".repeat(2048) });
+	});
+});
+
+test("sendWebResponse appends accept-encoding to Vary only once", async () => {
+	await withServer((request, response) => {
+		void sendWebResponse(response, responseJson(
+			{ payload: "x".repeat(2048) },
+			{ headers: { vary: "Origin, Accept-Encoding" } },
+		));
+	}, async (baseURL) => {
+		const { response, body } = await rawGet(baseURL, { "accept-encoding": "gzip" });
+		assert.equal(response.statusCode, 200);
+		assert.equal(response.headers["content-encoding"], "gzip");
+		assert.equal(response.headers.vary, "Origin, Accept-Encoding");
+		assert.deepEqual(JSON.parse(gunzipSync(body).toString("utf8")), { payload: "x".repeat(2048) });
+	});
+});
+
+test("sendWebResponse honors wildcard encodings and rejects invalid q values", async () => {
+	await withServer((request, response) => {
+		void sendWebResponse(response, responseJson({ payload: "x".repeat(2048) }));
+	}, async (baseURL) => {
+		const { response, body } = await rawGet(baseURL, { "accept-encoding": "*;q=1" });
+		assert.equal(response.statusCode, 200);
+		assert.equal(response.headers["content-encoding"], "gzip");
+		assert.deepEqual(JSON.parse(gunzipSync(body).toString("utf8")), { payload: "x".repeat(2048) });
+	});
+
+	await withServer((request, response) => {
+		void sendWebResponse(response, responseJson({ payload: "x".repeat(2048) }));
+	}, async (baseURL) => {
+		const { response, body } = await rawGet(baseURL, { "accept-encoding": "gzip;q=abc" });
+		assert.equal(response.statusCode, 200);
+		assert.equal(response.headers["content-encoding"], undefined);
+		assert.deepEqual(JSON.parse(body.toString("utf8")), { payload: "x".repeat(2048) });
+	});
+});
+
 
 test("readJsonBody returns valid JSON objects", async () => {
 	const body = await readJsonBody(new Request("http://example.test", {
