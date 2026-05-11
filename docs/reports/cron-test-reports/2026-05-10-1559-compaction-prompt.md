@@ -117,3 +117,11 @@ Die vorhandenen Tests sind sinnvoll, schnell und gut isoliert, decken aber nur d
 - Ausgeführte Kommandos: `npm run build -- --pretty false`; `node --test test/compaction-prompt.test.mjs`.
 - Ergebnis: Build erfolgreich; Compaction-Prompt-Subset erfolgreich mit 3/3 Tests.
 - Verbleibende offene Punkte: Preservation-Test für ungültigen Custom-Save, Test für Custom-Mode-Dateierzeugung, Builder-/API-Subsets aus diesem Report.
+
+## Umgesetzt am 2026-05-11 15:14 Europe/Berlin
+
+- Bereich: Preservation-Test für ungültigen Custom-Save.
+- Geänderte Dateien: `test/compaction-prompt.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1559-compaction-prompt.md`.
+- Ausgeführte Kommandos: `npm run build -- --pretty false`; `node --test test/compaction-prompt.test.mjs`.
+- Ergebnis: Build erfolgreich; Compaction-Prompt-Subset grün mit 4/4 Tests. Abgesichert ist, dass ein invalides Custom-Prompt-Save den bestehenden gültigen Custom-Prompt, `updatedAt` und aktiven Custom-Pfad nicht überschreibt.
+- Verbleibende offene Punkte: Test für Custom-Mode-Dateierzeugung, Builder-/API-Subsets aus diesem Report.
