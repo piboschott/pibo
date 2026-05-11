@@ -32,10 +32,22 @@ import type {
   XStateProjectionTransition,
   XStateProjectionTransitionConfig,
   XStateProjectionTransitionMeta,
+  WorkflowMachineSnapshot,
+  WorkflowRunStatus,
+  WorkflowXStateUiActor,
+  WorkflowXStateUiCurrent,
+  WorkflowXStateUiEdge,
+  WorkflowXStateUiModel,
+  WorkflowXStateUiModelKind,
+  WorkflowXStateUiModelSchemaVersion,
+  WorkflowXStateUiNode,
+  WorkflowXStateUiNodeStatus,
 } from "../types/index.js";
 
 export const WORKFLOW_XSTATE_PROJECTION_KIND: XStateProjectionKind = "pibo.workflow.xstateProjection";
 export const WORKFLOW_XSTATE_PROJECTION_VERSION: XStateProjectionSchemaVersion = 1;
+export const WORKFLOW_XSTATE_UI_MODEL_KIND: WorkflowXStateUiModelKind = "pibo.workflow.xstateUiModel";
+export const WORKFLOW_XSTATE_UI_MODEL_VERSION: WorkflowXStateUiModelSchemaVersion = 1;
 
 export const WORKFLOW_XSTATE_SNAPSHOT_KINDS = ["kernel", "xstate", "ui"] as const satisfies readonly WorkflowSnapshotKind[];
 
@@ -277,6 +289,208 @@ export function createXStateMachineProjection(options: CreateXStateMachineProjec
     metadata: options.metadata,
     ui: options.ui,
   };
+}
+
+export type CreateWorkflowXStateUiModelOptions = {
+  snapshot?: WorkflowMachineSnapshot;
+  activeStateIds?: string[];
+};
+
+export function createWorkflowXStateUiModel(
+  projection: XStateMachineProjection,
+  options: CreateWorkflowXStateUiModelOptions = {},
+): WorkflowXStateUiModel {
+  const current = createWorkflowXStateUiCurrent(projection, options);
+  const activeStateIds = new Set(current?.stateIds ?? []);
+  return {
+    kind: WORKFLOW_XSTATE_UI_MODEL_KIND,
+    schemaVersion: WORKFLOW_XSTATE_UI_MODEL_VERSION,
+    projection: {
+      kind: projection.kind,
+      schemaVersion: projection.schemaVersion,
+      workflowId: projection.id,
+      workflowVersion: projection.version,
+      initialStateId: projection.initial,
+      durableTruth: projection.contextShape.durableTruth,
+      exposesPrivatePayloads: projection.contextShape.exposesPrivatePayloads,
+      snapshotKinds: [...WORKFLOW_XSTATE_SNAPSHOT_KINDS],
+    },
+    ...(current ? { current } : {}),
+    nodes: createWorkflowXStateUiNodes(projection, activeStateIds, current?.status),
+    edges: createWorkflowXStateUiEdges(projection),
+    actors: createWorkflowXStateUiActors(projection),
+    guards: Object.values(projection.guards).sort((left, right) => left.id.localeCompare(right.id)),
+    actions: Object.values(projection.actions).sort((left, right) => left.id.localeCompare(right.id)),
+    delays: Object.values(projection.delays).sort((left, right) => left.id.localeCompare(right.id)),
+    finalStates: projection.finalStates,
+    ui: projection.ui,
+  };
+}
+
+function createWorkflowXStateUiCurrent(
+  projection: XStateMachineProjection,
+  options: CreateWorkflowXStateUiModelOptions,
+): WorkflowXStateUiCurrent | undefined {
+  const snapshot = options.snapshot;
+  const stateIds = options.activeStateIds ?? (snapshot ? activeStateIdsFromWorkflowSnapshot(projection, snapshot) : []);
+  if (!snapshot && stateIds.length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...(snapshot ? { snapshotKind: snapshot.kind, runId: snapshot.runId, status: snapshot.status } : {}),
+    stateIds,
+    ...(snapshot?.current.nodeId ? { nodeId: snapshot.current.nodeId } : {}),
+    ...(snapshot?.current.edgeId ? { edgeId: snapshot.current.edgeId } : {}),
+  };
+}
+
+function activeStateIdsFromWorkflowSnapshot(
+  projection: XStateMachineProjection,
+  snapshot: WorkflowMachineSnapshot,
+): string[] {
+  const terminalStateId = terminalStateIdForWorkflowStatus(projection, snapshot.status);
+  if (terminalStateId !== undefined) {
+    return [terminalStateId];
+  }
+  if (snapshot.current.nodeId !== undefined) {
+    return [xstateStateIdForNode(snapshot.current.nodeId)];
+  }
+  return [projection.initial];
+}
+
+function terminalStateIdForWorkflowStatus(
+  projection: XStateMachineProjection,
+  status: WorkflowRunStatus,
+): string | undefined {
+  if (status === "completed") {
+    return projection.finalStates.completed;
+  }
+  if (status === "failed") {
+    return projection.finalStates.failed;
+  }
+  if (status === "cancelled") {
+    return projection.finalStates.cancelled;
+  }
+  return undefined;
+}
+
+function createWorkflowXStateUiNodes(
+  projection: XStateMachineProjection,
+  activeStateIds: ReadonlySet<string>,
+  workflowStatus: WorkflowRunStatus | undefined,
+): WorkflowXStateUiNode[] {
+  const projectedStates = Object.values(projection.states).sort((left, right) => left.id.localeCompare(right.id));
+  const terminalStates: XStateProjectionState[] = (Object.entries(projection.finalStates) as Array<[
+    XStateProjectionTerminalKind,
+    string,
+  ]>).map(([terminalKind, stateId]) => ({
+    id: stateId,
+    kind: "terminal",
+    type: "final",
+    tags: [terminalKind],
+    meta: {
+      pibo: {
+        kind: "terminal",
+        terminal: { status: terminalKind },
+      },
+    },
+  }));
+
+  return [...projectedStates, ...terminalStates]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((state) => {
+      const pibo = state.meta?.pibo;
+      const status = workflowXStateUiNodeStatus(state, activeStateIds, workflowStatus);
+      return {
+        id: state.id,
+        label: workflowXStateUiNodeLabel(state),
+        kind: state.kind,
+        type: state.type,
+        nodeId: state.nodeId,
+        nodeKind: pibo?.nodeKind,
+        actorId: state.actorId ?? pibo?.actorId,
+        status,
+        tags: [...(state.tags ?? pibo?.tags ?? [])],
+        description: pibo?.description,
+        position: pibo?.ui?.position,
+        collapsed: pibo?.ui?.collapsed,
+        color: pibo?.ui?.color,
+        icon: pibo?.ui?.icon,
+        wait: pibo?.wait,
+        retry: pibo?.retry,
+        terminal: pibo?.terminal,
+      };
+    });
+}
+
+function workflowXStateUiNodeLabel(state: Pick<XStateProjectionState, "id" | "kind" | "nodeId" | "meta">): string {
+  if (state.kind === "terminal") {
+    return state.meta?.pibo.terminal?.status ?? state.id;
+  }
+  if (state.kind === "retryDelay") {
+    return state.nodeId ? `${state.nodeId} retry delay` : state.id;
+  }
+  return state.nodeId ?? state.id;
+}
+
+function workflowXStateUiNodeStatus(
+  state: Pick<XStateProjectionState, "id" | "kind">,
+  activeStateIds: ReadonlySet<string>,
+  workflowStatus: WorkflowRunStatus | undefined,
+): WorkflowXStateUiNodeStatus {
+  if (!activeStateIds.has(state.id)) {
+    return "idle";
+  }
+  if (state.kind === "terminal") {
+    if (workflowStatus === "completed" || workflowStatus === "failed" || workflowStatus === "cancelled") {
+      return workflowStatus;
+    }
+    return "active";
+  }
+  if (state.kind === "wait" || workflowStatus === "waiting") {
+    return "waiting";
+  }
+  if (state.kind === "retryDelay") {
+    return "retry_scheduled";
+  }
+  if (workflowStatus === "failed" || workflowStatus === "cancelled") {
+    return workflowStatus;
+  }
+  return "active";
+}
+
+function createWorkflowXStateUiEdges(projection: XStateMachineProjection): WorkflowXStateUiEdge[] {
+  return projection.transitions.map((transition, index) => {
+    const edgeUi = transition.meta?.pibo.ui;
+    return {
+      id: transition.id ?? `workflow.transition.${index}`,
+      source: transition.source,
+      target: transition.target,
+      event: transition.event,
+      edgeId: transition.edgeId,
+      edgeKind: transition.meta?.pibo.edgeKind,
+      guardRef: transition.guard,
+      adapterRef: transition.meta?.pibo.adapterRef,
+      actions: [...(transition.actions ?? [])],
+      label: edgeUi?.label,
+      color: edgeUi?.color,
+      priority: transition.meta?.pibo.priority,
+    };
+  });
+}
+
+function createWorkflowXStateUiActors(projection: XStateMachineProjection): WorkflowXStateUiActor[] {
+  return Object.values(projection.actors)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((actor) => ({
+      id: actor.id,
+      nodeId: actor.nodeId,
+      kind: actor.kind,
+      src: actor.src,
+      childWorkflowId: actor.childWorkflowId,
+      childWorkflowVersion: actor.childWorkflowVersion,
+    }));
 }
 
 type CreateXStateMachineConfigOptions = {

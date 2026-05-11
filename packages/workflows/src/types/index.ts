@@ -952,6 +952,96 @@ export type XStateMachineProjection = {
   ui?: WorkflowUiMetadata;
 };
 
+export type WorkflowXStateUiModelSchemaVersion = 1;
+export type WorkflowXStateUiModelKind = "pibo.workflow.xstateUiModel";
+export type WorkflowXStateUiNodeStatus =
+  | "idle"
+  | "active"
+  | "waiting"
+  | "retry_scheduled"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type WorkflowXStateUiProjectionSummary = {
+  kind: XStateProjectionKind;
+  schemaVersion: XStateProjectionSchemaVersion;
+  workflowId: WorkflowId;
+  workflowVersion: WorkflowVersion;
+  initialStateId: string;
+  durableTruth: XStateProjectionContextShape["durableTruth"];
+  exposesPrivatePayloads: XStateProjectionContextShape["exposesPrivatePayloads"];
+  snapshotKinds: WorkflowSnapshotKind[];
+};
+
+export type WorkflowXStateUiNode = {
+  id: string;
+  label: string;
+  kind: XStateProjectionRuntimeStateKind;
+  type?: XStateProjectionStateType;
+  nodeId?: NodeId;
+  nodeKind?: WorkflowNodeDefinition["kind"];
+  actorId?: string;
+  status: WorkflowXStateUiNodeStatus;
+  tags: string[];
+  description?: string;
+  position?: { x: number; y: number };
+  collapsed?: boolean;
+  color?: string;
+  icon?: string;
+  wait?: XStateProjectionStateMeta["pibo"]["wait"];
+  retry?: XStateProjectionStateMeta["pibo"]["retry"];
+  terminal?: XStateProjectionStateMeta["pibo"]["terminal"];
+};
+
+export type WorkflowXStateUiEdge = {
+  id: string;
+  source: string;
+  target: string;
+  event: string;
+  edgeId?: EdgeId;
+  edgeKind?: EdgeKind;
+  guardRef?: RegistryRefId;
+  adapterRef?: RegistryRefId;
+  actions: string[];
+  label?: string;
+  color?: string;
+  priority?: number;
+};
+
+export type WorkflowXStateUiActor = {
+  id: string;
+  nodeId: NodeId;
+  kind: WorkflowNodeDefinition["kind"];
+  src: string;
+  childWorkflowId?: WorkflowId;
+  childWorkflowVersion?: WorkflowVersion;
+};
+
+export type WorkflowXStateUiCurrent = {
+  snapshotKind?: WorkflowSnapshotKind;
+  runId?: WorkflowRunId;
+  status?: WorkflowRunStatus;
+  stateIds: string[];
+  nodeId?: NodeId;
+  edgeId?: EdgeId;
+};
+
+export type WorkflowXStateUiModel = {
+  kind: WorkflowXStateUiModelKind;
+  schemaVersion: WorkflowXStateUiModelSchemaVersion;
+  projection: WorkflowXStateUiProjectionSummary;
+  current?: WorkflowXStateUiCurrent;
+  nodes: WorkflowXStateUiNode[];
+  edges: WorkflowXStateUiEdge[];
+  actors: WorkflowXStateUiActor[];
+  guards: XStateProjectionGuard[];
+  actions: XStateProjectionAction[];
+  delays: XStateProjectionDelay[];
+  finalStates: Record<XStateProjectionTerminalKind, string>;
+  ui?: WorkflowUiMetadata;
+};
+
 export type WorkflowInspectionEvent =
   | { type: "@pibo.workflow.actor.created"; actorId: string; nodeId?: NodeId }
   | { type: "@pibo.workflow.event.sent"; actorId: string; event: WorkflowRuntimeEvent }

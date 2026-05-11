@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Web UI Workflow/XState consumers should use `createWorkflowXStateUiModel(projectWorkflowToXStateProjection(definition), { snapshot | activeStateIds })` to get compact nodes/edges/actors/guards/actions/delays while keeping `contextShape.exposesPrivatePayloads: false` and kernel snapshots as durable truth.
 - XState projection snapshot tests should compare normalized full projections for representative fixtures against `packages/workflows/src/testing/__snapshots__/xstate-projection.snap.json`; normalize object keys but preserve transition arrays so snapshot diffs catch semantic projection changes.
 - XState guard/wait/failure/final projection is deterministic: edge/loop guards populate the flat `guards` index, human nodes become `wait` states with durable wait actions/timeouts, node invoke failures target failed or retry-delay states, and `definition.final` nodes add completion transitions to `workflow.completed`.
 - XState workflow projection composes `projectWorkflowNodesToXState` and `projectWorkflowEdgesToXState` inside `projectWorkflowToXStateProjection`: map each workflow node to `node.<id>` plus `workflow.node.<id>` actor metadata, then layer edge transitions/actions without changing node ids.
@@ -732,4 +733,17 @@
   - Full XState projection snapshots are large but useful for catching accidental changes across states, transitions, actors, guards, actions, delays, context shape, and machine config metadata.
   - Keep snapshot normalization local to the test: object keys are sorted for deterministic file diffs, while arrays remain ordered to protect edge/final transition order.
   - Snapshot fixtures should cover representative graph features rather than every fixture; current coverage includes one-node, mixed node kinds, human timeout waits, and bounded retry/back-edge policy.
+---
+
+## 2026-05-11 02:06 UTC - 10.7
+- Added a compact `WorkflowXStateUiModel` surface for the future Web UI Workflow/XState tab, derived from `XStateMachineProjection` plus optional kernel snapshots or explicit active state ids.
+- Exposed UI model constants and `createWorkflowXStateUiModel` from the workflows package; the model includes safe nodes, edges, actors, guards, actions, delays, terminal states, and current-state status without adding any XState CLI command.
+- Added internal tests for mixed-node projection display data and kernel snapshot status mapping for waiting, completed, and retry-delay states.
+- Marked task `10.7` complete in the workflow-system task list because the referenced JSON PRDs are absent and progress is tracked in `tasks.md`.
+- Files changed: `packages/workflows/src/types/index.ts`, `packages/workflows/src/xstate/index.ts`, `packages/workflows/src/testing/xstate-ui-model.test.ts`, `docs/specs/changes/pibo-workflow-system-v1/tasks.md`, `progress.txt`.
+- Quality checks: `npm --prefix packages/workflows run typecheck`; `npm --prefix packages/workflows test`; `npm run typecheck`; container `docker exec pibo-dev-Workflows ... npm --prefix packages/workflows run typecheck && npm --prefix packages/workflows test`.
+- **Learnings for future iterations:**
+  - The Web UI should consume the compact UI model instead of hand-reading the full machine config; it keeps visualization fields ordered and strips runtime payloads.
+  - `WorkflowMachineSnapshot.kind === "kernel"` remains authoritative for current UI status; active XState ids are a projection/cache input, not durable truth.
+  - Story 10.7 intentionally did not add CLI surface; debug/inspection commands belong to later persistence/inspection stories.
 ---
