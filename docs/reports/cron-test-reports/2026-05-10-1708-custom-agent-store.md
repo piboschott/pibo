@@ -154,6 +154,14 @@ node --test test/agent-store.test.mjs test/agent-profiles.test.mjs
 3. Die globale Namensentscheidung für Custom Agents explizit testen und im Testnamen dokumentieren.
 4. Danach erst die breiteren Web-Channel-Custom-Agent-Tests als Integrationsabsicherung nutzen.
 
+## Umgesetzt am 2026-05-11 13:38 Europe/Berlin
+
+- Bereich: Globale Custom-Agent-Namenssemantik über Owner-Grenzen hinweg.
+- Geänderte Dateien: `test/agent-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1708-custom-agent-store.md`.
+- Ausgeführte Kommandos: `node --test test/agent-store.test.mjs`.
+- Ergebnis: Grün; 9/9 Agent-Store-Tests bestanden. Der neue Test dokumentiert, dass identische `displayName`/`profileName`-Werte auch bei unterschiedlichem `ownerScope` abgelehnt werden, und prüft, dass dabei kein Agent für den zweiten Owner angelegt wird.
+- Verbleibende offene Punkte: Profil-Mapping-Contract, Migration-Snapshot und kleinere Web-Normalizer-Tests sind weiterhin offen.
+
 ## Betrachtete Dateien und Kommandos
 
 Gelesen/analysiert:
