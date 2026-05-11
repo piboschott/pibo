@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -150,6 +150,41 @@ test("user skill names reject duplicates and invalid values", () => {
 		() => updateUserSkill(findUserSkill("valid-helper", cwd).id, { name: "UpperCase" }, cwd),
 		/lowercase kebab-case/,
 	);
+});
+
+test("missing user skill markdown falls back to an empty description and can be recreated", () => {
+	const cwd = tempWorkspace();
+	const created = createUserSkill(
+		{
+			name: "missing-markdown-helper",
+			description: "Original description.",
+			markdown: "Original body.",
+		},
+		cwd,
+	);
+
+	rmSync(created.path);
+	assert.equal(listUserSkills(cwd)[0].description, "");
+	assert.equal(findUserSkill(created.id, cwd)?.description, "");
+
+	const updated = updateUserSkill(created.id, { description: "Restored description." }, cwd);
+	assert.equal(updated.description, "Restored description.");
+	assert.match(readFileSync(updated.path, "utf-8"), /description: Restored description\./);
+});
+
+test("invalid user skill stores fail before returning sanitized entries", () => {
+	const cwd = tempWorkspace();
+	createUserSkill(
+		{
+			name: "store-seed-helper",
+			description: "Seed helper.",
+			markdown: "Seed body.",
+		},
+		cwd,
+	);
+	writeFileSync(join(cwd, ".pibo", "user-skills.json"), JSON.stringify({ version: 1, skills: [{}] }), "utf-8");
+
+	assert.throws(() => loadUserSkillStore(cwd), /Invalid user skill entry/);
 });
 
 test("parseSkillMd handles plain, colon, broken, and body delimiter cases", () => {
