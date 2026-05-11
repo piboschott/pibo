@@ -9,6 +9,7 @@ import {
 	findUserSkill,
 	listUserSkills,
 	loadUserSkillStore,
+	parseSkillMd,
 	updateUserSkill,
 } from "../dist/user-skills/store.js";
 
@@ -61,4 +62,30 @@ test("create and update skill metadata can read frontmatter from markdown input"
 	assert.equal(updated.description, "Updated helper.");
 	assert.equal(findUserSkill(created.id, cwd)?.description, "Updated helper.");
 	assert.doesNotMatch(readFileSync(updated.path, "utf-8"), /---[\s\S]*---[\s\S]*---[\s\S]*---/);
+});
+
+test("parseSkillMd handles plain, colon, broken, and body delimiter cases", () => {
+	assert.deepEqual(parseSkillMd("plain body"), {
+		name: "",
+		description: "",
+		body: "plain body",
+	});
+
+	assert.deepEqual(parseSkillMd("---\nname: colon-helper\ndescription: Text: with colon\n---\n\nUse it."), {
+		name: "colon-helper",
+		description: "Text: with colon",
+		body: "Use it.",
+	});
+
+	assert.deepEqual(parseSkillMd("---\nname: broken\ndescription: Missing end"), {
+		name: "",
+		description: "",
+		body: "---\nname: broken\ndescription: Missing end",
+	});
+
+	assert.deepEqual(parseSkillMd("---\nname: body-helper\ndescription: Body delimiter\n---\n\nKeep --- in body."), {
+		name: "body-helper",
+		description: "Body delimiter",
+		body: "Keep --- in body.",
+	});
 });
