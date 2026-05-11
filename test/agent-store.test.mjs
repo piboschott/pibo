@@ -65,6 +65,81 @@ test("custom agent store migrates legacy profile names before listing", () => {
 	store.close();
 });
 
+test("custom agent store migrates old tables with stable defaults", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const db = new DatabaseSync(path);
+	db.exec(`
+		CREATE TABLE chat_agents (
+			id TEXT PRIMARY KEY,
+			profile_name TEXT NOT NULL UNIQUE,
+			owner_scope TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			description TEXT,
+			native_tools_json TEXT NOT NULL,
+			skills_json TEXT NOT NULL,
+			context_files_json TEXT NOT NULL,
+			subagents_json TEXT NOT NULL,
+			builtin_tools TEXT NOT NULL,
+			run_control INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`);
+	db.prepare(`
+		INSERT INTO chat_agents (
+			id,
+			profile_name,
+			owner_scope,
+			display_name,
+			description,
+			native_tools_json,
+			skills_json,
+			context_files_json,
+			subagents_json,
+			builtin_tools,
+			run_control,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`).run(
+		"agent_legacy_defaults",
+		"legacy-defaults",
+		"user:test",
+		"legacy-defaults",
+		null,
+		"[]",
+		"[]",
+		"[]",
+		"[]",
+		"default",
+		0,
+		"2026-05-01T00:00:00.000Z",
+		"2026-05-01T00:00:00.000Z",
+	);
+	db.close();
+
+	const store = new CustomAgentStore(path);
+	const agent = store.get("agent_legacy_defaults");
+	assert.ok(agent);
+
+	assert.equal(agent.autoContextFiles, true);
+	assert.deepEqual(agent.mcpServers, []);
+	assert.deepEqual(agent.piPackages, []);
+	assert.deepEqual(agent.builtinToolNames, ["read", "bash", "edit", "write"]);
+	assert.equal(agent.mainModel, undefined);
+	assert.equal(agent.subagentModel, undefined);
+	assert.equal(agent.thinkingLevel, undefined);
+	assert.equal(agent.mainThinkingLevel, undefined);
+	assert.equal(agent.subagentThinkingLevel, undefined);
+	assert.equal(agent.fast, undefined);
+	assert.equal(agent.mainFast, undefined);
+	assert.equal(agent.subagentFast, undefined);
+	assert.equal(agent.archivedAt, undefined);
+	assert.equal(agent.runControl, false);
+
+	store.close();
+});
+
 test("custom agent store archives and deletes agents", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const store = new CustomAgentStore(path);
