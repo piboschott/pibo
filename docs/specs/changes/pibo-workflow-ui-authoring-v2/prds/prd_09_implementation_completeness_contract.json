@@ -169,8 +169,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified builder raw Workflow IR, raw JSON schema, direct prompt template, and Markdown prompt asset panels through focused source/API coverage plus browser verification."
     },
     {
       "id": "US-012",

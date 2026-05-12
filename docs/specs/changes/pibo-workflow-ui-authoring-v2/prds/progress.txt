@@ -2030,3 +2030,30 @@
   - Completeness-contract stories may need only focused acceptance-coverage additions when the underlying feature stories already implemented the UI; still run browser verification for UI-facing contracts.
   - Zero-node draft saves should be tested at the draft PATCH boundary, while publish blocking remains covered by `before_publish` validation.
 ---
+## 2026-05-12 15:41 CEST - US-011
+- What was implemented
+  - Completed the implementation-completeness story for Workflow Builder raw/schema/prompt panels.
+  - Added focused coverage asserting the builder exposes raw Pibo Workflow IR editing, forbids raw XState editing, renders workflow/node/human raw JSON schema editors, uses the shared Markdown editor for prompt assets, and relies on existing `schema_edit`/`prompt_edit` web-channel flows.
+  - Marked PRD 09 US-011 passing.
+- Files changed
+  - `test/workflow-v2-builder-editing-raw-ir.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && node --test test/workflow-v2-builder-editing-raw-ir.test.mjs && npm run build && node --test --test-name-pattern "workflow validation pipeline|workflow prompt asset revisions" test/web-channel.test.mjs'` — passed, including typecheck, 4/4 builder coverage tests, and 2/2 targeted web-channel tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway safely and verified `http://127.0.0.1:4802/apps/chat` returned OK; host gateways were not touched.
+  - Used `browser-use --fresh-profile --session ralph-v2-us011` inside `pibo-dev-WorkflowsV2` with dev auth (`dev@pibo.local`) to open `/apps/chat/workflows/drafts/draft_standard-project_1-0-0_d2823f93`.
+  - Verified the builder shows the raw Pibo Workflow IR editor, last-valid IR object, and raw-XState-not-exposed copy.
+  - Selected the `collect` Agent node and verified the direct Prompt template editor plus Prompt Asset Markdown editor, Markdown-editor-pattern copy, and revision/content-hash pinning copy.
+  - Selected the `plan` Code node and verified the raw JSON schema editor, JSON Schema subset boundary copy, and no-Zod/AJV/form-builder copy.
+  - Saved screenshot inside the container: `/tmp/ralph-v2-us011-builder-raw-schema-prompt.png`.
+- **Learnings for future iterations:**
+  - Patterns discovered
+    - Completeness-contract raw/schema/prompt coverage can reuse the existing builder source-level assertions and targeted `web-channel` `schema_edit`/`prompt_edit` integration flows without adding a duplicate full end-to-end authoring path.
+  - Gotchas encountered
+    - The standard-project duplicate draft is deterministic for the dev user and may contain state from earlier browser checks; for verification, assert the required panels and copy instead of assuming a pristine draft title.
+  - Useful context
+    - Selecting React Flow nodes by `.react-flow__node[data-id=<nodeId>]` with `browser-use eval` reliably opens the node inspector for browser checks.
+---
