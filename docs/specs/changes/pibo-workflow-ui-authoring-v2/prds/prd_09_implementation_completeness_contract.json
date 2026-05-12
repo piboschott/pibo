@@ -62,8 +62,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Project sidebar markers are implemented from real Pibo Session workflowSessionKind metadata with distinct visible icons/labels and real-session-only descendants."
     },
     {
       "id": "US-005",

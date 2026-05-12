@@ -908,3 +908,24 @@
   - Configured workflow sessions have no run id until the start story creates a durable run, so run inspection UI needs explicit empty states rather than hiding sections.
   - Keep run inspection copy clear that Project session/workflow run facts are authoritative and XState is only a projection.
 ---
+## 2026-05-12 03:52 CEST - US-004
+- What was implemented
+  - Completed the implementation-completeness sidebar marker story by validating the existing Project sidebar session-kind implementation against the V2 acceptance criteria.
+  - Confirmed Project sidebar data uses stable `workflowSessionKind` values for real Pibo Session descendants and excludes logical workflow graph elements through existing API coverage.
+  - Marked PRD 09 US-004 passing after browser verification of the visible main-workflow marker and accessible label.
+- Files changed
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run chat-ui:build && npm run build && node --test --test-name-pattern "project bootstrap includes real workflow session descendants" test/web-channel.test.mjs'` — passed.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Created dev-auth Project `Completeness Sidebar Markers 1778550676` and configured workflow session `Completeness Sidebar Workflow` for `standard-project@1.0.0`.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` to open the Project workflow session.
+  - Verified the authenticated page shows `dev@pibo.local`, the Project, the workflow session, the visible `main workflow` marker, and `Main workflow session` accessible labels.
+  - Saved screenshot: `/tmp/ralph-v2-prd09-sidebar-markers.png` inside the container.
+- **Learnings for future iterations:**
+  - Completeness-contract stories may be satisfied by focused PRD stories; rerun the focused tests/browser checks and mark only the corresponding completeness story.
+---
