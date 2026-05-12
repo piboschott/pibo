@@ -281,8 +281,8 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified existing Project Workflow/XState run inspection view against the completeness contract: status/current node/run history/node attempts/edge transfers/output/error sections, nested and definition link panels including deleted-definition coverage, and explicit XState-projection-only truth-source copy."
     },
     {
       "id": "US-019",

@@ -2215,3 +2215,25 @@
   - Useful context
     - For browser checks, open archive/delete confirmation panels without submitting destructive actions; create and tombstone a temporary workflow only when a real snapshot-only Project deleted-definition state is needed.
 ---
+## 2026-05-12 17:22 CEST - US-018
+- What was implemented
+  - Completed the implementation-completeness workflow run inspection story by validating the existing Projects Workflow/XState run inspection view against the V2 acceptance criteria.
+  - Confirmed the run view exposes status, current node, run history, node attempts, edge transfers, output, error, nested-session links, workflow definition link state, and XState-projection-only truth-source copy.
+  - Marked PRD 09 US-018 passing.
+- Files changed
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && node --test test/workflow-v2-run-inspection-human-actions.test.mjs'` — passed, 3/3 focused tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "project bootstrap includes real workflow session descendants|workflow delete API tombstones UI workflows" test/web-channel.test.mjs'` — passed, 2/2 targeted integration tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Created dev-auth Project `US018 Run Inspection 1778599211`, configured workflow session `US018 Workflow Run Inspection` for `standard-project@1.0.0`, and started run `wfr_9f37e115-9154-4806-916b-6f9bf27c65dc` through the Chat Web API.
+  - Used `browser-use --fresh-profile --session ralph-v2-us018` inside `pibo-dev-WorkflowsV2` to open the Project session with `?view=workflow`.
+  - Verified the authenticated Workflow/XState Project view exposes `Workflow run inspection`, `Status`, `Current node`, `Run history`, `Node attempts`, `Edge transfers`, `Output`, `Error`, `Workflow navigation links`, `Nested workflow child sessions`, `Workflow definition link`, `kernel/run records: truth`, `XState projection only`, and the live `standard-project@1.0.0` definition link.
+  - Saved screenshot: `/tmp/ralph-v2-us018-run-inspection.png` inside the container.
+- **Learnings for future iterations:**
+  - Completeness-contract run inspection can be closed with the focused run-inspection source coverage plus the targeted web-channel tests for real session descendants and deleted-definition snapshot fallback, then a browser check against a started Project workflow session.
+---
