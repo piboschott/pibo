@@ -19,7 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, History, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
 import {
 	getWorkflowAdapterPicker,
 	getWorkflowDraft,
@@ -27,10 +27,12 @@ import {
 	getWorkflowHandlerPicker,
 	getWorkflowProfilePicker,
 	getWorkflowVersionPicker,
+	getWorkflowVersionHistory,
 	patchWorkflowDraft,
 	postWorkflowDraftPublish,
 	postWorkflowDuplicateDraft,
 	postWorkflowNextDraft,
+	type WorkflowCatalogVersionRecord,
 	type WorkflowDraftDefinition,
 	type WorkflowDraftDiagnostic,
 	type WorkflowDraftRecord,
@@ -48,35 +50,6 @@ import {
 
 const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
 const STARTER_DRAFT_ID = "v2-starter-draft";
-const PUBLISHED_WORKFLOW_ROWS: Array<{
-	id: string;
-	version: string;
-	title: string;
-	description: string;
-	source: "code" | "ui";
-}> = [
-	{
-		id: "standard-project",
-		version: "1.0.0",
-		title: "Standard Project",
-		description: "Code-registered workflow available for duplicate-to-draft authoring.",
-		source: "code",
-	},
-	{
-		id: "simple-chat",
-		version: "1.0.0",
-		title: "Simple Chat",
-		description: "Baseline chat workflow available for draft loading checks.",
-		source: "code",
-	},
-	{
-		id: "ui-review-workflow",
-		version: "2.0.0",
-		title: "UI Review Workflow",
-		description: "UI-authored published workflow fixture. Editing creates the active next-version draft instead of mutating this version.",
-		source: "ui",
-	},
-];
 
 const DEFAULT_GRAPH_POSITION = { x: 80, y: 80 };
 const GRAPH_COLUMN_GAP = 260;
@@ -151,6 +124,13 @@ type WorkflowEdgePortDetails = {
 	directlyCompatible: boolean;
 };
 
+type WorkflowVersionHistoryGroup = {
+	workflowId: string;
+	title: string;
+	source: WorkflowCatalogVersionRecord["source"];
+	records: WorkflowCatalogVersionRecord[];
+};
+
 export function WorkflowsArea({ draftId, viewWorkflowId, viewWorkflowVersion }: { draftId?: string; viewWorkflowId?: string; viewWorkflowVersion?: string }) {
 	return (
 		<main className="h-full min-h-0 overflow-auto bg-[#101d22]">
@@ -201,13 +181,35 @@ export function WorkflowsArea({ draftId, viewWorkflowId, viewWorkflowVersion }: 
 }
 
 function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
+	const [historyRows, setHistoryRows] = useState<WorkflowCatalogVersionRecord[]>([]);
+	const [historyLoadState, setHistoryLoadState] = useState<"loading" | "loaded" | "error">("loading");
+	const [historyErrorMessage, setHistoryErrorMessage] = useState<string | undefined>();
 	const [duplicatingKey, setDuplicatingKey] = useState<string | undefined>();
 	const [editingKey, setEditingKey] = useState<string | undefined>();
 	const [errorMessage, setErrorMessage] = useState<string | undefined>();
 	const busy = Boolean(duplicatingKey || editingKey);
 
+	const loadVersionHistory = useCallback(async () => {
+		setHistoryLoadState("loading");
+		setHistoryErrorMessage(undefined);
+		try {
+			const response = await getWorkflowVersionHistory();
+			setHistoryRows(response.options);
+			setHistoryLoadState("loaded");
+		} catch (error) {
+			setHistoryErrorMessage(error instanceof Error ? error.message : "Failed to load workflow version history");
+			setHistoryLoadState("error");
+		}
+	}, []);
+
+	useEffect(() => {
+		void loadVersionHistory();
+	}, [loadVersionHistory]);
+
+	const historyGroups = useMemo(() => groupWorkflowVersionHistory(historyRows), [historyRows]);
+
 	const duplicateWorkflow = async (workflowId: string, version: string) => {
-		const key = `${workflowId}@${version}`;
+		const key = workflowVersionSelectionKey(workflowId, version);
 		setDuplicatingKey(key);
 		setErrorMessage(undefined);
 		try {
@@ -220,7 +222,7 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 	};
 
 	const editPublishedWorkflow = async (workflowId: string, version: string) => {
-		const key = `${workflowId}@${version}`;
+		const key = workflowVersionSelectionKey(workflowId, version);
 		setEditingKey(key);
 		setErrorMessage(undefined);
 		try {
@@ -253,53 +255,52 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 				{activeDraftId === STARTER_DRAFT_ID ? <div className="mt-3 text-[11px] font-semibold text-emerald-300">Currently open in the builder.</div> : null}
 			</div>
 
-			<div className="grid gap-3">
-				<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Published workflows</div>
-				{PUBLISHED_WORKFLOW_ROWS.map((workflow) => {
-					const key = `${workflow.id}@${workflow.version}`;
-					return (
-						<div key={key} className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-4">
-							<div className="flex items-start justify-between gap-3">
-								<div className="min-w-0">
-									<div className="flex flex-wrap items-center gap-2">
-										<div className="font-semibold text-slate-100">{workflow.title}</div>
-										<WorkflowPill label={`${workflow.source} source`} />
-										<WorkflowPill label="published" />
-									</div>
-									<div className="mt-1 font-mono text-[11px] text-slate-500">{workflow.id}@{workflow.version}</div>
-									<p className="mt-2 text-xs leading-5 text-slate-500">{workflow.description}</p>
-									{workflow.source === "ui" ? (
-										<p className="mt-2 text-[11px] leading-5 text-emerald-300">
-											Edit creates or reuses the active next-version draft. Published {workflow.version} remains immutable.
-										</p>
-									) : null}
-								</div>
-								<div className="flex shrink-0 flex-col gap-2">
-									{workflow.source === "ui" ? (
-										<button
-											type="button"
-											className="inline-flex items-center justify-center gap-1 rounded-sm border border-[#11a4d4]/50 px-3 py-1.5 text-xs font-semibold text-[#8bdcf4] transition hover:border-[#11a4d4] hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-											onClick={() => void editPublishedWorkflow(workflow.id, workflow.version)}
-											disabled={busy}
-										>
-											{editingKey === key ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
-											Edit published
-										</button>
-									) : null}
-									<button
-										type="button"
-										className="inline-flex items-center justify-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-										onClick={() => void duplicateWorkflow(workflow.id, workflow.version)}
-										disabled={busy}
-									>
-										{duplicatingKey === key ? <Loader2 size={13} className="animate-spin" /> : <CopyPlus size={13} />}
-										Duplicate to draft
-									</button>
-								</div>
-							</div>
+			<div className="grid gap-3" aria-label="Workflow version history">
+				<div className="flex items-center justify-between gap-3">
+					<div>
+						<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+							<History size={13} />
+							Version history
 						</div>
-					);
-				})}
+						<p className="mt-1 text-[11px] leading-5 text-slate-500">
+							Published versions are listed in deterministic workflow/version order. Only published rows are selectable for Project sessions; archived or deleted rows stay visible as history.
+						</p>
+					</div>
+					<button
+						type="button"
+						className="inline-flex items-center gap-1 rounded-sm border border-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+						onClick={() => void loadVersionHistory()}
+						disabled={historyLoadState === "loading"}
+					>
+						{historyLoadState === "loading" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+						Refresh
+					</button>
+				</div>
+				{historyLoadState === "loading" ? (
+					<div className="flex items-center gap-2 rounded-sm border border-slate-800 bg-[#101d22]/70 p-4 text-xs text-slate-400" aria-live="polite">
+						<Loader2 size={14} className="animate-spin text-[#11a4d4]" />
+						Loading workflow version history…
+					</div>
+				) : null}
+				{historyLoadState === "error" ? (
+					<div className="rounded-sm border border-red-900/70 bg-red-950/40 p-3 text-xs leading-5 text-red-200" role="alert">
+						{historyErrorMessage ?? "Failed to load workflow version history."}
+					</div>
+				) : null}
+				{historyLoadState === "loaded" && historyGroups.length === 0 ? (
+					<div className="rounded-sm border border-dashed border-slate-700 bg-[#101d22]/70 p-4 text-xs text-slate-500">No workflow versions are registered yet.</div>
+				) : null}
+				{historyLoadState === "loaded" ? historyGroups.map((group) => (
+					<WorkflowVersionHistoryGroupCard
+						key={group.workflowId}
+						group={group}
+						busy={busy}
+						duplicatingKey={duplicatingKey}
+						editingKey={editingKey}
+						onDuplicate={duplicateWorkflow}
+						onEditPublished={editPublishedWorkflow}
+					/>
+				)) : null}
 			</div>
 
 			{errorMessage ? (
@@ -307,6 +308,122 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 					{errorMessage}
 				</div>
 			) : null}
+		</div>
+	);
+}
+
+function WorkflowVersionHistoryGroupCard({
+	group,
+	busy,
+	duplicatingKey,
+	editingKey,
+	onDuplicate,
+	onEditPublished,
+}: {
+	group: WorkflowVersionHistoryGroup;
+	busy: boolean;
+	duplicatingKey?: string;
+	editingKey?: string;
+	onDuplicate: (workflowId: string, version: string) => Promise<void>;
+	onEditPublished: (workflowId: string, version: string) => Promise<void>;
+}) {
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-4" aria-label={`Version history for ${group.workflowId}`}>
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="font-semibold text-slate-100">{group.title}</div>
+						<WorkflowPill label={`${group.records.length} version${group.records.length === 1 ? "" : "s"}`} />
+						<WorkflowPill label={`${group.source} source`} />
+					</div>
+					<div className="mt-1 font-mono text-[11px] text-slate-500">{group.workflowId}</div>
+				</div>
+			</div>
+			<div className="mt-3 grid gap-2">
+				{group.records.map((record) => (
+					<WorkflowVersionHistoryRow
+						key={workflowVersionSelectionKey(record.id, record.version)}
+						record={record}
+						busy={busy}
+						duplicatingKey={duplicatingKey}
+						editingKey={editingKey}
+						onDuplicate={onDuplicate}
+						onEditPublished={onEditPublished}
+					/>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function WorkflowVersionHistoryRow({
+	record,
+	busy,
+	duplicatingKey,
+	editingKey,
+	onDuplicate,
+	onEditPublished,
+}: {
+	record: WorkflowCatalogVersionRecord;
+	busy: boolean;
+	duplicatingKey?: string;
+	editingKey?: string;
+	onDuplicate: (workflowId: string, version: string) => Promise<void>;
+	onEditPublished: (workflowId: string, version: string) => Promise<void>;
+}) {
+	const key = workflowVersionSelectionKey(record.id, record.version);
+	const published = record.status === "published";
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="font-mono text-[11px] font-semibold text-slate-200">{record.id}@{record.version}</div>
+						<WorkflowPill label={record.status} />
+						<WorkflowPill label={`${record.source} source`} />
+						{record.tags.map((tag) => <WorkflowPill key={tag} label={tag} />)}
+					</div>
+					{record.description ? <div className="mt-2 text-slate-500">{record.description}</div> : null}
+					<div className={`mt-2 text-[11px] ${published ? "text-emerald-300" : "text-amber-200"}`}>{workflowHistoryStatusDescription(record)}</div>
+				</div>
+				<div className="flex shrink-0 flex-col gap-2">
+					{published ? (
+						<>
+							{record.source === "ui" ? (
+								<button
+									type="button"
+									className="inline-flex items-center justify-center gap-1 rounded-sm border border-[#11a4d4]/50 px-3 py-1.5 text-xs font-semibold text-[#8bdcf4] transition hover:border-[#11a4d4] hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => void onEditPublished(record.id, record.version)}
+									disabled={busy}
+								>
+									{editingKey === key ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
+									Edit published
+								</button>
+							) : null}
+							<button
+								type="button"
+								className="inline-flex items-center justify-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+								onClick={() => void onDuplicate(record.id, record.version)}
+								disabled={busy}
+							>
+								{duplicatingKey === key ? <Loader2 size={13} className="animate-spin" /> : <CopyPlus size={13} />}
+								Duplicate to draft
+							</button>
+							<a
+								className="inline-flex items-center justify-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-[#11a4d4]/60 hover:text-slate-100"
+								href={workflowVersionViewerPath(record.id, record.version)}
+							>
+								<ExternalLink size={13} />
+								View details
+							</a>
+						</>
+					) : (
+						<div className="max-w-44 rounded-sm border border-amber-800/70 bg-amber-950/20 p-2 text-[11px] text-amber-100">
+							Unavailable for Project session selection.
+						</div>
+					)}
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -2039,6 +2156,35 @@ function WorkflowVersionDiagnostics({ diagnostics, ariaLabel }: { diagnostics: W
 			))}
 		</div>
 	);
+}
+
+function groupWorkflowVersionHistory(rows: WorkflowCatalogVersionRecord[]): WorkflowVersionHistoryGroup[] {
+	const groups = new Map<string, WorkflowVersionHistoryGroup>();
+	for (const row of rows) {
+		const existing = groups.get(row.id);
+		if (existing) {
+			existing.records.push(row);
+			if (row.status === "published" && existing.records[0]?.status !== "published") {
+				existing.title = row.title;
+				existing.source = row.source;
+			}
+			continue;
+		}
+		groups.set(row.id, {
+			workflowId: row.id,
+			title: row.title,
+			source: row.source,
+			records: [row],
+		});
+	}
+	return [...groups.values()];
+}
+
+function workflowHistoryStatusDescription(record: WorkflowCatalogVersionRecord): string {
+	if (record.status === "published") return "Published workflow version — selectable for Project sessions and safe to duplicate into UI drafts.";
+	if (record.status === "archived") return "Archived workflow version — shown for lifecycle history but hidden from default Project session creation choices.";
+	if (record.status === "deleted") return "Deleted workflow definition — historical runs must render from immutable snapshots instead of live catalog links.";
+	return "Draft workflow version — not published and unavailable for Project session creation.";
 }
 
 function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNode>) {

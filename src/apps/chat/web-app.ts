@@ -385,7 +385,7 @@ type WorkflowCatalogVersionRecord = {
 	title: string;
 	description?: string;
 	source: "code" | "ui";
-	status: "draft" | "published" | "archived";
+	status: "draft" | "published" | "archived" | "deleted";
 	tags: string[];
 };
 
@@ -396,6 +396,14 @@ type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
 type WorkflowVersionPickerResponse = {
 	kind: "workflow-versions";
 	options: WorkflowVersionPickerOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowVersionHistoryResponse = {
+	kind: "version-history";
+	options: WorkflowCatalogVersionRecord[];
 	selectedWorkflowId?: string;
 	selectedWorkflowVersion?: string;
 	diagnostics: WorkflowPickerDiagnostic[];
@@ -2716,6 +2724,32 @@ function buildWorkflowVersionPicker(state: ChatWebAppState, selectedWorkflowId?:
 	};
 }
 
+function buildWorkflowVersionHistory(state: ChatWebAppState, selectedWorkflowId?: string, selectedWorkflowVersion?: string): WorkflowVersionHistoryResponse {
+	const options = [...buildProjectWorkflowVersionCatalog(state)].sort(compareWorkflowCatalogVersionRecords);
+	const normalizedWorkflowId = selectedWorkflowId?.trim() || undefined;
+	const normalizedWorkflowVersion = selectedWorkflowVersion?.trim() || undefined;
+	const selected = normalizedWorkflowId
+		? options.find((option) => option.id === normalizedWorkflowId && (!normalizedWorkflowVersion || option.version === normalizedWorkflowVersion))
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedWorkflowId && !selected) {
+		diagnostics.push({
+			code: "WorkflowCatalogError.unknownWorkflowVersion",
+			message: `Workflow version '${normalizedWorkflowId}${normalizedWorkflowVersion ? `@${normalizedWorkflowVersion}` : ""}' is not present in workflow version history.`,
+			severity: "error",
+			path: "$.workflow",
+			registryRef: normalizedWorkflowVersion ? `${normalizedWorkflowId}@${normalizedWorkflowVersion}` : normalizedWorkflowId,
+			hint: "Open a live, archived, or snapshot-backed workflow version record from the catalog history.",
+		});
+	}
+	return {
+		kind: "version-history",
+		options,
+		...(selected ? { selectedWorkflowId: selected.id, selectedWorkflowVersion: selected.version } : {}),
+		diagnostics,
+	};
+}
+
 function buildProjectWorkflowVersionOptions(state?: ChatWebAppState): WorkflowVersionPickerOption[] {
 	return buildProjectWorkflowVersionCatalog(state).filter((option): option is WorkflowVersionPickerOption => option.status === "published");
 }
@@ -2795,6 +2829,29 @@ function workflowCatalogRecordFromPublishedVersion(record: WorkflowPublishedVers
 		status: "published",
 		tags: workflowDefinitionTags(record.definition),
 	};
+}
+
+const WORKFLOW_CATALOG_STATUS_SORT_ORDER: Record<WorkflowCatalogVersionRecord["status"], number> = {
+	published: 0,
+	draft: 1,
+	archived: 2,
+	deleted: 3,
+};
+
+function compareWorkflowCatalogVersionRecords(left: WorkflowCatalogVersionRecord, right: WorkflowCatalogVersionRecord): number {
+	return left.id.localeCompare(right.id)
+		|| compareWorkflowCatalogVersionStrings(left.version, right.version)
+		|| WORKFLOW_CATALOG_STATUS_SORT_ORDER[left.status] - WORKFLOW_CATALOG_STATUS_SORT_ORDER[right.status]
+		|| left.title.localeCompare(right.title);
+}
+
+function compareWorkflowCatalogVersionStrings(left: string, right: string): number {
+	const leftSemver = parseWorkflowSemver(left);
+	const rightSemver = parseWorkflowSemver(right);
+	if (leftSemver && rightSemver) return compareWorkflowSemver(leftSemver, rightSemver);
+	if (leftSemver) return -1;
+	if (rightSemver) return 1;
+	return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
 }
 
 function workflowDefinitionTags(definition: PiboJsonObject): string[] {
@@ -6256,6 +6313,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				}
 				if (pickerKind === "workflow-versions") {
 					return responseJson(buildWorkflowVersionPicker(
+						state,
+						url.searchParams.get("selectedWorkflowId") ?? undefined,
+						url.searchParams.get("selectedWorkflowVersion") ?? undefined,
+					));
+				}
+				if (pickerKind === "version-history") {
+					return responseJson(buildWorkflowVersionHistory(
 						state,
 						url.searchParams.get("selectedWorkflowId") ?? undefined,
 						url.searchParams.get("selectedWorkflowVersion") ?? undefined,

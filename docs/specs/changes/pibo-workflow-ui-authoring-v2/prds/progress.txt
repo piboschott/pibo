@@ -30,6 +30,7 @@
 - Invalid raw Workflow IR text should be a transient warning diagnostic on the draft while preserving the last parsed `definition`; clear the warning after the next valid parsed raw/visual edit.
 - Project workflow configuration snapshots should be immutable Project-service records keyed by Pibo Session id; apply prompt overrides only to the effective snapshot definition while preserving the base definition and hash.
 - Edge adapter UI should derive source output and target input ports from current Workflow IR; use-as-edge stores the target input as adapter output, while insert-node splits the edge through a visible deterministic adapter node.
+- Workflow Library version history should consume all catalog states for visibility, while Project workflow-version pickers remain published-only selection surfaces.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -856,4 +857,30 @@
 - **Learnings for future iterations:**
   - Edge adapter fixes should reuse the selected edge's current source output and target input ports so the edge adapter output matches the target contract immediately after saving.
   - Browser checks for uppercase-styled headings should lower-case `innerText` before matching strings such as `Adapter node editor` or `Compatible edge adapter dialog`.
+---
+## 2026-05-12 03:39 CEST - US-004
+- What was implemented
+  - Added an authenticated workflow version-history response that returns deterministic workflow/version history across published, draft, archived, and future deleted catalog states.
+  - Replaced the hard-coded Workflow Library published rows with version-history rendering grouped by workflow id, with published rows offering duplicate/edit/detail actions and unavailable states clearly marked.
+  - Kept Project workflow-session creation on the published-only workflow-version picker while surfacing archived/draft rows only in the Library history.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow version picker|workflow draft publish" test/web-channel.test.mjs'` — passed, 2/2 targeted tests.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway from the rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows` and `/apps/chat/projects`.
+  - Verified the Workflows page shows `Version history`, deterministic grouped rows, `Archived Review Workflow`, the `archived` status, unavailable Project-selection copy, and published-row duplicate/detail actions.
+  - Verified the Projects create panel still shows a published-only `Workflow version` selector and excludes archived/draft history rows from Project session creation.
+  - Saved screenshot: `/tmp/ralph-v2-version-history.png` inside the container.
+- **Learnings for future iterations:**
+  - Version history and workflow selection should stay separate: history can include draft/archived/deleted states for visibility, while Project creation should consume only published picker options.
+  - Browser workers may preserve previously published UI workflow versions in the container store, so version-history UI checks should assert stable labels/statuses rather than a fixed version count.
 ---

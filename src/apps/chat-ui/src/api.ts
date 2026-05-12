@@ -286,19 +286,31 @@ export async function getWorkflowAdapterPicker(selectedRefId?: string): Promise<
 	return requestJson<WorkflowRegisteredRefPickerResponse>(`/api/chat/workflows/pickers/adapters${suffix}`);
 }
 
-export type WorkflowVersionPickerOption = {
+export type WorkflowCatalogVersionRecord = {
 	id: string;
 	version: string;
 	title: string;
 	description?: string;
 	source: "code" | "ui";
-	status: "published";
+	status: "draft" | "published" | "archived" | "deleted";
 	tags: string[];
+};
+
+export type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
+	status: "published";
 };
 
 export type WorkflowVersionPickerResponse = {
 	kind: "workflow-versions";
 	options: WorkflowVersionPickerOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+export type WorkflowVersionHistoryResponse = {
+	kind: "version-history";
+	options: WorkflowCatalogVersionRecord[];
 	selectedWorkflowId?: string;
 	selectedWorkflowVersion?: string;
 	diagnostics: WorkflowPickerDiagnostic[];
@@ -310,6 +322,14 @@ export async function getWorkflowVersionPicker(input: { selectedWorkflowId?: str
 	if (input.selectedWorkflowVersion) params.set("selectedWorkflowVersion", input.selectedWorkflowVersion);
 	const suffix = params.size ? `?${params.toString()}` : "";
 	return requestJson<WorkflowVersionPickerResponse>(`/api/chat/workflows/pickers/workflow-versions${suffix}`);
+}
+
+export async function getWorkflowVersionHistory(input: { selectedWorkflowId?: string; selectedWorkflowVersion?: string } = {}): Promise<WorkflowVersionHistoryResponse> {
+	const params = new URLSearchParams();
+	if (input.selectedWorkflowId) params.set("selectedWorkflowId", input.selectedWorkflowId);
+	if (input.selectedWorkflowVersion) params.set("selectedWorkflowVersion", input.selectedWorkflowVersion);
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowVersionHistoryResponse>(`/api/chat/workflows/pickers/version-history${suffix}`);
 }
 
 export type WorkflowDraftDiagnostic = {

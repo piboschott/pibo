@@ -1966,6 +1966,29 @@ test("workflow version picker lists published nested workflow refs and reports m
 		assert.equal(missingPayload.diagnostics[0].code, "WorkflowCatalogError.unknownWorkflowVersion");
 		assert.equal(missingPayload.diagnostics[0].registryRef, "missing-workflow@9.9.9");
 		assert.equal(missingPayload.diagnostics[0].path, "$.workflow");
+
+		const history = await fetch(`${baseURL}/api/chat/workflows/pickers/version-history`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(history.status, 200);
+		const historyPayload = await history.json();
+		assert.equal(historyPayload.kind, "version-history");
+		assert.deepEqual(historyPayload.options.map((option) => `${option.id}@${option.version}:${option.status}`), [
+			"archived-review-workflow@1.0.0:archived",
+			"simple-chat@1.0.0:published",
+			"standard-project@1.0.0:published",
+			"ui-draft-workflow@0.1.0-draft:draft",
+			"ui-review-workflow@2.0.0:published",
+		]);
+
+		const archivedHistory = await fetch(`${baseURL}/api/chat/workflows/pickers/version-history?selectedWorkflowId=archived-review-workflow&selectedWorkflowVersion=1.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedHistory.status, 200);
+		const archivedHistoryPayload = await archivedHistory.json();
+		assert.equal(archivedHistoryPayload.selectedWorkflowId, "archived-review-workflow");
+		assert.equal(archivedHistoryPayload.selectedWorkflowVersion, "1.0.0");
+		assert.equal(archivedHistoryPayload.diagnostics.length, 0);
 	} finally {
 		await channel.stop?.();
 	}
@@ -2481,6 +2504,17 @@ test("workflow draft publish allocates patch, minor, and major versions", async 
 		assert.ok(pickerKeys.includes("ui-review-workflow@2.0.1"));
 		assert.ok(pickerKeys.includes("ui-standard-project-copy@1.1.0"));
 		assert.ok(pickerKeys.includes("ui-simple-chat-copy@2.0.0"));
+
+		const historyResponse = await fetch(`${baseURL}/api/chat/workflows/pickers/version-history`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(historyResponse.status, 200);
+		const historyPayload = await historyResponse.json();
+		const historyKeys = historyPayload.options.map((option) => `${option.id}@${option.version}:${option.status}`);
+		assert.ok(historyKeys.includes("ui-review-workflow@2.0.0:published"));
+		assert.ok(historyKeys.includes("ui-review-workflow@2.0.1:published"));
+		assert.ok(historyKeys.indexOf("ui-review-workflow@2.0.0:published") < historyKeys.indexOf("ui-review-workflow@2.0.1:published"));
+		assert.ok(historyKeys.includes("archived-review-workflow@1.0.0:archived"));
 
 		const db = new DatabaseSync(dataStorePath, { readOnly: true });
 		try {
