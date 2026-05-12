@@ -128,8 +128,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added focused V2 composition boundary coverage tests that map registered node/picker paths, negative security diagnostics, adapter insertion, and state mapping raw-IR boundaries."
     }
   ]
 }

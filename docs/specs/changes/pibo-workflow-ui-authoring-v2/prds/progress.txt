@@ -1777,3 +1777,25 @@
   - Publish gating should be duplicated at the UI affordance level for clarity, but the server `before_publish` route still needs direct integration coverage for invalid draft shapes.
   - Browser verification can inspect the publish panel HTML to confirm disabled button state when `browser-use eval` does not print returned values.
 ---
+## 2026-05-12 13:47 CEST - US-008
+- What was implemented
+  - Added focused Workflow V2 composition boundary coverage tests that map existing package, web-channel, and UI-source coverage for registered node kinds, capability pickers, adapter insertion, negative security diagnostics, and state mapping/raw-IR boundaries.
+  - Marked PRD 05 US-008 passing with notes about the added coverage matrix.
+- Files changed
+  - `test/workflow-v2-composition-boundaries.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `node --test test/workflow-v2-composition-boundaries.test.mjs` — passed, 2/2 tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && node --test test/workflow-v2-composition-boundaries.test.mjs test/workflow-v2-state-mapping-ui.test.mjs'` — passed, 4/4 tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Verified the container gateway was reachable at `http://127.0.0.1:4802/apps/chat`.
+  - Used `browser-use --fresh-profile --session ralph-v2` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the builder graph controls expose `Add Agent node`, `Add Workflow node`, `Add Adapter node`, `Add Human node`, registered nested workflow/adapters/human action selectors, and copy that refs are registered-only with no inline transform code.
+  - Saved screenshots inside the container: `/tmp/ralph-v2-composition-boundaries.png` and `/tmp/ralph-v2-composition-boundaries-agent.png`.
+- **Learnings for future iterations:**
+  - Composition test stories can stay focused by asserting the existing package/web-channel/UI coverage matrix instead of duplicating each long browser flow in a new end-to-end test.
+---
