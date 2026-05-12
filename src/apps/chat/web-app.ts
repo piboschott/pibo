@@ -410,6 +410,74 @@ type WorkflowVersionHistoryResponse = {
 	diagnostics: WorkflowPickerDiagnostic[];
 };
 
+type WorkflowCatalogAction =
+	| "view"
+	| "duplicate"
+	| "create_project_session"
+	| "edit_draft"
+	| "validate"
+	| "publish"
+	| "create_next_draft"
+	| "version_history"
+	| "archive"
+	| "delete";
+
+type WorkflowCatalogEditability = {
+	canView: boolean;
+	canDuplicate: boolean;
+	canEditDraft: boolean;
+	canCreateDraft: boolean;
+	canValidate: boolean;
+	canPublish: boolean;
+	canArchive: boolean;
+	canDelete: boolean;
+	canCreateProjectSession: boolean;
+};
+
+type WorkflowCatalogVersionSummary = WorkflowCatalogVersionRecord & {
+	definitionHash?: string;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+type WorkflowCatalogRecord = {
+	id: string;
+	title: string;
+	description?: string;
+	tags: string[];
+	source: "code" | "ui";
+	status: "draft" | "published" | "archived" | "deleted";
+	versions: WorkflowCatalogVersionSummary[];
+	activeDraftId?: string;
+	editability: WorkflowCatalogEditability;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+type WorkflowCatalogListResponse = {
+	kind: "workflow-catalog";
+	includeArchived: boolean;
+	workflows: WorkflowCatalogRecord[];
+};
+
+type WorkflowCatalogInspectResponse = {
+	kind: "workflow-inspect";
+	workflow: WorkflowCatalogRecord;
+	selected:
+		| { kind: "draft"; draft: WorkflowDraftRecord }
+		| {
+			kind: "publishedVersion";
+			version: WorkflowCatalogVersionRecord & { definitionHash: string };
+			definition: PiboJsonObject;
+			validation: WorkflowValidationSummary;
+		};
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
 type WorkflowDraftDiagnostic = {
 	code: string;
 	message: string;
@@ -639,6 +707,17 @@ class ChatWorkflowDraftStore {
 			.prepare("SELECT * FROM workflow_ui_drafts WHERE workflow_id = ? AND status = 'draft' ORDER BY updated_at DESC, draft_id ASC LIMIT 1")
 			.get(workflowId) as WorkflowDraftStoreRow | undefined;
 		return row ? workflowDraftFromStoreRow(row) : undefined;
+	}
+
+	listDrafts(filter: { workflowId?: string } = {}): OwnedWorkflowDraftRecord[] {
+		const rows = filter.workflowId
+			? this.dataStore.db
+				.prepare("SELECT * FROM workflow_ui_drafts WHERE workflow_id = ? ORDER BY updated_at DESC, draft_id ASC")
+				.all(filter.workflowId) as WorkflowDraftStoreRow[]
+			: this.dataStore.db
+				.prepare("SELECT * FROM workflow_ui_drafts ORDER BY workflow_id ASC, updated_at DESC, draft_id ASC")
+				.all() as WorkflowDraftStoreRow[];
+		return rows.map(workflowDraftFromStoreRow);
 	}
 
 	saveDraft(record: OwnedWorkflowDraftRecord): void {
@@ -1254,6 +1333,20 @@ function workflowNextDraftResourceId(pathname: string): string | undefined {
 	if (!encodedId || encodedId.includes("/")) return undefined;
 	try {
 		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
+	}
+}
+
+function workflowCatalogResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		const workflowId = decodeURIComponent(encodedId);
+		if (workflowId === "drafts" || workflowId === "pickers" || workflowId === "lifecycle-events") return undefined;
+		return workflowId;
 	} catch {
 		throw new PiboWebHttpError("Invalid workflow id", 400);
 	}
@@ -3084,6 +3177,313 @@ function workflowDefinitionTags(definition: PiboJsonObject): string[] {
 	return tags.filter((tag): tag is string => typeof tag === "string");
 }
 
+type WorkflowCatalogBuildContext = {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	includeArchived: boolean;
+};
+
+type WorkflowCatalogAccumulator = {
+	id: string;
+	title: string;
+	description?: string;
+	source: "code" | "ui";
+	tags: Set<string>;
+	versions: WorkflowCatalogVersionSummary[];
+	activeDraftId?: string;
+};
+
+function buildWorkflowCatalogList(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	options: { includeArchived?: boolean } = {},
+): WorkflowCatalogListResponse {
+	const includeArchived = options.includeArchived === true;
+	const workflows = new Map<string, WorkflowCatalogAccumulator>();
+	const buildContext: WorkflowCatalogBuildContext = { state, context, webSession, includeArchived };
+
+	for (const record of STATIC_WORKFLOW_VERSION_CATALOG) {
+		if (record.status === "draft") continue;
+		if (record.status === "archived" && !includeArchived) continue;
+		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromCatalogRecord(record, buildContext));
+	}
+
+	for (const record of state.workflowPublishedVersionStore.listPublishedVersions()) {
+		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromPublishedVersion(record, buildContext));
+	}
+
+	for (const draft of state.workflowDraftStore.listDrafts()) {
+		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromDraft(draft));
+		const accumulator = workflows.get(draft.workflowId);
+		if (accumulator) accumulator.activeDraftId = draft.draftId;
+	}
+
+	return {
+		kind: "workflow-catalog",
+		includeArchived,
+		workflows: [...workflows.values()]
+			.map(workflowCatalogRecordFromAccumulator)
+			.sort(compareWorkflowCatalogRecords),
+	};
+}
+
+function addWorkflowCatalogVersion(workflows: Map<string, WorkflowCatalogAccumulator>, summary: WorkflowCatalogVersionSummary): void {
+	const existing = workflows.get(summary.id);
+	const accumulator = existing ?? {
+		id: summary.id,
+		title: summary.title,
+		...(summary.description ? { description: summary.description } : {}),
+		source: summary.source,
+		tags: new Set<string>(),
+		versions: [],
+	};
+	if (!existing) workflows.set(summary.id, accumulator);
+	if (summary.source === "ui") accumulator.source = "ui";
+	if (summary.status === "draft") {
+		accumulator.title = summary.title;
+		if (summary.description) accumulator.description = summary.description;
+	}
+	for (const tag of summary.tags) accumulator.tags.add(tag);
+	accumulator.versions.push(summary);
+}
+
+function workflowCatalogRecordFromAccumulator(accumulator: WorkflowCatalogAccumulator): WorkflowCatalogRecord {
+	const versions = [...accumulator.versions].sort(compareWorkflowCatalogVersionRecords);
+	const diagnostics = uniqueWorkflowDiagnostics(versions.flatMap((version) => version.diagnostics));
+	const actions = uniqueWorkflowCatalogActions(versions.flatMap((version) => version.actions));
+	const latest = selectWorkflowCatalogDisplayVersion(versions);
+	return {
+		id: accumulator.id,
+		title: latest?.title ?? accumulator.title,
+		...(latest?.description ?? accumulator.description ? { description: latest?.description ?? accumulator.description } : {}),
+		tags: [...new Set([...accumulator.tags, ...(latest?.tags ?? [])])].sort(),
+		source: accumulator.source,
+		status: deriveWorkflowCatalogStatus(versions),
+		versions,
+		...(accumulator.activeDraftId ? { activeDraftId: accumulator.activeDraftId } : {}),
+		editability: workflowCatalogEditability(actions),
+		validationState: workflowCatalogValidationStateFromVersions(versions),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions,
+	};
+}
+
+function selectWorkflowCatalogDisplayVersion(versions: WorkflowCatalogVersionSummary[]): WorkflowCatalogVersionSummary | undefined {
+	const sorted = [...versions].sort(compareWorkflowCatalogVersionRecords);
+	return [...sorted].reverse().find((version) => version.status === "draft")
+		?? [...sorted].reverse().find((version) => version.status === "published")
+		?? sorted[0];
+}
+
+function deriveWorkflowCatalogStatus(versions: WorkflowCatalogVersionSummary[]): WorkflowCatalogRecord["status"] {
+	if (versions.some((version) => version.status === "draft")) return "draft";
+	if (versions.some((version) => version.status === "published")) return "published";
+	if (versions.some((version) => version.status === "archived")) return "archived";
+	return versions[0]?.status ?? "deleted";
+}
+
+function workflowCatalogVersionSummaryFromCatalogRecord(record: WorkflowCatalogVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
+	const definition = record.status === "published" || record.status === "archived"
+		? createPublishedWorkflowDefinition(record, "pibo-agent")
+		: undefined;
+	const diagnostics = definition ? validateWorkflowDefinitionForV2(definition, context) : [];
+	return {
+		...record,
+		...(definition ? { definitionHash: hashWorkflowDefinitionJson(definition) } : {}),
+		validationState: workflowCatalogValidationStateFromDiagnostics(diagnostics, definition ? "valid" : "unknown"),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions: workflowCatalogActionsFor(record),
+	};
+}
+
+function workflowCatalogVersionSummaryFromPublishedVersion(record: WorkflowPublishedVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
+	const catalogRecord = workflowCatalogRecordFromPublishedVersion(record);
+	const diagnostics = validateWorkflowDefinitionForV2(record.definition, context);
+	return {
+		...catalogRecord,
+		definitionHash: record.definitionHash,
+		validationState: workflowCatalogValidationStateFromDiagnostics(diagnostics, "valid"),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions: workflowCatalogActionsFor(catalogRecord),
+	};
+}
+
+function workflowCatalogVersionSummaryFromDraft(draft: OwnedWorkflowDraftRecord): WorkflowCatalogVersionSummary {
+	const record = workflowCatalogRecordFromDraft(draft);
+	return {
+		...record,
+		validationState: draft.validationState,
+		diagnostics: draft.diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(draft.diagnostics),
+		actions: workflowCatalogActionsFor(record),
+	};
+}
+
+function workflowCatalogRecordFromDraft(draft: OwnedWorkflowDraftRecord): WorkflowCatalogVersionRecord {
+	return {
+		id: draft.workflowId,
+		version: workflowDraftVersionLabel(draft),
+		title: typeof draft.definition.title === "string" ? draft.definition.title : draft.workflowId,
+		...(typeof draft.definition.description === "string" ? { description: draft.definition.description } : {}),
+		source: "ui",
+		status: "draft",
+		tags: workflowDefinitionTags(draft.definition),
+	};
+}
+
+function workflowDraftVersionLabel(draft: OwnedWorkflowDraftRecord): string {
+	if (typeof draft.definition.version === "string" && draft.definition.version.trim()) return draft.definition.version.trim();
+	return draft.targetWorkflowVersion ?? "draft";
+}
+
+function workflowCatalogActionsFor(record: Pick<WorkflowCatalogVersionRecord, "source" | "status">): WorkflowCatalogAction[] {
+	if (record.status === "draft") return ["view", "edit_draft", "validate", "publish", "archive", "delete"];
+	if (record.status === "archived") return ["view", "version_history"];
+	if (record.status === "deleted") return ["view"];
+	const actions: WorkflowCatalogAction[] = ["view", "duplicate", "create_project_session", "version_history"];
+	if (record.source === "ui") actions.push("create_next_draft", "archive", "delete");
+	return actions;
+}
+
+function workflowCatalogEditability(actions: WorkflowCatalogAction[]): WorkflowCatalogEditability {
+	return {
+		canView: actions.includes("view"),
+		canDuplicate: actions.includes("duplicate"),
+		canEditDraft: actions.includes("edit_draft"),
+		canCreateDraft: actions.includes("create_next_draft"),
+		canValidate: actions.includes("validate"),
+		canPublish: actions.includes("publish"),
+		canArchive: actions.includes("archive"),
+		canDelete: actions.includes("delete"),
+		canCreateProjectSession: actions.includes("create_project_session"),
+	};
+}
+
+function workflowCatalogValidationStateFromDiagnostics(
+	diagnostics: WorkflowDraftDiagnostic[],
+	fallback: "unknown" | "valid" | "warning" | "error" = "unknown",
+): "unknown" | "valid" | "warning" | "error" {
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return "error";
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "warning")) return "warning";
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "info")) return fallback === "unknown" ? "warning" : fallback;
+	return fallback;
+}
+
+function workflowCatalogValidationStateFromVersions(versions: WorkflowCatalogVersionSummary[]): "unknown" | "valid" | "warning" | "error" {
+	const states = versions.map((version) => version.validationState);
+	if (states.includes("error")) return "error";
+	if (states.includes("warning")) return "warning";
+	if (states.includes("valid")) return "valid";
+	return "unknown";
+}
+
+function workflowMissingRefDiagnostics(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	return uniqueWorkflowDiagnostics(diagnostics.filter((diagnostic) => Boolean(diagnostic.registryRef)));
+}
+
+function uniqueWorkflowDiagnostics(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	const seen = new Set<string>();
+	return diagnostics.filter((diagnostic) => {
+		const key = [diagnostic.code, diagnostic.path ?? "", diagnostic.nodeId ?? "", diagnostic.edgeId ?? "", diagnostic.registryRef ?? "", diagnostic.message].join("\u0000");
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+function uniqueWorkflowCatalogActions(actions: WorkflowCatalogAction[]): WorkflowCatalogAction[] {
+	return [...new Set(actions)].sort();
+}
+
+function compareWorkflowCatalogRecords(left: WorkflowCatalogRecord, right: WorkflowCatalogRecord): number {
+	return left.id.localeCompare(right.id);
+}
+
+function buildWorkflowCatalogInspect(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	options: { includeArchived?: boolean; version?: string; draftId?: string } = {},
+): WorkflowCatalogInspectResponse {
+	let selectedDraft: OwnedWorkflowDraftRecord | undefined;
+	if (options.draftId) {
+		selectedDraft = state.workflowDraftStore.getDraft(options.draftId);
+		if (!selectedDraft || selectedDraft.workflowId !== workflowId) throw new PiboWebHttpError("Workflow draft not found", 404);
+	} else if (!options.version) {
+		selectedDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId);
+	}
+	if (selectedDraft) runWorkflowDraftValidation(state, context, webSession, selectedDraft, "draft_load");
+
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived: options.includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+
+	if (selectedDraft) {
+		return {
+			kind: "workflow-inspect",
+			workflow,
+			selected: { kind: "draft", draft: serializeWorkflowDraft(selectedDraft) },
+			diagnostics: selectedDraft.diagnostics,
+		};
+	}
+
+	const version = options.version ?? selectWorkflowCatalogDisplayVersion(workflow.versions)?.version;
+	const published = version ? workflowPublishedVersionInspection(state, context, webSession, workflowId, version, options.includeArchived === true) : undefined;
+	if (published) {
+		return {
+			kind: "workflow-inspect",
+			workflow,
+			selected: {
+				kind: "publishedVersion",
+				version: published.version,
+				definition: published.definition,
+				validation: published.validation,
+			},
+			diagnostics: published.diagnostics,
+		};
+	}
+
+	throw new PiboWebHttpError("Workflow version not found", 404);
+}
+
+function workflowPublishedVersionInspection(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	version: string,
+	includeArchived: boolean,
+): { version: WorkflowCatalogVersionRecord & { definitionHash: string }; definition: PiboJsonObject; validation: WorkflowValidationSummary; diagnostics: WorkflowDraftDiagnostic[] } | undefined {
+	const persisted = state.workflowPublishedVersionStore.listPublishedVersions({ workflowId }).find((record) => record.version === version);
+	if (persisted) {
+		const catalogRecord = workflowCatalogRecordFromPublishedVersion(persisted);
+		const diagnostics = validateWorkflowDefinitionForV2(persisted.definition, { state, context, webSession });
+		return {
+			version: { ...catalogRecord, definitionHash: persisted.definitionHash },
+			definition: persisted.definition,
+			validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
+			diagnostics,
+		};
+	}
+
+	const staticRecord = STATIC_WORKFLOW_VERSION_CATALOG.find((record) => record.id === workflowId && record.version === version);
+	if (!staticRecord || staticRecord.status === "draft" || (staticRecord.status === "archived" && !includeArchived)) return undefined;
+	const definition = createPublishedWorkflowDefinition(staticRecord, "pibo-agent");
+	const diagnostics = validateWorkflowDefinitionForV2(definition, { state, context, webSession });
+	return {
+		version: { ...staticRecord, definitionHash: hashWorkflowDefinitionJson(definition) },
+		definition,
+		validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
+		diagnostics,
+	};
+}
+
 const WORKFLOW_STARTER_DRAFT_ID = "v2-starter-draft";
 
 function workflowDraftBuilderPath(draftId: string): string {
@@ -3337,7 +3737,7 @@ function createWorkflowDraftDefinition(input: {
 	});
 }
 
-function createPublishedWorkflowDefinition(workflow: WorkflowVersionPickerOption, profileId: string): PiboJsonObject {
+function createPublishedWorkflowDefinition(workflow: WorkflowCatalogVersionRecord, profileId: string): PiboJsonObject {
 	return createRunnableWorkflowDefinition({
 		workflowId: workflow.id,
 		version: workflow.version,
@@ -6533,6 +6933,23 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						connection: "keep-alive",
 					},
 				});
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows` && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(buildWorkflowCatalogList(state, context, webSession, { includeArchived }));
+			}
+
+			const workflowCatalogId = workflowCatalogResourceId(url.pathname);
+			if (workflowCatalogId && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(buildWorkflowCatalogInspect(state, context, webSession, workflowCatalogId, {
+					includeArchived,
+					version: url.searchParams.get("version") ?? undefined,
+					draftId: url.searchParams.get("draftId") ?? undefined,
+				}));
 			}
 
 			const workflowDraftAction = workflowDraftActionResource(url.pathname);

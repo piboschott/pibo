@@ -316,6 +316,90 @@ export type WorkflowVersionHistoryResponse = {
 	diagnostics: WorkflowPickerDiagnostic[];
 };
 
+export type WorkflowCatalogAction =
+	| "view"
+	| "duplicate"
+	| "create_project_session"
+	| "edit_draft"
+	| "validate"
+	| "publish"
+	| "create_next_draft"
+	| "version_history"
+	| "archive"
+	| "delete";
+
+export type WorkflowCatalogEditability = {
+	canView: boolean;
+	canDuplicate: boolean;
+	canEditDraft: boolean;
+	canCreateDraft: boolean;
+	canValidate: boolean;
+	canPublish: boolean;
+	canArchive: boolean;
+	canDelete: boolean;
+	canCreateProjectSession: boolean;
+};
+
+export type WorkflowCatalogVersionSummary = WorkflowCatalogVersionRecord & {
+	definitionHash?: string;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+export type WorkflowCatalogRecord = {
+	id: string;
+	title: string;
+	description?: string;
+	tags: string[];
+	source: "code" | "ui";
+	status: "draft" | "published" | "archived" | "deleted";
+	versions: WorkflowCatalogVersionSummary[];
+	activeDraftId?: string;
+	editability: WorkflowCatalogEditability;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+export type WorkflowCatalogListResponse = {
+	kind: "workflow-catalog";
+	includeArchived: boolean;
+	workflows: WorkflowCatalogRecord[];
+};
+
+export type WorkflowCatalogInspectResponse = {
+	kind: "workflow-inspect";
+	workflow: WorkflowCatalogRecord;
+	selected:
+		| { kind: "draft"; draft: WorkflowDraftRecord }
+		| {
+			kind: "publishedVersion";
+			version: WorkflowCatalogVersionRecord & { definitionHash: string };
+			definition: WorkflowDraftDefinition;
+			validation: WorkflowValidationSummary;
+		};
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
+export async function getWorkflowCatalog(input: { includeArchived?: boolean } = {}): Promise<WorkflowCatalogListResponse> {
+	const params = new URLSearchParams();
+	if (input.includeArchived) params.set("includeArchived", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowCatalogListResponse>(`/api/chat/workflows${suffix}`);
+}
+
+export async function getWorkflowCatalogInspect(workflowId: string, input: { version?: string; draftId?: string; includeArchived?: boolean } = {}): Promise<WorkflowCatalogInspectResponse> {
+	const params = new URLSearchParams();
+	if (input.version) params.set("version", input.version);
+	if (input.draftId) params.set("draftId", input.draftId);
+	if (input.includeArchived) params.set("includeArchived", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowCatalogInspectResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}${suffix}`);
+}
+
 export async function getWorkflowVersionPicker(input: { selectedWorkflowId?: string; selectedWorkflowVersion?: string } = {}): Promise<WorkflowVersionPickerResponse> {
 	const params = new URLSearchParams();
 	if (input.selectedWorkflowId) params.set("selectedWorkflowId", input.selectedWorkflowId);

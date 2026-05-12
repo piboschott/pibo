@@ -1997,6 +1997,126 @@ test("workflow version picker lists published nested workflow refs and reports m
 	}
 });
 
+test("workflow catalog list and inspect APIs expose source/status, diagnostics, and archive filtering", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const catalogResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(catalogResponse.status, 200);
+		const catalogPayload = await catalogResponse.json();
+		assert.equal(catalogPayload.kind, "workflow-catalog");
+		assert.equal(catalogPayload.includeArchived, false);
+		assert.deepEqual(catalogPayload.workflows.map((workflow) => `${workflow.id}:${workflow.source}:${workflow.status}`), [
+			"simple-chat:code:published",
+			"standard-project:code:published",
+			"ui-review-workflow:ui:published",
+		]);
+
+		const standardWorkflow = catalogPayload.workflows.find((workflow) => workflow.id === "standard-project");
+		assert.ok(standardWorkflow);
+		assert.equal(standardWorkflow.title, "Standard Project");
+		assert.deepEqual(standardWorkflow.tags, ["project", "workflow"]);
+		assert.equal(standardWorkflow.versions[0].version, "1.0.0");
+		assert.equal(standardWorkflow.versions[0].definitionHash.startsWith("sha256:"), true);
+		assert.equal(standardWorkflow.validationState, "valid");
+		assert.deepEqual(standardWorkflow.missingRefs, []);
+		assert.equal(standardWorkflow.editability.canDuplicate, true);
+		assert.equal(standardWorkflow.editability.canEditDraft, false);
+		assert.ok(standardWorkflow.actions.includes("duplicate"));
+		assert.equal(standardWorkflow.actions.includes("publish"), false);
+		assert.equal(catalogPayload.workflows.some((workflow) => workflow.id === "archived-review-workflow"), false);
+
+		const archivedResponse = await fetch(`${baseURL}/api/chat/workflows?includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedResponse.status, 200);
+		const archivedPayload = await archivedResponse.json();
+		const archivedWorkflow = archivedPayload.workflows.find((workflow) => workflow.id === "archived-review-workflow");
+		assert.ok(archivedWorkflow);
+		assert.equal(archivedWorkflow.status, "archived");
+		assert.equal(archivedWorkflow.editability.canDuplicate, false);
+
+		const duplicateResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(duplicateResponse.status, 201);
+		const duplicatePayload = await duplicateResponse.json();
+		const invalidDefinition = structuredClone(duplicatePayload.draft.definition);
+		invalidDefinition.nodes.agent.profile.id = "missing-catalog-profile";
+		const invalidPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(duplicatePayload.draft.draftId)}`, {
+			method: "PATCH",
+			headers: jsonHeaders,
+			body: JSON.stringify({ definition: invalidDefinition, editTrigger: "node_edit" }),
+		});
+		assert.equal(invalidPatchResponse.status, 200);
+
+		const catalogAfterDraftResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(catalogAfterDraftResponse.status, 200);
+		const catalogAfterDraftPayload = await catalogAfterDraftResponse.json();
+		const copiedWorkflow = catalogAfterDraftPayload.workflows.find((workflow) => workflow.id === "ui-standard-project-copy");
+		assert.ok(copiedWorkflow);
+		assert.equal(copiedWorkflow.source, "ui");
+		assert.equal(copiedWorkflow.status, "draft");
+		assert.equal(copiedWorkflow.activeDraftId, duplicatePayload.draft.draftId);
+		assert.equal(copiedWorkflow.validationState, "error");
+		assert.ok(copiedWorkflow.missingRefs.some((diagnostic) => diagnostic.registryRef === "missing-catalog-profile"));
+		assert.equal(copiedWorkflow.editability.canEditDraft, true);
+		assert.ok(copiedWorkflow.actions.includes("publish"));
+
+		const inspectDraftResponse = await fetch(`${baseURL}/api/chat/workflows/ui-standard-project-copy`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(inspectDraftResponse.status, 200);
+		const inspectDraftPayload = await inspectDraftResponse.json();
+		assert.equal(inspectDraftPayload.kind, "workflow-inspect");
+		assert.equal(inspectDraftPayload.selected.kind, "draft");
+		assert.equal(inspectDraftPayload.selected.draft.draftId, duplicatePayload.draft.draftId);
+		assert.ok(inspectDraftPayload.diagnostics.some((diagnostic) => diagnostic.registryRef === "missing-catalog-profile"));
+
+		const inspectPublishedResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project?version=1.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(inspectPublishedResponse.status, 200);
+		const inspectPublishedPayload = await inspectPublishedResponse.json();
+		assert.equal(inspectPublishedPayload.selected.kind, "publishedVersion");
+		assert.equal(inspectPublishedPayload.selected.version.id, "standard-project");
+		assert.equal(inspectPublishedPayload.selected.version.version, "1.0.0");
+		assert.equal(inspectPublishedPayload.selected.version.source, "code");
+		assert.equal(inspectPublishedPayload.selected.validation.validationState, "valid");
+		assert.equal(inspectPublishedPayload.selected.definition.id, "standard-project");
+
+		const archivedInspectDefaultResponse = await fetch(`${baseURL}/api/chat/workflows/archived-review-workflow?version=1.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedInspectDefaultResponse.status, 404);
+
+		const archivedInspectResponse = await fetch(`${baseURL}/api/chat/workflows/archived-review-workflow?version=1.0.0&includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedInspectResponse.status, 200);
+		const archivedInspectPayload = await archivedInspectResponse.json();
+		assert.equal(archivedInspectPayload.selected.kind, "publishedVersion");
+		assert.equal(archivedInspectPayload.selected.version.status, "archived");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow security boundary validates registered refs and rejects inline execution paths", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

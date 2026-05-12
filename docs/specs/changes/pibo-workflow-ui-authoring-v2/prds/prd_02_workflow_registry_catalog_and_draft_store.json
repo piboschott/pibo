@@ -74,8 +74,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Chat Web now exposes authenticated workflow catalog list and inspect APIs with source/status, versions, editability, validation state, missing refs, actions, and archived filtering."
     },
     {
       "id": "US-006",
