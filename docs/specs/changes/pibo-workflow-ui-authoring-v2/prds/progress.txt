@@ -2321,3 +2321,21 @@
   - Useful context
     - Root raw-XState fields now produce `WorkflowSecurityError.rawXStateAuthoring`; root inline executable fields use the existing `WorkflowSecurityError.inlineExecutableCode` diagnostic.
 ---
+## 2026-05-12 18:19 CEST - US-022
+- What was implemented
+  - Added focused US-022 checklist assertions to the Workflow V2 lifecycle checklist test so catalog/storage lifecycle coverage is reviewable in one place.
+  - Marked PRD 09 US-022 passing with notes that map store, API, versioning, archive/delete, missing-ref, one-active-draft, and historical snapshot coverage.
+- Files changed
+  - `test/workflow-v2-lifecycle-checklist.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+- Quality checks run
+  - `node --test test/workflow-v2-lifecycle-checklist.test.mjs`
+  - In `pibo-dev-WorkflowsV2` container: `node --test test/workflow-v2-lifecycle-checklist.test.mjs`
+  - In `pibo-dev-WorkflowsV2` container: `node --test test/workflow-v2-release-coverage.test.mjs`
+  - In `pibo-dev-WorkflowsV2` container: `npm run typecheck`
+- Browser verification, if UI changed
+  - Not run; this story changed checklist tests and PRD metadata only, with no UI behavior changes.
+- **Learnings for future iterations:**
+  - Catalog/lifecycle completeness checks can stay focused by asserting the existing package-level store tests plus targeted `web-channel` lifecycle flows instead of duplicating long HTTP scenarios.
+  - Missing-reference coverage for workflow-version pickers uses `WorkflowCatalogError.unknownWorkflowVersion` and `registryRef` values like `missing-workflow@9.9.9`.
+---

@@ -12,6 +12,39 @@ function assertAllMatch(source, checks) {
 	}
 }
 
+test("Workflow V2 catalog and lifecycle checklist tests cover US-022 storage and API gates", async () => {
+	const catalogEntityTests = await readSource("packages/workflows/src/testing/workflow-catalog-entities.test.ts");
+	const publishedVersionTests = await readSource("packages/workflows/src/testing/workflow-published-versions.test.ts");
+	const webChannelTests = await readSource("test/web-channel.test.mjs");
+
+	assertAllMatch(catalogEntityTests, [
+		["registry/store tests assert workflow source metadata", /WORKFLOW_RECORD_SOURCES[\s\S]*\["code", "ui"\][\s\S]*isWorkflowRecordSource\("deleted"\), false/],
+		["registry/store tests assert workflow status metadata", /WORKFLOW_RECORD_STATUSES[\s\S]*\["draft", "published", "archived"\][\s\S]*isWorkflowRecordStatus\("deleted"\), false/],
+		["registry/store tests save incomplete UI drafts without losing diagnostics", /store\.saveWorkflowDraft\(draft\)[\s\S]*assert\.deepEqual\(store\.getWorkflowDraft\(draft\.draftId\), draft\)[\s\S]*assert\.equal\(store\.getWorkflowIdentity\(definition\.id\)\?\.currentDraftId, draft\.draftId\)/],
+		["registry/store tests update saved UI draft revisions", /store\.saveWorkflowDraft\(updatedDraft\)[\s\S]*assert\.deepEqual\(store\.getWorkflowDraft\(draft\.draftId\), updatedDraft\)/],
+		["registry/store tests keep lifecycle entities separate", /store\.saveWorkflowIdentity\(identity\)[\s\S]*store\.saveWorkflowDraft\(draft\)[\s\S]*store\.savePublishedWorkflowVersion\(published\)[\s\S]*store\.saveWorkflowArchiveState\(archiveState\)[\s\S]*store\.saveWorkflowDeleteTombstone\(tombstone\)/],
+		["registry/store tests enforce one active draft per workflow identity", /already has an active draft/],
+		["registry/store tests preserve snapshots after delete tombstones", /store\.saveDefinitionSnapshot\(snapshot\)[\s\S]*store\.saveWorkflowDeleteTombstone\(tombstone\)[\s\S]*listDefinitionSnapshots\(\{ workflowId: definition\.id \}\)/],
+	]);
+
+	assertAllMatch(publishedVersionTests, [
+		["published-version tests assert immutable definition hashes", /assert\.equal\(record\.definitionHash, hashWorkflowDefinition\(definition\)\)/],
+		["published-version tests hydrate registry lookup from persisted records", /registerWorkflowPublishedVersion\(registry, record\)[\s\S]*resolveWorkflowDefinition\(registry, definition\.id, definition\.version\)/],
+		["published-version tests reject replacement bodies", /rejects attempts to replace an existing published definition body[\s\S]*assert\.throws\(\(\) => store\.savePublishedWorkflowVersion\(changedRecord\), \/immutable\//],
+	]);
+
+	assertAllMatch(webChannelTests, [
+		["catalog API tests assert source/status rows and actions", /workflow catalog list and inspect APIs expose source\/status, diagnostics, and archive filtering[\s\S]*catalogPayload\.workflows\.map\(\(workflow\) => `\$\{workflow\.id\}:\$\{workflow\.source\}:\$\{workflow\.status\}`\)[\s\S]*standard-project:code:published[\s\S]*ui-review-workflow:ui:published/],
+		["catalog API tests duplicate into UI draft and surface missing refs", /const duplicateResponse = await fetch\(`\$\{baseURL\}\/api\/chat\/workflows\/standard-project\/duplicate`[\s\S]*missing-catalog-profile[\s\S]*inspectDraftPayload\.diagnostics\.some\(\(diagnostic\) => diagnostic\.registryRef === "missing-catalog-profile"\)/],
+		["publish API tests create and inspect immutable version resources", /workflow catalog lifecycle APIs create, validate, publish, and expose version resources[\s\S]*assert\.match\(publishPayload\.publishedVersion\.definitionHash, \/\^sha256:\[a-f0-9\]\{64\}\$\/[\s\S]*versionInspectPayload\.version\.status, "published"/],
+		["duplicate API tests handle code and UI published versions", /workflow duplicate-to-draft catalog operation handles code and UI published versions[\s\S]*sourceCodeInspectPayload\.selected\.version\.source, "code"[\s\S]*sourceUiInspectPayload\.selected\.version\.source, "ui"/],
+		["archive API tests hide archived workflows by default and retain history", /workflow archive API applies at workflow identity scope and hides archived workflows from selection[\s\S]*defaultCatalogPayload\.workflows\.some\(\(workflow\) => workflow\.id === "ui-review-workflow"\), false[\s\S]*historyPayload\.options\.some/],
+		["delete API tests tombstone live catalog state and preserve Project snapshots", /workflow delete API tombstones UI workflows while preserving Project snapshots[\s\S]*deletePayload\.deleted, true[\s\S]*historicalRunPayload\.snapshot\.id, sessionPayload\.snapshot\.id/],
+		["next-draft API tests create then reuse the one active published edit draft", /workflow published edit creates or reuses one next-version draft[\s\S]*createPayload\.reused, false[\s\S]*reusePayload\.reused, true/],
+		["picker tests cover missing workflow-version refs", /workflow version picker lists published nested workflow refs and reports missing refs[\s\S]*WorkflowCatalogError\.unknownWorkflowVersion[\s\S]*missing-workflow@9\.9\.9/],
+	]);
+});
+
 test("Workflow V2 lifecycle tests cover immutable publish records and registry visibility", async () => {
 	const publishedVersionTests = await readSource("packages/workflows/src/testing/workflow-published-versions.test.ts");
 	const catalogEntityTests = await readSource("packages/workflows/src/testing/workflow-catalog-entities.test.ts");

@@ -343,8 +343,8 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added focused catalog/lifecycle checklist coverage that maps store source/status and draft persistence tests, web-channel catalog/duplicate/publish/archive/delete/missing-ref flows, immutable published-version tests, one-active-draft enforcement, and historical snapshot preservation."
     },
     {
       "id": "US-023",
