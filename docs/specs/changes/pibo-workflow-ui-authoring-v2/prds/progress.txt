@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Dedicated workflow version-list/inspect APIs should derive visibility through `buildWorkflowCatalogList` before reading definitions so archive/delete filtering matches catalog and picker surfaces.
 - Configured/not-started Project workflow UI should derive pre-run validation and blocking diagnostics from `workflowLifecycleEvents`, because no workflow run record or trace attempt exists before Start succeeds.
 - Web-channel tests import `dist/`, so run `npm run build` before targeted `node --test test/web-channel.test.mjs` checks when server code changes.
 - Raw JSON schema editors should write schema JSON back into Pibo Workflow IR and rely on the draft validation pipeline to surface `WorkflowInterfaceError.*` subset diagnostics rather than adding Zod, AJV, or form-builder layers.
@@ -1422,4 +1423,29 @@
   - Saved screenshot: `/tmp/ralph-v2-deferral-negative-tests.png` inside the container.
 - **Learnings for future iterations:**
   - Source-level negative UI tests should include control `aria-label`, `title`, and `placeholder` attributes, because icon-only buttons may expose their action only through accessibility labels.
+---
+## 2026-05-12 08:01 CEST - US-006
+- What was implemented
+  - Added authenticated `POST /api/chat/workflows` support to create a UI workflow draft identity from title/description/tags and optional Pibo Workflow IR.
+  - Added dedicated `GET /api/chat/workflows/:workflowId/versions` and `GET /api/chat/workflows/:workflowId/versions/:version` routes that reuse catalog visibility rules and include source/status, validation, diagnostics, and missing refs.
+  - Added Chat UI API client helpers for create-draft and version list/inspect routes.
+  - Added Web API regression coverage for create, save, validate, publish, version list/inspect, archive auth, and archived-version visibility.
+  - Marked PRD 09 US-006 passing.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow catalog lifecycle APIs create" test/web-channel.test.mjs'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && node --test test/web-channel.test.mjs'` — passed, 69/69 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this story changed backend/API lifecycle routes, client API helpers, and automated API tests with no visible UI behavior change.
+- **Learnings for future iterations:**
+  - Version-list and version-inspect routes should first resolve workflow visibility through the catalog projection, then inspect the immutable definition, so archive/delete behavior stays consistent across catalog, pickers, and Project selection.
+  - Web-channel API tests import compiled `dist/`; rebuild before targeted tests after changing `src/apps/chat/web-app.ts`.
 ---

@@ -491,6 +491,29 @@ type WorkflowCatalogInspectResponse = {
 	diagnostics: WorkflowDraftDiagnostic[];
 };
 
+type WorkflowVersionListResponse = {
+	kind: "workflow-version-list";
+	workflowId: string;
+	includeArchived: boolean;
+	workflow: WorkflowCatalogRecord;
+	versions: WorkflowCatalogVersionSummary[];
+};
+
+type WorkflowVersionInspectResponse = {
+	kind: "workflow-version-inspect";
+	workflow: WorkflowCatalogRecord;
+	version: WorkflowCatalogVersionRecord & { definitionHash: string };
+	definition: PiboJsonObject;
+	validation: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+};
+
+type WorkflowCreateDraftResponse = {
+	draft: WorkflowDraftRecord;
+	builderPath: string;
+};
+
 type WorkflowDraftDiagnostic = {
 	code: string;
 	message: string;
@@ -569,6 +592,14 @@ type WorkflowArchiveBody = {
 
 type WorkflowDeleteBody = {
 	confirmWorkflowId?: unknown;
+};
+
+type WorkflowCreateDraftBody = {
+	workflowId?: unknown;
+	title?: unknown;
+	description?: unknown;
+	tags?: unknown;
+	definition?: unknown;
 };
 
 type WorkflowDraftPatchBody = {
@@ -1655,6 +1686,22 @@ function workflowArchiveResourceId(pathname: string): string | undefined {
 	}
 }
 
+function workflowVersionResource(pathname: string): { workflowId: string; version?: string } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 2 && parts.length !== 3) return undefined;
+	if (!parts[0] || parts[1] !== "versions" || (parts.length === 3 && !parts[2])) return undefined;
+	try {
+		return {
+			workflowId: decodeURIComponent(parts[0]),
+			...(parts[2] ? { version: decodeURIComponent(parts[2]) } : {}),
+		};
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow version route", 400);
+	}
+}
+
 function workflowCatalogResourceId(pathname: string): string | undefined {
 	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
 	if (!pathname.startsWith(prefix)) return undefined;
@@ -2585,6 +2632,52 @@ function normalizeWorkflowArchiveReason(value: unknown): string | undefined {
 	if (typeof value !== "string") throw new PiboWebHttpError("Workflow archive reason must be a string", 400);
 	const trimmed = value.trim();
 	return trimmed ? trimmed.slice(0, 500) : undefined;
+}
+
+function normalizeWorkflowDraftTitle(value: unknown, fallback?: string): string {
+	const source = value === undefined || value === null || value === "" ? fallback : value;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow title must be a string", 400);
+	const title = source.replace(/\s+/g, " ").trim();
+	if (!title) throw new PiboWebHttpError("Workflow title is required", 400);
+	if (title.length > 160) throw new PiboWebHttpError("Workflow title is too long", 400);
+	return title;
+}
+
+function normalizeWorkflowDraftDescription(value: unknown, fallback?: string): string | undefined {
+	const source = value === undefined || value === null || value === "" ? fallback : value;
+	if (source === undefined || source === null || source === "") return undefined;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow description must be a string", 400);
+	const description = source.replace(/\s+/g, " ").trim();
+	if (!description) return undefined;
+	if (description.length > 1000) throw new PiboWebHttpError("Workflow description is too long", 400);
+	return description;
+}
+
+function normalizeWorkflowDraftTags(value: unknown, fallback: string[] = []): string[] {
+	const source = value === undefined || value === null ? fallback : value;
+	if (!Array.isArray(source)) throw new PiboWebHttpError("Workflow tags must be an array of strings", 400);
+	return [...new Set(source.map((tag) => {
+		if (typeof tag !== "string") throw new PiboWebHttpError("Workflow tags must be strings", 400);
+		return tag.replace(/\s+/g, " ").trim();
+	}).filter(Boolean))].slice(0, 20);
+}
+
+function normalizeWorkflowCreateWorkflowId(value: unknown, fallbackTitle: string): string {
+	const source = value === undefined || value === null || value === ""
+		? `ui-${workflowSlugFromTitle(fallbackTitle)}-${randomUUID().slice(0, 8)}`
+		: value;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow id must be a string", 400);
+	const workflowId = source.trim();
+	if (!workflowId) throw new PiboWebHttpError("Workflow id is required", 400);
+	if (workflowId.length > 160 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(workflowId)) {
+		throw new PiboWebHttpError("Workflow id may contain only letters, numbers, dots, underscores, and dashes", 400);
+	}
+	return workflowId;
+}
+
+function workflowSlugFromTitle(title: string): string {
+	const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+	return slug || "workflow";
 }
 
 function requireWorkflowDeleteConfirmation(value: unknown, workflowId: string): void {
@@ -4001,6 +4094,163 @@ function workflowPublishedVersionInspection(
 		validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
 		diagnostics,
 	};
+}
+
+function buildWorkflowVersionList(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	options: { includeArchived?: boolean } = {},
+): WorkflowVersionListResponse {
+	const includeArchived = options.includeArchived === true;
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	return {
+		kind: "workflow-version-list",
+		workflowId,
+		includeArchived,
+		workflow,
+		versions: workflow.versions
+			.filter((version) => version.status === "published" || version.status === "archived")
+			.sort(compareWorkflowCatalogVersionRecords),
+	};
+}
+
+function buildWorkflowVersionInspect(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	version: string,
+	options: { includeArchived?: boolean } = {},
+): WorkflowVersionInspectResponse {
+	const includeArchived = options.includeArchived === true;
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	const published = workflowPublishedVersionInspection(state, context, webSession, workflowId, version, includeArchived);
+	if (!published) throw new PiboWebHttpError("Workflow version not found", 404);
+	const diagnostics = sanitizeWorkflowDiagnostics(published.diagnostics);
+	return {
+		kind: "workflow-version-inspect",
+		workflow,
+		version: published.version,
+		definition: published.definition,
+		validation: published.validation,
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+	};
+}
+
+function createWorkflowDraftIdentity(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	body: WorkflowCreateDraftBody,
+): WorkflowCreateDraftResponse {
+	const inputDefinition = body.definition === undefined ? undefined : normalizeWorkflowCreateDefinition(body.definition);
+	const fallbackTitle = inputDefinition && typeof inputDefinition.title === "string" ? inputDefinition.title : undefined;
+	const title = normalizeWorkflowDraftTitle(body.title, fallbackTitle);
+	const workflowId = normalizeWorkflowCreateWorkflowId(body.workflowId ?? inputDefinition?.id, title);
+	const description = normalizeWorkflowDraftDescription(body.description, inputDefinition && typeof inputDefinition.description === "string" ? inputDefinition.description : undefined);
+	const tags = normalizeWorkflowDraftTags(body.tags, inputDefinition ? workflowDefinitionTags(inputDefinition) : ["ui-draft"]);
+	assertWorkflowCreateIdentityAvailable(state, context, webSession, workflowId);
+
+	const now = new Date().toISOString();
+	const draftId = `draft_${workflowId.replace(/[^a-zA-Z0-9_-]/g, "-")}_${randomUUID().slice(0, 8)}`;
+	const definition = inputDefinition
+		? workflowCreateDefinitionWithIdentity(inputDefinition, { workflowId, title, description, tags })
+		: createEmptyWorkflowDraftDefinition({ workflowId, title, description, tags });
+	const draft: OwnedWorkflowDraftRecord = {
+		draftId,
+		workflowId,
+		source: "ui",
+		status: "draft",
+		versionIntent: "patch",
+		definition,
+		diagnostics: [
+			{
+				code: "WorkflowBuilderInfo.createdDraft",
+				message: `Created UI workflow draft '${workflowId}'.`,
+				severity: "info",
+				path: "$.id",
+				hint: "Drafts may be incomplete until validation passes before publish or run.",
+			},
+		],
+		validationState: "warning",
+		revision: 1,
+		createdAt: now,
+		updatedAt: now,
+		ownerScope: webSession.ownerScope,
+	};
+	state.workflowDraftStore.saveDraft(draft);
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.draft.saved",
+		workflowId: draft.workflowId,
+		workflowVersion: typeof draft.definition.version === "string" ? draft.definition.version : undefined,
+		draftId: draft.draftId,
+		status: "saved",
+		diagnostics: draft.diagnostics,
+		payload: { operation: "create" },
+	});
+	runWorkflowDraftValidation(state, context, webSession, draft, "draft_load");
+	return { draft: serializeWorkflowDraft(draft), builderPath: workflowDraftBuilderPath(draft.draftId) };
+}
+
+function normalizeWorkflowCreateDefinition(value: unknown): PiboJsonObject {
+	if (!isJsonObject(value)) throw new PiboWebHttpError("Workflow definition must be a JSON object", 400);
+	return cloneJsonObject(value);
+}
+
+function assertWorkflowCreateIdentityAvailable(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+): void {
+	if (state.workflowTombstoneStore.getWorkflowTombstone(workflowId)) throw new PiboWebHttpError("Workflow id has been deleted", 409);
+	const existing = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true }).workflows.find((record) => record.id === workflowId);
+	if (existing || state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId) || state.workflowPublishedVersionStore.listPublishedVersions({ workflowId }).length) {
+		throw new PiboWebHttpError(`Workflow '${workflowId}' already exists`, 409);
+	}
+}
+
+function workflowCreateDefinitionWithIdentity(
+	definition: PiboJsonObject,
+	input: { workflowId: string; title: string; description?: string; tags: string[] },
+): PiboJsonObject {
+	const next = cloneJsonObject(definition);
+	next.id = input.workflowId;
+	if (typeof next.version !== "string" || !next.version.trim()) next.version = "0.1.0-draft";
+	next.title = input.title;
+	if (input.description) next.description = input.description;
+	else delete next.description;
+	next.metadata = workflowMetadataWithTags(next.metadata, input.tags);
+	if (!isJsonObject(next.nodes)) next.nodes = {};
+	if (!isJsonObject(next.edges)) next.edges = {};
+	if (!isJsonObject(next.ui)) next.ui = { layout: "auto", positions: {} };
+	return next;
+}
+
+function createEmptyWorkflowDraftDefinition(input: { workflowId: string; title: string; description?: string; tags: string[] }): PiboJsonObject {
+	return {
+		id: input.workflowId,
+		version: "0.1.0-draft",
+		title: input.title,
+		...(input.description ? { description: input.description } : {}),
+		metadata: { tags: input.tags },
+		nodes: {},
+		edges: {},
+		ui: { layout: "auto", positions: {} },
+	};
+}
+
+function workflowMetadataWithTags(value: unknown, tags: string[]): PiboJsonObject {
+	const metadata = isJsonObject(value) ? cloneJsonObject(value) : {};
+	metadata.tags = tags;
+	return metadata;
 }
 
 const WORKFLOW_STARTER_DRAFT_ID = "v2-starter-draft";
@@ -8119,6 +8369,22 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const webSession = await requireSession(request, context);
 				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
 				return responseJson(buildWorkflowCatalogList(state, context, webSession, { includeArchived }));
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowCreateDraftBody>(request);
+				return responseJson(createWorkflowDraftIdentity(state, context, webSession, body), { status: 201 });
+			}
+
+			const workflowVersion = workflowVersionResource(url.pathname);
+			if (workflowVersion && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(workflowVersion.version
+					? buildWorkflowVersionInspect(state, context, webSession, workflowVersion.workflowId, workflowVersion.version, { includeArchived })
+					: buildWorkflowVersionList(state, context, webSession, workflowVersion.workflowId, { includeArchived }));
 			}
 
 			const workflowCatalogId = workflowCatalogResourceId(url.pathname);

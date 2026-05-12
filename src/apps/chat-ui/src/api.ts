@@ -404,6 +404,24 @@ export type WorkflowCatalogInspectResponse = {
 	diagnostics: WorkflowDraftDiagnostic[];
 };
 
+export type WorkflowVersionListResponse = {
+	kind: "workflow-version-list";
+	workflowId: string;
+	includeArchived: boolean;
+	workflow: WorkflowCatalogRecord;
+	versions: WorkflowCatalogVersionSummary[];
+};
+
+export type WorkflowVersionInspectResponse = {
+	kind: "workflow-version-inspect";
+	workflow: WorkflowCatalogRecord;
+	version: WorkflowCatalogVersionRecord & { definitionHash: string };
+	definition: WorkflowDraftDefinition;
+	validation: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+};
+
 export async function getWorkflowCatalog(input: { includeArchived?: boolean } = {}): Promise<WorkflowCatalogListResponse> {
 	const params = new URLSearchParams();
 	if (input.includeArchived) params.set("includeArchived", "true");
@@ -418,6 +436,20 @@ export async function getWorkflowCatalogInspect(workflowId: string, input: { ver
 	if (input.includeArchived) params.set("includeArchived", "true");
 	const suffix = params.size ? `?${params.toString()}` : "";
 	return requestJson<WorkflowCatalogInspectResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}${suffix}`);
+}
+
+export async function getWorkflowVersionList(workflowId: string, input: { includeArchived?: boolean } = {}): Promise<WorkflowVersionListResponse> {
+	const params = new URLSearchParams();
+	if (input.includeArchived) params.set("includeArchived", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowVersionListResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}/versions${suffix}`);
+}
+
+export async function getWorkflowVersionInspect(workflowId: string, version: string, input: { includeArchived?: boolean } = {}): Promise<WorkflowVersionInspectResponse> {
+	const params = new URLSearchParams();
+	if (input.includeArchived) params.set("includeArchived", "true");
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowVersionInspectResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}/versions/${encodeURIComponent(version)}${suffix}`);
 }
 
 export async function getWorkflowVersionPicker(input: { selectedWorkflowId?: string; selectedWorkflowVersion?: string } = {}): Promise<WorkflowVersionPickerResponse> {
@@ -515,6 +547,18 @@ export type WorkflowDraftRecord = {
 export type WorkflowDraftResponse = {
 	draft: WorkflowDraftRecord;
 };
+
+export type WorkflowCreateDraftResponse = WorkflowDraftResponse & {
+	builderPath: string;
+};
+
+export async function postWorkflowCreateDraft(input: { workflowId?: string; title: string; description?: string; tags?: string[]; definition?: WorkflowDraftDefinition }): Promise<WorkflowCreateDraftResponse> {
+	return requestJson<WorkflowCreateDraftResponse>("/api/chat/workflows", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
 
 export async function getWorkflowDraft(draftId: string): Promise<WorkflowDraftResponse> {
 	return requestJson<WorkflowDraftResponse>(`/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`);

@@ -2204,6 +2204,161 @@ test("workflow catalog list and inspect APIs expose source/status, diagnostics, 
 	}
 });
 
+test("workflow catalog lifecycle APIs create, validate, publish, and expose version resources", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const createResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				workflowId: "ui-lifecycle-api-draft",
+				title: "Lifecycle API Draft",
+				description: "Created through the catalog lifecycle API.",
+				tags: ["lifecycle", "api"],
+			}),
+		});
+		assert.equal(createResponse.status, 201);
+		const createPayload = await createResponse.json();
+		assert.equal(createPayload.draft.workflowId, "ui-lifecycle-api-draft");
+		assert.equal(createPayload.draft.source, "ui");
+		assert.equal(createPayload.draft.status, "draft");
+		assert.equal(createPayload.draft.validationState, "error");
+		assert.match(createPayload.builderPath, /^\/apps\/chat\/workflows\/drafts\/draft_ui-lifecycle-api-draft_/);
+
+		const emptyVersionsResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/versions`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(emptyVersionsResponse.status, 200);
+		const emptyVersionsPayload = await emptyVersionsResponse.json();
+		assert.equal(emptyVersionsPayload.kind, "workflow-version-list");
+		assert.equal(emptyVersionsPayload.workflow.source, "ui");
+		assert.equal(emptyVersionsPayload.workflow.status, "draft");
+		assert.deepEqual(emptyVersionsPayload.versions, []);
+
+		const runnableDefinition = {
+			id: "ui-lifecycle-api-draft",
+			version: "0.1.0",
+			title: "Lifecycle API Draft",
+			description: "Created through the catalog lifecycle API.",
+			metadata: { tags: ["api", "lifecycle"] },
+			input: { kind: "text", description: "Input for the lifecycle API workflow." },
+			output: { kind: "text", description: "Output from the lifecycle API workflow." },
+			initial: "agent",
+			nodes: {
+				agent: {
+					kind: "agent",
+					runtime: "pibo",
+					profile: { kind: "fixed", id: "pibo-agent" },
+					promptTemplate: "Answer with the workflow input.\n\n{{input}}",
+					output: { kind: "text" },
+				},
+			},
+			edges: {},
+			ui: { layout: "auto", positions: { agent: { x: 80, y: 80 } } },
+		};
+
+		const patchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(createPayload.draft.draftId)}`, {
+			method: "PATCH",
+			headers: jsonHeaders,
+			body: JSON.stringify({ definition: runnableDefinition, editTrigger: "graph_edit" }),
+		});
+		assert.equal(patchResponse.status, 200);
+		const patchPayload = await patchResponse.json();
+		assert.equal(patchPayload.validation.ok, true);
+		assert.deepEqual(patchPayload.diagnostics.filter((diagnostic) => diagnostic.registryRef), []);
+
+		const validateResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(createPayload.draft.draftId)}/validate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ trigger: "graph_edit" }),
+		});
+		assert.equal(validateResponse.status, 200);
+		const validatePayload = await validateResponse.json();
+		assert.equal(validatePayload.validation.ok, true);
+		assert.equal(validatePayload.draft.source, "ui");
+		assert.equal(validatePayload.draft.status, "draft");
+
+		const publishResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(createPayload.draft.draftId)}/publish`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ versionIntent: "patch" }),
+		});
+		assert.equal(publishResponse.status, 201);
+		const publishPayload = await publishResponse.json();
+		assert.equal(publishPayload.publishedVersion.workflowId, "ui-lifecycle-api-draft");
+		assert.equal(publishPayload.publishedVersion.source, "ui");
+		assert.equal(publishPayload.publishedVersion.status, "published");
+		assert.equal(publishPayload.publishedVersion.version, "0.1.1");
+		assert.match(publishPayload.publishedVersion.definitionHash, /^sha256:[a-f0-9]{64}$/);
+
+		const versionsResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/versions`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(versionsResponse.status, 200);
+		const versionsPayload = await versionsResponse.json();
+		assert.deepEqual(versionsPayload.versions.map((version) => `${version.version}:${version.source}:${version.status}`), ["0.1.1:ui:published"]);
+		assert.deepEqual(versionsPayload.versions[0].missingRefs, []);
+
+		const versionInspectResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/versions/0.1.1`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(versionInspectResponse.status, 200);
+		const versionInspectPayload = await versionInspectResponse.json();
+		assert.equal(versionInspectPayload.kind, "workflow-version-inspect");
+		assert.equal(versionInspectPayload.version.version, "0.1.1");
+		assert.equal(versionInspectPayload.version.source, "ui");
+		assert.equal(versionInspectPayload.version.status, "published");
+		assert.equal(versionInspectPayload.validation.ok, true);
+		assert.deepEqual(versionInspectPayload.missingRefs, []);
+		assert.equal(versionInspectPayload.definition.id, "ui-lifecycle-api-draft");
+
+		const unauthenticatedArchive = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/archive`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+			},
+			body: JSON.stringify({ reason: "auth baseline check" }),
+		});
+		assert.equal(unauthenticatedArchive.status, 401);
+
+		const archiveResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/archive`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ reason: "Lifecycle API coverage complete." }),
+		});
+		assert.equal(archiveResponse.status, 200);
+		const archivePayload = await archiveResponse.json();
+		assert.equal(archivePayload.workflow.source, "ui");
+		assert.equal(archivePayload.workflow.status, "archived");
+		assert.equal(archivePayload.archiveState.archived, true);
+
+		const archivedVersionDefaultResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/versions/0.1.1`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedVersionDefaultResponse.status, 404);
+
+		const archivedVersionResponse = await fetch(`${baseURL}/api/chat/workflows/ui-lifecycle-api-draft/versions/0.1.1?includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedVersionResponse.status, 200);
+		const archivedVersionPayload = await archivedVersionResponse.json();
+		assert.equal(archivedVersionPayload.version.status, "archived");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow duplicate-to-draft catalog operation handles code and UI published versions", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

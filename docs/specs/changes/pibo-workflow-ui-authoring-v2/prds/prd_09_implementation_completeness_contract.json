@@ -92,8 +92,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Workflow catalog lifecycle APIs now expose authenticated list, inspect, create draft, duplicate, draft save, validate, publish, archive, delete, and dedicated version list/inspect routes with source/status metadata and missing-reference diagnostics."
     },
     {
       "id": "US-007",
