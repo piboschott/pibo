@@ -2981,6 +2981,8 @@ const WORKFLOW_EDIT_VALIDATION_TRIGGERS = new Set<WorkflowValidationTrigger>([
 	"raw_ir_edit",
 ]);
 
+const WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE = "WorkflowBuilderWarning.invalidRawIrText";
+
 const WORKFLOW_VALIDATION_DIAGNOSTIC_PREFIXES = [
 	"WorkflowValidation",
 	"WorkflowGraphError",
@@ -3098,24 +3100,47 @@ function cloneJsonObject(value: PiboJsonObject): PiboJsonObject {
 	return JSON.parse(JSON.stringify(value)) as PiboJsonObject;
 }
 
-function parseWorkflowDraftDefinitionFromPatch(body: WorkflowDraftPatchBody): { definition?: PiboJsonObject; trigger: WorkflowValidationTrigger } {
+function parseWorkflowDraftDefinitionFromPatch(body: WorkflowDraftPatchBody): { definition?: PiboJsonObject; trigger: WorkflowValidationTrigger; diagnostic?: WorkflowDraftDiagnostic } {
 	const hasRawText = body.rawDefinitionText !== undefined;
 	const hasDefinition = body.definition !== undefined;
 	if (hasRawText && hasDefinition) throw new PiboWebHttpError("Provide either rawDefinitionText or definition, not both", 400);
 	const trigger = normalizeWorkflowEditTrigger(body.editTrigger ?? (hasRawText ? "raw_ir_edit" : "graph_edit"));
 	if (!hasRawText && !hasDefinition) return { trigger };
-	const value = hasRawText ? parseRawWorkflowDefinitionText(body.rawDefinitionText) : body.definition;
-	if (!isJsonObject(value)) throw new PiboWebHttpError("Workflow draft definition must be a JSON object", 400);
-	return { definition: value, trigger };
+	if (hasRawText) return { trigger, ...parseRawWorkflowDefinitionText(body.rawDefinitionText) };
+	if (!isJsonObject(body.definition)) throw new PiboWebHttpError("Workflow draft definition must be a JSON object", 400);
+	return { definition: body.definition, trigger };
 }
 
-function parseRawWorkflowDefinitionText(value: unknown): unknown {
+function parseRawWorkflowDefinitionText(value: unknown): { definition?: PiboJsonObject; diagnostic?: WorkflowDraftDiagnostic } {
 	if (typeof value !== "string") throw new PiboWebHttpError("Raw Workflow IR text must be a string", 400);
+	let parsed: unknown;
 	try {
-		return JSON.parse(value) as unknown;
+		parsed = JSON.parse(value) as unknown;
 	} catch {
-		throw new PiboWebHttpError("Raw Workflow IR text must be valid JSON before it can replace the saved draft object", 400);
+		return {
+			diagnostic: createRawWorkflowIrParseDiagnostic("Raw Workflow IR text was not saved because it is not valid JSON."),
+		};
 	}
+	if (!isJsonObject(parsed)) {
+		return {
+			diagnostic: createRawWorkflowIrParseDiagnostic("Raw Workflow IR text was not saved because it must parse to a JSON object."),
+		};
+	}
+	return { definition: parsed };
+}
+
+function createRawWorkflowIrParseDiagnostic(message: string): WorkflowDraftDiagnostic {
+	return {
+		code: WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE,
+		message,
+		severity: "warning",
+		path: "$",
+		hint: "Fix the raw Workflow IR text and save again; the last valid draft object remains unchanged.",
+	};
+}
+
+function withoutRawWorkflowIrParseDiagnostic(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	return diagnostics.filter((diagnostic) => diagnostic.code !== WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE);
 }
 
 function requireMutableWorkflowDraft(state: ChatWebAppState, webSession: PiboWebSession, draftId: string): OwnedWorkflowDraftRecord {
@@ -6040,10 +6065,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<WorkflowDraftPatchBody>(request);
 				const record = requireMutableWorkflowDraft(state, webSession, workflowDraftId);
-				const { definition, trigger } = parseWorkflowDraftDefinitionFromPatch(body);
+				const { definition, trigger, diagnostic } = parseWorkflowDraftDefinitionFromPatch(body);
 				if (definition) {
 					record.definition = definition;
+					record.diagnostics = withoutRawWorkflowIrParseDiagnostic(record.diagnostics);
 					record.revision += 1;
+				} else if (diagnostic) {
+					record.diagnostics = [...withoutRawWorkflowIrParseDiagnostic(record.diagnostics), diagnostic];
 				}
 				const validation = runWorkflowDraftValidation(state, context, webSession, record, trigger);
 				return responseJson({ draft: serializeWorkflowDraft(record), ...validation });

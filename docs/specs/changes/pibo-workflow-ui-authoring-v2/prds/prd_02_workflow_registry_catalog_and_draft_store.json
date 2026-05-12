@@ -59,8 +59,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Raw IR parse failures now return a warning diagnostic without replacing the persisted draft definition; valid raw IR still updates the shared draft object."
     },
     {
       "id": "US-005",

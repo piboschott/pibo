@@ -2245,7 +2245,49 @@ test("workflow validation pipeline runs on draft load, edit, validate, and publi
 		assert.equal(rawPatchPayload.validation.trigger, "raw_ir_edit");
 		assert.equal(rawPatchPayload.validation.ok, true);
 
-		const invalidDefinition = structuredClone(validDefinition);
+		const invalidRawPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ rawDefinitionText: "{ invalid raw workflow ir", editTrigger: "raw_ir_edit" }),
+		});
+		assert.equal(invalidRawPatchResponse.status, 200);
+		const invalidRawPatchPayload = await invalidRawPatchResponse.json();
+		assert.equal(invalidRawPatchPayload.validation.trigger, "raw_ir_edit");
+		assert.equal(invalidRawPatchPayload.validation.validationState, "warning");
+		assert.equal(invalidRawPatchPayload.draft.revision, rawPatchPayload.draft.revision);
+		assert.deepEqual(invalidRawPatchPayload.draft.definition, rawPatchPayload.draft.definition);
+		assert.ok(invalidRawPatchPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowBuilderWarning.invalidRawIrText" && diagnostic.severity === "warning"));
+
+		const reloadedAfterInvalidRawResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(reloadedAfterInvalidRawResponse.status, 200);
+		const reloadedAfterInvalidRawPayload = await reloadedAfterInvalidRawResponse.json();
+		assert.equal(reloadedAfterInvalidRawPayload.draft.revision, rawPatchPayload.draft.revision);
+		assert.deepEqual(reloadedAfterInvalidRawPayload.draft.definition, rawPatchPayload.draft.definition);
+
+		const rawRepairDefinition = structuredClone(rawPatchPayload.draft.definition);
+		rawRepairDefinition.title = "Raw IR safe sync";
+		const rawRepairResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ rawDefinitionText: JSON.stringify(rawRepairDefinition), editTrigger: "raw_ir_edit" }),
+		});
+		assert.equal(rawRepairResponse.status, 200);
+		const rawRepairPayload = await rawRepairResponse.json();
+		assert.equal(rawRepairPayload.draft.definition.title, "Raw IR safe sync");
+		assert.equal(rawRepairPayload.draft.revision, rawPatchPayload.draft.revision + 1);
+		assert.equal(rawRepairPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowBuilderWarning.invalidRawIrText"), false);
+
+		const invalidDefinition = structuredClone(rawRepairPayload.draft.definition);
 		invalidDefinition.nodes.agent.profile.id = "missing-workflow-profile";
 		const invalidPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
 			method: "PATCH",

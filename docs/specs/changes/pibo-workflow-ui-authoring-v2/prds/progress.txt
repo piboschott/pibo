@@ -26,6 +26,7 @@
 - Project view routing should combine `PiboWebSessionNode.workflowSessionKind` with `PiboProjectSession` workflow linkage; legacy `simple-chat` Project main sessions may carry `main_workflow` metadata but must still route to Terminal.
 - V2 workflow security validation should reject inline executable fields and hidden LLM coercion at draft/publish/start boundaries; incompatible ports require visible registered adapter refs instead.
 - Container web gateway restart commands should avoid `pgrep`/`pkill` patterns that match the wrapper shell; keep the Node process alive with a keepalive/nohup after `runWebGatewayServer` logs startup.
+- Invalid raw Workflow IR text should be a transient warning diagnostic on the draft while preserving the last parsed `definition`; clear the warning after the next valid parsed raw/visual edit.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -754,4 +755,25 @@
   - Saved screenshot: `/tmp/ralph-v2-product-duplicate-to-draft.png` inside the container.
 - **Learnings for future iterations:**
   - Product-overview stories can be completed by focused PRD implementations; still verify the user-facing end-to-end acceptance criteria before marking the overview story passing.
+---
+## 2026-05-12 02:57 CEST - US-004
+- What was implemented
+  - Added safe raw Workflow IR parse handling for draft PATCH requests.
+  - Invalid raw IR JSON now returns `WorkflowBuilderWarning.invalidRawIrText` as a warning diagnostic without overwriting the persisted draft `definition` or incrementing the revision.
+  - Valid raw IR text still updates the same draft definition object used by visual graph editing and clears stale raw-parse warnings.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow validation pipeline" test/web-channel.test.mjs'` — passed, 1/1 targeted test.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this story changed draft PATCH API safety and tests only, with no visible UI behavior changes.
+- **Learnings for future iterations:**
+  - Raw IR parse failures should be warning diagnostics on the existing draft, not HTTP 400 replacements, so authors can recover without losing the last valid Workflow IR object.
+  - Clear stale raw-parse warnings once a valid raw or visual edit saves a parsed definition.
 ---
