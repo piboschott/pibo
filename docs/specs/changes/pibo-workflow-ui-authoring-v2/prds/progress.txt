@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- V2 workflow picker API options should carry a uniform `displayName`, optional description, and nullable `paramsSchema` even when the picker has richer metadata such as profile aliases, schemas, or workflow versions.
 - V2 explicit non-goal browser checks should verify visible scope-boundary copy and scan interactive action labels, because explanatory panels intentionally mention deferred features without exposing them as actions.
 - Project Workflow/XState navigation should derive nested workflow links from real `PiboWebSessionNode` child sessions and definition link/deleted state from Project session `workflowDefinitionLink` metadata.
 - Registered guard/adapter params should flow from picker `paramsSchema` metadata; render params editors only for selected refs with schemas and reject params on refs without schemas.
@@ -1234,4 +1235,26 @@
 - **Learnings for future iterations:**
   - Duplicating a UI-published workflow must clone the stored published definition body, not reconstruct a generic draft from catalog row metadata.
   - When browser-clicking a version-history row, choose the smallest DOM ancestor containing the target `workflowId@version`; larger ancestors can contain several duplicate buttons and click the wrong row.
+---
+## 2026-05-12 06:31 CEST - US-007
+- What was implemented
+  - Added authenticated picker API support for registered human actions and prompt assets under `/api/chat/workflows/pickers/:kind`.
+  - Normalized picker option metadata so profiles, handlers, registered refs, and workflow-version options expose `displayName`, optional description, and nullable `paramsSchema` where applicable.
+  - Added Web API coverage for human-action and prompt-asset pickers plus paramsSchema/displayName assertions on existing picker surfaces.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/api.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow .*picker" test/web-channel.test.mjs'` — passed, 5/5 targeted picker tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this story exposed API contracts and client types with no visible UI behavior change.
+- **Learnings for future iterations:**
+  - Keep workflow picker response shapes uniform at the API boundary even when individual picker families have extra metadata.
+  - Convert catalog version records to picker option records explicitly instead of relying on TypeScript narrowing from lifecycle-status checks.
 ---

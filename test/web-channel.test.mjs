@@ -1811,6 +1811,7 @@ test("workflow profile picker excludes archived custom agents and reports archiv
 		const pickerPayload = await picker.json();
 		assert.deepEqual(pickerPayload.options.map((option) => option.id), ["pibo-agent"]);
 		assert.equal(pickerPayload.options[0].source, "global");
+		assert.equal(pickerPayload.options[0].paramsSchema, null);
 		assert.deepEqual(pickerPayload.options[0].aliases, ["default"]);
 
 		const selectedArchived = await fetch(`${baseURL}/api/chat/workflows/pickers/profiles?selectedProfileId=workflow-reviewer`, {
@@ -1845,8 +1846,10 @@ test("workflow handler picker lists registered handlers and reports missing refs
 			"fixture.handlers.summarizeDecision",
 		]);
 		assert.equal(pickerPayload.options[0].displayName, "Make plan");
+		assert.equal(Object.hasOwn(pickerPayload.options[0], "paramsSchema"), true);
 		assert.equal(Object.hasOwn(pickerPayload.options[0], "inputSchema"), true);
 		assert.equal(Object.hasOwn(pickerPayload.options[0], "outputSchema"), true);
+		assert.equal(pickerPayload.options[0].paramsSchema, null);
 		assert.equal(pickerPayload.options[0].inputSchema, null);
 		assert.equal(pickerPayload.options[0].outputSchema, null);
 
@@ -1941,6 +1944,77 @@ test("workflow guard and adapter pickers list registered refs and report missing
 	}
 });
 
+test("workflow human action and prompt asset pickers list registered refs and report missing refs", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	try {
+		const humanActionPicker = await fetch(`${baseURL}/api/chat/workflows/pickers/human-actions`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(humanActionPicker.status, 200);
+		const humanActionPayload = await humanActionPicker.json();
+		assert.equal(humanActionPayload.kind, "human-actions");
+		assert.deepEqual(humanActionPayload.options.map((option) => option.id), [
+			"fixture.humanActions.approve",
+			"fixture.humanActions.reject",
+		]);
+		assert.equal(humanActionPayload.options[0].displayName, "Approve");
+		assert.equal(humanActionPayload.options[0].kind, "approve");
+		assert.equal(humanActionPayload.options[0].paramsSchema, null);
+
+		const selectedAction = await fetch(`${baseURL}/api/chat/workflows/pickers/human-actions?selectedRefId=fixture.humanActions.approve`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(selectedAction.status, 200);
+		const selectedActionPayload = await selectedAction.json();
+		assert.equal(selectedActionPayload.selectedRefId, "fixture.humanActions.approve");
+		assert.deepEqual(selectedActionPayload.diagnostics, []);
+
+		const missingAction = await fetch(`${baseURL}/api/chat/workflows/pickers/human-actions?selectedRefId=missing.humanActions.inline`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(missingAction.status, 200);
+		const missingActionPayload = await missingAction.json();
+		assert.equal(missingActionPayload.selectedRefId, undefined);
+		assert.equal(missingActionPayload.diagnostics[0].code, "WorkflowGraphError.unknownHumanActionRef");
+		assert.equal(missingActionPayload.diagnostics[0].registryRef, "missing.humanActions.inline");
+		assert.equal(missingActionPayload.diagnostics[0].path, "$.nodes.human.actions.0.id");
+
+		const promptAssetPicker = await fetch(`${baseURL}/api/chat/workflows/pickers/prompt-assets`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(promptAssetPicker.status, 200);
+		const promptAssetPayload = await promptAssetPicker.json();
+		assert.equal(promptAssetPayload.kind, "prompt-assets");
+		assert.deepEqual(promptAssetPayload.options.map((option) => option.id), ["fixture.promptBuilders.draftPrompt"]);
+		assert.equal(promptAssetPayload.options[0].displayName, "Draft prompt builder");
+		assert.equal(promptAssetPayload.options[0].paramsSchema, null);
+
+		const selectedPromptAsset = await fetch(`${baseURL}/api/chat/workflows/pickers/prompt-assets?selectedRefId=fixture.promptBuilders.draftPrompt`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(selectedPromptAsset.status, 200);
+		const selectedPromptAssetPayload = await selectedPromptAsset.json();
+		assert.equal(selectedPromptAssetPayload.selectedRefId, "fixture.promptBuilders.draftPrompt");
+		assert.deepEqual(selectedPromptAssetPayload.diagnostics, []);
+
+		const missingPromptAsset = await fetch(`${baseURL}/api/chat/workflows/pickers/prompt-assets?selectedRefId=missing.promptAssets.inline`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(missingPromptAsset.status, 200);
+		const missingPromptAssetPayload = await missingPromptAsset.json();
+		assert.equal(missingPromptAssetPayload.selectedRefId, undefined);
+		assert.equal(missingPromptAssetPayload.diagnostics[0].code, "WorkflowGraphError.unknownPromptBuilderRef");
+		assert.equal(missingPromptAssetPayload.diagnostics[0].registryRef, "missing.promptAssets.inline");
+		assert.equal(missingPromptAssetPayload.diagnostics[0].path, "$.nodes.agent.promptBuilder.id");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow version picker lists published nested workflow refs and reports missing refs", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
@@ -1959,6 +2033,8 @@ test("workflow version picker lists published nested workflow refs and reports m
 			"simple-chat@1.0.0",
 			"ui-review-workflow@2.0.0",
 		]);
+		assert.equal(pickerPayload.options[0].displayName, "Standard Project");
+		assert.equal(pickerPayload.options[0].paramsSchema, null);
 		assert.equal(pickerPayload.options.some((option) => option.status !== "published"), false);
 
 		const selectedWorkflow = await fetch(`${baseURL}/api/chat/workflows/pickers/workflow-versions?selectedWorkflowId=standard-project&selectedWorkflowVersion=1.0.0`, {

@@ -205,6 +205,7 @@ export type WorkflowProfilePickerOption = {
 	id: string;
 	displayName: string;
 	description?: string;
+	paramsSchema: Record<string, unknown> | null;
 	aliases: string[];
 	source: "custom" | "global";
 	visibility: "private" | "global";
@@ -241,6 +242,7 @@ export type WorkflowHandlerPickerOption = {
 	id: string;
 	displayName: string;
 	description?: string;
+	paramsSchema: Record<string, unknown> | null;
 	inputSchema: Record<string, unknown> | null;
 	outputSchema: Record<string, unknown> | null;
 };
@@ -264,10 +266,11 @@ export type WorkflowRegisteredRefOption = {
 	displayName: string;
 	description?: string;
 	paramsSchema: Record<string, unknown> | null;
+	kind?: string;
 };
 
 export type WorkflowRegisteredRefPickerResponse = {
-	kind: "guards" | "adapters";
+	kind: "guards" | "adapters" | "human-actions" | "prompt-assets";
 	options: WorkflowRegisteredRefOption[];
 	selectedRefId?: string;
 	diagnostics: WorkflowPickerDiagnostic[];
@@ -287,6 +290,20 @@ export async function getWorkflowAdapterPicker(selectedRefId?: string): Promise<
 	return requestJson<WorkflowRegisteredRefPickerResponse>(`/api/chat/workflows/pickers/adapters${suffix}`);
 }
 
+export async function getWorkflowHumanActionPicker(selectedRefId?: string): Promise<WorkflowRegisteredRefPickerResponse> {
+	const params = new URLSearchParams();
+	if (selectedRefId) params.set("selectedRefId", selectedRefId);
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowRegisteredRefPickerResponse>(`/api/chat/workflows/pickers/human-actions${suffix}`);
+}
+
+export async function getWorkflowPromptAssetPicker(selectedRefId?: string): Promise<WorkflowRegisteredRefPickerResponse> {
+	const params = new URLSearchParams();
+	if (selectedRefId) params.set("selectedRefId", selectedRefId);
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<WorkflowRegisteredRefPickerResponse>(`/api/chat/workflows/pickers/prompt-assets${suffix}`);
+}
+
 export type WorkflowCatalogVersionRecord = {
 	id: string;
 	version: string;
@@ -299,6 +316,8 @@ export type WorkflowCatalogVersionRecord = {
 
 export type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
 	status: "published";
+	displayName: string;
+	paramsSchema: Record<string, unknown> | null;
 };
 
 export type WorkflowVersionPickerResponse = {

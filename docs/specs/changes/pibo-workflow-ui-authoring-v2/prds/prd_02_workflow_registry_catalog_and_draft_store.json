@@ -105,8 +105,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Authenticated picker APIs now expose profiles, handlers, adapters, guards, human actions, prompt assets, and published workflow versions with display names, descriptions, nullable paramsSchema metadata, and diagnostics for unavailable selected refs."
     },
     {
       "id": "US-008",

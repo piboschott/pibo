@@ -324,6 +324,7 @@ type WorkflowProfilePickerOption = {
 	id: string;
 	displayName: string;
 	description?: string;
+	paramsSchema: PiboJsonObject | null;
 	aliases: string[];
 	source: "custom" | "global";
 	visibility: "private" | "global";
@@ -353,6 +354,7 @@ type WorkflowHandlerPickerOption = {
 	id: string;
 	displayName: string;
 	description?: string;
+	paramsSchema: PiboJsonObject | null;
 	inputSchema: PiboJsonObject | null;
 	outputSchema: PiboJsonObject | null;
 };
@@ -369,10 +371,11 @@ type WorkflowRegisteredRefOption = {
 	displayName: string;
 	description?: string;
 	paramsSchema: PiboJsonObject | null;
+	kind?: string;
 };
 
 type WorkflowRegisteredRefPickerResponse = {
-	kind: "guards" | "adapters";
+	kind: "guards" | "adapters" | "human-actions" | "prompt-assets";
 	options: WorkflowRegisteredRefOption[];
 	selectedRefId?: string;
 	diagnostics: WorkflowPickerDiagnostic[];
@@ -394,6 +397,8 @@ type WorkflowCatalogVersionRecord = {
 
 type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
 	status: "published";
+	displayName: string;
+	paramsSchema: PiboJsonObject | null;
 };
 
 type WorkflowPublishedVersionSelection = WorkflowVersionPickerOption & {
@@ -2426,7 +2431,7 @@ function resolveProjectWorkflowSelection(
 	if (selected.status !== "published") {
 		throw new PiboWebHttpError(`Workflow version '${selected.id}@${selected.version}' is not published`, 400);
 	}
-	return selected as WorkflowVersionPickerOption;
+	return workflowVersionPickerOptionFromCatalogRecord({ ...selected, status: "published" });
 }
 
 function normalizeLegacyProjectWorkflowId(value: unknown): string {
@@ -2590,7 +2595,7 @@ function workflowValidationSnapshot(validation: WorkflowValidationResponse): Pib
 }
 
 function workflowVersionFromSnapshot(snapshot: PiboProjectWorkflowSessionSnapshot): WorkflowVersionPickerOption {
-	return {
+	return workflowVersionPickerOptionFromCatalogRecord({
 		id: snapshot.workflow.id,
 		version: snapshot.workflow.version,
 		title: snapshot.workflow.title ?? snapshot.workflow.id,
@@ -2598,7 +2603,7 @@ function workflowVersionFromSnapshot(snapshot: PiboProjectWorkflowSessionSnapsho
 		source: snapshot.workflow.source,
 		status: "published",
 		tags: [...snapshot.workflow.tags],
-	};
+	});
 }
 
 function validateProjectWorkflowSnapshotForStart(
@@ -3091,6 +3096,7 @@ function buildWorkflowProfilePicker(
 			id: agent.profileName,
 			displayName: agent.displayName,
 			...(agent.description ? { description: agent.description } : {}),
+			paramsSchema: null,
 			aliases: [],
 			source: "custom",
 			visibility: "private",
@@ -3107,6 +3113,7 @@ function buildWorkflowProfilePicker(
 			id: profile.name,
 			displayName: profile.name,
 			...(profile.description ? { description: profile.description } : {}),
+			paramsSchema: null,
 			aliases: [...(profile.aliases ?? [])],
 			source: "global",
 			visibility: "global",
@@ -3159,6 +3166,7 @@ const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
 		id: "fixture.handlers.makePlan",
 		displayName: "Make plan",
 		description: "Registered code handler that turns a topic payload into a step plan.",
+		paramsSchema: null,
 		inputSchema: null,
 		outputSchema: null,
 	},
@@ -3166,6 +3174,7 @@ const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
 		id: "fixture.handlers.reviseDraft",
 		displayName: "Revise draft",
 		description: "Registered code handler that applies review feedback to a draft payload.",
+		paramsSchema: null,
 		inputSchema: null,
 		outputSchema: null,
 	},
@@ -3173,6 +3182,7 @@ const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
 		id: "fixture.handlers.summarizeDecision",
 		displayName: "Summarize decision",
 		description: "Registered code handler that normalizes a review decision into a workflow summary.",
+		paramsSchema: null,
 		inputSchema: null,
 		outputSchema: null,
 	},
@@ -3275,7 +3285,7 @@ function buildWorkflowHandlerPicker(selectedHandlerId?: string): WorkflowHandler
 }
 
 function buildWorkflowRegisteredRefPicker(
-	kind: "guards" | "adapters",
+	kind: WorkflowRegisteredRefPickerResponse["kind"],
 	optionsInput: WorkflowRegisteredRefOption[],
 	selectedRefId: string | undefined,
 ): WorkflowRegisteredRefPickerResponse {
@@ -3287,21 +3297,54 @@ function buildWorkflowRegisteredRefPicker(
 		: undefined;
 	const diagnostics: WorkflowPickerDiagnostic[] = [];
 	if (normalizedSelection && !activeSelection) {
-		const isGuard = kind === "guards";
-		diagnostics.push({
-			code: isGuard ? "WorkflowGraphError.unknownGuardRef" : "WorkflowGraphError.unknownAdapterRef",
-			message: `Workflow edge references ${isGuard ? "guard" : "adapter"} '${normalizedSelection}', but it is not registered in the Workflow Registry.`,
-			severity: "error",
-			path: isGuard ? "$.edges.edge.guard.handler" : "$.edges.edge.adapter.transform.id",
-			registryRef: normalizedSelection,
-			hint: `Select a registered ${isGuard ? "guard" : "adapter"} ref before publishing or running this workflow.`,
-		});
+		diagnostics.push(workflowRegisteredRefPickerDiagnostic(kind, normalizedSelection));
 	}
 	return {
 		kind,
 		options,
 		...(activeSelection ? { selectedRefId: activeSelection } : {}),
 		diagnostics,
+	};
+}
+
+function workflowRegisteredRefPickerDiagnostic(kind: WorkflowRegisteredRefPickerResponse["kind"], registryRef: string): WorkflowPickerDiagnostic {
+	if (kind === "guards") {
+		return {
+			code: "WorkflowGraphError.unknownGuardRef",
+			message: `Workflow edge references guard '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.edges.edge.guard.handler",
+			registryRef,
+			hint: "Select a registered guard ref before publishing or running this workflow.",
+		};
+	}
+	if (kind === "adapters") {
+		return {
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `Workflow edge references adapter '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.edges.edge.adapter.transform.id",
+			registryRef,
+			hint: "Select a registered adapter ref before publishing or running this workflow.",
+		};
+	}
+	if (kind === "human-actions") {
+		return {
+			code: "WorkflowGraphError.unknownHumanActionRef",
+			message: `Human node references human action '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.nodes.human.actions.0.id",
+			registryRef,
+			hint: "Select a registered human action before publishing or running this workflow.",
+		};
+	}
+	return {
+		code: "WorkflowGraphError.unknownPromptBuilderRef",
+		message: `Agent node references prompt asset '${registryRef}', but it is not registered in the Workflow Registry.`,
+		severity: "error",
+		path: "$.nodes.agent.promptBuilder.id",
+		registryRef,
+		hint: "Select a registered prompt asset ref before publishing or running this workflow.",
 	};
 }
 
@@ -3358,7 +3401,17 @@ function buildWorkflowVersionHistory(state: ChatWebAppState, selectedWorkflowId?
 }
 
 function buildProjectWorkflowVersionOptions(state?: ChatWebAppState): WorkflowVersionPickerOption[] {
-	return buildProjectWorkflowVersionCatalog(state).filter((option): option is WorkflowVersionPickerOption => option.status === "published");
+	return buildProjectWorkflowVersionCatalog(state)
+		.filter((option): option is WorkflowCatalogVersionRecord & { status: "published" } => option.status === "published")
+		.map(workflowVersionPickerOptionFromCatalogRecord);
+}
+
+function workflowVersionPickerOptionFromCatalogRecord(record: WorkflowCatalogVersionRecord & { status: "published" }): WorkflowVersionPickerOption {
+	return {
+		...record,
+		displayName: record.title,
+		paramsSchema: null,
+	};
 }
 
 const STATIC_WORKFLOW_VERSION_CATALOG: WorkflowCatalogVersionRecord[] = [
@@ -7723,6 +7776,20 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					return responseJson(buildWorkflowRegisteredRefPicker(
 						"adapters",
 						WORKFLOW_ADAPTER_REF_OPTIONS,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "human-actions") {
+					return responseJson(buildWorkflowRegisteredRefPicker(
+						"human-actions",
+						WORKFLOW_HUMAN_ACTION_REF_OPTIONS,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "prompt-assets") {
+					return responseJson(buildWorkflowRegisteredRefPicker(
+						"prompt-assets",
+						WORKFLOW_PROMPT_ASSET_REF_OPTIONS,
 						url.searchParams.get("selectedRefId") ?? undefined,
 					));
 				}
