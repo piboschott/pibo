@@ -1,4 +1,6 @@
 ## Codebase Patterns
+- Workflow Builder manual Validate controls should call the draft validate route without `before_publish`; the publish route owns the `before_publish` trigger, while manual validation uses the route fallback/edit triggers.
+- Broad V2 release-gate tests can assert a PRD coverage matrix across package tests, web-channel integration tests, and source-level UI surfaces instead of duplicating long flows.
 - Workflow lifecycle archive/delete UI should use in-page confirmation panels with copy that names default catalog/picker effects and historical Project snapshot behavior so browser checks can verify the safeguards.
 - Workflow state mapping UI should write simple scoped `state.reads`/`state.writes` arrays through dropdown controls, trigger `state_edit` validation, and leave complex state DSL edits to raw Pibo Workflow IR.
 - Project workflow create/start diagnostics should render sanitized diagnostic metadata (`code`, `path`, `nodeId`, `edgeId`, `registryRef`, `hint`) near the blocking action, not only in a global error banner.
@@ -1667,4 +1669,29 @@
   - Not run; this completion-contract update validated existing backend/API picker behavior and did not change visible UI.
 - **Learnings for future iterations:**
   - Completeness-contract stories can be marked after the focused PRD story is already implemented, but the matching targeted test family should be re-run before updating the contract PRD.
+---
+## 2026-05-12 12:53 CEST - US-007
+- What was implemented
+  - Added a V2 release coverage test suite that maps unit, integration, and UI coverage to the PRD release areas: registry lifecycle, diagnostics, versioning/archive/delete, Project workflow snapshots/start gates, Builder actions, routing, and human action surfaces.
+  - Added a visible `Validate draft` action to the Workflow Builder publish/version panel so browser and source-level UI coverage can verify duplicate/edit/validate/publish authoring affordances without conflating validation with publish.
+  - Marked PRD 08 US-007 passing.
+- Files changed
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `test/workflow-v2-release-coverage.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run chat-ui:build && node --test test/workflow-v2-release-coverage.test.mjs'` — passed, 3/3 targeted release coverage tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm --prefix packages/workflows test -- src/testing/workflow-catalog-entities.test.ts src/testing/validation.test.ts src/testing/workflow-published-versions.test.ts'` — passed, 138/138 workflow package tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm test'` — passed, 349/349 root tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Verified the container gateway served `http://127.0.0.1:4802/apps/chat` successfully after rebuild.
+  - Used `browser-use --fresh-profile --session ralph-v2-release` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the Workflow publish/version panel rendered `Validate draft` and `Publish draft`, clicked `Validate draft`, and confirmed the UI showed `Draft validation returned diagnostics. Publish remains a separate action.`
+  - Saved screenshot: `/tmp/ralph-v2-release-validate.png` inside the container.
+- **Learnings for future iterations:**
+  - The draft validate API rejects `before_publish` on the manual validate route; leave that trigger to publish and let manual validation use the route default/edit-trigger contract.
+  - Release coverage can stay cheap by guarding the coverage matrix while relying on existing package and web-channel behavior tests for the long-running flows.
 ---

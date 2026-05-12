@@ -35,6 +35,7 @@ import {
 	patchWorkflowDraft,
 	postWorkflowArchive,
 	postWorkflowDraftPublish,
+	postWorkflowDraftValidate,
 	postWorkflowDuplicateDraft,
 	postWorkflowNextDraft,
 	postWorkflowPromptAssetRevision,
@@ -782,8 +783,9 @@ function WorkflowSecurityBoundaryPanel() {
 function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 	const [currentDraft, setCurrentDraft] = useState(draft);
 	const [versionIntent, setVersionIntent] = useState<"patch" | "minor" | "major">(draft.versionIntent);
-	const [publishState, setPublishState] = useState<"idle" | "publishing" | "published" | "error">("idle");
+	const [publishState, setPublishState] = useState<"idle" | "validating" | "validated" | "publishing" | "published" | "error">("idle");
 	const [publishMessage, setPublishMessage] = useState<string | undefined>();
+	const publishActionBusy = publishState === "validating" || publishState === "publishing";
 
 	useEffect(() => {
 		setCurrentDraft(draft);
@@ -791,6 +793,21 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 		setPublishState("idle");
 		setPublishMessage(undefined);
 	}, [draft]);
+
+	const validateDraft = async () => {
+		setPublishState("validating");
+		setPublishMessage(undefined);
+		try {
+			const response = await postWorkflowDraftValidate(currentDraft.draftId);
+			setCurrentDraft(response.draft);
+			setVersionIntent(response.draft.versionIntent);
+			setPublishState("validated");
+			setPublishMessage(`Draft validation ${response.validation.ok ? "passed" : "returned diagnostics"}. Publish remains a separate action.`);
+		} catch (error) {
+			setPublishState("error");
+			setPublishMessage(error instanceof Error ? error.message : "Failed to validate workflow draft");
+		}
+	};
 
 	const publishDraft = async () => {
 		setPublishState("publishing");
@@ -850,7 +867,7 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 								className="rounded-sm border border-slate-700 bg-[#101d22] px-2 py-1.5 text-xs text-slate-100 outline-none transition focus:border-[#11a4d4]"
 								value={versionIntent}
 								onChange={(event) => setVersionIntent(event.target.value as "patch" | "minor" | "major")}
-								disabled={publishState === "publishing"}
+								disabled={publishActionBusy}
 								aria-label="Version bump intent"
 							>
 								<option value="patch">Patch version bump (default)</option>
@@ -860,9 +877,18 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 						</label>
 						<button
 							type="button"
+							className="inline-flex items-center justify-center gap-1 rounded-sm border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-[#11a4d4] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+							onClick={() => void validateDraft()}
+							disabled={publishActionBusy}
+						>
+							{publishState === "validating" ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+							Validate draft
+						</button>
+						<button
+							type="button"
 							className="inline-flex items-center justify-center gap-1 rounded-sm border border-emerald-600/70 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
 							onClick={() => void publishDraft()}
-							disabled={publishState === "publishing"}
+							disabled={publishActionBusy}
 						>
 							{publishState === "publishing" ? <Loader2 size={13} className="animate-spin" /> : <CheckCheck size={13} />}
 							Publish draft
