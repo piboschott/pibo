@@ -944,9 +944,7 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 
 			<WorkflowGraphCanvas draft={currentDraft} onDraftChange={setCurrentDraft} />
 
-			{currentDraft.diagnostics.length ? <WorkflowDraftDiagnostics draft={currentDraft} /> : (
-				<div className="rounded-sm border border-emerald-900/60 bg-emerald-950/20 p-3 text-xs text-emerald-200">No draft diagnostics returned by the loader.</div>
-			)}
+			<WorkflowValidationPanel draft={currentDraft} />
 
 			<WorkflowRawIrEditor draft={currentDraft} onDraftChange={setCurrentDraft} />
 
@@ -2518,6 +2516,42 @@ function WorkflowParamsEditor({ label, schema, value, onChange }: { label: strin
 	);
 }
 
+function WorkflowValidationPanel({ draft }: { draft: WorkflowDraftRecord }) {
+	const validation = draft.validation;
+	const errorCount = validation?.errorCount ?? draft.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+	const warningCount = validation?.warningCount ?? draft.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+	const infoCount = validation?.infoCount ?? draft.diagnostics.filter((diagnostic) => diagnostic.severity === "info").length;
+	return (
+		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-4" aria-label="Workflow validation panel">
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div>
+					<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Validation panel</div>
+					<h4 className="mt-1 text-sm font-bold text-slate-100">Structured draft diagnostics</h4>
+					<p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
+						Draft validation reports sanitized diagnostic fields from the Workflow IR pipeline. Publish remains gated by blocking error diagnostics and the backend before-publish route.
+					</p>
+				</div>
+				<div className="flex flex-wrap gap-2 text-[11px]">
+					<WorkflowPill label={`${errorCount} errors`} />
+					<WorkflowPill label={`${warningCount} warnings`} />
+					<WorkflowPill label={`${infoCount} info`} />
+				</div>
+			</div>
+			<div className="mt-3 grid gap-3 text-xs md:grid-cols-3" aria-label="Workflow validation summary">
+				<WorkflowFact label="Validation state" value={draft.validationState} />
+				<WorkflowFact label="Last trigger" value={validation?.trigger ?? "not checked"} />
+				<WorkflowFact label="Checked at" value={validation?.checkedAt ?? "not checked"} />
+				<WorkflowFact label="Publish gate" value={validation?.blocksPublish ? "blocked" : "not blocked"} />
+				<WorkflowFact label="Run gate" value={validation?.blocksRun ? "blocked" : "not blocked"} />
+				<WorkflowFact label="Diagnostic count" value={String(draft.diagnostics.length)} />
+			</div>
+			{draft.diagnostics.length ? <WorkflowDraftDiagnostics draft={draft} /> : (
+				<div className="mt-3 rounded-sm border border-emerald-900/60 bg-emerald-950/20 p-3 text-xs text-emerald-200">No validation diagnostics returned by the draft pipeline.</div>
+			)}
+		</div>
+	);
+}
+
 function WorkflowInspectorDiagnostics({ diagnostics, emptyLabel }: { diagnostics: WorkflowDraftDiagnostic[]; emptyLabel: string }) {
 	if (!diagnostics.length) {
 		return <div className="rounded-sm border border-slate-800 bg-[#101d22] p-2 text-[11px] text-slate-500">{emptyLabel}</div>;
@@ -2554,16 +2588,31 @@ function WorkflowInspectorPickerDiagnostics({ diagnostics }: { diagnostics: Work
 
 function WorkflowDraftDiagnostics({ draft }: { draft: WorkflowDraftRecord }) {
 	return (
-		<div className="grid gap-2" aria-label="Workflow draft diagnostics">
+		<div className="mt-3 grid gap-2" aria-label="Workflow structured diagnostics">
 			{draft.diagnostics.map((diagnostic) => (
-				<div key={`${diagnostic.code}:${diagnostic.path ?? diagnostic.nodeId ?? diagnostic.edgeId ?? "workflow"}`} className="rounded-sm border border-amber-700/70 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">
+				<div key={`${diagnostic.code}:${diagnostic.path ?? diagnostic.nodeId ?? diagnostic.edgeId ?? diagnostic.registryRef ?? "workflow"}`} className="rounded-sm border border-amber-700/70 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">
 					<div className="flex items-center gap-2 font-bold text-amber-200"><AlertTriangle size={13} />{diagnostic.code}</div>
 					<div className="mt-1">{diagnostic.message}</div>
-					{diagnostic.path ? <div className="mt-1 font-mono text-[11px] text-amber-200/80">{diagnostic.path}</div> : null}
-					{diagnostic.hint ? <div className="mt-1 text-amber-200/80">{diagnostic.hint}</div> : null}
+					<div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+						<WorkflowDiagnosticMeta label="Severity" value={diagnostic.severity} />
+						<WorkflowDiagnosticMeta label="Path" value={diagnostic.path} />
+						<WorkflowDiagnosticMeta label="Node" value={diagnostic.nodeId} />
+						<WorkflowDiagnosticMeta label="Edge" value={diagnostic.edgeId} />
+						<WorkflowDiagnosticMeta label="Registry ref" value={diagnostic.registryRef} />
+					</div>
+					{diagnostic.hint ? <div className="mt-2 text-amber-200/80">{diagnostic.hint}</div> : null}
 				</div>
 			))}
 		</div>
+	);
+}
+
+function WorkflowDiagnosticMeta({ label, value }: { label: string; value?: string }) {
+	if (!value) return null;
+	return (
+		<span className="rounded-sm border border-amber-700/50 bg-amber-950/40 px-2 py-0.5">
+			<span className="font-semibold text-amber-200/80">{label}:</span> <code>{value}</code>
+		</span>
 	);
 }
 

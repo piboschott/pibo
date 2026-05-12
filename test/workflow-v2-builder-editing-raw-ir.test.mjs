@@ -56,7 +56,10 @@ test("Workflow V2 builder tests cover visual editing and publish flow", async ()
 		["node inspector is visible", /Node inspector: \{nodeId\}/],
 		["edge inspector is visible", /Edge inspector: \{edgeId\}/],
 		["layout copy states runtime semantics are unchanged", /Saving layout writes only display metadata and does not change nodes, edges, ports, guards, adapters, runtime routing, or validation semantics/],
+		["validation panel exposes summary and structured diagnostics", /aria-label="Workflow validation panel"[\s\S]*aria-label="Workflow validation summary"[\s\S]*aria-label="Workflow structured diagnostics"/],
 		["publish panel exposes validation and publish actions", /Validate draft[\s\S]*Publish draft/],
+		["publish panel gates publish on blocking diagnostics", /const publishBlocked = currentDraft\.validation\?\.blocksPublish === true \|\| publishErrorCount > 0[\s\S]*disabled=\{publishActionBusy \|\| publishBlocked\}/],
+		["publish gate names before-publish node and IO contracts", /before-publish validation also requires workflow input\/output ports and at least one node/],
 	]);
 });
 

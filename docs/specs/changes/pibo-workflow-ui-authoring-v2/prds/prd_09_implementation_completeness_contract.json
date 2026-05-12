@@ -185,8 +185,8 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Workflow Builder now exposes a validation panel with validation summary fields and structured diagnostic metadata, and the publish/version panel gates Publish from blocksPublish/error diagnostics while backend before_publish validation rejects zero-node or missing input/output contract drafts. Source-level UI coverage and targeted web-channel validation/publish/version-allocation flows verify the contract."
     },
     {
       "id": "US-013",

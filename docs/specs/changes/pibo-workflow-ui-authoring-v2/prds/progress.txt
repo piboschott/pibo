@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Builder validation/publish completeness can pair source-level UI panel assertions with targeted `web-channel` validate, before-publish rejection, and version-allocation flows.
 - Workflow Builder coverage stories can pair a source-level UI/test matrix with targeted `web-channel` flows; compare layout-only changes by stripping `ui` metadata before checking runtime semantics.
 - Workflow Library buttons and labels should consume source/status-derived API `actions`/`editability` metadata rather than re-deriving code/UI mutation rules in React rows.
 - Rollout-gate docs should pair each phase with required automated test families and reference canonical product smoke checklists instead of duplicating behavior contracts.
@@ -2056,4 +2057,33 @@
     - The standard-project duplicate draft is deterministic for the dev user and may contain state from earlier browser checks; for verification, assert the required panels and copy instead of assuming a pristine draft title.
   - Useful context
     - Selecting React Flow nodes by `.react-flow__node[data-id=<nodeId>]` with `browser-use eval` reliably opens the node inspector for browser checks.
+---
+## 2026-05-12 15:53 CEST - US-012
+- What was implemented
+  - Added a Workflow Builder validation panel with validation summary fields and structured diagnostic metadata for severity, path, node, edge, and registry refs.
+  - Kept the publish/version panel gated by `blocksPublish` and error diagnostics, with explicit before-publish copy for node and workflow input/output contract requirements.
+  - Added focused source-level coverage for the validation and publish panels, then marked PRD 09 US-012 passing.
+- Files changed
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `test/workflow-v2-builder-editing-raw-ir.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `node --test test/workflow-v2-builder-editing-raw-ir.test.mjs` — passed, 4/4 tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && node --test test/workflow-v2-builder-editing-raw-ir.test.mjs && npm run build && node --test --test-name-pattern "workflow builder draft loader opens starter and duplicated UI draft wrappers|workflow validation pipeline runs on draft load, edit, validate, and publish boundaries|workflow draft publish allocates patch, minor, and major versions" test/web-channel.test.mjs'` — passed, including typecheck, 4/4 builder coverage tests, build, and 3/3 targeted web-channel tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway safely after the build and verified `http://127.0.0.1:4802/apps/chat` returned OK; host gateways were not touched.
+  - Used `browser-use --fresh-profile --session ralph-v2-us012` inside `pibo-dev-WorkflowsV2` with dev auth (`dev@pibo.local`) to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the builder shows the Workflow validation panel, structured draft diagnostics, validation summary, publish/version panel, disabled `Publish draft` button, and `Validate draft` action.
+  - Clicked `Validate draft` and verified validation returned diagnostics while `Publish draft` remained disabled.
+  - Saved screenshot inside the container: `/tmp/ralph-v2-us012-validation-publish.png`.
+- **Learnings for future iterations:**
+  - Patterns discovered
+    - Builder validation/publish completeness can stay focused by checking source-level panel affordances plus the existing targeted web-channel validate, before-publish, and version-allocation flows.
+  - Gotchas encountered
+    - For scrollable Workflows pages, browser checks are more reliable when they query panel aria labels and `textContent`, then scroll the panel into view before taking a screenshot.
+  - Useful context
+    - The starter draft route `/apps/chat/workflows/drafts/v2-starter-draft` is useful for browser checks that need blocking diagnostics and a disabled Publish button.
 ---
