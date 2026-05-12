@@ -152,8 +152,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Catalog and picker APIs now have focused authentication coverage, UI workflow drafts are treated as global authenticated catalog resources, and cross-user edit/publish/duplicate permission-matrix behavior is covered by web-channel tests."
     }
   ]
 }

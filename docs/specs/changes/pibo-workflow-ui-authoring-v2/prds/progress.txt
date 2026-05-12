@@ -36,6 +36,7 @@
 - Prompt asset edits should create managed revisions and pin revision IDs/content hashes in published workflow versions and snapshots.
 - V2 workflow HTTP contracts are documented under Chat Web routes: catalog/lifecycle APIs use `/api/chat/workflows`, while Project workflow session APIs use `/api/chat/projects/:projectId/workflow-sessions`.
 - Workflow catalog list/inspect APIs should group static code projections, persisted UI drafts, and UI-published versions, while gating archived records behind `includeArchived=true`.
+- V2 workflow catalog permissions treat UI-authored drafts and published versions as global authenticated resources; `ownerScope`/principal fields are audit/event metadata, not draft access gates.
 - Use `createWorkflowDiagnosticReport` from `@pasko70/pibo-workflows` validation exports for V2 diagnostic grouping across Workflow Library, Builder, Project session creation, run start, and runtime failure surfaces.
 - Normal UI workflow diagnostics should pass through Chat Web `sanitizeWorkflowDiagnostics` before persistence or response serialization so only code/message/severity/path/node/edge/registry ref/hint fields reach clients.
 - Workflow session routing metadata uses the stable Pibo Session metadata key `workflowSessionKind` with values `main_workflow`, `nested_workflow`, `agent_node`, and `subagent`; Chat sidebar nodes expose it as `PiboWebSessionNode.workflowSessionKind`.
@@ -1982,4 +1983,25 @@
     - `web-channel` tests import `dist/`, so the targeted API test must run after `npm run build` even when only test assertions changed.
   - Useful context
     - The configured Project workflow session integration test already exercises second-start idempotency and effective-snapshot use; adding exact identity/timestamp assertions makes it suitable for PRD 09 US-009.
+---
+## 2026-05-12 15:19 CEST - US-010
+- What was implemented
+  - Enforced the V2 catalog permission baseline by treating UI workflow drafts as global authenticated resources instead of owner-gated draft records.
+  - Added web-channel coverage for unauthenticated catalog/picker/inspect rejection, cross-user draft visibility/edit/publish, global UI published version inspection, eligible duplication, and code-workflow delete denial.
+  - Updated diagnostic redaction coverage for global draft access while keeping Project/session access checks covered.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/web-channel.test.mjs'` — passed, 72/72 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this was a Chat Web API permission/store behavior change with no UI surface changes.
+- **Learnings for future iterations:**
+  - V2 UI workflow draft rows still carry `ownerScope`, but catalog permission decisions should not use it as an access gate.
+  - Cross-user tests are useful for catching accidental private-catalog behavior when PRDs define workflows as global.
 ---

@@ -2111,6 +2111,139 @@ test("workflow version picker lists published nested workflow refs and reports m
 	}
 });
 
+test("workflow catalog authentication and permission baseline treats UI workflows as global", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const userOneHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+	const userTwoHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-2",
+	};
+
+	try {
+		const unauthenticatedCatalog = await fetch(`${baseURL}/api/chat/workflows`);
+		assert.equal(unauthenticatedCatalog.status, 401);
+
+		const unauthenticatedPicker = await fetch(`${baseURL}/api/chat/workflows/pickers/workflow-versions`);
+		assert.equal(unauthenticatedPicker.status, 401);
+
+		const createResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			method: "POST",
+			headers: userOneHeaders,
+			body: JSON.stringify({
+				workflowId: "ui-global-permission-draft",
+				title: "Global Permission Draft",
+				description: "Created by one authenticated user and editable by another.",
+				tags: ["global", "permissions"],
+			}),
+		});
+		assert.equal(createResponse.status, 201);
+		const createPayload = await createResponse.json();
+		const draftId = createPayload.draft.draftId;
+
+		const userTwoCatalog = await fetch(`${baseURL}/api/chat/workflows`, {
+			headers: { "x-test-user": "user-2" },
+		});
+		assert.equal(userTwoCatalog.status, 200);
+		const userTwoCatalogPayload = await userTwoCatalog.json();
+		const globalDraft = userTwoCatalogPayload.workflows.find((workflow) => workflow.id === "ui-global-permission-draft");
+		assert.ok(globalDraft);
+		assert.equal(globalDraft.source, "ui");
+		assert.equal(globalDraft.status, "draft");
+		assert.equal(globalDraft.activeDraftId, draftId);
+		assert.equal(globalDraft.editability.canEditDraft, true);
+		assert.equal(globalDraft.editability.canPublish, true);
+
+		const userTwoDraftResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			headers: { "x-test-user": "user-2" },
+		});
+		assert.equal(userTwoDraftResponse.status, 200);
+		const userTwoDraftPayload = await userTwoDraftResponse.json();
+		assert.equal(userTwoDraftPayload.draft.workflowId, "ui-global-permission-draft");
+
+		const runnableDefinition = {
+			id: "ui-global-permission-draft",
+			version: "0.1.0",
+			title: "Global Permission Draft",
+			description: "Created by one authenticated user and editable by another.",
+			metadata: { tags: ["global", "permissions"] },
+			input: { kind: "text", description: "Input for the global permission workflow." },
+			output: { kind: "text", description: "Output from the global permission workflow." },
+			initial: "agent",
+			nodes: {
+				agent: {
+					kind: "agent",
+					runtime: "pibo",
+					profile: { kind: "fixed", id: "pibo-agent" },
+					promptTemplate: "Answer with the workflow input.\n\n{{input}}",
+					output: { kind: "text" },
+				},
+			},
+			edges: {},
+			ui: { layout: "auto", positions: { agent: { x: 80, y: 80 } } },
+		};
+
+		const userTwoPatch = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: userTwoHeaders,
+			body: JSON.stringify({ definition: runnableDefinition, editTrigger: "graph_edit" }),
+		});
+		assert.equal(userTwoPatch.status, 200);
+		const userTwoPatchPayload = await userTwoPatch.json();
+		assert.equal(userTwoPatchPayload.validation.ok, true);
+
+		const userTwoPublish = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/publish`, {
+			method: "POST",
+			headers: userTwoHeaders,
+			body: JSON.stringify({ versionIntent: "patch" }),
+		});
+		assert.equal(userTwoPublish.status, 201);
+		const userTwoPublishPayload = await userTwoPublish.json();
+		assert.equal(userTwoPublishPayload.publishedVersion.workflowId, "ui-global-permission-draft");
+		assert.equal(userTwoPublishPayload.publishedVersion.version, "0.1.1");
+		assert.equal(userTwoPublishPayload.publishedVersion.publishedBy, "user:user-2");
+
+		const userOneVersion = await fetch(`${baseURL}/api/chat/workflows/ui-global-permission-draft/versions/0.1.1`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(userOneVersion.status, 200);
+		const userOneVersionPayload = await userOneVersion.json();
+		assert.equal(userOneVersionPayload.version.source, "ui");
+		assert.equal(userOneVersionPayload.version.status, "published");
+
+		const userOneDuplicate = await fetch(`${baseURL}/api/chat/workflows/ui-global-permission-draft/duplicate`, {
+			method: "POST",
+			headers: userOneHeaders,
+			body: JSON.stringify({ version: "0.1.1" }),
+		});
+		assert.equal(userOneDuplicate.status, 201);
+		const userOneDuplicatePayload = await userOneDuplicate.json();
+		assert.equal(userOneDuplicatePayload.draft.baseWorkflowId, "ui-global-permission-draft");
+		assert.equal(userOneDuplicatePayload.draft.baseWorkflowVersion, "0.1.1");
+
+		const unauthenticatedInspect = await fetch(`${baseURL}/api/chat/workflows/ui-global-permission-draft?version=0.1.1`);
+		assert.equal(unauthenticatedInspect.status, 401);
+
+		const codeDeleteResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project`, {
+			method: "DELETE",
+			headers: userTwoHeaders,
+			body: JSON.stringify({ confirmWorkflowId: "standard-project" }),
+		});
+		assert.equal(codeDeleteResponse.status, 409);
+		assert.match((await codeDeleteResponse.json()).error, /Code workflow projections are read-only/);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow catalog list and inspect APIs expose source/status, diagnostics, and archive filtering", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
@@ -4368,7 +4501,10 @@ test("workflow diagnostics are redacted and scoped to owning Project sessions", 
 		const otherUserDraftResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
 			headers: { "x-test-user": "user-2" },
 		});
-		assert.equal(otherUserDraftResponse.status, 404);
+		assert.equal(otherUserDraftResponse.status, 200);
+		const otherUserDraftPayload = await otherUserDraftResponse.json();
+		assert.equal(otherUserDraftPayload.draft.workflowId, "ui-standard-project-copy");
+		assert.doesNotMatch(JSON.stringify(otherUserDraftPayload.draft.diagnostics), /s3cr3t|top-secret-output|secret prompt|secret-state|secret-payload|secret-human/);
 
 		const lifecycleResponse = await fetch(`${baseURL}/api/chat/workflows/lifecycle-events?draftId=${encodeURIComponent(draftId)}&limit=20`, {
 			headers: { "x-test-user": "user-1" },
@@ -4383,7 +4519,8 @@ test("workflow diagnostics are redacted and scoped to owning Project sessions", 
 		});
 		assert.equal(otherUserLifecycleResponse.status, 200);
 		const otherUserLifecyclePayload = await otherUserLifecycleResponse.json();
-		assert.equal(otherUserLifecyclePayload.events.length, 0);
+		assert.ok(otherUserLifecyclePayload.events.some((event) => event.draftId === draftId));
+		assert.doesNotMatch(JSON.stringify(otherUserLifecyclePayload.events), /s3cr3t|top-secret-output|secret prompt|secret-state|secret-payload|secret-human/);
 	} finally {
 		await channel.stop?.();
 	}

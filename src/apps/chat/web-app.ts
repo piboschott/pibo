@@ -4195,7 +4195,6 @@ function buildWorkflowCatalogList(
 	}
 
 	for (const draft of state.workflowDraftStore.listDrafts()) {
-		if (draft.ownerScope !== webSession.ownerScope) continue;
 		const summary = workflowCatalogVersionSummaryFromDraft(draft, state);
 		if (!isWorkflowCatalogSummaryVisible(summary, includeArchived)) continue;
 		addWorkflowCatalogVersion(workflows, summary);
@@ -4420,10 +4419,9 @@ function buildWorkflowCatalogInspect(
 	let selectedDraft: OwnedWorkflowDraftRecord | undefined;
 	if (options.draftId) {
 		selectedDraft = state.workflowDraftStore.getDraft(options.draftId);
-		if (!selectedDraft || selectedDraft.workflowId !== workflowId || selectedDraft.ownerScope !== webSession.ownerScope) throw new PiboWebHttpError("Workflow draft not found", 404);
+		if (!selectedDraft || selectedDraft.workflowId !== workflowId) throw new PiboWebHttpError("Workflow draft not found", 404);
 	} else if (!options.version) {
-		const activeDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId);
-		selectedDraft = activeDraft?.ownerScope === webSession.ownerScope ? activeDraft : undefined;
+		selectedDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId);
 	}
 	if (selectedDraft) runWorkflowDraftValidation(state, context, webSession, selectedDraft, "draft_load");
 
@@ -4693,7 +4691,7 @@ function duplicateWorkflowIntoDraft(
 
 	const copyWorkflowId = `ui-${published.id}-copy`;
 	const existingDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(copyWorkflowId);
-	if (existingDraft && existingDraft.ownerScope === webSession.ownerScope) return serializeWorkflowDraft(existingDraft);
+	if (existingDraft) return serializeWorkflowDraft(existingDraft);
 
 	const now = new Date().toISOString();
 	const draftId = `draft_${published.id.replace(/[^a-zA-Z0-9_-]/g, "-")}_${published.version.replace(/[^a-zA-Z0-9_-]/g, "-")}_${randomUUID().slice(0, 8)}`;
@@ -4754,7 +4752,7 @@ function createNextVersionDraftFromPublishedWorkflow(
 	}
 
 	const existingDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(published.id);
-	if (existingDraft && existingDraft.ownerScope === webSession.ownerScope) {
+	if (existingDraft) {
 		return { draft: serializeWorkflowDraft(existingDraft), reused: true };
 	}
 
@@ -5257,7 +5255,7 @@ function requireMutableWorkflowDraft(state: ChatWebAppState, webSession: PiboWeb
 			payload: { operation: "starter" },
 		});
 	}
-	if (!record || record.ownerScope !== webSession.ownerScope) throw new PiboWebHttpError("Workflow draft not found", 404);
+	if (!record) throw new PiboWebHttpError("Workflow draft not found", 404);
 	if (state.workflowTombstoneStore.getWorkflowTombstone(record.workflowId)) {
 		throw new PiboWebHttpError("Workflow has been deleted", 404);
 	}
