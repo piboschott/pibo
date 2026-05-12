@@ -249,8 +249,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added focused lifecycle checklist coverage that binds publish/version UI wiring, immutable version APIs, semantic version intents, next-draft editing, version history, and workflow-version picker behavior to existing integration tests."
     },
     {
       "id": "US-017",

@@ -2158,3 +2158,31 @@
   - Useful context
     - The duplicated `standard-project@1.0.0` draft `draft_standard-project_1-0-0_d2823f93` contains typed edges with registered guard and edge-adapter refs, which makes it useful for browser checks of edge inspectors and adapter dialogs.
 ---
+## 2026-05-12 16:52 CEST - US-016
+- What was implemented
+  - Completed the implementation-completeness story for publish and version lifecycle.
+  - Added focused lifecycle checklist coverage that binds publish/version UI wiring to immutable version APIs, semantic patch/minor/major publish tests, next-version draft editing, deterministic version history, and workflow-version picker integration.
+  - Marked PRD 09 US-016 passing.
+- Files changed
+  - `test/workflow-v2-lifecycle-checklist.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `node --test test/workflow-v2-lifecycle-checklist.test.mjs` — passed, 4/4 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json` — passed.
+  - `git diff --check` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run build && node --test test/workflow-v2-lifecycle-checklist.test.mjs && node --test --test-name-pattern "workflow catalog lifecycle APIs create, validate, publish, and expose version resources|workflow draft publish allocates patch, minor, and major versions|workflow published edit creates or reuses one next-version draft|workflow version picker lists published nested workflow refs and reports missing refs" test/web-channel.test.mjs'` — passed, including typecheck, build, 4/4 lifecycle checklist tests, and 4/4 targeted web-channel tests.
+- Browser verification, if UI changed
+  - Verified the container gateway was reachable at `http://127.0.0.1:4802/apps/chat`.
+  - Used `browser-use --fresh-profile --session ralph-v2-us016` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows`.
+  - Verified Workflow Library version history, deterministic workflow/version ordering copy, `Edit published`, `Create Project session`, and `standard-project@1.0.0` published version selection.
+  - Opened `/apps/chat/workflows/drafts/v2-starter-draft` and verified the publish version panel, default `patch` intent, patch/minor/major choices, and disabled publish action while diagnostics block the draft.
+  - Saved screenshot: `/tmp/ralph-v2-us016-publish-version-lifecycle.png` inside the container.
+- **Learnings for future iterations:**
+  - Patterns discovered
+    - Publish/version aggregate stories can reuse the lifecycle checklist test as the source-level bridge between UI affordances and existing web-channel lifecycle flows.
+  - Gotchas encountered
+    - `browser-use eval` is more reliable with one-line JavaScript and template-literal selectors for aria labels.
+  - Useful context
+    - The starter draft route keeps the publish panel in a predictable blocked state while still exposing the version intent selector.
+---

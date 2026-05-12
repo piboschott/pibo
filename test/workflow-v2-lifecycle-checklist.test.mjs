@@ -55,6 +55,41 @@ test("Workflow V2 lifecycle tests cover version bumps and one-active-draft enfor
 	]);
 });
 
+test("Workflow V2 completeness covers publish and version lifecycle UI wiring", async () => {
+	const apiSource = await readSource("src/apps/chat-ui/src/api.ts");
+	const workflowsAreaSource = await readSource("src/apps/chat-ui/src/WorkflowsArea.tsx");
+	const webChannelTests = await readSource("test/web-channel.test.mjs");
+
+	assertAllMatch(apiSource, [
+		["version list API uses the published-version route", /getWorkflowVersionList[\s\S]*\/api\/chat\/workflows\/\$\{encodeURIComponent\(workflowId\)\}\/versions/],
+		["version inspect API uses the immutable version route", /getWorkflowVersionInspect[\s\S]*\/api\/chat\/workflows\/\$\{encodeURIComponent\(workflowId\)\}\/versions\/\$\{encodeURIComponent\(version\)\}/],
+		["Project workflow version picker uses published workflow versions", /getWorkflowVersionPicker[\s\S]*\/api\/chat\/workflows\/pickers\/workflow-versions/],
+		["library version history uses the version-history picker", /getWorkflowVersionHistory[\s\S]*\/api\/chat\/workflows\/pickers\/version-history/],
+		["publish API submits the selected semantic version intent", /postWorkflowDraftPublish[\s\S]*versionIntent\?: "patch" \| "minor" \| "major"[\s\S]*body: JSON\.stringify\(input\)/],
+		["edit-published API creates or reuses the next draft", /postWorkflowNextDraft[\s\S]*\/api\/chat\/workflows\/\$\{encodeURIComponent\(workflowId\)\}\/drafts/],
+	]);
+
+	assertAllMatch(workflowsAreaSource, [
+		["library loads deterministic version history", /getWorkflowVersionHistory\(\)[\s\S]*groupWorkflowVersionHistory\(historyRows\)[\s\S]*Published versions are listed in deterministic workflow\/version order/],
+		["version history rows expose next-draft editing", /hasWorkflowCatalogAction\(record, "create_next_draft"\)[\s\S]*Edit published/],
+		["version history rows expose Project version selection", /hasWorkflowCatalogAction\(record, "create_project_session"\)[\s\S]*Create Project session/],
+		["publish panel exposes selected version intent state", /useState<"patch" \| "minor" \| "major">\(draft\.versionIntent\)[\s\S]*Version bump intent/],
+		["publish panel documents the patch default", /Default publish increments the patch version/],
+		["publish panel offers patch, minor, and major choices", /Patch version bump \(default\)[\s\S]*Minor version bump[\s\S]*Major version bump/],
+		["publish action sends the selected version intent", /postWorkflowDraftPublish\(currentDraft\.draftId, \{ versionIntent \}\)/],
+		["publish success reports immutable definition hash", /Definition hash \$\{response\.publishedVersion\.definitionHash\}/],
+	]);
+
+	assertAllMatch(webChannelTests, [
+		["publish validates before creating an immutable version", /workflow validation pipeline runs on draft load, edit, validate, and publish boundaries[\s\S]*publishPayload\.validation\.trigger, "before_publish"/],
+		["publish creates immutable version resources", /workflow catalog lifecycle APIs create, validate, publish, and expose version resources[\s\S]*publishPayload\.publishedVersion\.definitionHash/],
+		["version resources are inspectable", /versionInspectPayload\.version\.status, "published"[\s\S]*versionInspectPayload\.definition\.id, "ui-lifecycle-api-draft"/],
+		["semantic version choices allocate patch, minor, and major versions", /workflow draft publish allocates patch, minor, and major versions[\s\S]*minorPublish\.payload\.publishedVersion\.version, "1\.1\.0"[\s\S]*majorPublish\.payload\.publishedVersion\.version, "2\.0\.0"/],
+		["published edits create or reuse the next-version draft path", /workflow published edit creates or reuses one next-version draft[\s\S]*createPayload\.reused, false[\s\S]*reusePayload\.reused, true/],
+		["published versions remain selectable through the workflow-version picker", /workflow version picker lists published nested workflow refs and reports missing refs[\s\S]*standard-project@1\.0\.0:published/],
+	]);
+});
+
 test("Workflow V2 lifecycle tests cover archive filters, delete tombstones, and historical snapshots", async () => {
 	const catalogEntityTests = await readSource("packages/workflows/src/testing/workflow-catalog-entities.test.ts");
 	const webChannelTests = await readSource("test/web-channel.test.mjs");
