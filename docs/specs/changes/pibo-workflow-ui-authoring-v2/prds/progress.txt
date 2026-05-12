@@ -1799,3 +1799,21 @@
 - **Learnings for future iterations:**
   - Composition test stories can stay focused by asserting the existing package/web-channel/UI coverage matrix instead of duplicating each long browser flow in a new end-to-end test.
 ---
+## 2026-05-12 13:56 CEST - US-008
+- What was implemented
+  - Added a focused Workflow V2 lifecycle checklist test suite covering immutable published records, definition hashes, registry visibility, patch/minor/major version behavior, one-active-draft enforcement, archive filtering, delete tombstones, and historical Project snapshot inspectability.
+  - Marked PRD 06 US-008 passing with notes about the lifecycle coverage matrix.
+- Files changed
+  - `test/workflow-v2-lifecycle-checklist.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && node --test test/workflow-v2-lifecycle-checklist.test.mjs && npm --prefix packages/workflows test -- src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow catalog lifecycle APIs|workflow draft publish allocates patch|workflow published edit creates|workflow archive API applies|workflow delete API tombstones" test/web-channel.test.mjs'` — passed, 5/5 targeted lifecycle integration tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Not run; this story added lifecycle test coverage only and did not change visible UI behavior.
+- **Learnings for future iterations:**
+  - Lifecycle checklist coverage can stay focused by tying package-level entity/hash tests to targeted web-channel lifecycle flows instead of adding another duplicate end-to-end lifecycle scenario.
+---

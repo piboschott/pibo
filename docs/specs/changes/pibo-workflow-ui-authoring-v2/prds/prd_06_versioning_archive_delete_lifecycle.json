@@ -126,8 +126,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added focused Workflow V2 lifecycle checklist tests that guard immutable publish/hash/registry coverage, patch/minor/major and one-active-draft coverage, archive/delete filtering, tombstones, and historical snapshot inspectability."
     }
   ]
 }
