@@ -142,8 +142,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added focused builder editing/raw IR coverage that maps duplicate/open builder, graph edits, layout save semantics, prompt/schema edits, validate/publish paths, raw IR valid sync, invalid raw text warnings, invalid workflow diagnostics, and last-valid-object preservation."
     }
   ]
 }

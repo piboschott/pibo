@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Workflow Builder coverage stories can pair a source-level UI/test matrix with targeted `web-channel` flows; compare layout-only changes by stripping `ui` metadata before checking runtime semantics.
 - Workflow Library buttons and labels should consume source/status-derived API `actions`/`editability` metadata rather than re-deriving code/UI mutation rules in React rows.
 - Rollout-gate docs should pair each phase with required automated test families and reference canonical product smoke checklists instead of duplicating behavior contracts.
 - Run inspection checklist tests can combine a source-level UI coverage matrix with targeted `workflow-session-kind` and `web-channel` flows; seed missing registered human action refs to cover disabled controls and diagnostics.
@@ -1930,4 +1931,32 @@
     - The default browser-use profile was locked by another Chrome process; `--fresh-profile` was required for every browser-use command in the session.
   - Useful context
     - The Workflow Library source/status action chip aria-label is `Workflow Library source/status actions`, which makes browser checks straightforward.
+---
+## 2026-05-12 14:57 CEST - US-009
+- What was implemented
+  - Added focused Workflow Builder editing/raw IR coverage that maps the existing duplicate/open builder, graph add-node/connect-edge/layout save, prompt edit, schema edit, validate, and publish integration flows.
+  - Added raw IR safe-sync coverage for valid raw edits, invalid JSON warnings, invalid workflow diagnostics, and last-valid-object preservation.
+  - Added a runtime-semantics assertion proving layout-only `ui` metadata changes are ignored when comparing serialized workflow execution semantics.
+  - Marked PRD 04 US-009 passing.
+- Files changed
+  - `test/workflow-v2-builder-editing-raw-ir.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_04_workflow_builder_and_ir_editing.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `node --test test/workflow-v2-builder-editing-raw-ir.test.mjs` — passed, 3/3 tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && node --test test/workflow-v2-builder-editing-raw-ir.test.mjs && npm run build && node --test --test-name-pattern "workflow prompt asset revisions|workflow builder draft loader opens starter|workflow validation pipeline|workflow draft publish allocates" test/web-channel.test.mjs'` — passed, including typecheck, 3/3 builder coverage tests, and 4/4 targeted web-channel tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_04_workflow_builder_and_ir_editing.json` — passed.
+- Browser verification, if UI changed
+  - Verified the container gateway served `http://127.0.0.1:4802/apps/chat` successfully.
+  - Used `browser-use --fresh-profile --session ralph-v2-builder-tests` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the builder rendered `Visual graph editor`, `Add Agent node`, `Connect nodes`, `Save layout`, `Validate draft`, `Publish draft`, `Raw Pibo Workflow IR editor`, `Last valid Pibo Workflow IR object`, layout-semantics copy, and last-valid raw IR copy.
+  - Saved screenshot: `/tmp/ralph-v2-builder-editing-raw-ir.png` inside the container.
+- **Learnings for future iterations:**
+  - Patterns discovered
+    - Builder coverage tests can remain focused by mapping source/UI affordances to the targeted web-channel integration flows that own draft, validation, and publish behavior.
+    - Layout semantics can be tested by stripping workflow `ui` metadata before comparing serialized runtime semantics.
+  - Gotchas encountered
+    - `browser-use` still needed `--fresh-profile` for this worker session.
+  - Useful context
+    - The starter draft route `/apps/chat/workflows/drafts/v2-starter-draft` exposes the builder controls and raw IR panel without requiring a new draft fixture.
 ---
