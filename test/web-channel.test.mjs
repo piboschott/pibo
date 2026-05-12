@@ -2766,6 +2766,28 @@ test("workflow delete API tombstones UI workflows while preserving Project snaps
 		assert.equal(projectSession.workflowDefinitionLink.href, undefined);
 		assert.match(projectSession.workflowDefinitionLink.tombstoneLabel, /Definition deleted/);
 
+		const historicalRunResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions/${encodeURIComponent(sessionPayload.session.id)}/start`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({}),
+		});
+		assert.equal(historicalRunResponse.status, 200);
+		const historicalRunPayload = await historicalRunResponse.json();
+		assert.equal(historicalRunPayload.alreadyStarted, true);
+		assert.equal(historicalRunPayload.workflow.id, "ui-review-workflow");
+		assert.equal(historicalRunPayload.workflow.version, "2.0.0");
+		assert.equal(historicalRunPayload.workflow.source, "ui");
+		assert.equal(historicalRunPayload.workflow.title, "UI Review Workflow");
+		assert.equal(historicalRunPayload.projectSession.workflowRunId, startPayload.run.id);
+		assert.equal(historicalRunPayload.snapshot.id, sessionPayload.snapshot.id);
+		assert.equal(historicalRunPayload.snapshot.deletedDefinitionFallback.workflowId, "ui-review-workflow");
+		assert.equal(historicalRunPayload.snapshot.deletedDefinitionFallback.workflowVersion, "2.0.0");
+		assert.equal(historicalRunPayload.snapshot.workflow.effectiveDefinitionHash, sessionPayload.snapshot.workflow.effectiveDefinitionHash);
+		assert.deepEqual(historicalRunPayload.snapshot.effectiveDefinition, sessionPayload.snapshot.effectiveDefinition);
+		assert.equal(historicalRunPayload.run.id, startPayload.run.id);
+		assert.equal(historicalRunPayload.run.snapshotId, sessionPayload.snapshot.id);
+		assert.equal(historicalRunPayload.run.effectiveDefinitionHash, sessionPayload.snapshot.workflow.effectiveDefinitionHash);
+
 		const lifecycleResponse = await fetch(`${baseURL}/api/chat/workflows/lifecycle-events?type=workflow.delete.tombstoned&workflowId=ui-review-workflow`, {
 			headers: { "x-test-user": "user-1" },
 		});

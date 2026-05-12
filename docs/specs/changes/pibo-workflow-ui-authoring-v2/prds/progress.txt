@@ -1736,3 +1736,19 @@
   - Structured missing-reference assertions should check the registry ref plus path and node/edge location, not only the diagnostic code.
   - `missingRefs` is a catalog summary; keep richer non-missing `registryRef` diagnostics such as params and kind mismatches in full diagnostics.
 ---
+## 2026-05-12 13:19 CEST - US-008
+- What was implemented
+  - Added Project snapshot lifecycle regression assertions to the workflow delete integration test.
+  - Verified a tombstoned UI workflow can still return the existing Project workflow run with `alreadyStarted: true`, the immutable saved snapshot, deleted-definition fallback metadata, and the saved effective definition.
+  - Marked PRD 03 US-008 passing.
+- Files changed
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_03_project_session_selection_and_snapshots.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run build && node --test --test-name-pattern "workflow delete API tombstones" test/web-channel.test.mjs'` — passed.
+- Browser verification, if UI changed
+  - Not run; this story added backend integration-test coverage only and did not change visible UI behavior.
+- **Learnings for future iterations:**
+  - Historical Project run inspection after workflow tombstone can be tested by calling the Project workflow start route again and asserting it returns the existing run plus the saved snapshot rather than resolving the live catalog.
+---

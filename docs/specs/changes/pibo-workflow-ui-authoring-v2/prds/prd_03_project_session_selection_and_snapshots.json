@@ -122,8 +122,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added snapshot lifecycle regression coverage: configured session creation has no run, start is idempotent/immutable, and deleted UI workflow historical run inspection returns the saved snapshot/effective definition."
     }
   ]
 }
