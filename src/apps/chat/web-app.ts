@@ -185,6 +185,7 @@ type ChatWebAppState = {
 	syncedUserSkillNames?: Set<string>;
 	workflowDraftStore: ChatWorkflowDraftStore;
 	workflowPublishedVersionStore: ChatWorkflowPublishedVersionStore;
+	workflowArchiveStore: ChatWorkflowArchiveStore;
 	workflowLifecycleEventStore: ChatWorkflowLifecycleEventStore;
 };
 
@@ -551,6 +552,10 @@ type WorkflowNextDraftBody = {
 	version?: unknown;
 };
 
+type WorkflowArchiveBody = {
+	reason?: unknown;
+};
+
 type WorkflowDraftPatchBody = {
 	definition?: unknown;
 	rawDefinitionText?: unknown;
@@ -609,6 +614,26 @@ type WorkflowPublishedVersionStoreRow = {
 	published_by: string | null;
 	published_at: string;
 	created_at: string;
+};
+
+type WorkflowArchiveStateRecord = {
+	workflowId: string;
+	source: "ui";
+	archived: boolean;
+	archivedAt?: string;
+	archivedBy?: string;
+	archiveReason?: string;
+	updatedAt: string;
+};
+
+type WorkflowArchiveStateStoreRow = {
+	workflow_id: string;
+	source: "ui";
+	archived: number;
+	archived_at: string | null;
+	archived_by: string | null;
+	archive_reason: string | null;
+	updated_at: string;
 };
 
 type WorkflowLifecycleEventType =
@@ -936,6 +961,88 @@ function workflowPublishedVersionFromStoreRow(row: WorkflowPublishedVersionStore
 		...(row.published_by ? { publishedBy: row.published_by } : {}),
 		publishedAt: row.published_at,
 		createdAt: row.created_at,
+	};
+}
+
+class ChatWorkflowArchiveStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_archive_states (
+				workflow_id TEXT PRIMARY KEY,
+				source TEXT NOT NULL,
+				archived INTEGER NOT NULL,
+				archived_at TEXT,
+				archived_by TEXT,
+				archive_reason TEXT,
+				updated_at TEXT NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_archive_states_archived
+				ON workflow_archive_states(archived, updated_at);
+		`);
+	}
+
+	setWorkflowArchived(input: { workflowId: string; archivedBy: string; archiveReason?: string }): WorkflowArchiveStateRecord {
+		const existing = this.getWorkflowArchiveState(input.workflowId);
+		const now = new Date().toISOString();
+		const archiveReason = input.archiveReason ?? existing?.archiveReason;
+		const record: WorkflowArchiveStateRecord = {
+			workflowId: input.workflowId,
+			source: "ui",
+			archived: true,
+			archivedAt: existing?.archivedAt ?? now,
+			archivedBy: input.archivedBy,
+			...(archiveReason ? { archiveReason } : {}),
+			updatedAt: now,
+		};
+		this.saveWorkflowArchiveState(record);
+		return record;
+	}
+
+	saveWorkflowArchiveState(record: WorkflowArchiveStateRecord): void {
+		this.dataStore.db.prepare(`
+			INSERT INTO workflow_archive_states (
+				workflow_id,
+				source,
+				archived,
+				archived_at,
+				archived_by,
+				archive_reason,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(workflow_id) DO UPDATE SET
+				source = excluded.source,
+				archived = excluded.archived,
+				archived_at = excluded.archived_at,
+				archived_by = excluded.archived_by,
+				archive_reason = excluded.archive_reason,
+				updated_at = excluded.updated_at
+		`).run(
+			record.workflowId,
+			record.source,
+			record.archived ? 1 : 0,
+			record.archivedAt ?? null,
+			record.archivedBy ?? null,
+			record.archiveReason ?? null,
+			record.updatedAt,
+		);
+	}
+
+	getWorkflowArchiveState(workflowId: string): WorkflowArchiveStateRecord | undefined {
+		const row = this.dataStore.db.prepare("SELECT * FROM workflow_archive_states WHERE workflow_id = ?").get(workflowId) as WorkflowArchiveStateStoreRow | undefined;
+		return row ? workflowArchiveStateFromStoreRow(row) : undefined;
+	}
+}
+
+function workflowArchiveStateFromStoreRow(row: WorkflowArchiveStateStoreRow): WorkflowArchiveStateRecord {
+	return {
+		workflowId: row.workflow_id,
+		source: row.source,
+		archived: row.archived === 1,
+		...(row.archived_at ? { archivedAt: row.archived_at } : {}),
+		...(row.archived_by ? { archivedBy: row.archived_by } : {}),
+		...(row.archive_reason ? { archiveReason: row.archive_reason } : {}),
+		updatedAt: row.updated_at,
 	};
 }
 
@@ -1329,6 +1436,19 @@ function workflowDuplicateResourceId(pathname: string): string | undefined {
 function workflowNextDraftResourceId(pathname: string): string | undefined {
 	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
 	const suffix = "/drafts";
+	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+	const encodedId = pathname.slice(prefix.length, -suffix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
+	}
+}
+
+function workflowArchiveResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	const suffix = "/archive";
 	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
 	const encodedId = pathname.slice(prefix.length, -suffix.length);
 	if (!encodedId || encodedId.includes("/")) return undefined;
@@ -2242,6 +2362,13 @@ function normalizeProjectWorkflowVersion(value: unknown): string | undefined {
 	if (value === undefined || value === null || value === "") return undefined;
 	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Workflow version must be a string", 400);
 	return value.trim();
+}
+
+function normalizeWorkflowArchiveReason(value: unknown): string | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value !== "string") throw new PiboWebHttpError("Workflow archive reason must be a string", 400);
+	const trimmed = value.trim();
+	return trimmed ? trimmed.slice(0, 500) : undefined;
 }
 
 const PROJECT_WORKFLOW_SESSION_CREATE_FIELDS = new Set([
@@ -3202,14 +3329,22 @@ const STATIC_WORKFLOW_VERSION_CATALOG: WorkflowCatalogVersionRecord[] = [
 function buildProjectWorkflowVersionCatalog(state?: ChatWebAppState): WorkflowCatalogVersionRecord[] {
 	const recordsByKey = new Map<string, WorkflowCatalogVersionRecord>();
 	for (const record of STATIC_WORKFLOW_VERSION_CATALOG) {
-		recordsByKey.set(workflowCatalogVersionKey(record.id, record.version), record);
+		const projected = workflowCatalogRecordWithArchiveState(record, state);
+		recordsByKey.set(workflowCatalogVersionKey(projected.id, projected.version), projected);
 	}
 	if (state) {
 		for (const record of state.workflowPublishedVersionStore.listPublishedVersions()) {
-			recordsByKey.set(workflowCatalogVersionKey(record.workflowId, record.version), workflowCatalogRecordFromPublishedVersion(record));
+			const projected = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(record), state);
+			recordsByKey.set(workflowCatalogVersionKey(projected.id, projected.version), projected);
 		}
 	}
 	return [...recordsByKey.values()];
+}
+
+function workflowCatalogRecordWithArchiveState(record: WorkflowCatalogVersionRecord, state?: ChatWebAppState): WorkflowCatalogVersionRecord {
+	const archiveState = state?.workflowArchiveStore.getWorkflowArchiveState(record.id);
+	if (record.source === "ui" && archiveState?.archived) return { ...record, status: "archived" };
+	return record;
 }
 
 function workflowCatalogVersionKey(workflowId: string, version: string): string {
@@ -3286,16 +3421,21 @@ function buildWorkflowCatalogList(
 
 	for (const record of STATIC_WORKFLOW_VERSION_CATALOG) {
 		if (record.status === "draft") continue;
-		if (record.status === "archived" && !includeArchived) continue;
-		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromCatalogRecord(record, buildContext));
+		const summary = workflowCatalogVersionSummaryFromCatalogRecord(record, buildContext);
+		if (summary.status === "archived" && !includeArchived) continue;
+		addWorkflowCatalogVersion(workflows, summary);
 	}
 
 	for (const record of state.workflowPublishedVersionStore.listPublishedVersions()) {
-		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromPublishedVersion(record, buildContext));
+		const summary = workflowCatalogVersionSummaryFromPublishedVersion(record, buildContext);
+		if (summary.status === "archived" && !includeArchived) continue;
+		addWorkflowCatalogVersion(workflows, summary);
 	}
 
 	for (const draft of state.workflowDraftStore.listDrafts()) {
-		addWorkflowCatalogVersion(workflows, workflowCatalogVersionSummaryFromDraft(draft));
+		const summary = workflowCatalogVersionSummaryFromDraft(draft, state);
+		if (summary.status === "archived" && !includeArchived) continue;
+		addWorkflowCatalogVersion(workflows, summary);
 		const accumulator = workflows.get(draft.workflowId);
 		if (accumulator) accumulator.activeDraftId = draft.draftId;
 	}
@@ -3366,22 +3506,23 @@ function deriveWorkflowCatalogStatus(versions: WorkflowCatalogVersionSummary[]):
 }
 
 function workflowCatalogVersionSummaryFromCatalogRecord(record: WorkflowCatalogVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
-	const definition = record.status === "published" || record.status === "archived"
-		? createPublishedWorkflowDefinition(record, "pibo-agent")
+	const catalogRecord = workflowCatalogRecordWithArchiveState(record, context.state);
+	const definition = catalogRecord.status === "published" || catalogRecord.status === "archived"
+		? createPublishedWorkflowDefinition(catalogRecord, "pibo-agent")
 		: undefined;
 	const diagnostics = definition ? validateWorkflowDefinitionForV2(definition, context) : [];
 	return {
-		...record,
+		...catalogRecord,
 		...(definition ? { definitionHash: hashWorkflowDefinitionJson(definition) } : {}),
 		validationState: workflowCatalogValidationStateFromDiagnostics(diagnostics, definition ? "valid" : "unknown"),
 		diagnostics,
 		missingRefs: workflowMissingRefDiagnostics(diagnostics),
-		actions: workflowCatalogActionsFor(record),
+		actions: workflowCatalogActionsFor(catalogRecord),
 	};
 }
 
 function workflowCatalogVersionSummaryFromPublishedVersion(record: WorkflowPublishedVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
-	const catalogRecord = workflowCatalogRecordFromPublishedVersion(record);
+	const catalogRecord = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(record), context.state);
 	const diagnostics = validateWorkflowDefinitionForV2(record.definition, context);
 	return {
 		...catalogRecord,
@@ -3393,8 +3534,8 @@ function workflowCatalogVersionSummaryFromPublishedVersion(record: WorkflowPubli
 	};
 }
 
-function workflowCatalogVersionSummaryFromDraft(draft: OwnedWorkflowDraftRecord): WorkflowCatalogVersionSummary {
-	const record = workflowCatalogRecordFromDraft(draft);
+function workflowCatalogVersionSummaryFromDraft(draft: OwnedWorkflowDraftRecord, state: ChatWebAppState): WorkflowCatalogVersionSummary {
+	const record = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromDraft(draft), state);
 	return {
 		...record,
 		validationState: draft.validationState,
@@ -3542,7 +3683,8 @@ function workflowPublishedVersionInspection(
 ): { version: WorkflowCatalogVersionRecord & { definitionHash: string }; definition: PiboJsonObject; validation: WorkflowValidationSummary; diagnostics: WorkflowDraftDiagnostic[] } | undefined {
 	const persisted = state.workflowPublishedVersionStore.listPublishedVersions({ workflowId }).find((record) => record.version === version);
 	if (persisted) {
-		const catalogRecord = workflowCatalogRecordFromPublishedVersion(persisted);
+		const catalogRecord = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(persisted), state);
+		if (catalogRecord.status === "archived" && !includeArchived) return undefined;
 		const diagnostics = validateWorkflowDefinitionForV2(persisted.definition, { state, context, webSession });
 		return {
 			version: { ...catalogRecord, definitionHash: persisted.definitionHash },
@@ -3553,11 +3695,12 @@ function workflowPublishedVersionInspection(
 	}
 
 	const staticRecord = STATIC_WORKFLOW_VERSION_CATALOG.find((record) => record.id === workflowId && record.version === version);
-	if (!staticRecord || staticRecord.status === "draft" || (staticRecord.status === "archived" && !includeArchived)) return undefined;
-	const definition = createPublishedWorkflowDefinition(staticRecord, "pibo-agent");
+	const catalogRecord = staticRecord ? workflowCatalogRecordWithArchiveState(staticRecord, state) : undefined;
+	if (!catalogRecord || catalogRecord.status === "draft" || (catalogRecord.status === "archived" && !includeArchived)) return undefined;
+	const definition = createPublishedWorkflowDefinition(catalogRecord, "pibo-agent");
 	const diagnostics = validateWorkflowDefinitionForV2(definition, { state, context, webSession });
 	return {
-		version: { ...staticRecord, definitionHash: hashWorkflowDefinitionJson(definition) },
+		version: { ...catalogRecord, definitionHash: hashWorkflowDefinitionJson(definition) },
 		definition,
 		validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
 		diagnostics,
@@ -3714,6 +3857,41 @@ function createNextVersionDraftFromPublishedWorkflow(
 		},
 	});
 	return { draft: serializeWorkflowDraft(draft), reused: false };
+}
+
+function archiveWorkflowIdentity(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowIdValue: unknown,
+	reasonValue: unknown,
+): { workflow: WorkflowCatalogRecord; archiveState: WorkflowArchiveStateRecord } {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	if (workflow.source !== "ui") {
+		throw new PiboWebHttpError("Code workflow projections are read-only; duplicate them to a UI draft before archiving", 409);
+	}
+	const archiveState = state.workflowArchiveStore.setWorkflowArchived({
+		workflowId,
+		archivedBy: principalIdFor(webSession),
+		archiveReason: normalizeWorkflowArchiveReason(reasonValue),
+	});
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.archive.updated",
+		workflowId,
+		status: "accepted",
+		diagnostics: [],
+		payload: {
+			archived: true,
+			archiveReason: archiveState.archiveReason ?? null,
+			archiveScope: "workflow_identity",
+		},
+	});
+	const archivedWorkflow = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true }).workflows.find((record) => record.id === workflowId);
+	if (!archivedWorkflow) throw new PiboWebHttpError("Archived workflow not found", 500);
+	return { workflow: archivedWorkflow, archiveState };
 }
 
 function selectPublishedWorkflowVersion(state: ChatWebAppState, workflowId: string, version?: string): WorkflowVersionPickerOption | undefined {
@@ -6673,6 +6851,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		userSkillManager: new UserSkillManager(os.homedir()),
 		workflowDraftStore: new ChatWorkflowDraftStore(dataStore),
 		workflowPublishedVersionStore: new ChatWorkflowPublishedVersionStore(dataStore),
+		workflowArchiveStore: new ChatWorkflowArchiveStore(dataStore),
 		workflowLifecycleEventStore: new ChatWorkflowLifecycleEventStore(dataStore),
 	};
 
@@ -7322,6 +7501,14 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const body = await readJsonBody<WorkflowNextDraftBody>(request);
 				const { draft, reused } = createNextVersionDraftFromPublishedWorkflow(state, webSession, nextDraftWorkflowId, body.version);
 				return responseJson({ draft, builderPath: workflowDraftBuilderPath(draft.draftId), reused }, { status: reused ? 200 : 201 });
+			}
+
+			const archiveWorkflowId = workflowArchiveResourceId(url.pathname);
+			if (archiveWorkflowId && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowArchiveBody>(request);
+				return responseJson(archiveWorkflowIdentity(state, context, webSession, archiveWorkflowId, body.reason));
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows/lifecycle-events` && request.method === "GET") {

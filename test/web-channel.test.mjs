@@ -2128,6 +2128,91 @@ test("workflow catalog list and inspect APIs expose source/status, diagnostics, 
 	}
 });
 
+test("workflow archive API applies at workflow identity scope and hides archived workflows from selection", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const archiveResponse = await fetch(`${baseURL}/api/chat/workflows/ui-review-workflow/archive`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ reason: "Deprecated by a newer review workflow." }),
+		});
+		assert.equal(archiveResponse.status, 200);
+		const archivePayload = await archiveResponse.json();
+		assert.equal(archivePayload.archiveState.workflowId, "ui-review-workflow");
+		assert.equal(archivePayload.archiveState.archived, true);
+		assert.equal(archivePayload.archiveState.archiveReason, "Deprecated by a newer review workflow.");
+		assert.equal(archivePayload.workflow.id, "ui-review-workflow");
+		assert.equal(archivePayload.workflow.status, "archived");
+		assert.deepEqual(archivePayload.workflow.versions.map((version) => `${version.version}:${version.status}`), ["2.0.0:archived"]);
+
+		const defaultCatalogResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(defaultCatalogResponse.status, 200);
+		const defaultCatalogPayload = await defaultCatalogResponse.json();
+		assert.equal(defaultCatalogPayload.workflows.some((workflow) => workflow.id === "ui-review-workflow"), false);
+
+		const archivedCatalogResponse = await fetch(`${baseURL}/api/chat/workflows?includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedCatalogResponse.status, 200);
+		const archivedCatalogPayload = await archivedCatalogResponse.json();
+		const archivedWorkflow = archivedCatalogPayload.workflows.find((workflow) => workflow.id === "ui-review-workflow");
+		assert.ok(archivedWorkflow);
+		assert.equal(archivedWorkflow.status, "archived");
+		assert.equal(archivedWorkflow.editability.canCreateProjectSession, false);
+		assert.equal(archivedWorkflow.editability.canArchive, false);
+
+		const pickerResponse = await fetch(`${baseURL}/api/chat/workflows/pickers/workflow-versions`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(pickerResponse.status, 200);
+		const pickerPayload = await pickerResponse.json();
+		assert.equal(pickerPayload.options.some((option) => option.id === "ui-review-workflow"), false);
+
+		const historyResponse = await fetch(`${baseURL}/api/chat/workflows/pickers/version-history?selectedWorkflowId=ui-review-workflow&selectedWorkflowVersion=2.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(historyResponse.status, 200);
+		const historyPayload = await historyResponse.json();
+		assert.equal(historyPayload.selectedWorkflowId, "ui-review-workflow");
+		assert.equal(historyPayload.selectedWorkflowVersion, "2.0.0");
+		assert.ok(historyPayload.options.some((option) => `${option.id}@${option.version}:${option.status}` === "ui-review-workflow@2.0.0:archived"));
+
+		const defaultInspectResponse = await fetch(`${baseURL}/api/chat/workflows/ui-review-workflow?version=2.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(defaultInspectResponse.status, 404);
+
+		const archivedInspectResponse = await fetch(`${baseURL}/api/chat/workflows/ui-review-workflow?version=2.0.0&includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(archivedInspectResponse.status, 200);
+		const archivedInspectPayload = await archivedInspectResponse.json();
+		assert.equal(archivedInspectPayload.selected.version.status, "archived");
+
+		const codeArchiveResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/archive`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({}),
+		});
+		assert.equal(codeArchiveResponse.status, 409);
+		assert.match((await codeArchiveResponse.json()).error, /Code workflow projections are read-only/);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow security boundary validates registered refs and rejects inline execution paths", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

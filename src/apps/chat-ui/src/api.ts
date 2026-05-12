@@ -569,6 +569,27 @@ export async function postWorkflowNextDraft(workflowId: string, input: { version
 	});
 }
 
+export type WorkflowArchiveResponse = {
+	workflow: WorkflowCatalogRecord;
+	archiveState: {
+		workflowId: string;
+		source: "ui";
+		archived: boolean;
+		archivedAt?: string;
+		archivedBy?: string;
+		archiveReason?: string;
+		updatedAt: string;
+	};
+};
+
+export async function postWorkflowArchive(workflowId: string, input: { reason?: string } = {}): Promise<WorkflowArchiveResponse> {
+	return requestJson<WorkflowArchiveResponse>(`/api/chat/workflows/${encodeURIComponent(workflowId)}/archive`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
 export type CronScheduleInput =
 	| { kind: "in"; value: string }
 	| { kind: "at"; at: string }

@@ -79,8 +79,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented workflow-level archive via authenticated catalog API, identity-scoped archive state, archived filtering in catalog/pickers, and Workflow Library archive action."
     },
     {
       "id": "US-006",

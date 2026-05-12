@@ -19,7 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, History, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, History, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
 import {
 	getWorkflowAdapterPicker,
 	getWorkflowDraft,
@@ -29,6 +29,7 @@ import {
 	getWorkflowVersionPicker,
 	getWorkflowVersionHistory,
 	patchWorkflowDraft,
+	postWorkflowArchive,
 	postWorkflowDraftPublish,
 	postWorkflowDuplicateDraft,
 	postWorkflowNextDraft,
@@ -46,6 +47,7 @@ import {
 	type WorkflowValidationTrigger,
 	type WorkflowVersionPickerOption,
 	type WorkflowVersionPickerResponse,
+	type WorkflowVersionHistoryResponse,
 } from "./api";
 
 const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
@@ -191,8 +193,9 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 	const [historyErrorMessage, setHistoryErrorMessage] = useState<string | undefined>();
 	const [duplicatingKey, setDuplicatingKey] = useState<string | undefined>();
 	const [editingKey, setEditingKey] = useState<string | undefined>();
+	const [archivingWorkflowId, setArchivingWorkflowId] = useState<string | undefined>();
 	const [errorMessage, setErrorMessage] = useState<string | undefined>();
-	const busy = Boolean(duplicatingKey || editingKey);
+	const busy = Boolean(duplicatingKey || editingKey || archivingWorkflowId);
 
 	const loadVersionHistory = useCallback(async () => {
 		setHistoryLoadState("loading");
@@ -236,6 +239,19 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 		} catch (error) {
 			setErrorMessage(error instanceof Error ? error.message : "Failed to create next-version draft");
 			setEditingKey(undefined);
+		}
+	};
+
+	const archiveWorkflow = async (workflowId: string) => {
+		setArchivingWorkflowId(workflowId);
+		setErrorMessage(undefined);
+		try {
+			await postWorkflowArchive(workflowId);
+			await loadVersionHistory();
+		} catch (error) {
+			setErrorMessage(error instanceof Error ? error.message : "Failed to archive workflow");
+		} finally {
+			setArchivingWorkflowId(undefined);
 		}
 	};
 
@@ -302,8 +318,10 @@ function WorkflowLibraryPanel({ activeDraftId }: { activeDraftId?: string }) {
 						busy={busy}
 						duplicatingKey={duplicatingKey}
 						editingKey={editingKey}
+						archivingWorkflowId={archivingWorkflowId}
 						onDuplicate={duplicateWorkflow}
 						onEditPublished={editPublishedWorkflow}
+						onArchive={archiveWorkflow}
 					/>
 				)) : null}
 			</div>
@@ -322,15 +340,19 @@ function WorkflowVersionHistoryGroupCard({
 	busy,
 	duplicatingKey,
 	editingKey,
+	archivingWorkflowId,
 	onDuplicate,
 	onEditPublished,
+	onArchive,
 }: {
 	group: WorkflowVersionHistoryGroup;
 	busy: boolean;
 	duplicatingKey?: string;
 	editingKey?: string;
+	archivingWorkflowId?: string;
 	onDuplicate: (workflowId: string, version: string) => Promise<void>;
 	onEditPublished: (workflowId: string, version: string) => Promise<void>;
+	onArchive: (workflowId: string) => Promise<void>;
 }) {
 	return (
 		<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-4" aria-label={`Version history for ${group.workflowId}`}>
@@ -352,8 +374,10 @@ function WorkflowVersionHistoryGroupCard({
 						busy={busy}
 						duplicatingKey={duplicatingKey}
 						editingKey={editingKey}
+						archivingWorkflowId={archivingWorkflowId}
 						onDuplicate={onDuplicate}
 						onEditPublished={onEditPublished}
+						onArchive={onArchive}
 					/>
 				))}
 			</div>
@@ -366,18 +390,23 @@ function WorkflowVersionHistoryRow({
 	busy,
 	duplicatingKey,
 	editingKey,
+	archivingWorkflowId,
 	onDuplicate,
 	onEditPublished,
+	onArchive,
 }: {
 	record: WorkflowCatalogVersionRecord;
 	busy: boolean;
 	duplicatingKey?: string;
 	editingKey?: string;
+	archivingWorkflowId?: string;
 	onDuplicate: (workflowId: string, version: string) => Promise<void>;
 	onEditPublished: (workflowId: string, version: string) => Promise<void>;
+	onArchive: (workflowId: string) => Promise<void>;
 }) {
 	const key = workflowVersionSelectionKey(record.id, record.version);
 	const published = record.status === "published";
+	const archivable = published && record.source === "ui";
 	return (
 		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
 			<div className="flex flex-wrap items-start justify-between gap-3">
@@ -421,6 +450,17 @@ function WorkflowVersionHistoryRow({
 								<ExternalLink size={13} />
 								View details
 							</a>
+							{archivable ? (
+								<button
+									type="button"
+									className="inline-flex items-center justify-center gap-1 rounded-sm border border-amber-700/70 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-500 hover:text-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => void onArchive(record.id)}
+									disabled={busy}
+								>
+									{archivingWorkflowId === record.id ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />}
+									Archive workflow
+								</button>
+							) : null}
 						</>
 					) : (
 						<div className="max-w-44 rounded-sm border border-amber-800/70 bg-amber-950/20 p-2 text-[11px] text-amber-100">
@@ -2184,7 +2224,7 @@ function WorkflowBuilderWorkflowNodeEditor() {
 }
 
 function WorkflowVersionViewer({ workflowId, workflowVersion }: { workflowId: string; workflowVersion: string }) {
-	const [picker, setPicker] = useState<WorkflowVersionPickerResponse | undefined>();
+	const [picker, setPicker] = useState<WorkflowVersionHistoryResponse | undefined>();
 	const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading");
 	const [errorMessage, setErrorMessage] = useState<string | undefined>();
 
@@ -2192,7 +2232,7 @@ function WorkflowVersionViewer({ workflowId, workflowVersion }: { workflowId: st
 		let cancelled = false;
 		setLoadState("loading");
 		setErrorMessage(undefined);
-		getWorkflowVersionPicker({ selectedWorkflowId: workflowId, selectedWorkflowVersion: workflowVersion })
+		getWorkflowVersionHistory({ selectedWorkflowId: workflowId, selectedWorkflowVersion: workflowVersion })
 			.then((response) => {
 				if (cancelled) return;
 				setPicker(response);
@@ -2259,7 +2299,7 @@ function WorkflowVersionViewer({ workflowId, workflowVersion }: { workflowId: st
 	);
 }
 
-function WorkflowVersionSelectionSummary({ option }: { option: WorkflowVersionPickerOption }) {
+function WorkflowVersionSelectionSummary({ option }: { option: WorkflowCatalogVersionRecord }) {
 	return (
 		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
 			<div className="font-semibold text-slate-200">Selected workflow: {option.title}</div>
@@ -2274,7 +2314,7 @@ function WorkflowVersionSelectionSummary({ option }: { option: WorkflowVersionPi
 	);
 }
 
-function WorkflowVersionOptionCard({ option }: { option: WorkflowVersionPickerOption }) {
+function WorkflowVersionOptionCard({ option }: { option: WorkflowCatalogVersionRecord }) {
 	return (
 		<div className="rounded-sm border border-slate-800 bg-[#151f24]/70 p-3 text-xs leading-5 text-slate-400">
 			<div className="flex flex-wrap items-start justify-between gap-2">
