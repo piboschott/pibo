@@ -46,9 +46,13 @@ test("Workflow V2 composition boundary tests cover registered node and picker pa
 
 	assertAllMatch(workflowsAreaSource, [
 		["builder exposes registered adapter node insertion", /Add Adapter node/],
+		["adapter nodes select registered adapter refs", /Registered adapter ref[\s\S]*Select a registered adapter ref/],
 		["compatible edge dialog can use a registered adapter on the edge", /Use as edge adapter/],
 		["compatible edge dialog can insert a visible adapter node", /Insert adapter node/],
 		["adapter node editor explains refs are registered and deterministic", /Adapter nodes store only a registered deterministic adapter ref/],
+		["human node editor renders prompt and resume schema fields", /Human prompt[\s\S]*Human node resume payload schema JSON/],
+		["human node editor selects registered human action choices", /Registered action choices[\s\S]*Actions are selected from the Workflow Registry/],
+		["human node editor renders timeout controls", /aria-label="Human node timeout"[\s\S]*Timeout kind[\s\S]*Timeout value/],
 	]);
 });
 

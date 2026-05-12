@@ -2109,3 +2109,25 @@
   - Aggregate completeness stories can use focused source-level coverage tests to bind already-implemented PRD surfaces to the final contract, while browser verification should still exercise the visible UI contract.
   - `browser-use eval` was reliable after collapsing multi-line JavaScript to one line before passing it as the positional eval argument.
 ---
+## 2026-05-12 16:19 CEST - US-014
+- What was implemented
+  - Added focused coverage for PRD 09 adapter and human node ref completeness.
+  - Extended the composition boundary source test to assert registered adapter selection plus human prompt, raw resume schema, registered action choices, and timeout UI controls.
+  - Extended the web-channel composition/security test to assert missing adapter and human action refs block draft publish with `before_publish` diagnostics.
+  - Marked PRD 09 US-014 passing.
+- Files changed
+  - `test/workflow-v2-composition-boundaries.test.mjs`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test test/workflow-v2-composition-boundaries.test.mjs test/web-channel.test.mjs'` — passed, 74/74 tests.
+- Browser verification, if UI changed
+  - Verified the container gateway at `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile --session ralph-v2` inside `pibo-dev-WorkflowsV2` with dev auth (`dev@pibo.local`) to open `/apps/chat/workflows/drafts/v2-starter-draft`.
+  - Verified the graph controls expose registered adapter and human-action selects, adding an adapter node opens the registered adapter ref inspector, and adding a human node opens prompt, raw resume schema, registered action choices, and timeout controls.
+  - Saved screenshot: `/tmp/ralph-v2-adapter-human-refs.png` inside the container.
+- **Learnings for future iterations:**
+  - PRD 09 aggregate stories can often be completed by adding focused coverage that binds already-implemented UI controls to backend publish/start gates, then marking the aggregate story passing.
+---

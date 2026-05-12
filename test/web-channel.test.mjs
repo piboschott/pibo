@@ -3193,6 +3193,19 @@ test("workflow security boundary validates registered refs and rejects inline ex
 		});
 		assert.ok(invalidPatchPayload.diagnostics.some((diagnostic) => diagnostic.hint?.includes("Hidden LLM coercion is not allowed")));
 
+		const invalidPublishResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}/publish`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ versionIntent: "patch" }),
+		});
+		assert.equal(invalidPublishResponse.status, 422);
+		const invalidPublishPayload = await invalidPublishResponse.json();
+		assert.equal(invalidPublishPayload.validation.trigger, "before_publish");
+		assert.equal(invalidPublishPayload.validation.blocksPublish, true);
+		assert.ok(invalidPublishPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowGraphError.unknownAdapterRef" && diagnostic.registryRef === "missing.adapters.inline"));
+		assert.ok(invalidPublishPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowGraphError.unknownAdapterRef" && diagnostic.registryRef === "missing.adapters.edge"));
+		assert.ok(invalidPublishPayload.diagnostics.some((diagnostic) => diagnostic.code === "WorkflowGraphError.unknownHumanActionRef" && diagnostic.registryRef === "missing.humanActions.inline"));
+
 		const inspectResponse = await fetch(`${baseURL}/api/chat/workflows/${encodeURIComponent(duplicatePayload.draft.workflowId)}`, {
 			headers: { "x-test-user": "user-1" },
 		});

@@ -217,8 +217,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified adapter nodes through registered adapter picker-only selection and human nodes through prompt, raw resume schema, registered action choices, and timeout controls. Focused tests now assert adapter/human UI coverage and publish-blocking diagnostics for missing adapter and human action refs."
     },
     {
       "id": "US-015",
