@@ -548,6 +548,30 @@ export async function postProjectWorkflowSessionStart(projectId: string, piboSes
 	});
 }
 
+export type ProjectWorkflowHumanActionInput = {
+	waitTokenId: string;
+	actionId?: string;
+	kind?: string;
+	payload?: unknown;
+};
+
+export type ProjectWorkflowHumanActionResponse = {
+	ok: true;
+	projectSession: PiboProjectSession;
+	waitToken: unknown;
+	action: unknown;
+	run: unknown;
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
+export async function postProjectWorkflowHumanAction(projectId: string, piboSessionId: string, input: ProjectWorkflowHumanActionInput): Promise<ProjectWorkflowHumanActionResponse> {
+	return requestJson<ProjectWorkflowHumanActionResponse>(`/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions/${encodeURIComponent(piboSessionId)}/human-actions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(input),
+	});
+}
+
 export type WorkflowDraftDefinition = Record<string, unknown>;
 
 export type WorkflowDraftRecord = {

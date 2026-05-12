@@ -39,6 +39,8 @@ export type ChatSessionViewProps = {
 	onOpenSession(piboSessionId: string): void;
 	onThinkingLevelChange(level: ThinkingLevel): void;
 	onModelChanged?(): Promise<void>;
+	onRefreshBootstrap?(): Promise<unknown>;
+	onError?(message: string | null): void;
 };
 
 export type ChatSessionView = {

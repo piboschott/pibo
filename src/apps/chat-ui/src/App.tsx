@@ -3494,6 +3494,8 @@ function SessionTracePane({
 							await onRefreshBootstrap();
 							await onRefreshTrace();
 						},
+						onRefreshBootstrap,
+						onError,
 					})
 				)}
 				<Composer

@@ -1959,7 +1959,9 @@ test("workflow human action and prompt asset pickers list registered refs and re
 		assert.equal(humanActionPayload.kind, "human-actions");
 		assert.deepEqual(humanActionPayload.options.map((option) => option.id), [
 			"fixture.humanActions.approve",
+			"fixture.humanActions.cancel",
 			"fixture.humanActions.reject",
+			"fixture.humanActions.resume",
 		]);
 		assert.equal(humanActionPayload.options[0].displayName, "Approve");
 		assert.equal(humanActionPayload.options[0].kind, "approve");
@@ -3747,6 +3749,217 @@ test("chat web app creates configured Project workflow sessions and starts one w
 			body: JSON.stringify({ workflowId: "standard-project" }),
 		});
 		assert.equal(legacyRejected.status, 400);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+test("chat web app lists and resolves Project workflow human wait tokens", async () => {
+	const { channel, baseURL, storageDir, projectStorePath } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+	const postHumanAction = (piboSessionId, body) => fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions/${encodeURIComponent(piboSessionId)}/human-actions`, {
+		method: "POST",
+		headers: jsonHeaders,
+		body: JSON.stringify(body),
+	});
+	let projectId;
+
+	try {
+		const projectResponse = await fetch(`${baseURL}/api/chat/projects`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				name: "Workflow Human Actions Project",
+				projectFolder: join(storageDir, "workflow-human-actions-project"),
+				createFolder: true,
+			}),
+		});
+		assert.equal(projectResponse.status, 201);
+		const projectPayload = await projectResponse.json();
+		projectId = projectPayload.project.id;
+
+		const createdResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				profile: "pibo-agent",
+				workflowId: "standard-project",
+				workflowVersion: "1.0.0",
+				title: "Human Review Workflow",
+			}),
+		});
+		assert.equal(createdResponse.status, 201);
+		const createdPayload = await createdResponse.json();
+
+		const startResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions/${encodeURIComponent(createdPayload.session.id)}/start`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({}),
+		});
+		assert.equal(startResponse.status, 202);
+		const startPayload = await startResponse.json();
+		const runId = startPayload.run.id;
+
+		const otherCreatedResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				profile: "pibo-agent",
+				workflowId: "standard-project",
+				workflowVersion: "1.0.0",
+				title: "Other Human Review Workflow",
+			}),
+		});
+		assert.equal(otherCreatedResponse.status, 201);
+		const otherCreatedPayload = await otherCreatedResponse.json();
+		const otherStartResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectId)}/workflow-sessions/${encodeURIComponent(otherCreatedPayload.session.id)}/start`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({}),
+		});
+		assert.equal(otherStartResponse.status, 202);
+
+		const db = new DatabaseSync(projectStorePath);
+		try {
+			const now = new Date().toISOString();
+			const insertWaitToken = ({ id, actions, schema, expiresAt }) => {
+				db.prepare(`INSERT INTO project_workflow_wait_tokens (
+					id,
+					project_id,
+					pibo_session_id,
+					workflow_run_id,
+					node_attempt_id,
+					human_node_id,
+					actions_json,
+					prompt,
+					schema_json,
+					status,
+					resume_payload_json,
+					resume_payload_present,
+					expires_at,
+					created_at,
+					resolved_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 0, ?, ?, NULL)`)
+					.run(
+						id,
+						projectId,
+						createdPayload.session.id,
+						runId,
+						`wna_${id}`,
+						"review",
+						JSON.stringify(actions),
+						`Review prompt for ${id}`,
+						schema ? JSON.stringify(schema) : null,
+						expiresAt ?? null,
+						now,
+					);
+			};
+			insertWaitToken({ id: "wwt_approve", actions: [{ id: "fixture.humanActions.approve", kind: "approve" }] });
+			insertWaitToken({ id: "wwt_reject", actions: [{ id: "fixture.humanActions.reject", kind: "reject" }] });
+			insertWaitToken({
+				id: "wwt_resume",
+				actions: [{ id: "fixture.humanActions.resume", kind: "resume" }],
+				schema: {
+					type: "object",
+					properties: { comment: { type: "string" } },
+					required: ["comment"],
+					additionalProperties: false,
+				},
+			});
+			insertWaitToken({ id: "wwt_cancel", actions: [{ id: "fixture.humanActions.cancel", kind: "cancel" }] });
+			insertWaitToken({
+				id: "wwt_expired",
+				actions: [{ id: "fixture.humanActions.approve", kind: "approve" }],
+				expiresAt: "2000-01-01T00:00:00.000Z",
+			});
+			db.prepare("UPDATE project_workflow_runs SET status = 'waiting' WHERE id = ?").run(runId);
+			db.prepare("UPDATE project_sessions SET state = 'waiting' WHERE pibo_session_id = ?").run(createdPayload.session.id);
+		} finally {
+			db.close();
+		}
+
+		const bootstrapResponse = await fetch(`${baseURL}/api/chat/projects/bootstrap?projectId=${encodeURIComponent(projectId)}&piboSessionId=${encodeURIComponent(createdPayload.session.id)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(bootstrapResponse.status, 200);
+		const bootstrapPayload = await bootstrapResponse.json();
+		const bootProjectSession = bootstrapPayload.projectSessions.find((session) => session.piboSessionId === createdPayload.session.id);
+		assert.equal(bootProjectSession.pendingHumanActions.length, 5);
+		const resumeWait = bootProjectSession.pendingHumanActions.find((action) => action.waitTokenId === "wwt_resume");
+		assert.equal(resumeWait.prompt, "Review prompt for wwt_resume");
+		assert.equal(resumeWait.availableActions[0].id, "fixture.humanActions.resume");
+		assert.equal(resumeWait.availableActions[0].displayName, "Resume");
+		assert.equal(resumeWait.payloadRequirements.required, true);
+		assert.equal(resumeWait.payloadRequirements.schema.required[0], "comment");
+
+		const missingTokenResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_missing", actionId: "fixture.humanActions.approve" });
+		assert.equal(missingTokenResponse.status, 404);
+		const missingTokenPayload = await missingTokenResponse.json();
+		assert.equal(missingTokenPayload.diagnostics[0].code, "WorkflowRuntimeError.unknownWaitToken");
+
+		const mismatchResponse = await postHumanAction(otherCreatedPayload.session.id, { waitTokenId: "wwt_resume", actionId: "fixture.humanActions.resume" });
+		assert.equal(mismatchResponse.status, 403);
+		const mismatchPayload = await mismatchResponse.json();
+		assert.equal(mismatchPayload.diagnostics[0].code, "WorkflowRuntimeError.waitTokenSessionMismatch");
+
+		const unavailableResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_resume", actionId: "fixture.humanActions.approve" });
+		assert.equal(unavailableResponse.status, 422);
+		const unavailablePayload = await unavailableResponse.json();
+		assert.equal(unavailablePayload.diagnostics[0].code, "WorkflowRuntimeError.humanActionUnavailable");
+
+		const invalidResumeResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_resume", actionId: "fixture.humanActions.resume", payload: {} });
+		assert.equal(invalidResumeResponse.status, 422);
+		const invalidResumePayload = await invalidResumeResponse.json();
+		assert.equal(invalidResumePayload.diagnostics[0].code, "WorkflowRuntimeError.invalidHumanActionPayload");
+
+		const approveResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_approve", actionId: "fixture.humanActions.approve" });
+		assert.equal(approveResponse.status, 202);
+		const approvePayload = await approveResponse.json();
+		assert.equal(approvePayload.action.kind, "approve");
+		assert.equal(approvePayload.waitToken.status, "resumed");
+
+		const rejectResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_reject", actionId: "fixture.humanActions.reject" });
+		assert.equal(rejectResponse.status, 202);
+		const rejectPayload = await rejectResponse.json();
+		assert.equal(rejectPayload.action.kind, "reject");
+
+		const resumeResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_resume", actionId: "fixture.humanActions.resume", payload: { comment: "Looks good" } });
+		assert.equal(resumeResponse.status, 202);
+		const resumePayload = await resumeResponse.json();
+		assert.equal(resumePayload.action.kind, "resume");
+		assert.deepEqual(resumePayload.action.payload, { comment: "Looks good" });
+
+		const replayResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_approve", actionId: "fixture.humanActions.approve" });
+		assert.equal(replayResponse.status, 409);
+		const replayPayload = await replayResponse.json();
+		assert.equal(replayPayload.diagnostics[0].code, "WorkflowRuntimeError.waitTokenNotPending");
+
+		const cancelResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_cancel", actionId: "fixture.humanActions.cancel" });
+		assert.equal(cancelResponse.status, 200);
+		const cancelPayload = await cancelResponse.json();
+		assert.equal(cancelPayload.action.kind, "cancel");
+		assert.equal(cancelPayload.run.status, "cancelled");
+		assert.equal(cancelPayload.projectSession.state, "cancelled");
+
+		const expiredResponse = await postHumanAction(createdPayload.session.id, { waitTokenId: "wwt_expired", actionId: "fixture.humanActions.approve" });
+		assert.equal(expiredResponse.status, 409);
+		const expiredPayload = await expiredResponse.json();
+		assert.equal(expiredPayload.diagnostics[0].code, "WorkflowRuntimeError.waitTokenExpired");
+
+		const lifecycleResponse = await fetch(`${baseURL}/api/chat/workflows/lifecycle-events?projectId=${encodeURIComponent(projectId)}&limit=200`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(lifecycleResponse.status, 200);
+		const lifecyclePayload = await lifecycleResponse.json();
+		assert.ok(lifecyclePayload.events.some((event) => event.type === "workflow.human_action.submitted" && event.status === "submitted" && event.workflowRunId === runId));
+		assert.ok(lifecyclePayload.events.some((event) => event.type === "workflow.human_action.submitted" && event.status === "blocked" && event.workflowRunId === runId));
 	} finally {
 		await channel.stop?.();
 	}

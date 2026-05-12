@@ -100,6 +100,41 @@ export type PiboProjectWorkflowDefinitionLink = {
 	tombstoneLabel?: string;
 };
 
+export type PiboProjectWorkflowPendingHumanActionRef = {
+	id: string;
+	kind?: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: Record<string, unknown> | null;
+	registered: boolean;
+};
+
+export type PiboProjectWorkflowPendingHumanAction = {
+	waitTokenId: string;
+	workflowRunId: string;
+	nodeAttemptId?: string;
+	humanNodeId?: string;
+	prompt: string;
+	schema?: Record<string, unknown>;
+	status: "pending";
+	payloadRequirements: {
+		required: boolean;
+		schema?: Record<string, unknown>;
+		description: string;
+	};
+	availableActions: PiboProjectWorkflowPendingHumanActionRef[];
+	diagnostics: Array<{
+		code: string;
+		message: string;
+		severity: "info" | "warning" | "error";
+		path?: string;
+		registryRef?: string;
+		hint?: string;
+	}>;
+	createdAt: string;
+	expiresAt?: string;
+};
+
 export type PiboProjectSession = {
 	projectId: string;
 	piboSessionId: string;
@@ -112,6 +147,7 @@ export type PiboProjectSession = {
 	state?: PiboProjectSessionState;
 	configuration?: PiboProjectWorkflowSessionConfiguration;
 	workflowDefinitionLink?: PiboProjectWorkflowDefinitionLink;
+	pendingHumanActions?: PiboProjectWorkflowPendingHumanAction[];
 	retryCount?: number;
 	maxRetries?: number;
 	archived?: boolean;

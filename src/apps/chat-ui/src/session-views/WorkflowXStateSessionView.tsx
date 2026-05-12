@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Circle, Clock3, Database, ExternalLink, GitBranch, History, Layers3, ListChecks, Route, XCircle } from "lucide-react";
+import { postProjectWorkflowHumanAction } from "../api";
 import { JsonRenderer } from "../tracing/JsonRenderer";
 import type { PiboProjectSession, PiboProjectWorkflowDefinitionLink, PiboSessionSignalSnapshot, PiboSessionTraceView, PiboTraceNode, PiboWebSessionNode, PiboWebSessionStatus, WorkflowLifecycleEventRecord } from "../types";
 import type { ChatSessionViewProps } from "./types";
@@ -78,6 +79,8 @@ export function WorkflowXStateSessionView({
 	workflowLifecycleEvents,
 	sessionNodes,
 	onOpenSession,
+	onRefreshBootstrap,
+	onError,
 }: ChatSessionViewProps) {
 	const workflowModel = workflowProjectSession ? createProjectSessionWorkflowModel(workflowProjectSession, traceView, selectedSessionStatus, selectedSessionSignal, workflowLifecycleEvents ?? [], sessionNodes) : null;
 
@@ -105,7 +108,7 @@ export function WorkflowXStateSessionView({
 			<div className="mx-auto flex max-w-6xl flex-col gap-4">
 				<WorkflowSummaryCard model={workflowModel} />
 				<WorkflowProjectionBoundaryNotice />
-				<WorkflowExecutionShell model={workflowModel} />
+				<WorkflowExecutionShell model={workflowModel} onRefreshBootstrap={onRefreshBootstrap} onError={onError} />
 				<WorkflowRunInspectionPanel model={workflowModel} />
 				<WorkflowNavigationLinks model={workflowModel} onOpenSession={onOpenSession} />
 				<WorkflowGraph nodes={workflowModel.nodes} edges={workflowModel.edges} />
@@ -127,10 +130,41 @@ type WorkflowConfigurationSummary = {
 	promptOverrideNodeIds: string[];
 };
 
+type WorkflowPendingHumanActionRef = {
+	id: string;
+	kind?: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: Record<string, unknown> | null;
+	registered: boolean;
+};
+
 type WorkflowPendingHumanAction = {
 	id: string;
+	waitTokenId?: string;
+	workflowRunId?: string;
+	nodeAttemptId?: string;
+	humanNodeId?: string;
+	prompt: string;
 	label: string;
 	source: string;
+	schema?: Record<string, unknown>;
+	payloadRequirements?: {
+		required: boolean;
+		schema?: Record<string, unknown>;
+		description: string;
+	};
+	availableActions: WorkflowPendingHumanActionRef[];
+	diagnostics: Array<{
+		code: string;
+		message: string;
+		severity: "info" | "warning" | "error";
+		path?: string;
+		registryRef?: string;
+		hint?: string;
+	}>;
+	createdAt?: string;
+	expiresAt?: string;
 };
 
 type WorkflowNestedSessionLink = {
@@ -141,6 +175,7 @@ type WorkflowNestedSessionLink = {
 };
 
 type WorkflowProjectSessionUiModel = {
+	projectId: string;
 	workflowId: string;
 	workflowVersion?: string;
 	workflowRunId?: string;
@@ -214,7 +249,7 @@ function WorkflowProjectionBoundaryNotice() {
 	);
 }
 
-function WorkflowExecutionShell({ model }: { model: WorkflowProjectSessionUiModel }) {
+function WorkflowExecutionShell({ model, onRefreshBootstrap, onError }: { model: WorkflowProjectSessionUiModel; onRefreshBootstrap?: () => Promise<unknown>; onError?: (message: string | null) => void }) {
 	const activeNode = model.workflowRunId ? currentWorkflowNode(model) : undefined;
 	const selectedWorkflow = `${model.workflowId}${model.workflowVersion ? `@${model.workflowVersion}` : ""}`;
 	return (
@@ -243,26 +278,141 @@ function WorkflowExecutionShell({ model }: { model: WorkflowProjectSessionUiMode
 				</div>
 			</WorkflowShellCard>
 			<WorkflowShellCard title="Human action area" icon={<Clock3 size={14} />}>
-				<div className="space-y-3 text-xs text-slate-400">
-					{model.pendingHumanActions.length ? (
-						<div className="space-y-2">
-							{model.pendingHumanActions.map((action) => (
-								<div key={action.id} className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-2 text-amber-100">
-									<div className="font-semibold">{action.label}</div>
-									<div className="mt-1 font-mono text-[10px] text-amber-100/70">{action.source}</div>
-								</div>
-							))}
-						</div>
-					) : (
-						<div className="rounded-sm border border-slate-800 bg-[#0b0f14] p-3 text-slate-500">
-							No pending human action. Approval, rejection, resume, and cancel controls will render here when a workflow wait token exists.
-						</div>
-					)}
-					<p className="leading-5 text-slate-500">
-						This human action area lives inside the workflow run context and stays separate from normal Terminal chat controls.
-					</p>
-				</div>
+				<WorkflowHumanActionArea model={model} onRefreshBootstrap={onRefreshBootstrap} onError={onError} />
 			</WorkflowShellCard>
+		</div>
+	);
+}
+
+function WorkflowHumanActionArea({ model, onRefreshBootstrap, onError }: { model: WorkflowProjectSessionUiModel; onRefreshBootstrap?: () => Promise<unknown>; onError?: (message: string | null) => void }) {
+	const [payloadTextByToken, setPayloadTextByToken] = useState<Record<string, string>>({});
+	const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+	const [diagnosticsByToken, setDiagnosticsByToken] = useState<Record<string, WorkflowPendingHumanAction["diagnostics"]>>({});
+	const [messageByToken, setMessageByToken] = useState<Record<string, string>>({});
+	const setPayloadText = (waitTokenId: string, value: string) => {
+		setPayloadTextByToken((current) => ({ ...current, [waitTokenId]: value }));
+	};
+	const submitAction = async (wait: WorkflowPendingHumanAction, action: WorkflowPendingHumanActionRef) => {
+		if (!wait.waitTokenId || !action.registered) return;
+		const key = `${wait.waitTokenId}:${action.id}`;
+		const kind = action.kind ?? "resume";
+		let payload: unknown;
+		if (kind === "resume") {
+			const raw = payloadTextByToken[wait.waitTokenId] ?? (wait.payloadRequirements?.required ? "{}" : "");
+			if (raw.trim()) {
+				try {
+					payload = JSON.parse(raw) as unknown;
+				} catch {
+					const diagnostics = [{
+						code: "WorkflowRuntimeError.invalidHumanActionPayload",
+						message: "Resume payload must be valid JSON before it can be submitted.",
+						severity: "error" as const,
+						path: "$.payload",
+						hint: "Enter JSON such as {\"comment\":\"Approved\"}.",
+					}];
+					setDiagnosticsByToken((current) => ({ ...current, [wait.waitTokenId!]: diagnostics }));
+					onError?.("Resume payload must be valid JSON.");
+					return;
+				}
+			}
+		}
+		setSubmittingKey(key);
+		setDiagnosticsByToken((current) => ({ ...current, [wait.waitTokenId!]: [] }));
+		try {
+			await postProjectWorkflowHumanAction(model.projectId, model.piboSessionId, {
+				waitTokenId: wait.waitTokenId,
+				actionId: action.id,
+				...(action.kind ? { kind: action.kind } : {}),
+				...(payload !== undefined ? { payload } : {}),
+			});
+			setMessageByToken((current) => ({ ...current, [wait.waitTokenId!]: `${action.displayName} submitted.` }));
+			onError?.(null);
+			await onRefreshBootstrap?.();
+		} catch (caught) {
+			const diagnostics = workflowHumanActionDiagnosticsFromError(caught);
+			setDiagnosticsByToken((current) => ({ ...current, [wait.waitTokenId!]: diagnostics }));
+			onError?.(diagnostics[0]?.message ?? workflowHumanActionErrorMessage(caught));
+		} finally {
+			setSubmittingKey(null);
+		}
+	};
+	return (
+		<div className="space-y-3 text-xs text-slate-400">
+			{model.pendingHumanActions.length ? (
+				<div className="space-y-3">
+					{model.pendingHumanActions.map((wait) => {
+						const waitDiagnostics = [...wait.diagnostics, ...(wait.waitTokenId ? diagnosticsByToken[wait.waitTokenId] ?? [] : [])];
+						return (
+							<div key={wait.id} className="rounded-sm border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100" aria-label="Pending workflow human action wait token">
+								<div className="flex items-start justify-between gap-3">
+									<div className="min-w-0">
+										<div className="font-semibold">{wait.label}</div>
+										<div className="mt-1 break-words text-[11px] leading-5 text-amber-100/80">{wait.prompt}</div>
+									</div>
+									<span className="shrink-0 rounded border border-amber-400/40 bg-[#0b0f14]/40 px-1.5 py-0.5 font-mono text-[10px] text-amber-100/70">{wait.waitTokenId ? shortWorkflowValue(wait.waitTokenId) : wait.source}</span>
+								</div>
+								<div className="mt-2 grid gap-2 text-[11px] text-amber-100/75">
+									<WorkflowShellFact label="human node" value={wait.humanNodeId ?? "unspecified"} />
+									<WorkflowShellFact label="payload" value={wait.payloadRequirements?.description ?? "No persisted payload schema."} />
+									{wait.expiresAt ? <WorkflowShellFact label="expires" value={wait.expiresAt} /> : null}
+								</div>
+								{wait.payloadRequirements?.schema ? (
+									<div className="mt-2 rounded-sm border border-amber-400/25 bg-[#0b0f14]/50 p-2">
+										<div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-amber-100/70">Resume payload schema</div>
+										<JsonRenderer value={wait.payloadRequirements.schema} defaultExpandLevel={1} maxHeight="10rem" showControls={false} />
+									</div>
+								) : null}
+								{wait.availableActions.some((action) => action.kind === "resume") ? (
+									<label className="mt-3 block text-[11px] text-amber-100/80">
+										<span className="mb-1 block font-semibold">Resume payload JSON</span>
+										<textarea
+											className="min-h-20 w-full rounded-sm border border-amber-500/30 bg-[#0b0f14] px-2 py-1.5 font-mono text-[11px] text-amber-50 outline-none focus:border-[#11a4d4]"
+											value={payloadTextByToken[wait.waitTokenId ?? wait.id] ?? (wait.payloadRequirements?.required ? "{}" : "")}
+											onChange={(event) => setPayloadText(wait.waitTokenId ?? wait.id, event.target.value)}
+											placeholder='{"comment":"Approved"}'
+										/>
+									</label>
+								) : null}
+								<div className="mt-3 flex flex-wrap gap-2" aria-label="Workflow wait token actions">
+									{wait.availableActions.length ? wait.availableActions.map((action) => {
+										const key = `${wait.waitTokenId}:${action.id}`;
+										return (
+											<button
+												key={action.id}
+												type="button"
+												disabled={!wait.waitTokenId || !action.registered || submittingKey !== null}
+												onClick={() => void submitAction(wait, action)}
+												className="rounded-sm border border-amber-400/40 bg-[#0b0f14]/70 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:border-[#11a4d4] hover:text-[#8bdcf4] disabled:cursor-not-allowed disabled:opacity-50"
+												title={action.description ?? action.id}
+											>
+												{submittingKey === key ? "Submitting…" : action.displayName}
+											</button>
+										);
+									}) : <span className="text-amber-100/60">No registered human actions are available for this wait token.</span>}
+								</div>
+								{wait.waitTokenId && messageByToken[wait.waitTokenId] ? <div className="mt-2 text-[11px] text-emerald-200">{messageByToken[wait.waitTokenId]}</div> : null}
+								{waitDiagnostics.length ? (
+									<div className="mt-2 space-y-1" aria-label="Human action diagnostics">
+										{waitDiagnostics.map((diagnostic, index) => (
+											<div key={`${diagnostic.code}:${index}`} className="rounded border border-red-400/35 bg-red-500/15 p-2 text-[11px] leading-5 text-red-100">
+												<div>{diagnostic.message}</div>
+												<div className="mt-1 font-mono text-[10px] text-red-100/70">{diagnostic.code}{diagnostic.path ? ` · ${diagnostic.path}` : ""}</div>
+											</div>
+										))}
+									</div>
+								) : null}
+							</div>
+						);
+					})}
+				</div>
+			) : (
+				<div className="rounded-sm border border-slate-800 bg-[#0b0f14] p-3 text-slate-500">
+					No pending human action. Approval, rejection, resume, and cancel controls render here when a persisted workflow wait token exists.
+				</div>
+			)}
+			<p className="leading-5 text-slate-500">
+				This human action area lives inside the workflow run context, validates wait-token state and resume payloads, and stays separate from normal Terminal chat controls.
+			</p>
 		</div>
 	);
 }
@@ -743,6 +893,7 @@ function createProjectSessionWorkflowModel(
 		},
 	];
 	return {
+		projectId: projectSession.projectId,
 		workflowId: projectSession.workflowId,
 		...(projectSession.workflowVersion ? { workflowVersion: projectSession.workflowVersion } : {}),
 		...(projectSession.workflowRunId ? { workflowRunId: projectSession.workflowRunId } : {}),
@@ -889,6 +1040,24 @@ function collectPendingHumanActions(
 	projectSession: PiboProjectSession,
 	selectedSessionSignal: PiboSessionSignalSnapshot | undefined,
 ): WorkflowPendingHumanAction[] {
+	if (projectSession.pendingHumanActions?.length) {
+		return projectSession.pendingHumanActions.map((action) => ({
+			id: `wait-token:${action.waitTokenId}`,
+			waitTokenId: action.waitTokenId,
+			workflowRunId: action.workflowRunId,
+			...(action.nodeAttemptId ? { nodeAttemptId: action.nodeAttemptId } : {}),
+			...(action.humanNodeId ? { humanNodeId: action.humanNodeId } : {}),
+			prompt: action.prompt,
+			label: "Pending registered human action",
+			source: "persisted wait token",
+			...(action.schema ? { schema: action.schema } : {}),
+			payloadRequirements: action.payloadRequirements,
+			availableActions: action.availableActions,
+			diagnostics: action.diagnostics,
+			createdAt: action.createdAt,
+			...(action.expiresAt ? { expiresAt: action.expiresAt } : {}),
+		}));
+	}
 	const state = workflowStateLabel(projectSession, undefined).toLowerCase();
 	const signalStatus = [selectedSessionSignal?.aggregateStatus, selectedSessionSignal?.localStatus]
 		.filter((value): value is string => typeof value === "string")
@@ -902,8 +1071,11 @@ function collectPendingHumanActions(
 	if (!hasPendingHumanAction) return [];
 	return [{
 		id: `human-action:${projectSession.piboSessionId}`,
+		prompt: "Session signal indicates a wait, but no persisted workflow wait token is available in the Project run store.",
 		label: "Awaiting human action",
 		source: selectedSessionSignal ? "session signal" : "project session state",
+		availableActions: [],
+		diagnostics: [],
 	}];
 }
 
@@ -1150,6 +1322,30 @@ function dedupeValidationErrors(errors: WorkflowValidationError[]): WorkflowVali
 		seen.add(key);
 		return true;
 	});
+}
+
+function workflowHumanActionDiagnosticsFromError(caught: unknown): WorkflowPendingHumanAction["diagnostics"] {
+	if (isRecord(caught) && isRecord(caught.data) && Array.isArray(caught.data.diagnostics)) {
+		return caught.data.diagnostics
+			.filter(isRecord)
+			.map((diagnostic) => ({
+				code: stringValue(diagnostic.code) ?? "WorkflowRuntimeError.humanActionRejected",
+				message: stringValue(diagnostic.message) ?? workflowHumanActionErrorMessage(caught),
+				severity: diagnostic.severity === "info" || diagnostic.severity === "warning" || diagnostic.severity === "error" ? diagnostic.severity : "error",
+				...(stringValue(diagnostic.path) ? { path: stringValue(diagnostic.path) } : {}),
+				...(stringValue(diagnostic.registryRef) ? { registryRef: stringValue(diagnostic.registryRef) } : {}),
+				...(stringValue(diagnostic.hint) ? { hint: stringValue(diagnostic.hint) } : {}),
+			}));
+	}
+	return [{
+		code: "WorkflowRuntimeError.humanActionRejected",
+		message: workflowHumanActionErrorMessage(caught),
+		severity: "error",
+	}];
+}
+
+function workflowHumanActionErrorMessage(caught: unknown): string {
+	return caught instanceof Error ? caught.message : String(caught);
 }
 
 function stringValue(value: unknown): string | undefined {

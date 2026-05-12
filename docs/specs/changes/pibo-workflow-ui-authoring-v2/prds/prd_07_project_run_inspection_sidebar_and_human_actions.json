@@ -111,8 +111,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented persisted Project workflow wait-token listing, approve/reject/resume/cancel submission controls, payload/state diagnostics, and tests."
     },
     {
       "id": "US-008",

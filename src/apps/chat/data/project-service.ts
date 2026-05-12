@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { piboHomePath } from "../../../core/pibo-home.js";
-import type { PiboJsonObject } from "../../../core/events.js";
+import type { PiboJsonObject, PiboJsonValue } from "../../../core/events.js";
 import type { ModelProfile } from "../../../core/profiles.js";
 import type { PiboThinkingLevel } from "../../../core/thinking.js";
 
@@ -109,6 +109,84 @@ export type PiboProjectWorkflowRun = {
 	cancelledAt?: string;
 };
 
+export type PiboProjectWorkflowHumanActionKind = "approve" | "reject" | "resume" | "cancel" | string;
+export type PiboProjectWorkflowWaitTokenStatus = "pending" | "resumed" | "expired" | "cancelled";
+
+export type PiboProjectWorkflowWaitActionRef = {
+	id: string;
+	kind?: PiboProjectWorkflowHumanActionKind;
+};
+
+export type PiboProjectWorkflowWaitToken = {
+	id: string;
+	projectId: string;
+	piboSessionId: string;
+	workflowRunId: string;
+	nodeAttemptId?: string;
+	humanNodeId?: string;
+	actions: PiboProjectWorkflowWaitActionRef[];
+	prompt: string;
+	schema?: PiboJsonObject;
+	status: PiboProjectWorkflowWaitTokenStatus;
+	resumePayload?: PiboJsonObject | PiboJsonValue;
+	createdAt: string;
+	expiresAt?: string;
+	resolvedAt?: string;
+};
+
+export type PiboProjectWorkflowPendingHumanActionRef = PiboProjectWorkflowWaitActionRef & {
+	displayName: string;
+	description?: string;
+	paramsSchema: PiboJsonObject | null;
+	registered: boolean;
+};
+
+export type PiboProjectWorkflowPendingHumanAction = {
+	waitTokenId: string;
+	workflowRunId: string;
+	nodeAttemptId?: string;
+	humanNodeId?: string;
+	prompt: string;
+	schema?: PiboJsonObject;
+	status: "pending";
+	payloadRequirements: {
+		required: boolean;
+		schema?: PiboJsonObject;
+		description: string;
+	};
+	availableActions: PiboProjectWorkflowPendingHumanActionRef[];
+	diagnostics: Array<{
+		code: string;
+		message: string;
+		severity: "error" | "warning" | "info";
+		path?: string;
+		registryRef?: string;
+		hint?: string;
+	}>;
+	createdAt: string;
+	expiresAt?: string;
+};
+
+export type PiboProjectWorkflowHumanActionRecord = {
+	id: string;
+	projectId: string;
+	piboSessionId: string;
+	workflowRunId: string;
+	waitTokenId: string;
+	actionId?: string;
+	kind: PiboProjectWorkflowHumanActionKind;
+	actor?: PiboJsonObject;
+	payload?: PiboJsonObject | PiboJsonValue;
+	createdAt: string;
+};
+
+export type ResolveProjectWorkflowHumanActionResult = {
+	waitToken: PiboProjectWorkflowWaitToken;
+	action: PiboProjectWorkflowHumanActionRecord;
+	run: PiboProjectWorkflowRun;
+	projectSession: PiboProjectSession;
+};
+
 export type StartProjectWorkflowRunResult = {
 	projectSession: PiboProjectSession;
 	run: PiboProjectWorkflowRun;
@@ -141,6 +219,7 @@ export type PiboProjectSession = {
 	state?: PiboProjectSessionState;
 	configuration?: PiboProjectWorkflowSessionConfiguration;
 	workflowDefinitionLink?: PiboProjectWorkflowDefinitionLink;
+	pendingHumanActions?: PiboProjectWorkflowPendingHumanAction[];
 	retryCount?: number;
 	maxRetries?: number;
 	archived?: boolean;
@@ -355,6 +434,209 @@ export class ChatProjectService {
 		return rows.map(projectWorkflowRunFromRow);
 	}
 
+	saveProjectWorkflowWaitToken(token: PiboProjectWorkflowWaitToken): PiboProjectWorkflowWaitToken {
+		this.db.prepare(`INSERT INTO project_workflow_wait_tokens (
+			id,
+			project_id,
+			pibo_session_id,
+			workflow_run_id,
+			node_attempt_id,
+			human_node_id,
+			actions_json,
+			prompt,
+			schema_json,
+			status,
+			resume_payload_json,
+			resume_payload_present,
+			expires_at,
+			created_at,
+			resolved_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			project_id = excluded.project_id,
+			pibo_session_id = excluded.pibo_session_id,
+			workflow_run_id = excluded.workflow_run_id,
+			node_attempt_id = excluded.node_attempt_id,
+			human_node_id = excluded.human_node_id,
+			actions_json = excluded.actions_json,
+			prompt = excluded.prompt,
+			schema_json = excluded.schema_json,
+			status = excluded.status,
+			resume_payload_json = excluded.resume_payload_json,
+			resume_payload_present = excluded.resume_payload_present,
+			expires_at = excluded.expires_at,
+			resolved_at = excluded.resolved_at`).run(
+			token.id,
+			token.projectId,
+			token.piboSessionId,
+			token.workflowRunId,
+			token.nodeAttemptId ?? null,
+			token.humanNodeId ?? null,
+			JSON.stringify(token.actions),
+			token.prompt,
+			token.schema ? JSON.stringify(token.schema) : null,
+			token.status,
+			token.resumePayload === undefined ? null : JSON.stringify(token.resumePayload),
+			token.resumePayload === undefined ? 0 : 1,
+			token.expiresAt ?? null,
+			token.createdAt,
+			token.resolvedAt ?? null,
+		);
+		if (token.status === "pending") {
+			const now = new Date().toISOString();
+			this.db.prepare("UPDATE project_workflow_runs SET status = 'waiting', updated_at = ? WHERE id = ? AND project_id = ? AND pibo_session_id = ?").run(now, token.workflowRunId, token.projectId, token.piboSessionId);
+			this.db.prepare("UPDATE project_sessions SET state = 'waiting', updated_at = ? WHERE pibo_session_id = ? AND project_id = ?").run(now, token.piboSessionId, token.projectId);
+		}
+		return this.getProjectWorkflowWaitToken(token.id)!;
+	}
+
+	getProjectWorkflowWaitToken(waitTokenId: string): PiboProjectWorkflowWaitToken | undefined {
+		const row = this.db.prepare("SELECT * FROM project_workflow_wait_tokens WHERE id = ?").get(waitTokenId) as ProjectWorkflowWaitTokenRow | undefined;
+		return row ? projectWorkflowWaitTokenFromRow(row) : undefined;
+	}
+
+	listProjectWorkflowWaitTokens(filter: { projectId?: string; piboSessionId?: string; workflowRunId?: string; status?: PiboProjectWorkflowWaitTokenStatus; limit?: number } = {}): PiboProjectWorkflowWaitToken[] {
+		const clauses: string[] = [];
+		const values: Array<string | number> = [];
+		if (filter.projectId) {
+			clauses.push("project_id = ?");
+			values.push(filter.projectId);
+		}
+		if (filter.piboSessionId) {
+			clauses.push("pibo_session_id = ?");
+			values.push(filter.piboSessionId);
+		}
+		if (filter.workflowRunId) {
+			clauses.push("workflow_run_id = ?");
+			values.push(filter.workflowRunId);
+		}
+		if (filter.status) {
+			clauses.push("status = ?");
+			values.push(filter.status);
+		}
+		const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+		const limit = Math.max(1, Math.min(filter.limit ?? 100, 500));
+		const rows = this.db.prepare(`SELECT * FROM project_workflow_wait_tokens ${where} ORDER BY created_at DESC, id DESC LIMIT ?`).all(...values, limit) as ProjectWorkflowWaitTokenRow[];
+		return rows.map(projectWorkflowWaitTokenFromRow);
+	}
+
+	listProjectWorkflowHumanActions(filter: { projectId?: string; piboSessionId?: string; workflowRunId?: string; waitTokenId?: string; limit?: number } = {}): PiboProjectWorkflowHumanActionRecord[] {
+		const clauses: string[] = [];
+		const values: Array<string | number> = [];
+		if (filter.projectId) {
+			clauses.push("project_id = ?");
+			values.push(filter.projectId);
+		}
+		if (filter.piboSessionId) {
+			clauses.push("pibo_session_id = ?");
+			values.push(filter.piboSessionId);
+		}
+		if (filter.workflowRunId) {
+			clauses.push("workflow_run_id = ?");
+			values.push(filter.workflowRunId);
+		}
+		if (filter.waitTokenId) {
+			clauses.push("wait_token_id = ?");
+			values.push(filter.waitTokenId);
+		}
+		const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+		const limit = Math.max(1, Math.min(filter.limit ?? 100, 500));
+		const rows = this.db.prepare(`SELECT * FROM project_workflow_human_actions ${where} ORDER BY created_at ASC, id ASC LIMIT ?`).all(...values, limit) as ProjectWorkflowHumanActionRow[];
+		return rows.map(projectWorkflowHumanActionFromRow);
+	}
+
+	resolveProjectWorkflowHumanAction(input: {
+		projectId: string;
+		piboSessionId: string;
+		workflowRunId: string;
+		waitTokenId: string;
+		actionId?: string;
+		kind: PiboProjectWorkflowHumanActionKind;
+		actor?: PiboJsonObject;
+		payload?: PiboJsonObject | PiboJsonValue;
+		actionRecordId?: string;
+		actedAt?: string;
+	}): ResolveProjectWorkflowHumanActionResult {
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			const token = this.getProjectWorkflowWaitToken(input.waitTokenId);
+			if (!token) throw new Error("Workflow wait token not found");
+			if (token.projectId !== input.projectId || token.piboSessionId !== input.piboSessionId || token.workflowRunId !== input.workflowRunId) {
+				throw new Error("Workflow wait token does not belong to this Project workflow session");
+			}
+			if (token.status !== "pending") throw new Error(`Workflow wait token is ${token.status} and cannot be resolved again`);
+			const actedAt = input.actedAt ?? new Date().toISOString();
+			if (token.expiresAt && Date.parse(token.expiresAt) <= Date.parse(actedAt)) {
+				this.db.prepare("UPDATE project_workflow_wait_tokens SET status = 'expired', resolved_at = ? WHERE id = ?").run(actedAt, token.id);
+				this.db.exec("COMMIT");
+				throw new Error(`Workflow wait token expired at ${token.expiresAt}`);
+			}
+			const actionRef = input.actionId
+				? token.actions.find((action) => action.id === input.actionId)
+				: token.actions.find((action) => action.kind === input.kind);
+			if (!actionRef) throw new Error("Workflow wait token does not offer the requested human action");
+			if (actionRef.kind && actionRef.kind !== input.kind) throw new Error("Workflow wait token action kind does not match the requested kind");
+			const nextStatus: PiboProjectWorkflowWaitTokenStatus = input.kind === "cancel" ? "cancelled" : "resumed";
+			const nextRunStatus: PiboProjectWorkflowRunStatus = input.kind === "cancel" ? "cancelled" : "running";
+			const action: PiboProjectWorkflowHumanActionRecord = {
+				id: input.actionRecordId ?? `wha_${randomUUID()}`,
+				projectId: input.projectId,
+				piboSessionId: input.piboSessionId,
+				workflowRunId: input.workflowRunId,
+				waitTokenId: input.waitTokenId,
+				...(actionRef.id ? { actionId: actionRef.id } : {}),
+				kind: input.kind,
+				...(input.actor ? { actor: input.actor } : {}),
+				...(input.payload !== undefined ? { payload: input.payload } : {}),
+				createdAt: actedAt,
+			};
+			this.db.prepare(`INSERT INTO project_workflow_human_actions (
+				id,
+				project_id,
+				pibo_session_id,
+				workflow_run_id,
+				wait_token_id,
+				action_id,
+				kind,
+				actor_json,
+				payload_json,
+				payload_present,
+				created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+				.run(
+					action.id,
+					action.projectId,
+					action.piboSessionId,
+					action.workflowRunId,
+					action.waitTokenId,
+					action.actionId ?? null,
+					action.kind,
+					action.actor ? JSON.stringify(action.actor) : null,
+					action.payload === undefined ? null : JSON.stringify(action.payload),
+					action.payload === undefined ? 0 : 1,
+					action.createdAt,
+				);
+			this.db.prepare("UPDATE project_workflow_wait_tokens SET status = ?, resume_payload_json = ?, resume_payload_present = ?, resolved_at = ? WHERE id = ?")
+				.run(nextStatus, input.payload === undefined ? null : JSON.stringify(input.payload), input.payload === undefined ? 0 : 1, actedAt, token.id);
+			this.db.prepare("UPDATE project_workflow_runs SET status = ?, updated_at = ?, cancelled_at = CASE WHEN ? = 'cancelled' THEN ? ELSE cancelled_at END WHERE id = ? AND project_id = ? AND pibo_session_id = ?")
+				.run(nextRunStatus, actedAt, nextRunStatus, actedAt, input.workflowRunId, input.projectId, input.piboSessionId);
+			this.db.prepare("UPDATE project_sessions SET state = ?, updated_at = ? WHERE pibo_session_id = ? AND project_id = ?")
+				.run(nextRunStatus, actedAt, input.piboSessionId, input.projectId);
+			const waitToken = this.getProjectWorkflowWaitToken(input.waitTokenId)!;
+			const run = this.getProjectWorkflowRun(input.workflowRunId)!;
+			const projectSession = this.getProjectSession(input.piboSessionId)!;
+			this.db.exec("COMMIT");
+			return { waitToken, action, run, projectSession };
+		} catch (error) {
+			try {
+				this.db.exec("ROLLBACK");
+			} catch {
+				// Transaction may already be committed when an expired token is recorded.
+			}
+			throw error;
+		}
+	}
+
 	startWorkflowSessionRun(input: {
 		projectId: string;
 		piboSessionId: string;
@@ -567,6 +849,40 @@ export class ChatProjectService {
 			);
 			CREATE INDEX IF NOT EXISTS project_workflow_runs_project_idx ON project_workflow_runs(project_id, created_at);
 			CREATE INDEX IF NOT EXISTS project_workflow_runs_session_idx ON project_workflow_runs(pibo_session_id);
+			CREATE TABLE IF NOT EXISTS project_workflow_wait_tokens (
+				id TEXT PRIMARY KEY,
+				project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+				pibo_session_id TEXT NOT NULL REFERENCES project_sessions(pibo_session_id) ON DELETE CASCADE,
+				workflow_run_id TEXT NOT NULL REFERENCES project_workflow_runs(id) ON DELETE CASCADE,
+				node_attempt_id TEXT,
+				human_node_id TEXT,
+				actions_json TEXT NOT NULL,
+				prompt TEXT NOT NULL,
+				schema_json TEXT,
+				status TEXT NOT NULL,
+				resume_payload_json TEXT,
+				resume_payload_present INTEGER NOT NULL DEFAULT 0,
+				expires_at TEXT,
+				created_at TEXT NOT NULL,
+				resolved_at TEXT
+			);
+			CREATE INDEX IF NOT EXISTS project_workflow_wait_tokens_run_idx ON project_workflow_wait_tokens(workflow_run_id, status, created_at);
+			CREATE INDEX IF NOT EXISTS project_workflow_wait_tokens_session_idx ON project_workflow_wait_tokens(project_id, pibo_session_id, status, created_at);
+			CREATE TABLE IF NOT EXISTS project_workflow_human_actions (
+				id TEXT PRIMARY KEY,
+				project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+				pibo_session_id TEXT NOT NULL REFERENCES project_sessions(pibo_session_id) ON DELETE CASCADE,
+				workflow_run_id TEXT NOT NULL REFERENCES project_workflow_runs(id) ON DELETE CASCADE,
+				wait_token_id TEXT NOT NULL REFERENCES project_workflow_wait_tokens(id) ON DELETE CASCADE,
+				action_id TEXT,
+				kind TEXT NOT NULL,
+				actor_json TEXT,
+				payload_json TEXT,
+				payload_present INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS project_workflow_human_actions_run_idx ON project_workflow_human_actions(workflow_run_id, created_at);
+			CREATE INDEX IF NOT EXISTS project_workflow_human_actions_wait_token_idx ON project_workflow_human_actions(wait_token_id, created_at);
 		`);
 		this.ensureProjectSessionWorkflowVersionColumn();
 		this.ensureProjectSessionConfigurationColumn();
@@ -659,6 +975,38 @@ type ProjectWorkflowRunRow = {
 	completed_at: string | null;
 	failed_at: string | null;
 	cancelled_at: string | null;
+};
+
+type ProjectWorkflowWaitTokenRow = {
+	id: string;
+	project_id: string;
+	pibo_session_id: string;
+	workflow_run_id: string;
+	node_attempt_id: string | null;
+	human_node_id: string | null;
+	actions_json: string;
+	prompt: string;
+	schema_json: string | null;
+	status: PiboProjectWorkflowWaitTokenStatus;
+	resume_payload_json: string | null;
+	resume_payload_present: number;
+	created_at: string;
+	expires_at: string | null;
+	resolved_at: string | null;
+};
+
+type ProjectWorkflowHumanActionRow = {
+	id: string;
+	project_id: string;
+	pibo_session_id: string;
+	workflow_run_id: string;
+	wait_token_id: string;
+	action_id: string | null;
+	kind: PiboProjectWorkflowHumanActionKind;
+	actor_json: string | null;
+	payload_json: string | null;
+	payload_present: number;
+	created_at: string;
 };
 
 function projectFromRow(row: ProjectRow): PiboProject {
@@ -763,6 +1111,47 @@ function projectWorkflowRunFromRow(row: ProjectWorkflowRunRow): PiboProjectWorkf
 	};
 }
 
+function projectWorkflowWaitTokenFromRow(row: ProjectWorkflowWaitTokenRow): PiboProjectWorkflowWaitToken {
+	return {
+		id: row.id,
+		projectId: row.project_id,
+		piboSessionId: row.pibo_session_id,
+		workflowRunId: row.workflow_run_id,
+		...(row.node_attempt_id ? { nodeAttemptId: row.node_attempt_id } : {}),
+		...(row.human_node_id ? { humanNodeId: row.human_node_id } : {}),
+		actions: safeJsonArray(row.actions_json).filter(isProjectWorkflowWaitActionRef),
+		prompt: row.prompt,
+		...(row.schema_json ? { schema: safeJsonObject(row.schema_json) as PiboJsonObject } : {}),
+		status: row.status,
+		...(row.resume_payload_present ? { resumePayload: safeJsonValue(row.resume_payload_json ?? "null") } : {}),
+		createdAt: row.created_at,
+		...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+		...(row.resolved_at ? { resolvedAt: row.resolved_at } : {}),
+	};
+}
+
+function projectWorkflowHumanActionFromRow(row: ProjectWorkflowHumanActionRow): PiboProjectWorkflowHumanActionRecord {
+	return {
+		id: row.id,
+		projectId: row.project_id,
+		piboSessionId: row.pibo_session_id,
+		workflowRunId: row.workflow_run_id,
+		waitTokenId: row.wait_token_id,
+		...(row.action_id ? { actionId: row.action_id } : {}),
+		kind: row.kind,
+		...(row.actor_json ? { actor: safeJsonObject(row.actor_json) as PiboJsonObject } : {}),
+		...(row.payload_present ? { payload: safeJsonValue(row.payload_json ?? "null") } : {}),
+		createdAt: row.created_at,
+	};
+}
+
+function isProjectWorkflowWaitActionRef(value: unknown): value is PiboProjectWorkflowWaitActionRef {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	return typeof record.id === "string" && record.id.trim().length > 0
+		&& (record.kind === undefined || typeof record.kind === "string");
+}
+
 function normalizeProjectName(value: unknown): string {
 	if (typeof value !== "string") throw new Error("Project name is required");
 	const name = value.replace(/\s+/g, " ").trim();
@@ -850,6 +1239,32 @@ function safeJsonObject(value: string): Record<string, unknown> {
 	} catch {
 		return {};
 	}
+}
+
+function safeJsonArray(value: string): unknown[] {
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+function safeJsonValue(value: string): PiboJsonValue {
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		return isJsonValue(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+function isJsonValue(value: unknown): value is PiboJsonValue {
+	if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+	if (typeof value === "number") return Number.isFinite(value);
+	if (Array.isArray(value)) return value.every(isJsonValue);
+	if (value && typeof value === "object") return Object.values(value).every(isJsonValue);
+	return false;
 }
 
 function isPlainJsonObject(value: unknown): value is PiboJsonObject {
