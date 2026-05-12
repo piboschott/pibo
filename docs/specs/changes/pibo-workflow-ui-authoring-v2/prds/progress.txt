@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- V2 explicit non-goal browser checks should verify visible scope-boundary copy and scan interactive action labels, because explanatory panels intentionally mention deferred features without exposing them as actions.
 - Project Workflow/XState navigation should derive nested workflow links from real `PiboWebSessionNode` child sessions and definition link/deleted state from Project session `workflowDefinitionLink` metadata.
 - Registered guard/adapter params should flow from picker `paramsSchema` metadata; render params editors only for selected refs with schemas and reject params on refs without schemas.
 - Workflow lifecycle observability for Chat Web belongs in durable `workflow_lifecycle_events` records and Project bootstrap data so configured-session run inspection can surface start-blocked diagnostics without a workflow run id.
@@ -1181,4 +1182,29 @@
 - **Learnings for future iterations:**
   - Keep `deleted` as tombstone state, not a normal `WorkflowRecordStatus`; live record status remains limited to draft, published, and archived.
   - Persisted UI entity writes should fail early when code projections or mismatched lifecycle statuses are accidentally passed through casted or decoded data.
+---
+## 2026-05-12 06:11 CEST - US-006
+- What was implemented
+  - Added a visible Workflows V2 scope-boundary panel to the Workflows product surface.
+  - Added a matching Project workflow session scope-boundary panel to the Project workflow creation surface.
+  - The panels state that V2 exposes registered-ref/Pibo Workflow IR authoring only, not inline executable code, raw XState editing, workflow templates, workflow slash commands/tools, product import/export, TypeScript export, or Zod schema authoring.
+- Files changed
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `src/apps/chat-ui/src/App.tsx`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run chat-ui:build'` — passed.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile --session ralph-v2` inside `pibo-dev-WorkflowsV2` with dev auth.
+  - Opened `/apps/chat/workflows` and verified the `Workflow V2 explicit non-goals` panel contains the V2 scope boundary and deferred executable/XState/template/import-export/Zod text.
+  - Scanned Workflows interactive button/link labels and confirmed no forbidden non-goal action labels are exposed.
+  - Opened `/apps/chat/projects` and verified the `Project workflow V2 explicit non-goals` panel contains the same Project-scope boundary.
+  - Scanned Project interactive button/link labels and confirmed no forbidden non-goal action labels are exposed.
+  - Saved screenshot: `/tmp/ralph-v2-non-goals.png` inside the container.
+- **Learnings for future iterations:**
+  - Non-goal verification should distinguish explanatory boundary text from actual interactive affordances; scan button and link labels for forbidden product paths.
 ---

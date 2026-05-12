@@ -2391,9 +2391,21 @@ function ProjectWorkflowSessionCreatePanel({
 					{selectedOption.description ? <span> — {selectedOption.description}</span> : null}
 				</div>
 			) : null}
+			<ProjectWorkflowScopeBoundaryPanel />
 			{loadState === "loading" ? <div className="mt-3 text-xs text-slate-500">Loading workflow catalog…</div> : null}
 			{loadState === "error" ? <div className="mt-3 rounded-sm border border-red-900/70 bg-red-950/40 p-3 text-xs text-red-200" role="alert">{errorMessage ?? "Failed to load workflow catalog."}</div> : null}
 		</section>
+	);
+}
+
+function ProjectWorkflowScopeBoundaryPanel() {
+	return (
+		<div className="mt-3 rounded-sm border border-amber-700/60 bg-amber-950/15 p-3 text-[11px] leading-5 text-amber-100/80" aria-label="Project workflow V2 explicit non-goals">
+			<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200"><Lock size={12} />V2 scope boundary</div>
+			<p className="mt-2">
+				Project workflow sessions select published catalog versions and save configured sessions only. They do not expose workflow templates, workflow slash commands, workflow tools for agents, inline TypeScript/JavaScript/shell/eval code, raw XState editing, TypeScript export, YAML/JSON product import/export, or Zod schema authoring.
+			</p>
+		</div>
 	);
 }
 

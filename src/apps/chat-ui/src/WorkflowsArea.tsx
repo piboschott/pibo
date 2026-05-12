@@ -182,6 +182,8 @@ export function WorkflowsArea({ draftId, viewWorkflowId, viewWorkflowVersion }: 
 					<WorkflowPrinciple icon={ShieldCheck} label="Workflow capabilities are registered refs only" />
 					<WorkflowPrinciple icon={Layers} label="XState stays a read-only visualization projection" />
 				</div>
+
+				<WorkflowExplicitNonGoalsPanel />
 			</section>
 		</main>
 	);
@@ -533,6 +535,26 @@ function WorkflowBuilderDraftLoader({ draftId }: { draftId: string }) {
 	}
 
 	return <WorkflowDraftEditorShell draft={draft} />;
+}
+
+function WorkflowExplicitNonGoalsPanel() {
+	return (
+		<div className="rounded-sm border border-amber-700/60 bg-amber-950/15 p-4 text-xs leading-5 text-amber-100" aria-label="Workflow V2 explicit non-goals">
+			<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200">
+				<ShieldCheck size={13} />
+				V2 scope boundary
+			</div>
+			<p className="mt-2 text-amber-100/90">
+				Workflows V2 is an authoring surface for Pibo Workflow IR and registered capability references, not a code or product import/export surface.
+			</p>
+			<ul className="mt-3 grid gap-1 text-[11px] text-amber-100/75 md:grid-cols-2">
+				<li>No inline TypeScript, JavaScript, shell, eval, arbitrary executable code, or raw handler body authoring.</li>
+				<li>No raw XState editing, workflow templates, workflow slash commands, or workflow tools for agents.</li>
+				<li>No YAML/JSON product import/export or TypeScript export path from UI-authored workflows.</li>
+				<li>No Zod schema authoring; schema edits remain constrained to Pibo Workflow IR and registered metadata.</li>
+			</ul>
+		</div>
+	);
 }
 
 function WorkflowSecurityBoundaryPanel() {
