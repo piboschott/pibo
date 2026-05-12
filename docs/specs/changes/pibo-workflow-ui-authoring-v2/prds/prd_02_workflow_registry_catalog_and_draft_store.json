@@ -90,8 +90,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Duplicate-to-draft now resolves the source published Workflow IR, clones it into a UI draft for code and UI-published workflows, reuses the existing active copy draft, and preserves the source definition hash for immutability checks."
     },
     {
       "id": "US-007",

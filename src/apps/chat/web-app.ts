@@ -396,6 +396,11 @@ type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
 	status: "published";
 };
 
+type WorkflowPublishedVersionSelection = WorkflowVersionPickerOption & {
+	definition: PiboJsonObject;
+	definitionHash: string;
+};
+
 type WorkflowVersionPickerResponse = {
 	kind: "workflow-versions";
 	options: WorkflowVersionPickerOption[];
@@ -3842,7 +3847,7 @@ function duplicateWorkflowIntoDraft(
 		status: "draft",
 		baseWorkflowId: published.id,
 		baseWorkflowVersion: published.version,
-		baseDefinitionHash: `catalog:${published.id}@${published.version}`,
+		baseDefinitionHash: published.definitionHash,
 		versionIntent: "patch",
 		definition: createDraftDefinitionFromPublishedWorkflow(published),
 		diagnostics: [
@@ -3906,7 +3911,7 @@ function createNextVersionDraftFromPublishedWorkflow(
 		status: "draft",
 		baseWorkflowId: published.id,
 		baseWorkflowVersion: published.version,
-		baseDefinitionHash: `catalog:${published.id}@${published.version}`,
+		baseDefinitionHash: published.definitionHash,
 		targetWorkflowVersion,
 		versionIntent: "patch",
 		definition: createNextVersionDraftDefinitionFromPublishedWorkflow(published, targetWorkflowVersion),
@@ -3978,10 +3983,28 @@ function archiveWorkflowIdentity(
 	return { workflow: archivedWorkflow, archiveState };
 }
 
-function selectPublishedWorkflowVersion(state: ChatWebAppState, workflowId: string, version?: string): WorkflowVersionPickerOption | undefined {
+function selectPublishedWorkflowVersion(state: ChatWebAppState, workflowId: string, version?: string): WorkflowPublishedVersionSelection | undefined {
 	const options = buildProjectWorkflowVersionOptions(state).filter((option) => option.id === workflowId);
-	if (!version) return options[0];
-	return options.find((option) => option.version === version);
+	const selected = version ? options.find((option) => option.version === version) : options[0];
+	if (!selected) return undefined;
+
+	const persisted = state.workflowPublishedVersionStore
+		.listPublishedVersions({ workflowId: selected.id })
+		.find((record) => record.version === selected.version);
+	if (persisted) {
+		return {
+			...selected,
+			definition: cloneJsonObject(persisted.definition),
+			definitionHash: persisted.definitionHash,
+		};
+	}
+
+	const definition = createPublishedWorkflowDefinition(selected, "pibo-agent");
+	return {
+		...selected,
+		definition,
+		definitionHash: hashWorkflowDefinitionJson(definition),
+	};
 }
 
 function nextPatchWorkflowVersion(version: string): string {
@@ -4030,53 +4053,67 @@ function createStarterWorkflowDraft(webSession: PiboWebSession): OwnedWorkflowDr
 	};
 }
 
-function createDraftDefinitionFromPublishedWorkflow(workflow: WorkflowVersionPickerOption): PiboJsonObject {
-	return createWorkflowDraftDefinition({
+function createDraftDefinitionFromPublishedWorkflow(workflow: WorkflowPublishedVersionSelection): PiboJsonObject {
+	return clonePublishedWorkflowDefinitionForDraft(workflow, {
 		workflowId: `ui-${workflow.id}-copy`,
 		version: `${workflow.version}-draft`,
 		title: `${workflow.title} Draft`,
 		description: workflow.description ?? `UI draft copied from ${workflow.id}@${workflow.version}.`,
 		tags: ["ui-draft", ...workflow.tags],
 		migrationNotes: `Duplicated from ${workflow.id}@${workflow.version} for Workflow UI Authoring V2.`,
-		fromVersion: workflow.version,
 	});
 }
 
-function createNextVersionDraftDefinitionFromPublishedWorkflow(workflow: WorkflowVersionPickerOption, targetWorkflowVersion: string): PiboJsonObject {
-	return createWorkflowDraftDefinition({
+function createNextVersionDraftDefinitionFromPublishedWorkflow(workflow: WorkflowPublishedVersionSelection, targetWorkflowVersion: string): PiboJsonObject {
+	return clonePublishedWorkflowDefinitionForDraft(workflow, {
 		workflowId: workflow.id,
 		version: targetWorkflowVersion,
 		title: `${workflow.title} Draft`,
 		description: workflow.description ?? `Next-version draft for ${workflow.id}@${workflow.version}.`,
 		tags: ["ui-draft", "next-version", ...workflow.tags],
 		migrationNotes: `Editing immutable ${workflow.id}@${workflow.version}; next publish targets ${targetWorkflowVersion}.`,
-		fromVersion: workflow.version,
 	});
 }
 
-function createWorkflowDraftDefinition(input: {
-	workflowId: string;
-	version: string;
-	title: string;
-	description: string;
-	tags: string[];
-	migrationNotes: string;
-	fromVersion: string;
-}): PiboJsonObject {
-	return createRunnableWorkflowDefinition({
-		workflowId: input.workflowId,
-		version: input.version,
-		title: input.title,
-		description: input.description,
-		tags: input.tags,
-		profileId: "pibo-agent",
-		metadata: {
-			migration: {
-				fromVersion: input.fromVersion,
-				notes: input.migrationNotes,
-			},
+function clonePublishedWorkflowDefinitionForDraft(
+	workflow: WorkflowPublishedVersionSelection,
+	input: {
+		workflowId: string;
+		version: string;
+		title: string;
+		description: string;
+		tags: string[];
+		migrationNotes: string;
+	},
+): PiboJsonObject {
+	const definition = cloneJsonObject(workflow.definition);
+	definition.id = input.workflowId;
+	definition.version = input.version;
+	definition.title = input.title;
+	definition.description = input.description;
+	delete definition.xstate;
+
+	const existingMetadata = isJsonObject(definition.metadata) ? cloneJsonObject(definition.metadata) : {};
+	const existingTags = Array.isArray(existingMetadata.tags) ? existingMetadata.tags.filter((tag): tag is string => typeof tag === "string") : [];
+	const existingMigration = isJsonObject(existingMetadata.migration) ? cloneJsonObject(existingMetadata.migration) : {};
+	definition.metadata = {
+		...existingMetadata,
+		tags: [...new Set([...input.tags, ...existingTags])],
+		migration: {
+			...existingMigration,
+			fromWorkflowId: workflow.id,
+			fromVersion: workflow.version,
+			fromDefinitionHash: workflow.definitionHash,
+			notes: input.migrationNotes,
 		},
-	});
+	};
+	if (!isJsonObject(definition.ui)) {
+		definition.ui = {
+			layout: "auto",
+			positions: {},
+		};
+	}
+	return definition;
 }
 
 function createPublishedWorkflowDefinition(workflow: WorkflowCatalogVersionRecord, profileId: string): PiboJsonObject {

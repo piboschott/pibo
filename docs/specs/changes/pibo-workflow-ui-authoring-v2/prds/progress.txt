@@ -42,6 +42,7 @@
 - Workflow Library version history should consume all catalog states for visibility, while Project workflow-version pickers remain published-only selection surfaces.
 - Workflow archive is a workflow-identity overlay; apply it consistently when projecting static catalog records, persisted versions, active drafts, inspect results, and picker options instead of mutating a single version.
 - Project workflow start should validate the immutable session snapshot and claim the one allowed run atomically in `ChatProjectService`; duplicate starts return the existing run instead of revalidating live catalog state.
+- Duplicate and edit-published draft creation should clone the resolved published Workflow IR and carry its definition hash; catalog summaries alone are not enough to preserve UI-authored graphs and layout.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -1207,4 +1208,30 @@
   - Saved screenshot: `/tmp/ralph-v2-non-goals.png` inside the container.
 - **Learnings for future iterations:**
   - Non-goal verification should distinguish explanatory boundary text from actual interactive affordances; scan button and link labels for forbidden product paths.
+---
+## 2026-05-12 06:24 CEST - US-006
+- What was implemented
+  - Implemented duplicate-to-draft source resolution so code and UI-published workflow versions are duplicated from the resolved published Pibo Workflow IR rather than a catalog summary.
+  - Duplicate drafts now store the source definition hash as `baseDefinitionHash`, preserve graph/layout/prompt edits from UI-published versions, strip any XState projection field, and still reuse the existing active copy draft.
+  - Added web-channel regression coverage for code duplicate, UI-published duplicate, repeated duplicate reuse, source version immutability, archived duplicate rejection, and cloned prompt/layout preservation.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck && npm run build && node --test --test-name-pattern "workflow duplicate-to-draft catalog operation" test/web-channel.test.mjs'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && node --test test/web-channel.test.mjs'` — passed, 66/66 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container web gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile --session ralph-v2-duplicate` inside `pibo-dev-WorkflowsV2` with dev auth to open the authenticated Workflows tab.
+  - Created a UI-published `ui-simple-chat-copy@1.1.0` version from a code duplicate in the authenticated browser context, with a custom prompt and layout position to verify cloning.
+  - Clicked `Duplicate to draft` for `ui-simple-chat-copy@1.1.0` in the Workflow Library and verified navigation to `/apps/chat/workflows/drafts/draft_ui-simple-chat-copy_1-1-0_*`.
+  - Verified the duplicated draft API data has `workflowId: ui-ui-simple-chat-copy-copy`, `base: ui-simple-chat-copy@1.1.0`, a `sha256:` source definition hash, the preserved custom prompt, and the preserved layout position.
+  - Saved screenshot: `/tmp/ralph-v2-duplicate-ui-published.png` inside the container.
+- **Learnings for future iterations:**
+  - Duplicating a UI-published workflow must clone the stored published definition body, not reconstruct a generic draft from catalog row metadata.
+  - When browser-clicking a version-history row, choose the smallest DOM ancestor containing the target `workflowId@version`; larger ancestors can contain several duplicate buttons and click the wrong row.
 ---

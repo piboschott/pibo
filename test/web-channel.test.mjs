@@ -2128,6 +2128,126 @@ test("workflow catalog list and inspect APIs expose source/status, diagnostics, 
 	}
 });
 
+test("workflow duplicate-to-draft catalog operation handles code and UI published versions", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const codeDuplicateResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(codeDuplicateResponse.status, 201);
+		const codeDuplicatePayload = await codeDuplicateResponse.json();
+		assert.equal(codeDuplicatePayload.draft.workflowId, "ui-standard-project-copy");
+		assert.equal(codeDuplicatePayload.draft.baseWorkflowId, "standard-project");
+		assert.equal(codeDuplicatePayload.draft.baseWorkflowVersion, "1.0.0");
+		assert.match(codeDuplicatePayload.draft.baseDefinitionHash, /^sha256:[a-f0-9]{64}$/);
+		assert.equal(codeDuplicatePayload.draft.definition.id, "ui-standard-project-copy");
+		assert.equal(codeDuplicatePayload.draft.definition.version, "1.0.0-draft");
+		assert.equal(codeDuplicatePayload.draft.definition.ui.layout, "auto");
+		assert.equal(codeDuplicatePayload.draft.definition.xstate, undefined);
+
+		const codeDuplicateAgainResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(codeDuplicateAgainResponse.status, 201);
+		const codeDuplicateAgainPayload = await codeDuplicateAgainResponse.json();
+		assert.equal(codeDuplicateAgainPayload.draft.draftId, codeDuplicatePayload.draft.draftId);
+
+		const sourceCodeInspectResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project?version=1.0.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sourceCodeInspectResponse.status, 200);
+		const sourceCodeInspectPayload = await sourceCodeInspectResponse.json();
+		assert.equal(sourceCodeInspectPayload.selected.kind, "publishedVersion");
+		assert.equal(sourceCodeInspectPayload.selected.version.source, "code");
+		assert.equal(sourceCodeInspectPayload.selected.version.status, "published");
+		assert.equal(sourceCodeInspectPayload.selected.definition.id, "standard-project");
+
+		const sourceDefinition = structuredClone(codeDuplicatePayload.draft.definition);
+		sourceDefinition.nodes.agent.promptTemplate = "Preserved UI published prompt.\\n\\n{{input}}";
+		sourceDefinition.ui.positions.agent = { x: 321, y: 654 };
+		const patchSourceDraftResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(codeDuplicatePayload.draft.draftId)}`, {
+			method: "PATCH",
+			headers: jsonHeaders,
+			body: JSON.stringify({ definition: sourceDefinition, editTrigger: "prompt_edit" }),
+		});
+		assert.equal(patchSourceDraftResponse.status, 200);
+
+		const publishSourceDraftResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(codeDuplicatePayload.draft.draftId)}/publish`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ versionIntent: "minor" }),
+		});
+		assert.equal(publishSourceDraftResponse.status, 201);
+		const publishSourceDraftPayload = await publishSourceDraftResponse.json();
+		assert.equal(publishSourceDraftPayload.publishedVersion.workflowId, "ui-standard-project-copy");
+		assert.equal(publishSourceDraftPayload.publishedVersion.version, "1.1.0");
+		assert.match(publishSourceDraftPayload.publishedVersion.definitionHash, /^sha256:[a-f0-9]{64}$/);
+
+		const uiDuplicateResponse = await fetch(`${baseURL}/api/chat/workflows/ui-standard-project-copy/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.1.0" }),
+		});
+		assert.equal(uiDuplicateResponse.status, 201);
+		const uiDuplicatePayload = await uiDuplicateResponse.json();
+		assert.equal(uiDuplicatePayload.draft.workflowId, "ui-ui-standard-project-copy-copy");
+		assert.equal(uiDuplicatePayload.draft.baseWorkflowId, "ui-standard-project-copy");
+		assert.equal(uiDuplicatePayload.draft.baseWorkflowVersion, "1.1.0");
+		assert.equal(uiDuplicatePayload.draft.baseDefinitionHash, publishSourceDraftPayload.publishedVersion.definitionHash);
+		assert.equal(uiDuplicatePayload.draft.definition.id, "ui-ui-standard-project-copy-copy");
+		assert.equal(uiDuplicatePayload.draft.definition.version, "1.1.0-draft");
+		assert.equal(uiDuplicatePayload.draft.definition.nodes.agent.promptTemplate, "Preserved UI published prompt.\\n\\n{{input}}");
+		assert.deepEqual(uiDuplicatePayload.draft.definition.ui.positions.agent, { x: 321, y: 654 });
+		assert.equal(uiDuplicatePayload.draft.definition.metadata.migration.fromWorkflowId, "ui-standard-project-copy");
+		assert.equal(uiDuplicatePayload.draft.definition.metadata.migration.fromDefinitionHash, publishSourceDraftPayload.publishedVersion.definitionHash);
+		assert.equal(uiDuplicatePayload.draft.definition.xstate, undefined);
+
+		const uiDuplicateAgainResponse = await fetch(`${baseURL}/api/chat/workflows/ui-standard-project-copy/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.1.0" }),
+		});
+		assert.equal(uiDuplicateAgainResponse.status, 201);
+		const uiDuplicateAgainPayload = await uiDuplicateAgainResponse.json();
+		assert.equal(uiDuplicateAgainPayload.draft.draftId, uiDuplicatePayload.draft.draftId);
+
+		const sourceUiInspectResponse = await fetch(`${baseURL}/api/chat/workflows/ui-standard-project-copy?version=1.1.0`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sourceUiInspectResponse.status, 200);
+		const sourceUiInspectPayload = await sourceUiInspectResponse.json();
+		assert.equal(sourceUiInspectPayload.selected.kind, "publishedVersion");
+		assert.equal(sourceUiInspectPayload.selected.version.source, "ui");
+		assert.equal(sourceUiInspectPayload.selected.version.status, "published");
+		assert.equal(sourceUiInspectPayload.selected.version.definitionHash, publishSourceDraftPayload.publishedVersion.definitionHash);
+		assert.equal(sourceUiInspectPayload.selected.definition.id, "ui-standard-project-copy");
+		assert.equal(sourceUiInspectPayload.selected.definition.nodes.agent.promptTemplate, "Preserved UI published prompt.\\n\\n{{input}}");
+
+		const archivedDuplicateResponse = await fetch(`${baseURL}/api/chat/workflows/archived-review-workflow/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(archivedDuplicateResponse.status, 404);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow archive API applies at workflow identity scope and hides archived workflows from selection", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
