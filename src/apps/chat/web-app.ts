@@ -362,6 +362,16 @@ type WorkflowHandlerPickerResponse = {
 	diagnostics: WorkflowPickerDiagnostic[];
 };
 
+type WorkflowRegisteredRefOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+};
+
+type WorkflowHumanActionOption = WorkflowRegisteredRefOption & {
+	kind: string;
+};
+
 type WorkflowCatalogVersionRecord = {
 	id: string;
 	version: string;
@@ -2489,6 +2499,55 @@ const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
 	},
 ];
 
+const WORKFLOW_ADAPTER_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.adapters.textToTopic",
+		displayName: "Text to topic",
+		description: "Registered deterministic adapter from the workflow fixtures registry.",
+	},
+	{
+		id: "fixture.adapters.draftToSummary",
+		displayName: "Draft to summary",
+		description: "Registered deterministic adapter from the workflow fixtures registry.",
+	},
+];
+
+const WORKFLOW_GUARD_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.guards.approved",
+		displayName: "Approved",
+		description: "Registered guard from the workflow fixtures registry.",
+	},
+	{
+		id: "fixture.guards.needsRevision",
+		displayName: "Needs revision",
+		description: "Registered guard from the workflow fixtures registry.",
+	},
+];
+
+const WORKFLOW_PROMPT_ASSET_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.promptBuilders.draftPrompt",
+		displayName: "Draft prompt builder",
+		description: "Registered prompt asset/prompt-builder ref from the workflow fixtures registry.",
+	},
+];
+
+const WORKFLOW_HUMAN_ACTION_REF_OPTIONS: WorkflowHumanActionOption[] = [
+	{
+		id: "fixture.humanActions.approve",
+		kind: "approve",
+		displayName: "Approve",
+		description: "Registered human action for approving a pending workflow wait token.",
+	},
+	{
+		id: "fixture.humanActions.reject",
+		kind: "reject",
+		displayName: "Reject",
+		description: "Registered human action for rejecting a pending workflow wait token.",
+	},
+];
+
 function buildWorkflowHandlerPicker(selectedHandlerId?: string): WorkflowHandlerPickerResponse {
 	const options = [...WORKFLOW_HANDLER_PICKER_OPTIONS]
 		.sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
@@ -2929,6 +2988,7 @@ const WORKFLOW_VALIDATION_DIAGNOSTIC_PREFIXES = [
 	"WorkflowCatalogError",
 	"WorkflowInterfaceError",
 	"WorkflowRegistryError",
+	"WorkflowSecurityError",
 ];
 
 function normalizeWorkflowEditTrigger(value: unknown): WorkflowValidationTrigger {
@@ -3173,7 +3233,7 @@ function validateWorkflowDefinitionForV2(
 	validateWorkflowInitialLike(definition.initial, new Set(nodeIds), diagnostics);
 
 	for (const [edgeId, edge] of isJsonObject(edges) ? Object.entries(edges) : []) {
-		validateWorkflowEdgeLike(edgeId, edge, new Set(nodeIds), diagnostics);
+		validateWorkflowEdgeLike(edgeId, edge, isJsonObject(nodes) ? nodes : {}, diagnostics);
 	}
 
 	return diagnostics;
@@ -3228,6 +3288,7 @@ function validateWorkflowNodeLike(
 	}
 	if (value.input !== undefined) validateWorkflowPortLike(value.input, `${path}.input`, diagnostics, { nodeId });
 	if (value.output !== undefined) validateWorkflowPortLike(value.output, `${path}.output`, diagnostics, { nodeId });
+	validateNoInlineExecutableCode(value, path, diagnostics, { nodeId });
 
 	const kind = value.kind;
 	if (kind === "agent") {
@@ -3312,6 +3373,17 @@ function validateWorkflowAgentNodeLike(
 			hint: "Prompt edits must save text on the Pibo Workflow IR node.",
 		});
 	}
+	if (node.promptTemplate !== undefined && node.promptBuilder !== undefined) {
+		diagnostics.push({
+			code: "WorkflowGraphError.ambiguousAgentPromptSource",
+			message: `Agent node '${nodeId}' declares both promptTemplate and a registered prompt asset ref.`,
+			severity: "error",
+			path,
+			nodeId,
+			hint: "Use either direct promptTemplate text or a registered prompt asset/prompt-builder ref, not both.",
+		});
+	}
+	if (node.promptBuilder !== undefined) validateWorkflowPromptAssetRefLike(nodeId, node.promptBuilder, diagnostics);
 }
 
 function validateWorkflowCodeNodeLike(nodeId: string, node: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
@@ -3371,16 +3443,19 @@ function validateWorkflowNestedNodeLike(
 }
 
 function validateWorkflowAdapterNodeLike(nodeId: string, node: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
-	const handler = isJsonObject(node.handler) ? node.handler : undefined;
-	const handlerId = handler && typeof handler.id === "string" ? handler.id.trim() : undefined;
-	if (!handlerId) {
+	validateRegisteredAdapterRefLike(node.handler, diagnostics, {
+		nodeId,
+		path: `$.nodes.${nodeId}.handler`,
+		ownerLabel: `Adapter node '${nodeId}'`,
+	});
+	if (node.mode !== undefined && node.mode !== "deterministic") {
 		diagnostics.push({
-			code: "WorkflowGraphError.unknownAdapterRef",
-			message: `Adapter node '${nodeId}' must select a registered adapter ref.`,
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `Adapter node '${nodeId}' must use deterministic registered adapter execution.`,
 			severity: "error",
-			path: `$.nodes.${nodeId}.handler.id`,
+			path: `$.nodes.${nodeId}.mode`,
 			nodeId,
-			hint: "Adapter nodes must use registered refs; the UI cannot create inline adapter code.",
+			hint: "Hidden LLM coercion is not a substitute for registered adapters in V2.",
 		});
 	}
 }
@@ -3396,9 +3471,10 @@ function validateWorkflowHumanNodeLike(nodeId: string, node: PiboJsonObject, dia
 		});
 	}
 	if (node.schema !== undefined) validateJsonSchemaObjectLike(node.schema, `$.nodes.${nodeId}.schema`, diagnostics, { nodeId, requireObjectRoot: true });
+	if (node.actions !== undefined) validateWorkflowHumanActionRefsLike(nodeId, node.actions, diagnostics);
 }
 
-function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodeIds: ReadonlySet<string>, diagnostics: WorkflowDraftDiagnostic[]): void {
+function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodes: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
 	const path = `$.edges.${edgeId}`;
 	if (!isJsonObject(value)) {
 		diagnostics.push({
@@ -3410,9 +3486,372 @@ function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodeIds:
 		});
 		return;
 	}
+	const nodeIds = new Set(Object.keys(nodes));
+	validateNoInlineExecutableCode(value, path, diagnostics, { edgeId });
+	validateNoHiddenLlmCoercion(value, path, diagnostics, { edgeId });
 	validateWorkflowEdgeEndpoint(edgeId, "from", value.from, nodeIds, diagnostics);
 	validateWorkflowEdgeEndpoint(edgeId, "to", value.to, nodeIds, diagnostics);
-	if (isJsonObject(value.adapter)) validateWorkflowPortLike(value.adapter.output, `${path}.adapter.output`, diagnostics, { edgeId });
+	if (value.guard !== undefined) validateWorkflowGuardRefLike(edgeId, value.guard, diagnostics);
+	if (value.adapter !== undefined) validateWorkflowEdgeAdapterLike(edgeId, value.adapter, nodes, value, diagnostics);
+	else validateWorkflowEdgeDirectCompatibility(edgeId, value, nodes, diagnostics);
+}
+
+const INLINE_EXECUTABLE_FIELD_NAMES = new Set([
+	"code",
+	"script",
+	"command",
+	"eval",
+	"javascript",
+	"shell",
+	"typescript",
+	"inlinecode",
+	"inlinehandler",
+	"inlinetypescript",
+	"inlinejavascript",
+	"inlineshell",
+	"handlersource",
+	"sourcecode",
+]);
+
+const HIDDEN_LLM_COERCION_FIELD_NAMES = new Set([
+	"llmcoercion",
+	"coercewithllm",
+	"hiddenllmcoercion",
+	"autocoerce",
+	"llmadapter",
+]);
+
+function validateNoInlineExecutableCode(
+	value: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
+): void {
+	for (const key of Object.keys(value)) {
+		if (!INLINE_EXECUTABLE_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
+		diagnostics.push({
+			code: "WorkflowSecurityError.inlineExecutableCode",
+			message: `${workflowDiagnosticOwnerLabel(target)} declares inline executable field '${key}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.${key}`,
+			...target,
+			hint: "Use registered handler, adapter, guard, prompt asset, or human action refs selected from V2 pickers instead of inline JavaScript, TypeScript, shell, eval, or arbitrary executable code.",
+		});
+	}
+}
+
+function validateNoHiddenLlmCoercion(
+	value: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
+): void {
+	for (const key of Object.keys(value)) {
+		if (!HIDDEN_LLM_COERCION_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
+		diagnostics.push({
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `${workflowDiagnosticOwnerLabel(target)} declares hidden LLM coercion field '${key}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.${key}`,
+			...target,
+			hint: "Use a visible registered adapter node or edge adapter when schemas are incompatible.",
+		});
+	}
+	const kind = typeof value.kind === "string" ? value.kind.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() : "";
+	if (kind === "llm" || kind === "llmadapter" || kind === "llmcoercion") {
+		diagnostics.push({
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `${workflowDiagnosticOwnerLabel(target)} uses LLM coercion kind '${value.kind}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.kind`,
+			...target,
+			hint: "Use deterministic registered adapters instead of hidden LLM coercion.",
+		});
+	}
+}
+
+function workflowDiagnosticOwnerLabel(target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">): string {
+	if (target.nodeId) return `Workflow node '${target.nodeId}'`;
+	if (target.edgeId) return `Workflow edge '${target.edgeId}'`;
+	return "Workflow definition";
+}
+
+function validateWorkflowPromptAssetRefLike(nodeId: string, value: unknown, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const path = `$.nodes.${nodeId}.promptBuilder`;
+	const ref = readPromptAssetRef(value);
+	if (!ref.id) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidPromptBuilderRef",
+			message: `Agent node '${nodeId}' must use a registered prompt asset ref when promptBuilder is declared.`,
+			severity: "error",
+			path,
+			nodeId,
+			hint: "Select a registered prompt asset/prompt-builder ref; V2 does not expose inline TypeScript prompt builders.",
+		});
+		return;
+	}
+	if (!ref.valid) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidPromptBuilderRef",
+			message: `Agent node '${nodeId}' prompt asset ref '${ref.id}' must use a registered TypeScript promptBuilder shape.`,
+			severity: "error",
+			path,
+			nodeId,
+			registryRef: ref.id,
+			hint: "Use { kind: 'promptBuilder', language: 'typescript', id: '<registered id>' } or a registered prompt asset id string.",
+		});
+		return;
+	}
+	if (!WORKFLOW_PROMPT_ASSET_REF_OPTIONS.some((option) => option.id === ref.id)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownPromptBuilderRef",
+			message: `Agent node '${nodeId}' references prompt asset '${ref.id}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: isJsonObject(value) ? `${path}.id` : path,
+			nodeId,
+			registryRef: ref.id,
+			hint: "Select a registered prompt asset ref before publishing or running this workflow.",
+		});
+	}
+}
+
+function readPromptAssetRef(value: unknown): { id?: string; valid: boolean } {
+	if (typeof value === "string") return { id: value.trim() || undefined, valid: Boolean(value.trim()) };
+	if (!isJsonObject(value)) return { valid: false };
+	const id = typeof value.id === "string" ? value.id.trim() : undefined;
+	return {
+		id,
+		valid: value.kind === "promptBuilder" && value.language === "typescript" && Boolean(id),
+	};
+}
+
+function validateRegisteredAdapterRefLike(
+	value: unknown,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId"> & { path: string; ownerLabel: string },
+): void {
+	const ref = readRegisteredAdapterRef(value);
+	if (!ref.id) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `${target.ownerLabel} must select a registered adapter ref.`,
+			severity: "error",
+			path: `${target.path}.id`,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			hint: "Adapter refs must be selected from the registered adapter picker; the UI cannot create inline adapter code.",
+		});
+		return;
+	}
+	if (!ref.valid) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `${target.ownerLabel} must use a registered TypeScript adapter ref shape.`,
+			severity: "error",
+			path: target.path,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: ref.id,
+			hint: "Persist adapter refs as { kind: 'adapter', language: 'typescript', id: '<registered id>' } instead of inline or raw handlers.",
+		});
+		return;
+	}
+	if (!WORKFLOW_ADAPTER_REF_OPTIONS.some((option) => option.id === ref.id)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `${target.ownerLabel} references adapter '${ref.id}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: `${target.path}.id`,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: ref.id,
+			hint: "Select a registered adapter ref before publishing or running this workflow.",
+		});
+	}
+}
+
+function readRegisteredAdapterRef(value: unknown): { id?: string; valid: boolean } {
+	if (!isJsonObject(value)) return { valid: false };
+	const id = typeof value.id === "string" ? value.id.trim() : undefined;
+	return {
+		id,
+		valid: value.kind === "adapter" && value.language === "typescript" && Boolean(id),
+	};
+}
+
+function validateWorkflowGuardRefLike(edgeId: string, value: unknown, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const path = `$.edges.${edgeId}.guard.handler`;
+	if (!isJsonObject(value) || typeof value.handler !== "string" || !value.handler.trim()) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidGuardRef",
+			message: `Workflow edge '${edgeId}' must use a registered guard handler ref.`,
+			severity: "error",
+			path,
+			edgeId,
+			hint: "Select a registered guard ref; V2 does not expose inline guard code.",
+		});
+		return;
+	}
+	const guardId = value.handler.trim();
+	if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isInteger(value.priority) || value.priority < 0)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidGuardPriority",
+			message: `Workflow edge '${edgeId}' guard priority must be a non-negative integer when declared.`,
+			severity: "error",
+			path: `$.edges.${edgeId}.guard.priority`,
+			edgeId,
+		});
+	}
+	if (!WORKFLOW_GUARD_REF_OPTIONS.some((option) => option.id === guardId)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownGuardRef",
+			message: `Workflow edge '${edgeId}' references guard '${guardId}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path,
+			edgeId,
+			registryRef: guardId,
+			hint: "Select a registered guard ref before publishing or running this workflow.",
+		});
+	}
+}
+
+function validateWorkflowHumanActionRefsLike(nodeId: string, value: unknown, diagnostics: WorkflowDraftDiagnostic[]): void {
+	if (!Array.isArray(value)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidHumanActionRef",
+			message: `Human node '${nodeId}' actions must be an array of registered human action refs.`,
+			severity: "error",
+			path: `$.nodes.${nodeId}.actions`,
+			nodeId,
+			hint: "Select registered human actions such as approve/reject; V2 does not create arbitrary action handlers.",
+		});
+		return;
+	}
+	value.forEach((action, index) => {
+		const path = `$.nodes.${nodeId}.actions.${index}`;
+		if (!isJsonObject(action) || typeof action.id !== "string" || !action.id.trim()) {
+			diagnostics.push({
+				code: "WorkflowGraphError.invalidHumanActionRef",
+				message: `Human node '${nodeId}' declares an invalid human action ref at index ${index}.`,
+				severity: "error",
+				path,
+				nodeId,
+				hint: "Human action refs must contain a non-empty registered action id.",
+			});
+			return;
+		}
+		const actionId = action.id.trim();
+		const registered = WORKFLOW_HUMAN_ACTION_REF_OPTIONS.find((option) => option.id === actionId);
+		if (!registered) {
+			diagnostics.push({
+				code: "WorkflowGraphError.unknownHumanActionRef",
+				message: `Human node '${nodeId}' references human action '${actionId}', but it is not registered in the Workflow Registry.`,
+				severity: "error",
+				path: `${path}.id`,
+				nodeId,
+				registryRef: actionId,
+				hint: "Select a registered human action before publishing or running this workflow.",
+			});
+			return;
+		}
+		if (action.kind !== undefined && action.kind !== registered.kind) {
+			diagnostics.push({
+				code: "WorkflowGraphError.humanActionKindMismatch",
+				message: `Human node '${nodeId}' action '${actionId}' declares kind '${action.kind}', but the registry defines kind '${registered.kind}'.`,
+				severity: "error",
+				path: `${path}.kind`,
+				nodeId,
+				registryRef: actionId,
+				hint: "Keep human action refs aligned with their registered action definitions.",
+			});
+		}
+	});
+}
+
+function validateWorkflowEdgeAdapterLike(
+	edgeId: string,
+	value: unknown,
+	nodes: PiboJsonObject,
+	edge: PiboJsonObject,
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.edges.${edgeId}.adapter`;
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `Workflow edge '${edgeId}' adapter must be a registered edge adapter object.`,
+			severity: "error",
+			path,
+			edgeId,
+			hint: "Use a visible edge adapter with a registered transform ref; hidden LLM coercion is not allowed.",
+		});
+		return;
+	}
+	validateNoInlineExecutableCode(value, path, diagnostics, { edgeId });
+	validateNoHiddenLlmCoercion(value, path, diagnostics, { edgeId });
+	if (value.kind !== undefined && value.kind !== "edgeAdapter") {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `Workflow edge '${edgeId}' adapter kind must be edgeAdapter when declared.`,
+			severity: "error",
+			path: `${path}.kind`,
+			edgeId,
+			hint: "Use edgeAdapter with a registered deterministic adapter transform.",
+		});
+	}
+	validateRegisteredAdapterRefLike(value.transform, diagnostics, {
+		edgeId,
+		path: `${path}.transform`,
+		ownerLabel: `Workflow edge '${edgeId}'`,
+	});
+	validateWorkflowPortLike(value.output, `${path}.output`, diagnostics, { edgeId });
+	const targetPort = readEdgeTargetInputPort(edge, nodes);
+	if (targetPort && isJsonObject(value.output) && !areWorkflowPortsDirectlyCompatible(value.output, targetPort)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.incompatibleEdgeAdapterOutput",
+			message: `Workflow edge '${edgeId}' adapter output is incompatible with the target input port.`,
+			severity: "error",
+			path: `${path}.output`,
+			edgeId,
+			hint: "Set the registered adapter output port to the target input contract; do not use hidden LLM coercion.",
+		});
+	}
+}
+
+function validateWorkflowEdgeDirectCompatibility(edgeId: string, edge: PiboJsonObject, nodes: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const sourcePort = readEdgeSourceOutputPort(edge, nodes);
+	const targetPort = readEdgeTargetInputPort(edge, nodes);
+	if (!sourcePort || !targetPort || areWorkflowPortsDirectlyCompatible(sourcePort, targetPort)) return;
+	diagnostics.push({
+		code: "WorkflowGraphError.incompatibleEdgePorts",
+		message: `Workflow edge '${edgeId}' connects incompatible source output and target input ports without a registered adapter.`,
+		severity: "error",
+		path: `$.edges.${edgeId}`,
+		edgeId,
+		hint: "Add a visible registered edge adapter or adapter node. Hidden LLM coercion is not allowed in V2.",
+	});
+}
+
+function readEdgeSourceOutputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const node = readWorkflowEdgeNode(edge.from, nodes);
+	return node && isJsonObject(node.output) ? node.output : undefined;
+}
+
+function readEdgeTargetInputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const node = readWorkflowEdgeNode(edge.to, nodes);
+	return node && isJsonObject(node.input) ? node.input : undefined;
+}
+
+function readWorkflowEdgeNode(endpoint: unknown, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const nodeId = isJsonObject(endpoint) && typeof endpoint.nodeId === "string" ? endpoint.nodeId.trim() : undefined;
+	const node = nodeId ? nodes[nodeId] : undefined;
+	return isJsonObject(node) ? node : undefined;
+}
+
+function areWorkflowPortsDirectlyCompatible(left: PiboJsonObject, right: PiboJsonObject): boolean {
+	if (left.kind === "text" && right.kind === "text") return true;
+	if (left.kind !== "json" || right.kind !== "json") return false;
+	return JSON.stringify(normalizeForCanonicalJson(left.schema)) === JSON.stringify(normalizeForCanonicalJson(right.schema));
 }
 
 function validateWorkflowEdgeEndpoint(

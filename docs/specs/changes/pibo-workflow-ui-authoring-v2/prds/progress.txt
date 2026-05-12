@@ -24,6 +24,7 @@
 - Chat Web workflow draft routes should persist UI drafts in a durable workflow registry/store table through `PiboDataStore` instead of module-level caches so drafts survive `createChatWebApp` recreation.
 - Project workflow session creation should whitelist request fields, reject disallowed override families/arbitrary options before persistence, and store allowed input/prompt/model/thinking/fast config in `project_sessions.configuration_json` with explicit workflow/eligible-node scopes.
 - Project view routing should combine `PiboWebSessionNode.workflowSessionKind` with `PiboProjectSession` workflow linkage; legacy `simple-chat` Project main sessions may carry `main_workflow` metadata but must still route to Terminal.
+- V2 workflow security validation should reject inline executable fields and hidden LLM coercion at draft/publish/start boundaries; incompatible ports require visible registered adapter refs instead.
 
 ## 2026-05-11 22:37 CEST - US-001
 - What was implemented
@@ -680,4 +681,30 @@
 - **Learnings for future iterations:**
   - Project main sessions can carry `main_workflow` metadata even when their `project_sessions.workflow_id` is `simple-chat`; view routing should check durable Project workflow linkage before treating the session as Workflow/XState.
   - Browser verification for routing stories should cover both the workflow-positive path and a safe Terminal fallback path because route query state may otherwise mask incorrect view selection.
+---
+## 2026-05-12 02:31 CEST - US-003
+- What was implemented
+  - Enforced the V2 registered-capability security boundary across draft validation for handlers, adapters, guards, nested workflows, human actions, prompt assets/prompt builders, and non-archived Agent profiles.
+  - Added rejection diagnostics for inline executable fields, hidden LLM coercion, and incompatible ports without a visible registered adapter.
+  - Added visible Workflows UI security-boundary copy describing registered refs only, no inline executable authoring, and no hidden LLM coercion.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `src/apps/chat-ui/src/WorkflowsArea.tsx`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build && node --test --test-name-pattern "workflow security boundary|workflow validation pipeline|workflow handler picker|workflow version picker" test/web-channel.test.mjs'` — passed, 4/4 targeted tests.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && node --test test/web-channel.test.mjs'` — passed, 60/60 tests.
+  - `python3 -m json.tool docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json` — passed.
+  - `git diff --check` — passed.
+- Browser verification, if UI changed
+  - Restarted the container gateway from rebuilt `/workspace/dist` and verified `http://127.0.0.1:4802/apps/chat` returned OK.
+  - Used `browser-use --fresh-profile` inside `pibo-dev-WorkflowsV2` with dev auth to open `/apps/chat/workflows`.
+  - Verified the authenticated Workflows page shows `dev@pibo.local`, `Registered capability security boundary`, `registered refs only`, `No inline JavaScript, TypeScript, shell, eval`, and `hidden LLM coercion is not used`.
+  - Saved screenshot: `/tmp/ralph-v2-security-boundary.png` inside the container.
+- **Learnings for future iterations:**
+  - Security-boundary validation should cover raw IR mutations as well as picker-driven edits, because publish/start boundaries consume stored Workflow IR.
+  - Browser text checks can require lowercasing `innerText` because headings may be uppercased by CSS.
 ---

@@ -46,8 +46,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented registered-ref validation for handlers, adapters, guards, nested workflows, human actions, prompt assets, and non-archived Agent profiles; added visible UI security-boundary copy and web-channel coverage for inline executable and hidden LLM coercion rejection."
     },
     {
       "id": "US-004",

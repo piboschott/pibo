@@ -1912,6 +1912,165 @@ test("workflow version picker lists published nested workflow refs and reports m
 	}
 });
 
+test("workflow security boundary validates registered refs and rejects inline execution paths", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const duplicateResponse = await fetch(`${baseURL}/api/chat/workflows/standard-project/duplicate`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ version: "1.0.0" }),
+		});
+		assert.equal(duplicateResponse.status, 201);
+		const duplicatePayload = await duplicateResponse.json();
+		const draftId = duplicatePayload.draft.draftId;
+
+		const textPort = { kind: "text" };
+		const planPort = {
+			kind: "json",
+			schema: {
+				type: "object",
+				properties: {
+					steps: { type: "array", items: { type: "string" } },
+				},
+			},
+		};
+		const secureDefinition = {
+			...duplicatePayload.draft.definition,
+			input: textPort,
+			output: textPort,
+			initial: "collect",
+			nodes: {
+				collect: {
+					kind: "agent",
+					runtime: "pibo",
+					profile: { kind: "fixed", id: "pibo-agent" },
+					promptTemplate: "Collect workflow input.",
+					output: textPort,
+				},
+				plan: {
+					kind: "code",
+					language: "typescript",
+					handler: "fixture.handlers.makePlan",
+					input: textPort,
+					output: planPort,
+				},
+				normalize: {
+					kind: "adapter",
+					mode: "deterministic",
+					handler: { kind: "adapter", language: "typescript", id: "fixture.adapters.textToTopic" },
+					input: planPort,
+					output: textPort,
+				},
+				promptAsset: {
+					kind: "agent",
+					runtime: "pibo",
+					profile: { kind: "fixed", id: "pibo-agent" },
+					promptBuilder: { kind: "promptBuilder", language: "typescript", id: "fixture.promptBuilders.draftPrompt" },
+					input: textPort,
+					output: textPort,
+				},
+				review: {
+					kind: "human",
+					prompt: "Review the plan.",
+					input: textPort,
+					output: textPort,
+					actions: [{ id: "fixture.humanActions.approve", kind: "approve" }],
+				},
+			},
+			edges: {
+				"collect-to-plan": {
+					id: "collect-to-plan",
+					from: { nodeId: "collect" },
+					to: { nodeId: "plan" },
+					kind: "data",
+					guard: { handler: "fixture.guards.approved", priority: 0 },
+				},
+				"plan-to-review": {
+					id: "plan-to-review",
+					from: { nodeId: "plan" },
+					to: { nodeId: "review" },
+					kind: "data",
+					adapter: {
+						kind: "edgeAdapter",
+						transform: { kind: "adapter", language: "typescript", id: "fixture.adapters.draftToSummary" },
+						output: textPort,
+					},
+				},
+			},
+		};
+
+		const validPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: jsonHeaders,
+			body: JSON.stringify({ definition: secureDefinition, editTrigger: "graph_edit" }),
+		});
+		assert.equal(validPatchResponse.status, 200);
+		const validPatchPayload = await validPatchResponse.json();
+		assert.equal(validPatchPayload.validation.ok, true);
+		assert.equal(validPatchPayload.diagnostics.some((diagnostic) => diagnostic.severity === "error"), false);
+
+		const invalidDefinition = structuredClone(secureDefinition);
+		invalidDefinition.nodes.plan.handler = "missing.handlers.inline";
+		invalidDefinition.nodes.plan.inlineTypeScript = "return await eval(input);";
+		invalidDefinition.nodes.normalize.handler.id = "missing.adapters.inline";
+		invalidDefinition.nodes.normalize.mode = "llm";
+		invalidDefinition.nodes.promptAsset.promptBuilder.id = "missing.promptAssets.inline";
+		invalidDefinition.nodes.review.actions = [
+			{ id: "missing.humanActions.inline", kind: "approve" },
+			{ id: "fixture.humanActions.approve", kind: "reject" },
+		];
+		invalidDefinition.nodes.jsonTarget = {
+			kind: "code",
+			language: "typescript",
+			handler: "fixture.handlers.reviseDraft",
+			input: planPort,
+			output: planPort,
+		};
+		invalidDefinition.edges["collect-to-plan"].guard.handler = "missing.guards.inline";
+		invalidDefinition.edges["plan-to-review"].adapter.transform.id = "missing.adapters.edge";
+		invalidDefinition.edges["plan-to-review"].adapter.llmCoercion = true;
+		invalidDefinition.edges["collect-to-json"] = {
+			id: "collect-to-json",
+			from: { nodeId: "collect" },
+			to: { nodeId: "jsonTarget" },
+			kind: "data",
+		};
+
+		const invalidPatchResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(draftId)}`, {
+			method: "PATCH",
+			headers: jsonHeaders,
+			body: JSON.stringify({ definition: invalidDefinition, editTrigger: "graph_edit" }),
+		});
+		assert.equal(invalidPatchResponse.status, 200);
+		const invalidPatchPayload = await invalidPatchResponse.json();
+		assert.equal(invalidPatchPayload.validation.ok, false);
+		const diagnosticCodes = new Set(invalidPatchPayload.diagnostics.map((diagnostic) => diagnostic.code));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.unknownHandlerRef"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.unknownAdapterRef"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.unknownGuardRef"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.unknownPromptBuilderRef"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.unknownHumanActionRef"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.humanActionKindMismatch"));
+		assert.ok(diagnosticCodes.has("WorkflowGraphError.incompatibleEdgePorts"));
+		assert.ok(diagnosticCodes.has("WorkflowSecurityError.inlineExecutableCode"));
+		assert.ok(diagnosticCodes.has("WorkflowSecurityError.hiddenLlmCoercion"));
+		assert.ok(invalidPatchPayload.diagnostics.some((diagnostic) => diagnostic.registryRef === "missing.guards.inline"));
+		assert.ok(invalidPatchPayload.diagnostics.some((diagnostic) => diagnostic.hint?.includes("Hidden LLM coercion is not allowed")));
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow builder draft loader opens starter and duplicated UI draft wrappers", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),

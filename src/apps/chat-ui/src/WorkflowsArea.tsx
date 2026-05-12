@@ -19,7 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
 import {
 	getWorkflowDraft,
 	getWorkflowHandlerPicker,
@@ -139,9 +139,10 @@ export function WorkflowsArea({ draftId, viewWorkflowId, viewWorkflowVersion }: 
 					</WorkflowSurfaceCard>
 				</div>
 
-				<div className="grid gap-3 rounded-sm border border-slate-800 bg-[#151f24] p-4 text-xs text-slate-400 md:grid-cols-3">
+				<div className="grid gap-3 rounded-sm border border-slate-800 bg-[#151f24] p-4 text-xs text-slate-400 md:grid-cols-4">
 					<WorkflowPrinciple icon={CheckCheck} label="Pibo Workflow IR remains the source of truth" />
 					<WorkflowPrinciple icon={CopyPlus} label="Code workflows can be duplicated into UI drafts" />
+					<WorkflowPrinciple icon={ShieldCheck} label="Workflow capabilities are registered refs only" />
 					<WorkflowPrinciple icon={Layers} label="XState stays a read-only visualization projection" />
 				</div>
 			</section>
@@ -267,6 +268,7 @@ function WorkflowBuilderLanding() {
 				title="Open a draft to start authoring"
 				description="Use the Workflow Library draft row or Duplicate to draft action. The builder route will load a draft wrapper around Pibo Workflow IR, not raw XState source."
 			/>
+			<WorkflowSecurityBoundaryPanel />
 			<WorkflowBuilderAgentNodeEditor />
 			<WorkflowBuilderCodeNodeEditor />
 			<WorkflowBuilderWorkflowNodeEditor />
@@ -318,6 +320,25 @@ function WorkflowBuilderDraftLoader({ draftId }: { draftId: string }) {
 	}
 
 	return <WorkflowDraftEditorShell draft={draft} />;
+}
+
+function WorkflowSecurityBoundaryPanel() {
+	return (
+		<div className="rounded-sm border border-emerald-900/60 bg-emerald-950/15 p-4 text-xs leading-5 text-emerald-100" aria-label="Registered capability security boundary">
+			<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-300">
+				<ShieldCheck size={13} />
+				Registered capability security boundary
+			</div>
+			<p className="mt-2 text-emerald-100/90">
+				V2 authoring composes registered refs only: non-archived Agent profiles, code handlers, adapters, guards, nested workflows, human actions, and prompt assets.
+			</p>
+			<ul className="mt-3 grid gap-1 text-[11px] text-emerald-100/75">
+				<li>No inline JavaScript, TypeScript, shell, eval, arbitrary executable nodes, or raw handler bodies are created by the UI.</li>
+				<li>Incompatible schemas must use a visible registered adapter node or edge adapter; hidden LLM coercion is not used.</li>
+				<li>XState remains projection-only; Pibo Workflow IR is the persisted source of truth.</li>
+			</ul>
+		</div>
+	);
 }
 
 function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
@@ -416,6 +437,8 @@ function WorkflowDraftEditorShell({ draft }: { draft: WorkflowDraftRecord }) {
 					</div>
 				) : null}
 			</div>
+
+			<WorkflowSecurityBoundaryPanel />
 
 			<WorkflowGraphCanvas draft={currentDraft} onDraftChange={setCurrentDraft} />
 
