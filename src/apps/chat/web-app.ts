@@ -4881,21 +4881,28 @@ function selectPublishedWorkflowVersion(state: ChatWebAppState, workflowId: stri
 	const options = buildProjectWorkflowVersionOptions(state).filter((option) => option.id === workflowId);
 	const selected = version ? options.find((option) => option.version === version) : options[0];
 	if (!selected) return undefined;
+	return resolvePublishedWorkflowDefinitionForProfile(state, selected, "pibo-agent");
+}
 
+function resolvePublishedWorkflowDefinitionForProfile(
+	state: ChatWebAppState,
+	workflow: WorkflowVersionPickerOption,
+	profileId: string,
+): WorkflowPublishedVersionSelection {
 	const persisted = state.workflowPublishedVersionStore
-		.listPublishedVersions({ workflowId: selected.id })
-		.find((record) => record.version === selected.version);
+		.listPublishedVersions({ workflowId: workflow.id })
+		.find((record) => record.version === workflow.version);
 	if (persisted) {
 		return {
-			...selected,
+			...workflow,
 			definition: cloneJsonObject(persisted.definition),
 			definitionHash: persisted.definitionHash,
 		};
 	}
 
-	const definition = createPublishedWorkflowDefinition(selected, "pibo-agent");
+	const definition = createPublishedWorkflowDefinition(workflow, profileId);
 	return {
-		...selected,
+		...workflow,
 		definition,
 		definitionHash: hashWorkflowDefinitionJson(definition),
 	};
@@ -5296,12 +5303,10 @@ function validatePublishedWorkflowBoundary(input: {
 	state: ChatWebAppState;
 	context: PiboWebAppContext;
 	webSession: PiboWebSession;
-	workflow: WorkflowVersionPickerOption;
-	profileId: string;
+	definition: PiboJsonObject;
 	trigger: "before_project_session_creation" | "before_workflow_start";
 }): WorkflowValidationResponse {
-	const definition = createPublishedWorkflowDefinition(input.workflow, input.profileId);
-	const diagnostics = sanitizeWorkflowDiagnostics(validateWorkflowDefinitionForV2(definition, input));
+	const diagnostics = sanitizeWorkflowDiagnostics(validateWorkflowDefinitionForV2(input.definition, input));
 	return {
 		diagnostics,
 		validation: summarizeWorkflowDiagnostics(diagnostics, input.trigger),
@@ -8997,14 +9002,14 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const project = requireOwnedProject(state, webSession, projectResource.projectId);
 				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
 				const workflowSelection = resolveProjectWorkflowSelection(state, body.workflowId, body.workflowVersion, { requireExplicitWorkflowId: true, requireExplicitVersion: true });
-				const baseDefinition = createPublishedWorkflowDefinition(workflowSelection, profile);
+				const publishedWorkflow = resolvePublishedWorkflowDefinitionForProfile(state, workflowSelection, profile);
+				const baseDefinition = cloneJsonObject(publishedWorkflow.definition);
 				const configuration = normalizeProjectWorkflowSessionConfiguration(body, baseDefinition);
 				const validation = validatePublishedWorkflowBoundary({
 					state,
 					context,
 					webSession,
-					workflow: workflowSelection,
-					profileId: profile,
+					definition: baseDefinition,
 					trigger: "before_project_session_creation",
 				});
 				recordWorkflowLifecycleEvent(state, webSession, {
@@ -9036,7 +9041,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					webSession,
 					project,
 					session,
-					workflow: workflowSelection,
+					workflow: publishedWorkflow,
 					baseDefinition,
 					configuration,
 					validation,

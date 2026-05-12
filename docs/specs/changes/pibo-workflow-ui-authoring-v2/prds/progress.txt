@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Project workflow creation/start validation should resolve persisted UI-published Workflow IR from the registry/store; only static code projections should synthesize runnable definitions with the selected session profile.
 - Completeness-contract aggregate stories can be verified with focused source-level coverage tests that bind existing source/API/browser surfaces to the contract before marking the aggregate story passing.
 - For browser checks of Project human action controls, create/start a Project workflow session through the dev-auth API, seed persisted wait tokens in the container Project store, then open the Project session with `?view=workflow`.
 - Builder validation/publish completeness can pair source-level UI panel assertions with targeted `web-channel` validate, before-publish rejection, and version-allocation flows.
@@ -2265,4 +2266,25 @@
     - `browser-use wait` in this environment supports `selector` and `text`, not `time`; use shell `sleep` between a click and async diagnostic checks.
   - Useful context
     - Browser eval commands should avoid shell-interpreted JavaScript template literals in selectors; quote CSS selectors with normal strings when running through `bash`.
+---
+## 2026-05-12 17:51 CEST - US-020
+- What was implemented
+  - Project workflow session creation now resolves persisted UI-published Workflow IR from the workflow registry/store before validation and snapshot creation.
+  - Static code workflow projections still synthesize runnable definitions with the selected Project session profile.
+  - Added web-channel coverage proving before-Project-session-creation validation blocks a UI-published workflow whose persisted Agent profile ref becomes unavailable, returns structured diagnostics, and snapshots the exact persisted definition when refs are available again.
+  - Marked PRD 09 US-020 passing.
+- Files changed
+  - `src/apps/chat/web-app.ts`
+  - `test/web-channel.test.mjs`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json`
+  - `docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/progress.txt`
+- Quality checks run
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run build'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-WorkflowsV2 bash -lc 'cd /workspace && node --test test/web-channel.test.mjs'` — passed, 73/73 tests.
+- Browser verification, if UI changed
+  - Not run; API/runtime validation path changed with no UI behavior change.
+- **Learnings for future iterations:**
+  - Project workflow validation boundaries must use the same persisted Workflow IR that snapshots and runs use; otherwise UI-published definitions can be accidentally replaced by static projection fixtures during validation.
+  - For UI-published workflow Project sessions, the Project session profile is session routing metadata and must not overwrite Agent node profile refs stored in the published Workflow IR.
 ---

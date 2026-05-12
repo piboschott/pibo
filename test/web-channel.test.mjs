@@ -3705,6 +3705,130 @@ test("workflow validation pipeline runs on draft load, edit, validate, and publi
 	}
 });
 
+test("workflow Project session creation validates persisted UI-published definitions", async () => {
+	const { channel, baseURL, setProfiles, storageDir } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "pibo-agent", aliases: ["default"] }, { name: "temporary-workflow-agent" }],
+	});
+
+	const jsonHeaders = {
+		"content-type": "application/json",
+		origin: baseURL,
+		"x-test-user": "user-1",
+	};
+
+	try {
+		const definition = {
+			id: "ui-validation-boundary",
+			version: "0.1.0",
+			title: "UI Validation Boundary",
+			description: "UI-published workflow used to verify Project creation validation.",
+			metadata: { tags: ["validation", "project"] },
+			input: { kind: "text", description: "Topic" },
+			output: { kind: "text", description: "Answer" },
+			initial: "agent",
+			nodes: {
+				agent: {
+					kind: "agent",
+					runtime: "pibo",
+					profile: { kind: "fixed", id: "temporary-workflow-agent" },
+					promptTemplate: "Answer the workflow input.",
+					metadata: { sessionOverrides: { prompt: true } },
+				},
+			},
+			edges: {},
+			ui: { layout: "auto", positions: { agent: { x: 80, y: 80 } } },
+		};
+
+		const createDraftResponse = await fetch(`${baseURL}/api/chat/workflows`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ workflowId: definition.id, title: definition.title, description: definition.description, definition }),
+		});
+		assert.equal(createDraftResponse.status, 201);
+		const createDraftPayload = await createDraftResponse.json();
+		assert.equal(createDraftPayload.draft.validation.trigger, "draft_load");
+		assert.equal(createDraftPayload.draft.validation.ok, true);
+
+		const publishResponse = await fetch(`${baseURL}/api/chat/workflows/drafts/${encodeURIComponent(createDraftPayload.draft.draftId)}/publish`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({ versionIntent: "patch" }),
+		});
+		assert.equal(publishResponse.status, 201);
+		const publishPayload = await publishResponse.json();
+		const workflowVersion = publishPayload.publishedVersion.version;
+		assert.equal(publishPayload.publishedVersion.definition.nodes.agent.profile.id, "temporary-workflow-agent");
+
+		const projectResponse = await fetch(`${baseURL}/api/chat/projects`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				name: "Workflow Validation Boundary Project",
+				projectFolder: join(storageDir, "workflow-validation-boundary-project"),
+				createFolder: true,
+			}),
+		});
+		assert.equal(projectResponse.status, 201);
+		const projectPayload = await projectResponse.json();
+
+		setProfiles([{ name: "pibo-agent", aliases: ["default"] }]);
+		const blockedCreateResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				profile: "pibo-agent",
+				workflowId: definition.id,
+				workflowVersion,
+				title: "Blocked persisted UI definition",
+			}),
+		});
+		assert.equal(blockedCreateResponse.status, 422);
+		const blockedCreatePayload = await blockedCreateResponse.json();
+		assert.equal(blockedCreatePayload.validation.trigger, "before_project_session_creation");
+		assert.equal(blockedCreatePayload.validation.blocksRun, true);
+		const missingProfileDiagnostic = blockedCreatePayload.diagnostics.find((diagnostic) => diagnostic.code === "WorkflowGraphError.unknownAgentProfileRef");
+		assert.ok(missingProfileDiagnostic);
+		assert.equal(missingProfileDiagnostic.severity, "error");
+		assert.equal(missingProfileDiagnostic.nodeId, "agent");
+		assert.equal(missingProfileDiagnostic.path, "$.nodes.agent.profile.id");
+		assert.equal(missingProfileDiagnostic.registryRef, "temporary-workflow-agent");
+		assert.equal(typeof missingProfileDiagnostic.message, "string");
+		assert.equal(typeof missingProfileDiagnostic.hint, "string");
+
+		setProfiles([{ name: "pibo-agent", aliases: ["default"] }, { name: "temporary-workflow-agent" }]);
+		const acceptedCreateResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({
+				profile: "pibo-agent",
+				workflowId: definition.id,
+				workflowVersion,
+				title: "Accepted persisted UI definition",
+			}),
+		});
+		assert.equal(acceptedCreateResponse.status, 201);
+		const acceptedCreatePayload = await acceptedCreateResponse.json();
+		assert.equal(acceptedCreatePayload.validation.trigger, "before_project_session_creation");
+		assert.equal(acceptedCreatePayload.validation.ok, true);
+		assert.equal(acceptedCreatePayload.snapshot.baseDefinition.nodes.agent.profile.id, "temporary-workflow-agent");
+		assert.equal(acceptedCreatePayload.snapshot.effectiveDefinition.nodes.agent.profile.id, "temporary-workflow-agent");
+
+		const startResponse = await fetch(`${baseURL}/api/chat/projects/${encodeURIComponent(projectPayload.project.id)}/workflow-sessions/${encodeURIComponent(acceptedCreatePayload.session.id)}/start`, {
+			method: "POST",
+			headers: jsonHeaders,
+			body: JSON.stringify({}),
+		});
+		assert.equal(startResponse.status, 202);
+		const startPayload = await startResponse.json();
+		assert.equal(startPayload.validation.trigger, "before_workflow_start");
+		assert.equal(startPayload.validation.ok, true);
+		assert.equal(startPayload.snapshot.effectiveDefinition.nodes.agent.profile.id, "temporary-workflow-agent");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow draft publish allocates patch, minor, and major versions", async () => {
 	const { channel, baseURL, dataStorePath } = await startWebHostChannel({
 		auth: createFakeAuthService(),

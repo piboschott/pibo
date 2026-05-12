@@ -312,8 +312,8 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Project workflow session creation now validates the persisted UI-published Workflow IR, snapshots that exact definition, and returns structured diagnostics that block create/start when error diagnostics remain; focused web-channel coverage verifies all draft/edit/publish/project/start validation triggers."
     },
     {
       "id": "US-021",
