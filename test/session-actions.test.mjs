@@ -317,6 +317,85 @@ test("routed session surfaces assistant provider errors with the active event id
 	assert.equal(error.error, "Invalid prompt_cache_key");
 });
 
+test("routed session expands context overflow errors with provider details", async () => {
+	let listener;
+	const events = [];
+	const runtime = {
+		cwd: process.cwd(),
+		session: {
+			model: { contextWindow: 272000 },
+			subscribe(callback) {
+				listener = callback;
+				return () => {};
+			},
+			async prompt() {
+				listener({
+					type: "message_end",
+					message: {
+						role: "assistant",
+						content: [],
+						api: "openai-codex-responses",
+						provider: "openai-codex",
+						model: "gpt-5.5",
+						usage: { totalTokens: 271382 },
+						stopReason: "error",
+						errorMessage: 'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}',
+					},
+				});
+			},
+			isStreaming: false,
+			getActiveToolNames() {
+				return [];
+			},
+			getAllTools() {
+				return [];
+			},
+			resourceLoader: {
+				getSkills() {
+					return { skills: [] };
+				},
+			},
+			sessionManager: {
+				getPiSessionId() {
+					return "session-id";
+				},
+				getSessionFile() {
+					return undefined;
+				},
+				getLeafId() {
+					return null;
+				},
+				getHeader() {
+					return undefined;
+				},
+			},
+		},
+		setRebindSession() {},
+		async dispose() {},
+	};
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "route:test",
+		id: "event-1",
+		text: "hello",
+		source: "actor",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+
+	const error = events.find((event) => event.type === "session_error");
+	assert.match(error.error, /Context window exceeded/);
+	assert.match(error.error, /Provider code: context_length_exceeded/);
+	assert.match(error.error, /Context usage: 271382 \/ 272000 tokens/);
+	assert.equal(error.errorDetails.category, "context_overflow");
+	assert.equal(error.errorDetails.providerCode, "context_length_exceeded");
+	assert.equal(error.errorDetails.model, "gpt-5.5");
+	assert.equal(error.errorDetails.contextWindow, 272000);
+	assert.equal(error.errorDetails.contextTokens, 271382);
+});
+
 test("routed session normalizes assistant thinking events", async () => {
 	let listener;
 	const events = [];

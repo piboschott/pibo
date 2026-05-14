@@ -292,6 +292,19 @@ export type PiboCompactionEndEvent = {
 	errorMessage?: string;
 };
 
+export type PiboSessionErrorDetails = {
+	category?: string;
+	providerType?: string;
+	providerCode?: string;
+	providerParam?: string;
+	providerMessage?: string;
+	api?: string;
+	provider?: string;
+	model?: string;
+	contextWindow?: number;
+	contextTokens?: number;
+};
+
 export type PiboOutputEvent =
 	| PiboMessageQueuedEvent
 	| PiboMessageStartedEvent
@@ -309,7 +322,7 @@ export type PiboOutputEvent =
 	| PiboCompactionStartEvent
 	| PiboCompactionEndEvent
 	| { type: "execution_result"; piboSessionId: string; eventId?: string; action: PiboExecutionAction; result: unknown }
-	| { type: "session_error"; piboSessionId: string; eventId?: string; error: string }
+	| { type: "session_error"; piboSessionId: string; eventId?: string; error: string; errorDetails?: PiboSessionErrorDetails }
 	| { type: "pi_event"; piboSessionId: string; event: unknown };
 
 export type PiboEventListener = (event: PiboOutputEvent) => void;

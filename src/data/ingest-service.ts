@@ -359,7 +359,7 @@ function attributesForOutputEvent(event: PiboOutputEvent): Record<string, unknow
 	if (event.type === "tool_execution_started" || event.type === "tool_execution_updated" || event.type === "tool_execution_finished") return { toolCallId: event.toolCallId, toolName: event.toolName, isError: "isError" in event ? event.isError : undefined };
 	if (event.type === "subagent_session") return { toolCallId: event.toolCallId, toolName: event.toolName, subagentName: event.subagentName, childPiboSessionId: event.childPiboSessionId, threadKey: event.threadKey };
 	if (event.type === "execution_result") return { action: event.action };
-	if (event.type === "session_error") return { error: event.error };
+	if (event.type === "session_error") return { error: event.error, ...(event.errorDetails ? { errorDetails: event.errorDetails } : {}) };
 	if (event.type === "compaction_start" || event.type === "compaction_end") return { reason: event.reason, aborted: "aborted" in event ? event.aborted : undefined, errorMessage: "errorMessage" in event ? event.errorMessage : undefined };
 	return {};
 }

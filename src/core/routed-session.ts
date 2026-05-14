@@ -13,6 +13,7 @@ import type {
 	PiboSessionListItem,
 	PiboSessionOperationResult,
 	PiboSessionStatus,
+	PiboSessionErrorDetails,
 	PiboSessionSwitchParams,
 	PiboSessionTreeNavigateParams,
 	PiboSessionTreeNode,
@@ -73,8 +74,85 @@ type PiEventCandidate = {
 
 type PiToolCall = { id: string; name: string; args: unknown };
 
+type AssistantErrorMessage = {
+	role?: unknown;
+	stopReason?: unknown;
+	errorMessage?: unknown;
+	api?: unknown;
+	provider?: unknown;
+	model?: unknown;
+	usage?: unknown;
+};
+
+type ErrorContext = { contextWindow?: number };
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function numberValue(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function parseEmbeddedProviderError(message: string): { providerType?: string; providerCode?: string; providerParam?: string; providerMessage?: string } | undefined {
+	const jsonStart = message.indexOf("{");
+	if (jsonStart === -1) return undefined;
+	try {
+		const parsed = JSON.parse(message.slice(jsonStart)) as { error?: { type?: unknown; code?: unknown; param?: unknown; message?: unknown } };
+		const error = parsed.error;
+		if (!error || typeof error !== "object") return undefined;
+		return {
+			providerType: stringValue(error.type),
+			providerCode: stringValue(error.code),
+			providerParam: stringValue(error.param),
+			providerMessage: stringValue(error.message),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+function assistantErrorDetails(message: AssistantErrorMessage, context?: ErrorContext): PiboSessionErrorDetails | undefined {
+	const rawError = typeof message.errorMessage === "string" ? message.errorMessage : "";
+	const providerError = parseEmbeddedProviderError(rawError);
+	const usage = message.usage && typeof message.usage === "object" ? (message.usage as { totalTokens?: unknown }) : undefined;
+	const contextTokens = numberValue(usage?.totalTokens);
+	const details: PiboSessionErrorDetails = {
+		category: providerError?.providerCode === "context_length_exceeded" ? "context_overflow" : undefined,
+		...providerError,
+		api: stringValue(message.api),
+		provider: stringValue(message.provider),
+		model: stringValue(message.model),
+		contextWindow: context?.contextWindow,
+		contextTokens,
+	};
+	return Object.values(details).some((value) => value !== undefined) ? details : undefined;
+}
+
+function formatAssistantError(message: AssistantErrorMessage, context?: ErrorContext): string {
+	const rawError = typeof message.errorMessage === "string" && message.errorMessage.length > 0 ? message.errorMessage : "Assistant message failed.";
+	const details = assistantErrorDetails(message, context);
+	if (details?.category !== "context_overflow") return rawError;
+
+	const lines = ["Context window exceeded while sending the model request."];
+	if (details.providerMessage) lines.push(`Provider message: ${details.providerMessage}`);
+	if (details.providerCode) lines.push(`Provider code: ${details.providerCode}`);
+	if (details.providerParam) lines.push(`Provider param: ${details.providerParam}`);
+	if (details.api || details.provider || details.model) {
+		lines.push(`Model: ${[details.api, details.provider, details.model].filter(Boolean).join(" / ")}`);
+	}
+	if (details.contextTokens !== undefined || details.contextWindow !== undefined) {
+		const usage = details.contextWindow
+			? `${details.contextTokens ?? "unknown"} / ${details.contextWindow} tokens`
+			: `${details.contextTokens} tokens`;
+		lines.push(`Context usage: ${usage}`);
+	}
+	lines.push("Automatic overflow compaction will be attempted if auto-compaction is enabled.");
+	return lines.join("\n");
 }
 
 function messageContentIndex(candidate: PiEventCandidate): number | undefined {
@@ -191,7 +269,7 @@ function normalizeToolExecutionEvent(piboSessionId: string, candidate: PiEventCa
 	return undefined;
 }
 
-function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEvent | undefined {
+function normalizePiEvent(piboSessionId: string, event: unknown, context?: ErrorContext): PiboOutputEvent | undefined {
 	if (!event || typeof event !== "object") return undefined;
 
 	const candidate = event as PiEventCandidate;
@@ -239,19 +317,15 @@ function normalizePiEvent(piboSessionId: string, event: unknown): PiboOutputEven
 	if (toolExecutionEvent) return toolExecutionEvent;
 
 	if (candidate.type === "message_end") {
-		const message = candidate.message as
-			| { role?: unknown; stopReason?: unknown; errorMessage?: unknown }
-			| undefined;
+		const message = candidate.message as AssistantErrorMessage | undefined;
 		const role = message?.role;
 		if (role === "assistant") {
 			if (message?.stopReason === "error" || typeof message?.errorMessage === "string") {
 				return {
 					type: "session_error",
 					piboSessionId,
-					error:
-						typeof message.errorMessage === "string" && message.errorMessage.length > 0
-							? message.errorMessage
-							: "Assistant message failed.",
+					error: formatAssistantError(message, context),
+					errorDetails: assistantErrorDetails(message, context),
 				};
 			}
 			const textPart = lastTextPartFromMessage(candidate.message);
@@ -418,7 +492,8 @@ export class RoutedSession {
 	private bindRuntimeSession(): void {
 		this.unsubscribe?.();
 		this.unsubscribe = this.runtime.session.subscribe((event) => {
-			const normalized = normalizePiEvent(this.piboSessionId, event);
+			const model = this.runtime.session.model as { contextWindow?: unknown } | undefined;
+			const normalized = normalizePiEvent(this.piboSessionId, event, { contextWindow: numberValue(model?.contextWindow) });
 			if (normalized) {
 				this.emit(this.withActiveMessage(normalized));
 			}
