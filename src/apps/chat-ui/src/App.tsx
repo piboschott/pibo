@@ -43,9 +43,9 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, installUserSkill, listUserSkills, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, type SaveCustomAgentInput, type UserSettings } from "./api";
+import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, getWorkflowVersionPicker, installUserSkill, listUserSkills, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postProjectWorkflowSession, postProjectWorkflowSessionStart, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, uploadChatFiles, type SaveCustomAgentInput, type UserSettings, type WorkflowVersionPickerOption } from "./api";
 import { THINKING_LEVELS } from "./types";
-import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill } from "./types";
+import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill, WorkflowLifecycleEventRecord } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
@@ -62,6 +62,7 @@ import { McpToolsView } from "./context/McpToolsView";
 import { ContextBuildView } from "./context/ContextBuildView";
 import { CronArea } from "./CronArea";
 import { RalphArea } from "./RalphArea";
+import { WorkflowsArea } from "./WorkflowsArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
 import {
@@ -78,13 +79,14 @@ import {
 	traceSummaryQueriesForSession,
 } from "./cache";
 
-type Area = "sessions" | "projects" | "cron" | "ralph" | "agents" | "context" | "settings";
+type Area = "sessions" | "projects" | "workflows" | "cron" | "ralph" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
 type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
 	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
+	| { area: "workflows"; draftId?: string; viewWorkflowId?: string; viewWorkflowVersion?: string }
 	| { area: "agents" }
 	| { area: "cron" }
 	| { area: "ralph" }
@@ -123,6 +125,11 @@ const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
 const SESSION_PAGE_SIZE = 120;
 const ARCHIVED_SESSION_PAGE_SIZE = 60;
+const PROJECT_ROUTING_UNKNOWN_TIMESTAMP = "1970-01-01T00:00:00.000Z";
+const PROJECT_SESSION_VIEW_ALLOWED_IDS: Record<ChatSessionViewId, readonly ChatSessionViewId[]> = {
+	terminal: ["terminal"],
+	workflow: ["workflow"],
+};
 
 type StoredSelection = {
 	roomId?: string;
@@ -450,6 +457,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 					return;
 				}
 				void navigate({ to: "/projects", search: sessionViewSearch, replace });
+				return;
+			}
+			if (target.area === "workflows") {
+				if (target.draftId) {
+					void navigate({ to: "/workflows/drafts/$draftId", params: { draftId: target.draftId }, replace });
+					return;
+				}
+				void navigate({ to: "/workflows", replace });
 				return;
 			}
 			if (target.area === "agents") {
@@ -948,6 +963,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 				description: "Download a file by absolute path or relative to the current working directory.",
 			},
 			{
+				slash: "/upload",
+				action: "upload",
+				description: "Upload one or more files to ~/.pibo/uploads.",
+			},
+			{
 				slash: "/thinking-show",
 				action: "thinking-show",
 				description: "Toggle historical thinking display in this browser.",
@@ -1412,7 +1432,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
 					</div>
 					<nav className="flex gap-1 flex-wrap">
-					{(["sessions", "projects", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
+					{(["sessions", "projects", "workflows", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
 						<button
 							key={item}
 							type="button"
@@ -1451,7 +1471,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 			<div
 				className={`min-h-0 ${
-					(area === "agents" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
+					(area === "agents" || area === "workflows" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
 						(area === "sessions" || area === "projects") && showRawEvents
 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-1"
 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-1"
@@ -1475,6 +1495,12 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onAgentsChanged={() => void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { selectSession: false })}
 						creatingSession={creatingSession || selectedRoomArchived}
 					/>
+				) : area === "workflows" ? (
+					<WorkflowsArea
+						draftId={route.area === "workflows" ? route.draftId : undefined}
+						viewWorkflowId={route.area === "workflows" ? route.viewWorkflowId : undefined}
+						viewWorkflowVersion={route.area === "workflows" ? route.viewWorkflowVersion : undefined}
+					/>
 				) : area === "projects" ? (
 					<ProjectsArea
 						baseBootstrap={bootstrap}
@@ -1482,7 +1508,6 @@ export function App({ route }: { route: ChatAppRoute }) {
 						routePiboSessionId={routePiboSessionId}
 						sessionViewId={sessionViewId}
 						sessionViews={sessionViews}
-						currentSessionView={currentSessionView}
 						showRawEvents={showRawEvents}
 						showThinking={showThinking}
 						expandThinking={expandThinking}
@@ -1907,7 +1932,6 @@ function ProjectsArea({
 	routePiboSessionId,
 	sessionViewId,
 	sessionViews,
-	currentSessionView,
 	showRawEvents,
 	showThinking,
 	expandThinking,
@@ -1929,7 +1953,6 @@ function ProjectsArea({
 	routePiboSessionId?: string;
 	sessionViewId: ChatSessionViewId;
 	sessionViews: ReturnType<typeof listChatSessionViews>;
-	currentSessionView: ReturnType<typeof getChatSessionView>;
 	showRawEvents: boolean;
 	showThinking: boolean;
 	expandThinking: boolean;
@@ -1951,6 +1974,15 @@ function ProjectsArea({
 	const [showArchivedProjects, setShowArchivedProjects] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedProjects") === "true");
 	const [showArchivedSessions, setShowArchivedSessions] = useState(() => localStorage.getItem("pibo.chat.projects.showArchivedSessions") === "true");
 	const [creatingSession, setCreatingSession] = useState(false);
+	const [creatingWorkflowSession, setCreatingWorkflowSession] = useState(false);
+	const [workflowPickerState, setWorkflowPickerState] = useState<"loading" | "loaded" | "error">("loading");
+	const [workflowPickerError, setWorkflowPickerError] = useState<string | null>(null);
+	const [workflowVersionOptions, setWorkflowVersionOptions] = useState<WorkflowVersionPickerOption[]>([]);
+	const [selectedWorkflowVersionKey, setSelectedWorkflowVersionKey] = useState("");
+	const [workflowSessionTitle, setWorkflowSessionTitle] = useState("");
+	const [startingWorkflowSessionId, setStartingWorkflowSessionId] = useState<string | null>(null);
+	const [workflowStartMessages, setWorkflowStartMessages] = useState<Record<string, string>>({});
+	const [workflowCreateDiagnostics, setWorkflowCreateDiagnostics] = useState<WorkflowUiDiagnostic[]>([]);
 	const [autoRenameSessionId, setAutoRenameSessionId] = useState<string | null>(null);
 	const [composerText, setComposerText] = useState(() => routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
@@ -1982,6 +2014,28 @@ function ProjectsArea({
 	}, [load]);
 
 	useEffect(() => {
+		let cancelled = false;
+		setWorkflowPickerState("loading");
+		setWorkflowPickerError(null);
+		getWorkflowVersionPicker()
+			.then((picker) => {
+				if (cancelled) return;
+				setWorkflowVersionOptions(picker.options);
+				const selected = picker.options.find((option) => option.id === picker.selectedWorkflowId && option.version === picker.selectedWorkflowVersion) ?? picker.options[0];
+				setSelectedWorkflowVersionKey((current) => current || (selected ? workflowVersionOptionKey(selected) : ""));
+				setWorkflowPickerState("loaded");
+			})
+			.catch((caught: unknown) => {
+				if (cancelled) return;
+				setWorkflowPickerError(errorMessage(caught));
+				setWorkflowPickerState("error");
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
 		setComposerText(routePiboSessionId ? readStoredComposerDraft(routePiboSessionId) : "");
 	}, [routePiboSessionId]);
 
@@ -2007,6 +2061,13 @@ function ProjectsArea({
 		capabilities: data?.capabilities ?? baseBootstrap.capabilities,
 		sessions: data?.sessions ?? [],
 	}) as BootstrapData, [baseBootstrap, data]);
+	const projectSessionViewRouting = useMemo(() => resolveProjectSessionViewRouting({
+		selectedSessionNode,
+		selectedProjectSession,
+		selectedSession: data?.session,
+		selectedProject,
+	}), [data?.session, selectedProject, selectedProjectSession, selectedSessionNode]);
+	const projectCurrentSessionView = useMemo(() => getChatSessionView(projectSessionViewRouting.viewId), [projectSessionViewRouting.viewId]);
 
 	const createProject = async () => {
 		const name = window.prompt("Project name");
@@ -2035,6 +2096,67 @@ function ProjectsArea({
 			onError(errorMessage(caught));
 		} finally {
 			setCreatingSession(false);
+		}
+	};
+
+	const createWorkflowProjectSession = async () => {
+		if (!selectedProject) return;
+		const selectedWorkflow = workflowVersionOptions.find((option) => workflowVersionOptionKey(option) === selectedWorkflowVersionKey);
+		if (!selectedWorkflow) {
+			setWorkflowCreateDiagnostics([{
+				code: "ProjectWorkflowSessionCreate.missingWorkflowVersion",
+				message: "Select a workflow version before creating the Project session.",
+				severity: "error",
+			}]);
+			onError("Select a workflow version before creating the Project session.");
+			return;
+		}
+		setCreatingWorkflowSession(true);
+		setWorkflowCreateDiagnostics([]);
+		try {
+			const title = workflowSessionTitle.trim();
+			const created = await postProjectWorkflowSession(selectedProject.id, {
+				profile: selectedSessionProfile,
+				workflowId: selectedWorkflow.id,
+				workflowVersion: selectedWorkflow.version,
+				...(title ? { title } : {}),
+			});
+			setWorkflowSessionTitle("");
+			setWorkflowCreateDiagnostics([]);
+			onNavigate(selectedProject.id, created.session.id, false, { closeMobileSidebar: false });
+			await load({ projectId: selectedProject.id, piboSessionId: created.session.id });
+		} catch (caught) {
+			setWorkflowCreateDiagnostics(workflowDiagnosticsFromError(caught));
+			onError(errorMessage(caught));
+		} finally {
+			setCreatingWorkflowSession(false);
+		}
+	};
+
+	const startWorkflowProjectSession = async (projectSession: PiboProjectSession) => {
+		if (!selectedProject) return;
+		setStartingWorkflowSessionId(projectSession.piboSessionId);
+		try {
+			const response = await postProjectWorkflowSessionStart(selectedProject.id, projectSession.piboSessionId);
+			const message = response.projectSession.workflowRunId
+				? "Workflow run started."
+				: "Start accepted after validation. No workflow run record exists yet.";
+			setWorkflowStartMessages((current) => ({ ...current, [projectSession.piboSessionId]: message }));
+			onError(null);
+			await load({ projectId: selectedProject.id, piboSessionId: projectSession.piboSessionId });
+		} catch (caught) {
+			const diagnostics = workflowDiagnosticsFromError(caught);
+			if (diagnostics.length) {
+				const codes = diagnostics.map((diagnostic) => diagnostic.code).filter(Boolean).slice(0, 3).join(", ");
+				setWorkflowStartMessages((current) => ({
+					...current,
+					[projectSession.piboSessionId]: `Start blocked: ${codes || "validation diagnostics"}`,
+				}));
+			}
+			onError(errorMessage(caught));
+			await load({ projectId: selectedProject.id, piboSessionId: projectSession.piboSessionId });
+		} finally {
+			setStartingWorkflowSessionId(null);
 		}
 	};
 
@@ -2088,6 +2210,16 @@ function ProjectsArea({
 		await load({ projectId: selectedProject?.id, piboSessionId: selectedPiboSessionId });
 		return true;
 	};
+
+	const workflowStartPanel = selectedProject && selectedProjectSession && isConfiguredWorkflowSessionPending(selectedProjectSession) ? (
+		<ConfiguredWorkflowStartPanel
+			projectSession={selectedProjectSession}
+			lifecycleEvents={data?.workflowLifecycleEvents ?? []}
+			starting={startingWorkflowSessionId === selectedProjectSession.piboSessionId}
+			message={workflowStartMessages[selectedProjectSession.piboSessionId] ?? null}
+			onStart={() => void startWorkflowProjectSession(selectedProjectSession)}
+		/>
+	) : null;
 
 	if (loading && !data) {
 		return <main className="min-h-0 grid place-items-center text-slate-400">Loading Projects...</main>;
@@ -2149,9 +2281,9 @@ function ProjectsArea({
 								<button type="button" onClick={() => { const next = !showArchivedSessions; setShowArchivedSessions(next); localStorage.setItem("pibo.chat.projects.showArchivedSessions", String(next)); }} title={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} aria-label={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedSessions ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedSessions ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
 							</div>
 						</div>
-						{sessionGroups.active.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} autoRename={autoRenameSessionId === session.piboSessionId} onAutoRenameConsumed={() => setAutoRenameSessionId(null)} />)}
+						{sessionGroups.active.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} autoRename={autoRenameSessionId === session.piboSessionId} onAutoRenameConsumed={() => setAutoRenameSessionId(null)} showWorkflowSessionKindMarkers />)}
 						{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active project sessions</div> : null}
-						{showArchivedSessions ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Project Sessions</div>{sessionGroups.archived.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} />)}{sessionGroups.archived.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived project sessions</div> : null}</div> : null}
+						{showArchivedSessions ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Project Sessions</div>{sessionGroups.archived.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} showWorkflowSessionKindMarkers />)}{sessionGroups.archived.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived project sessions</div> : null}</div> : null}
 					</div>
 				</div>
 			</aside>
@@ -2160,14 +2292,35 @@ function ProjectsArea({
 				selectedPiboSessionId={selectedPiboSessionId}
 				selectedRoomId={null}
 				selectedRoomArchived={Boolean(selectedProject?.archivedAt)}
-				workflowProjectSession={selectedProjectSession}
+				workflowProjectSession={projectSessionViewRouting.workflowProjectSession}
+				workflowLifecycleEvents={data?.workflowLifecycleEvents ?? []}
+				projectSessionCreatePanel={selectedProject ? (
+					<ProjectWorkflowSessionCreatePanel
+						project={selectedProject}
+						options={workflowVersionOptions}
+						selectedOptionKey={selectedWorkflowVersionKey}
+						titleValue={workflowSessionTitle}
+						loadState={workflowPickerState}
+						errorMessage={workflowPickerError}
+						creating={creatingWorkflowSession}
+						diagnostics={workflowCreateDiagnostics}
+						onSelectedOptionChange={(value) => {
+							setSelectedWorkflowVersionKey(value);
+							setWorkflowCreateDiagnostics([]);
+						}}
+						onTitleChange={setWorkflowSessionTitle}
+						onCreate={() => void createWorkflowProjectSession()}
+					/>
+				) : null}
+				workflowStartPanel={workflowStartPanel}
 				selectedSessionProfile={selectedSessionProfile}
 				selectedSessionActiveModel={resolveSessionActiveModelLabel(traceBootstrap, selectedSessionNode ?? { profile: selectedSessionProfile })}
 				selectedSessionStatus={selectedSessionNode?.status}
-				sessionViewId={sessionViewId}
+				sessionViewId={projectSessionViewRouting.viewId}
 				sessionViews={sessionViews}
-				currentSessionView={currentSessionView}
-				creatingSession={creatingSession}
+				currentSessionView={projectCurrentSessionView}
+				allowedSessionViewIds={PROJECT_SESSION_VIEW_ALLOWED_IDS[projectSessionViewRouting.viewId]}
+				creatingSession={creatingSession || creatingWorkflowSession}
 				showRawEvents={showRawEvents}
 				showThinking={showThinking}
 				expandThinking={expandThinking}
@@ -2196,6 +2349,297 @@ function ProjectsArea({
 			/>
 		</>
 	);
+}
+
+function ProjectWorkflowSessionCreatePanel({
+	project,
+	options,
+	selectedOptionKey,
+	titleValue,
+	loadState,
+	errorMessage,
+	creating,
+	diagnostics,
+	onSelectedOptionChange,
+	onTitleChange,
+	onCreate,
+}: {
+	project: PiboProject;
+	options: WorkflowVersionPickerOption[];
+	selectedOptionKey: string;
+	titleValue: string;
+	loadState: "loading" | "loaded" | "error";
+	errorMessage: string | null;
+	creating: boolean;
+	diagnostics: WorkflowUiDiagnostic[];
+	onSelectedOptionChange: (value: string) => void;
+	onTitleChange: (value: string) => void;
+	onCreate: () => void;
+}) {
+	const selectedOption = options.find((option) => workflowVersionOptionKey(option) === selectedOptionKey);
+	const disabled = creating || loadState !== "loaded" || !selectedOption || Boolean(project.archivedAt);
+	return (
+		<section className="rounded-sm border border-slate-800 bg-[#151f24] p-4 shadow-lg shadow-black/10" aria-labelledby="project-workflow-create-title">
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div className="min-w-0 max-w-2xl">
+					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#11a4d4]"><Layers size={13} />Workflow-backed session</div>
+					<h2 id="project-workflow-create-title" className="mt-1 text-sm font-bold text-slate-100">Create workflow Project session</h2>
+					<p className="mt-1 text-xs leading-5 text-slate-500">
+						Choose a published workflow version from the global catalog and save a configured Project session. Creation does not start a workflow run.
+					</p>
+				</div>
+				<div className="rounded-sm border border-slate-800 bg-[#101d22]/80 px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">
+					Project: <span className="text-slate-300">{project.name}</span>
+				</div>
+			</div>
+			<div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,18rem)_auto] md:items-end">
+				<label className="grid gap-1.5 text-xs font-semibold text-slate-300">
+					<span>Workflow version</span>
+					<select
+						aria-label="Workflow version"
+						className="rounded-sm border border-slate-700 bg-[#101d22] px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-[#11a4d4] disabled:opacity-60"
+						value={selectedOptionKey}
+						onChange={(event) => onSelectedOptionChange(event.target.value)}
+						disabled={creating || loadState !== "loaded"}
+					>
+						<option value="">Select a workflow version</option>
+						{options.map((option) => (
+							<option key={workflowVersionOptionKey(option)} value={workflowVersionOptionKey(option)}>{workflowVersionOptionLabel(option)}</option>
+						))}
+					</select>
+				</label>
+				<label className="grid gap-1.5 text-xs font-semibold text-slate-300">
+					<span>Session name</span>
+					<input
+						aria-label="Workflow session name"
+						className="rounded-sm border border-slate-700 bg-[#101d22] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#11a4d4] disabled:opacity-60"
+						value={titleValue}
+						onChange={(event) => onTitleChange(event.target.value)}
+						placeholder="Optional"
+						disabled={creating}
+					/>
+				</label>
+				<button
+					type="button"
+					onClick={onCreate}
+					disabled={disabled}
+					className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-[#11a4d4]/60 bg-[#11a4d4]/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-[#11a4d4] transition hover:bg-[#11a4d4]/15 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900/40 disabled:text-slate-500"
+				>
+					{creating ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+					Save configured session
+				</button>
+			</div>
+			{selectedOption ? (
+				<div className="mt-3 rounded-sm border border-slate-800 bg-[#101d22]/70 p-3 text-xs leading-5 text-slate-500">
+					<span className="font-semibold text-slate-300">{selectedOption.title}</span> <span className="font-mono text-slate-400">{selectedOption.id}@{selectedOption.version}</span>
+					{selectedOption.description ? <span> — {selectedOption.description}</span> : null}
+				</div>
+			) : null}
+			<ProjectWorkflowScopeBoundaryPanel />
+			{loadState === "loading" ? <div className="mt-3 text-xs text-slate-500">Loading workflow catalog…</div> : null}
+			{loadState === "error" ? <div className="mt-3 rounded-sm border border-red-900/70 bg-red-950/40 p-3 text-xs text-red-200" role="alert">{errorMessage ?? "Failed to load workflow catalog."}</div> : null}
+			{diagnostics.length ? <WorkflowDiagnosticsNotice label="Create-blocking diagnostics" diagnostics={diagnostics} /> : null}
+		</section>
+	);
+}
+
+function WorkflowDiagnosticsNotice({ label, diagnostics }: { label: string; diagnostics: WorkflowUiDiagnostic[] }) {
+	return (
+		<div className="mt-3 rounded-sm border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100" role="alert" aria-label={label}>
+			<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200"><AlertTriangle size={12} />{label}</div>
+			<div className="mt-2 space-y-2">
+				{diagnostics.map((diagnostic, index) => (
+					<div key={`${diagnostic.code ?? "diagnostic"}:${diagnostic.path ?? diagnostic.registryRef ?? diagnostic.nodeId ?? diagnostic.edgeId ?? index}`} className="rounded-sm border border-red-500/25 bg-[#0b0f14]/60 p-2">
+						<div className="break-words text-red-100">{diagnostic.message ?? diagnostic.code ?? "Workflow validation blocked this action."}</div>
+						<div className="mt-1 flex flex-wrap gap-1 font-mono text-[10px] text-red-200/70">
+							{diagnostic.code ? <span>{diagnostic.code}</span> : null}
+							{diagnostic.path ? <span>{diagnostic.path}</span> : null}
+							{diagnostic.nodeId ? <span>node:{diagnostic.nodeId}</span> : null}
+							{diagnostic.edgeId ? <span>edge:{diagnostic.edgeId}</span> : null}
+							{diagnostic.registryRef ? <span>{diagnostic.registryRef}</span> : null}
+						</div>
+						{diagnostic.hint ? <div className="mt-1 text-[11px] text-red-100/75">{diagnostic.hint}</div> : null}
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function ProjectWorkflowScopeBoundaryPanel() {
+	return (
+		<div className="mt-3 rounded-sm border border-amber-700/60 bg-amber-950/15 p-3 text-[11px] leading-5 text-amber-100/80" aria-label="Project workflow V2 explicit non-goals">
+			<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200"><Lock size={12} />V2 scope boundary</div>
+			<p className="mt-2">
+				Project workflow sessions select published catalog versions and save configured sessions only. They do not expose workflow templates, workflow slash commands, workflow tools for agents, inline TypeScript/JavaScript/shell/eval code, raw XState editing, TypeScript export, YAML/JSON product import/export, or Zod schema authoring.
+			</p>
+		</div>
+	);
+}
+
+function ConfiguredWorkflowStartPanel({
+	projectSession,
+	lifecycleEvents,
+	starting,
+	message,
+	onStart,
+}: {
+	projectSession: PiboProjectSession;
+	lifecycleEvents: readonly WorkflowLifecycleEventRecord[];
+	starting: boolean;
+	message: string | null;
+	onStart: () => void;
+}) {
+	const configurationSummary = workflowConfiguredSessionConfigurationSummary(projectSession);
+	const validationEvent = latestWorkflowSessionValidationEvent(projectSession.piboSessionId, lifecycleEvents);
+	const validation = workflowConfiguredSessionValidationSummary(validationEvent);
+	const blockingDiagnostics = latestWorkflowStartBlockingDiagnostics(projectSession.piboSessionId, lifecycleEvents);
+	const messageClass = workflowStartPanelMessageClass(message);
+	return (
+		<section className="rounded-sm border border-[#11a4d4]/35 bg-[#111820] p-4 shadow-lg shadow-black/10" aria-labelledby="project-workflow-start-title">
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div className="min-w-0 max-w-2xl">
+					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#11a4d4]"><Power size={13} />Configured/not-started</div>
+					<h2 id="project-workflow-start-title" className="mt-1 text-sm font-bold text-slate-100">Ready to start workflow</h2>
+					<p className="mt-1 text-xs leading-5 text-slate-500">
+						This Project session is saved for review. Start explicitly when the configuration is ready.
+					</p>
+				</div>
+				<button
+					type="button"
+					onClick={onStart}
+					disabled={starting}
+					className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-300 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-900/40 disabled:text-slate-500"
+				>
+					{starting ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
+					Start workflow
+				</button>
+			</div>
+			<div className="mt-4 grid gap-2 text-xs md:grid-cols-2 xl:grid-cols-4">
+				<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-3">
+					<div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Workflow</div>
+					<div className="mt-1 truncate font-mono text-slate-300" title={projectSession.workflowId}>{projectSession.workflowId}</div>
+					{projectSession.workflowVersion ? <div className="mt-1 text-slate-500">version {projectSession.workflowVersion}</div> : null}
+				</div>
+				<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-3">
+					<div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Configuration summary</div>
+					<div className="mt-1 text-slate-300">{configurationSummary.primary}</div>
+					<div className="mt-1 text-slate-500">{configurationSummary.secondary}</div>
+				</div>
+				<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-3">
+					<div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Validation state</div>
+					<div className={validation.className}>{validation.label}</div>
+					<div className="mt-1 text-slate-500">{validation.description}</div>
+				</div>
+				<div className="rounded-sm border border-slate-800 bg-[#101d22]/70 p-3">
+					<div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Run history</div>
+					<div className="mt-1 text-slate-300">No current run attempts</div>
+					<div className="mt-1 text-slate-500">No workflow run record exists until Start succeeds.</div>
+				</div>
+			</div>
+			{blockingDiagnostics.length ? (
+				<div className="mt-3 rounded-sm border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100" role="alert" aria-label="Start-blocking diagnostics">
+					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200"><AlertTriangle size={12} />Start-blocking diagnostics</div>
+					<div className="mt-2 space-y-2">
+						{blockingDiagnostics.map((diagnostic, index) => (
+							<div key={`${diagnostic.code}:${diagnostic.path ?? diagnostic.registryRef ?? index}`} className="rounded-sm border border-red-500/25 bg-[#0b0f14]/60 p-2">
+								<div className="break-words text-red-100">{diagnostic.message}</div>
+								<div className="mt-1 flex flex-wrap gap-1 font-mono text-[10px] text-red-200/70">
+									<span>{diagnostic.code}</span>
+									{diagnostic.path ? <span>{diagnostic.path}</span> : null}
+									{diagnostic.registryRef ? <span>{diagnostic.registryRef}</span> : null}
+								</div>
+								{diagnostic.hint ? <div className="mt-1 text-[11px] text-red-100/75">{diagnostic.hint}</div> : null}
+							</div>
+						))}
+					</div>
+				</div>
+			) : null}
+			{message ? <div className={`mt-3 rounded-sm border p-3 text-xs ${messageClass}`} role="status">{message}</div> : null}
+		</section>
+	);
+}
+
+type WorkflowLifecycleDiagnostic = WorkflowLifecycleEventRecord["diagnostics"][number];
+type WorkflowUiDiagnostic = Partial<WorkflowLifecycleDiagnostic> & { code?: string; message?: string };
+
+function workflowConfiguredSessionConfigurationSummary(projectSession: PiboProjectSession): { primary: string; secondary: string } {
+	const configuration = projectSession.configuration;
+	const inputCount = Object.keys(configuration?.inputValues ?? {}).length;
+	const promptOverrideCount = Object.keys(configuration?.promptOverrides ?? {}).length;
+	const modelLabel = configuration?.model ? `${configuration.model.provider}/${configuration.model.id}` : "default model";
+	const thinkingLabel = configuration?.thinkingLevel ? `${configuration.thinkingLevel} thinking` : "default thinking";
+	const fastModeLabel = configuration?.fastMode === true ? "fast mode on" : configuration?.fastMode === false ? "fast mode off" : "default speed";
+	return {
+		primary: `${inputCount} input ${inputCount === 1 ? "value" : "values"} · ${promptOverrideCount} prompt ${promptOverrideCount === 1 ? "override" : "overrides"}`,
+		secondary: `${modelLabel} · ${thinkingLabel} · ${fastModeLabel}`,
+	};
+}
+
+function latestWorkflowSessionValidationEvent(piboSessionId: string, events: readonly WorkflowLifecycleEventRecord[]): WorkflowLifecycleEventRecord | undefined {
+	return latestWorkflowLifecycleEvent(events.filter((event) => event.piboSessionId === piboSessionId && Boolean(event.validation)));
+}
+
+function latestWorkflowStartBlockingDiagnostics(piboSessionId: string, events: readonly WorkflowLifecycleEventRecord[]): WorkflowLifecycleDiagnostic[] {
+	const blockedEvent = latestWorkflowLifecycleEvent(events.filter((event) => event.piboSessionId === piboSessionId && event.type === "project.workflow_start.blocked"));
+	return (blockedEvent?.diagnostics ?? []).filter((diagnostic) => diagnostic.severity === "error");
+}
+
+function latestWorkflowLifecycleEvent(events: readonly WorkflowLifecycleEventRecord[]): WorkflowLifecycleEventRecord | undefined {
+	return events.reduce<WorkflowLifecycleEventRecord | undefined>((latest, event) => {
+		if (!latest) return event;
+		return event.createdAt > latest.createdAt ? event : latest;
+	}, undefined);
+}
+
+function workflowConfiguredSessionValidationSummary(event: WorkflowLifecycleEventRecord | undefined): { label: string; description: string; className: string } {
+	if (!event?.validation) {
+		return {
+			label: "not checked yet",
+			description: "Validation runs before Start creates a workflow run.",
+			className: "mt-1 text-slate-300",
+		};
+	}
+	const validation = event.validation;
+	const counts = `${validation.errorCount} errors · ${validation.warningCount} warnings`;
+	if (validation.blocksRun || validation.validationState === "error") {
+		return {
+			label: `blocked · ${counts}`,
+			description: `Last checked ${shortWorkflowTimestamp(validation.checkedAt)} at ${validation.trigger}.`,
+			className: "mt-1 text-red-200",
+		};
+	}
+	if (validation.validationState === "warning") {
+		return {
+			label: `warnings · ${counts}`,
+			description: `Last checked ${shortWorkflowTimestamp(validation.checkedAt)} at ${validation.trigger}.`,
+			className: "mt-1 text-amber-200",
+		};
+	}
+	return {
+		label: `valid · ${counts}`,
+		description: `Last checked ${shortWorkflowTimestamp(validation.checkedAt)} at ${validation.trigger}.`,
+		className: "mt-1 text-emerald-200",
+	};
+}
+
+function workflowStartPanelMessageClass(message: string | null): string {
+	if (message?.toLowerCase().includes("blocked")) return "border-red-500/40 bg-red-500/10 text-red-200";
+	return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+}
+
+function shortWorkflowTimestamp(value: string): string {
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return value;
+	return parsed.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+}
+
+function workflowVersionOptionKey(option: WorkflowVersionPickerOption): string {
+	return `${option.id}@${option.version}`;
+}
+
+function workflowVersionOptionLabel(option: WorkflowVersionPickerOption): string {
+	return `${option.title} (${option.id}@${option.version})`;
 }
 
 function WorkflowRunsPanel({
@@ -2245,6 +2689,99 @@ function WorkflowRunsPanel({
 
 function isWorkflowBackedProjectSession(projectSession: PiboProjectSession): boolean {
 	return Boolean(projectSession.workflowRunId) || projectSession.state === "workflow" || projectSession.workflowId !== "simple-chat";
+}
+
+function isConfiguredWorkflowSessionPending(projectSession: PiboProjectSession): boolean {
+	return isWorkflowBackedProjectSession(projectSession) && projectSession.state === "configured" && !projectSession.workflowRunId;
+}
+
+type ProjectSessionViewRouting = {
+	viewId: ChatSessionViewId;
+	workflowProjectSession?: PiboProjectSession;
+};
+
+function resolveProjectSessionViewRouting(input: {
+	selectedSessionNode?: PiboWebSessionNode;
+	selectedProjectSession?: PiboProjectSession;
+	selectedSession?: PiboSession;
+	selectedProject?: PiboProject;
+}): ProjectSessionViewRouting {
+	const workflowSessionKind = input.selectedSessionNode?.workflowSessionKind ?? workflowSessionKindFromProjectMetadata(input.selectedSession?.metadata);
+	if (workflowSessionKind === "main_workflow" || workflowSessionKind === "nested_workflow") {
+		if (input.selectedProjectSession && !isWorkflowBackedProjectSession(input.selectedProjectSession)) {
+			return { viewId: "terminal" };
+		}
+		if (!input.selectedProjectSession && workflowSessionKind === "main_workflow" && selectedMetadataWorkflowId(input.selectedSession?.metadata) === "simple-chat") {
+			return { viewId: "terminal" };
+		}
+		const workflowProjectSession = input.selectedProjectSession && isWorkflowBackedProjectSession(input.selectedProjectSession)
+			? input.selectedProjectSession
+			: createWorkflowViewProjectSession({
+				selectedSessionNode: input.selectedSessionNode,
+				selectedSession: input.selectedSession,
+				selectedProject: input.selectedProject,
+				workflowSessionKind,
+			});
+		return { viewId: "workflow", ...(workflowProjectSession ? { workflowProjectSession } : {}) };
+	}
+	if (workflowSessionKind === "agent_node" || workflowSessionKind === "subagent") {
+		return { viewId: "terminal" };
+	}
+	if (input.selectedProjectSession && isWorkflowBackedProjectSession(input.selectedProjectSession)) {
+		return { viewId: "workflow", workflowProjectSession: input.selectedProjectSession };
+	}
+	return { viewId: "terminal" };
+}
+
+function workflowSessionKindFromProjectMetadata(metadata: PiboSession["metadata"] | undefined): PiboWebSessionNode["workflowSessionKind"] {
+	const kind = metadataString(metadata, "workflowSessionKind");
+	if (kind === "main_workflow" || kind === "nested_workflow" || kind === "agent_node" || kind === "subagent") return kind;
+	if (metadataString(metadata, "projectSessionKind") === "main") return "main_workflow";
+	return undefined;
+}
+
+function selectedMetadataWorkflowId(metadata: PiboSession["metadata"] | undefined): string | undefined {
+	return metadataString(metadata, "projectWorkflowId") ?? metadataString(metadata, "workflowId");
+}
+
+function createWorkflowViewProjectSession(input: {
+	selectedSessionNode?: PiboWebSessionNode;
+	selectedSession?: PiboSession;
+	selectedProject?: PiboProject;
+	workflowSessionKind: "main_workflow" | "nested_workflow";
+}): PiboProjectSession | undefined {
+	const piboSessionId = input.selectedSessionNode?.piboSessionId ?? input.selectedSession?.id;
+	if (!piboSessionId) return undefined;
+	const metadata = input.selectedSession?.metadata;
+	const workflowId = selectedMetadataWorkflowId(metadata)
+		?? (input.workflowSessionKind === "nested_workflow" ? "nested-workflow-session" : "workflow-session");
+	const workflowVersion = metadataString(metadata, "projectWorkflowVersion") ?? metadataString(metadata, "workflowVersion");
+	const workflowRunId = metadataString(metadata, "workflowRunId");
+	return {
+		projectId: input.selectedProject?.id ?? metadataString(metadata, "projectId") ?? "project",
+		piboSessionId,
+		kind: input.workflowSessionKind === "nested_workflow" ? "sub" : "main",
+		workflowId,
+		...(workflowVersion ? { workflowVersion } : {}),
+		...(workflowRunId ? { workflowRunId } : {}),
+		...(input.selectedSessionNode?.parentId ? { parentMainSessionId: input.selectedSessionNode.parentId } : {}),
+		...(input.selectedSessionNode?.title || input.selectedSession?.title ? { title: input.selectedSessionNode?.title ?? input.selectedSession?.title } : {}),
+		state: workflowStateFromSessionNode(input.selectedSessionNode, workflowRunId),
+		...(input.selectedSessionNode?.archived !== undefined ? { archived: input.selectedSessionNode.archived } : {}),
+		createdAt: input.selectedSession?.createdAt ?? PROJECT_ROUTING_UNKNOWN_TIMESTAMP,
+		updatedAt: input.selectedSession?.updatedAt ?? input.selectedSessionNode?.lastActivityAt ?? PROJECT_ROUTING_UNKNOWN_TIMESTAMP,
+	};
+}
+
+function workflowStateFromSessionNode(sessionNode: PiboWebSessionNode | undefined, workflowRunId: string | undefined): PiboProjectSession["state"] {
+	if (sessionNode?.status === "error") return "failed";
+	if (sessionNode?.status === "running") return "running";
+	return workflowRunId ? "workflow" : "configured";
+}
+
+function metadataString(metadata: PiboSession["metadata"] | undefined, key: string): string | undefined {
+	const value = metadata?.[key];
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function workflowSessionLabel(projectSession: PiboProjectSession): string {
@@ -2440,9 +2977,13 @@ function SessionTracePane({
 	selectedSessionStatus,
 	selectedSessionSignal,
 	workflowProjectSession,
+	workflowLifecycleEvents,
+	projectSessionCreatePanel,
+	workflowStartPanel,
 	sessionViewId,
 	sessionViews,
 	currentSessionView,
+	allowedSessionViewIds,
 	creatingSession,
 	showRawEvents,
 	showThinking,
@@ -2475,9 +3016,13 @@ function SessionTracePane({
 	selectedSessionStatus?: PiboWebSessionStatus;
 	selectedSessionSignal?: PiboSignalSnapshot["sessions"][string];
 	workflowProjectSession?: PiboProjectSession;
+	workflowLifecycleEvents?: readonly WorkflowLifecycleEventRecord[];
+	projectSessionCreatePanel?: ReactNode;
+	workflowStartPanel?: ReactNode;
 	sessionViewId: ChatSessionViewId;
 	sessionViews: ReturnType<typeof listChatSessionViews>;
 	currentSessionView: ReturnType<typeof getChatSessionView>;
+	allowedSessionViewIds?: readonly ChatSessionViewId[];
 	creatingSession: boolean;
 	showRawEvents: boolean;
 	showThinking: boolean;
@@ -2810,6 +3355,7 @@ function SessionTracePane({
 	const workflowHeader = workflowProjectSession && isWorkflowBackedProjectSession(workflowProjectSession)
 		? createWorkflowHeaderSummary(workflowProjectSession, selectedSessionStatus)
 		: null;
+	const allowedSessionViewIdSet = useMemo(() => allowedSessionViewIds ? new Set(allowedSessionViewIds) : null, [allowedSessionViewIds]);
 	const copyHeaderPiboSessionId = () => {
 		if (!headerPiboSessionId) return;
 		void copyTextToClipboard(headerPiboSessionId).catch(() => undefined);
@@ -2876,22 +3422,26 @@ function SessionTracePane({
 					</div>
 					<div className="flex items-center gap-2">
 						<div className="flex items-center rounded-sm border border-slate-700 bg-[#0e1116] p-0.5">
-							{sessionViews.map((view) => (
-								<button
-									key={view.id}
-									type="button"
-									onClick={() => onSelectSessionView(view.id)}
-									title={view.description ?? view.label}
-									aria-label={`Switch to ${view.label} view`}
-									className={`min-w-20 px-2.5 py-1 text-[11px] font-bold tracking-wide max-[980px]:min-w-0 max-[980px]:px-1.5 ${
-										sessionViewId === view.id
-											? "bg-[#11a4d4]/10 text-[#11a4d4]"
-											: "text-slate-400 hover:text-[#11a4d4]"
-									}`}
-								>
-									{view.label}
-								</button>
-							))}
+							{sessionViews.map((view) => {
+								const disabledByRouting = Boolean(allowedSessionViewIdSet && !allowedSessionViewIdSet.has(view.id));
+								return (
+									<button
+										key={view.id}
+										type="button"
+										onClick={() => { if (!disabledByRouting) onSelectSessionView(view.id); }}
+										disabled={disabledByRouting}
+										title={disabledByRouting ? `Project session routing uses the ${currentSessionView.label} view for this session kind.` : view.description ?? view.label}
+										aria-label={disabledByRouting ? `${view.label} view unavailable for this Project session kind` : `Switch to ${view.label} view`}
+										className={`min-w-20 px-2.5 py-1 text-[11px] font-bold tracking-wide max-[980px]:min-w-0 max-[980px]:px-1.5 disabled:cursor-not-allowed disabled:text-slate-600 ${
+											sessionViewId === view.id
+												? "bg-[#11a4d4]/10 text-[#11a4d4]"
+												: "text-slate-400 hover:text-[#11a4d4] disabled:hover:text-slate-600"
+										}`}
+									>
+										{view.label}
+									</button>
+								);
+							})}
 						</div>
 						<HeaderIconButton
 							onClick={onToggleRawEvents}
@@ -2921,6 +3471,16 @@ function SessionTracePane({
 						) : null}
 					</div>
 				</div>
+				{projectSessionCreatePanel ? (
+					<div className="border-b border-slate-800 bg-[#101d22] px-4 py-3">
+						{projectSessionCreatePanel}
+					</div>
+				) : null}
+				{workflowStartPanel ? (
+					<div className="border-b border-slate-800 bg-[#101d22] px-4 py-3">
+						{workflowStartPanel}
+					</div>
+				) : null}
 				{currentTraceView?.hasOlderEvents ? (
 					<div className="border-b border-slate-800 bg-[#101d22] px-4 py-2 text-center">
 						<button
@@ -2947,6 +3507,8 @@ function SessionTracePane({
 						selectedSessionStatus,
 						selectedSessionSignal,
 						workflowProjectSession,
+						workflowLifecycleEvents,
+						sessionNodes: bootstrap.sessions,
 						sessionBreadcrumbs,
 						originSession,
 						derivedSessions,
@@ -2960,6 +3522,8 @@ function SessionTracePane({
 							await onRefreshBootstrap();
 							await onRefreshTrace();
 						},
+						onRefreshBootstrap,
+						onError,
 					})
 				)}
 				<Composer
@@ -3332,6 +3896,15 @@ function trimLiveOverlayForBaseTrace(overlay: LiveTraceOverlay | null, baseTrace
 
 function errorMessage(caught: unknown): string {
 	return caught instanceof Error ? caught.message : String(caught);
+}
+
+function workflowDiagnosticsFromError(caught: unknown): WorkflowUiDiagnostic[] {
+	if (!caught || typeof caught !== "object" || !("data" in caught)) return [];
+	const data = (caught as { data?: unknown }).data;
+	if (!data || typeof data !== "object" || !("diagnostics" in data)) return [];
+	const diagnostics = (data as { diagnostics?: unknown }).diagnostics;
+	if (!Array.isArray(diagnostics)) return [];
+	return diagnostics.filter((diagnostic): diagnostic is WorkflowUiDiagnostic => Boolean(diagnostic) && typeof diagnostic === "object");
 }
 
 function SignedOut({ message }: { message: string }) {
@@ -3963,6 +4536,7 @@ function SessionNode({
 	loadingPiboSessionId,
 	autoRename = false,
 	onAutoRenameConsumed,
+	showWorkflowSessionKindMarkers = false,
 }: {
 	node: PiboWebSessionNode;
 	signalNow: number;
@@ -3977,6 +4551,7 @@ function SessionNode({
 	loadingPiboSessionId?: string | null;
 	autoRename?: boolean;
 	onAutoRenameConsumed?: () => void;
+	showWorkflowSessionKindMarkers?: boolean;
 }) {
 	const safeTitle = sessionNodeTitle(node);
 	const [editing, setEditing] = useState(false);
@@ -4025,6 +4600,8 @@ function SessionNode({
 	};
 	const signal = sessionNodeSignal(node, signalNow);
 	const loading = loadingPiboSessionId === node.piboSessionId;
+	const workflowKind = showWorkflowSessionKindMarkers ? workflowSessionKindPresentation(node.workflowSessionKind) : null;
+	const WorkflowKindIcon = workflowKind?.Icon;
 
 	return (
 		<div>
@@ -4089,11 +4666,22 @@ function SessionNode({
 								}
 								onSelect(node.piboSessionId);
 							}}
+							aria-label={workflowKind ? `${workflowKind.ariaLabel}: ${safeTitle}` : `Open session ${safeTitle}`}
 							className="min-w-0 text-left px-1 py-1 grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center"
 						>
 							<span className="min-w-0">
-								<span className={`block text-sm truncate ${node.archived ? "text-slate-500" : "text-slate-200"}`}>{safeTitle}</span>
-								<span className="block text-[10px] font-mono truncate text-slate-500">{node.piboSessionId}</span>
+								<span className="flex min-w-0 items-center gap-1.5">
+									{workflowKind && WorkflowKindIcon ? (
+										<span className={`h-4 w-4 shrink-0 inline-flex items-center justify-center rounded-sm border ${workflowKind.className}`} title={workflowKind.ariaLabel} aria-label={workflowKind.ariaLabel}>
+											<WorkflowKindIcon size={11} aria-hidden="true" />
+										</span>
+									) : null}
+									<span className={`block min-w-0 truncate text-sm ${node.archived ? "text-slate-500" : "text-slate-200"}`}>{safeTitle}</span>
+								</span>
+								<span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+									{workflowKind ? <span className={`shrink-0 rounded-sm border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${workflowKind.className}`} title={workflowKind.ariaLabel}>{workflowKind.label}</span> : null}
+									<span className="min-w-0 truncate font-mono text-[10px] text-slate-500">{node.piboSessionId}</span>
+								</span>
 							</span>
 						</button>
 						<span className="grid grid-rows-[16px_16px] place-items-center gap-0.5">
@@ -4244,6 +4832,7 @@ function SessionNode({
 					onViewContext={onViewContext}
 					depth={depth + 1}
 					loadingPiboSessionId={loadingPiboSessionId}
+					showWorkflowSessionKindMarkers={showWorkflowSessionKindMarkers}
 				/>
 			)) : null}
 		</div>
@@ -4252,6 +4841,21 @@ function SessionNode({
 
 function sessionNodeTitle(node: PiboWebSessionNode): string {
 	return typeof node.title === "string" && node.title ? node.title : "Untitled Session";
+}
+
+function workflowSessionKindPresentation(kind: PiboWebSessionNode["workflowSessionKind"]): { label: string; ariaLabel: string; className: string; Icon: typeof Layers } | null {
+	switch (kind) {
+		case "main_workflow":
+			return { label: "main workflow", ariaLabel: "Main workflow session", className: "border-[#11a4d4]/40 bg-[#11a4d4]/10 text-[#11a4d4]", Icon: Layers };
+		case "nested_workflow":
+			return { label: "nested workflow", ariaLabel: "Nested workflow session", className: "border-violet-400/40 bg-violet-500/10 text-violet-300", Icon: Copy };
+		case "agent_node":
+			return { label: "agent node", ariaLabel: "Workflow agent node session", className: "border-emerald-400/40 bg-emerald-500/10 text-emerald-300", Icon: UserRound };
+		case "subagent":
+			return { label: "subagent", ariaLabel: "Subagent session", className: "border-amber-400/40 bg-amber-500/10 text-amber-300", Icon: User };
+		default:
+			return null;
+	}
 }
 
 function sessionNodeSignal(node: PiboWebSessionNode, now: number): { className: string; title: string } {
@@ -4561,6 +5165,7 @@ function Composer({
 }) {
 	const composerRootRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const activeCommandRef = useRef<HTMLButtonElement>(null);
 	const activeSkillRef = useRef<HTMLButtonElement>(null);
 	const historyNavRef = useRef<{ entries: string[]; index: number; draft: string } | null>(null);
@@ -4568,6 +5173,8 @@ function Composer({
 	const [activeSkillIndex, setActiveSkillIndex] = useState(0);
 	const [cursorPos, setCursorPos] = useState(0);
 	const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([]);
+	const [uploading, setUploading] = useState(false);
+	const [uploadStatus, setUploadStatus] = useState<{ message: string; copyText?: string; error: boolean } | null>(null);
 
 	const skillTrigger = useMemo(() => {
 		for (let i = cursorPos - 1; i >= 0; i--) {
@@ -4728,6 +5335,30 @@ function Composer({
 		return true;
 	};
 
+	const openUploadDialog = () => {
+		if (disabled || uploading) return;
+		fileInputRef.current?.click();
+	};
+
+	const handleFileSelection = async (selectedFiles: readonly File[]) => {
+		if (!selectedFiles.length) return;
+		setUploading(true);
+		setUploadStatus({ message: `Uploading ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}...`, error: false });
+		try {
+			const result = await uploadChatFiles(selectedFiles);
+			const paths = result.files.map((file) => file.path);
+			setUploadStatus({
+				message: `Uploaded ${result.files.length} file${result.files.length === 1 ? "" : "s"} successfully`,
+				copyText: paths.join("\n"),
+				error: false,
+			});
+		} catch (caught) {
+			setUploadStatus({ message: caught instanceof Error ? caught.message : String(caught), error: true });
+		} finally {
+			setUploading(false);
+		}
+	};
+
 	const submit = async () => {
 		if (disabled) return;
 		const text = value.trim();
@@ -4745,12 +5376,52 @@ function Composer({
 		historyNavRef.current = null;
 		appendStoredComposerHistory(text);
 		onValueChange("");
+		if (text.split(/\s+/)[0] === "/upload") {
+			openUploadDialog();
+			return;
+		}
 		if (text.startsWith("/") && (await onCommand(text))) return;
 		await onSend(text);
 	};
 
 	return (
 		<div ref={composerRootRef} className="relative p-3 bg-[#151f24] border-t border-slate-800 max-[980px]:p-2">
+			<input
+				ref={fileInputRef}
+				type="file"
+				multiple
+				className="hidden"
+				onChange={(event) => {
+					const files = Array.from(event.target.files ?? []);
+					event.target.value = "";
+					void handleFileSelection(files);
+				}}
+			/>
+			{uploadStatus ? (
+				<div className={`mb-2 flex items-center gap-2 rounded-sm border px-3 py-2 text-xs ${uploadStatus.error ? "border-red-900 bg-red-950/40 text-red-200" : uploadStatus.copyText ? "border-green-900/60 bg-green-950/30 text-green-300" : "border-slate-700 bg-[#0e1116] text-slate-300"}`}>
+					<span className="min-w-0 flex-1 truncate">{uploadStatus.message}</span>
+					{uploadStatus.copyText ? (
+						<button
+							type="button"
+							onClick={() => void copyTextToClipboard(uploadStatus.copyText!)}
+							title="Copy uploaded file path"
+							aria-label="Copy uploaded file path"
+							className="shrink-0 rounded-sm p-0.5 text-slate-400 hover:bg-slate-800 hover:text-[#11a4d4]"
+						>
+							<Copy size={13} />
+						</button>
+					) : null}
+					<button
+						type="button"
+						onClick={() => setUploadStatus(null)}
+						title="Hide upload status"
+						aria-label="Hide upload status"
+						className="shrink-0 rounded-sm p-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+					>
+						<X size={13} />
+					</button>
+				</div>
+			) : null}
 			{filteredSkills.length ? (
 				<div className="absolute left-3 bottom-full mb-2 w-[min(520px,calc(100%-24px))] max-h-72 overflow-auto bg-[#0e1116] border border-emerald-500 rounded-sm shadow-xl">
 					{filteredSkills.map((skill, index) => (
@@ -4835,7 +5506,7 @@ function Composer({
 				/>
 				<button
 					type="button"
-					disabled={disabled}
+					disabled={disabled || uploading}
 					onClick={() => void submit()}
 					title="Send message"
 					aria-label="Send message"

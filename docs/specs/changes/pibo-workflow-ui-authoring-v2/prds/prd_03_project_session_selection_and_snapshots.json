@@ -1,0 +1,129 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-project-session-selection-snapshots",
+  "description": "Project workflow session creation, delayed start, immutable workflow selection, allowed overrides, and configuration/effective-definition snapshots.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Document session override and pre-start edit policies",
+      "description": "As an implementation lead, I need override scope decisions before session APIs are built so that configuration behavior is explicit.",
+      "acceptanceCriteria": [
+        "Document prompt override eligibility rules for workflow/session nodes",
+        "Document whether model, thinking level, and fast mode apply workflow-wide or per eligible Agent node",
+        "Document whether allowed session-scoped fields remain editable between configured-session creation and first start",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add configured workflow Project session record fields",
+      "description": "As a backend developer, I need Project sessions to record selected workflow metadata so that configured sessions exist before runs start.",
+      "acceptanceCriteria": [
+        "Project workflow session records store Project id, Pibo Session id, session name, workflow id, workflow version, and configured/not-started state",
+        "Session states include configured, running, waiting, completed, failed, and cancelled",
+        "Session creation does not create a workflow run record",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement workflow session creation API",
+      "description": "As a Pibo user, I need an API-backed creation flow so that I can choose a published workflow version and configure allowed session values.",
+      "acceptanceCriteria": [
+        "Creation API accepts session name, workflow id/version, input values, prompt overrides, model, thinking level, and fast mode using documented override eligibility and scope rules",
+        "Creation API rejects unpublished, archived-by-default, missing, or invalid workflow versions",
+        "Creation API rejects agent profile overrides, retry limit overrides, handler/adapter/guard overrides, and arbitrary options",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Persist configuration and effective-definition snapshot",
+      "description": "As a runtime developer, I need immutable snapshots so that runs remain inspectable after workflow edits, archive, or delete.",
+      "acceptanceCriteria": [
+        "Snapshot stores snapshot id, Project id, Pibo Session id, workflow id, workflow version, base definition hash, and effective definition hash",
+        "Snapshot stores input values plus prompt overrides keyed by node id when present",
+        "Snapshot stores model, thinking level, fast mode, and creation timestamp when present",
+        "Snapshot persistence records whether model, thinking level, fast mode, and prompt overrides apply workflow-wide or per eligible Agent node",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement explicit start API with one-run enforcement",
+      "description": "As a Pibo user, I need Start to create exactly one run so that session lifecycle is predictable.",
+      "acceptanceCriteria": [
+        "Start API validates the session snapshot immediately before run creation",
+        "Start API creates exactly one workflow run for the Project session",
+        "Second-start attempts are rejected or idempotently return the existing run without creating another run",
+        "One-run enforcement does not disable allowed parallel node execution inside the run",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Enforce immutable workflow selection after session creation",
+      "description": "As a collaborator, I need selected workflow identity to remain stable so that historical behavior is explainable.",
+      "acceptanceCriteria": [
+        "Update paths cannot change workflow id or workflow version after session creation",
+        "Pre-run edit policy is documented, and update paths enforce that policy for allowed session-scoped fields before start",
+        "Session-scoped configuration never persists back to the workflow definition",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Build configured-session Project UI state",
+      "description": "As a Pibo user, I need to see a configured workflow session before running it so that I can review and start safely.",
+      "acceptanceCriteria": [
+        "Configured session view shows selected workflow id/version and configuration summary",
+        "Configured session view shows validation state, explicit Start action, and empty run-history state",
+        "Blocked create or start actions show diagnostics linked to invalid input, override, schema, or missing reference",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Add Project session snapshot lifecycle tests",
+      "description": "As a QA engineer, I need tests for session creation, start, immutability, and deleted-definition inspection.",
+      "acceptanceCriteria": [
+        "Tests cover configured-session creation without workflow run creation",
+        "Tests cover one-run enforcement and workflow id/version immutability",
+        "Tests verify historical run views use snapshot data after live workflow definition changes or is deleted",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Added snapshot lifecycle regression coverage: configured session creation has no run, start is idempotent/immutable, and deleted UI workflow historical run inspection returns the saved snapshot/effective definition."
+    }
+  ]
+}

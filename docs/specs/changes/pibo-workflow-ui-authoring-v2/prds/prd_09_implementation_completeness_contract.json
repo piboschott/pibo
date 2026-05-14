@@ -1,0 +1,396 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-implementation-completeness-contract",
+  "description": "Second-pass implementation completeness contract converted into Ralph-sized implementation and validation stories for every mandatory Workflow UI Authoring V2 area.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Resolve documented open decisions before affected implementation",
+      "description": "As an implementation lead, I need open decisions resolved before coding affected areas so that agents do not choose silently.",
+      "acceptanceCriteria": [
+        "Document exact Workflow Registry/store schema and database records before implementing store migrations",
+        "Document exact API route contracts, snapshot fields, deleted-workflow display behavior, graph/canvas library, override scope, prompt override eligibility, and prompt asset mutation/versioning before coding affected areas",
+        "Update the relevant PRD/spec files with the chosen decisions before dependent implementation stories are marked complete",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Resolved in docs: exact API route contracts, V2 snapshot fields, and deleted-workflow historical run display/link behavior."
+    },
+    {
+      "id": "US-002",
+      "title": "Create Workflows tab shell",
+      "description": "As an implementation agent, I need the Workflows product shell so that catalog and builder stories have a stable home.",
+      "acceptanceCriteria": [
+        "Add Workflows tab shell reachable from Chat Web main navigation",
+        "Workflows tab shell renders Workflow Library entry area",
+        "Workflows tab shell renders Workflow Builder entry area",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Workflows tab shell already satisfies this completeness-contract story via the Chat Web Workflows route, main navigation item, Workflow Library area, and Workflow Builder area."
+    },
+    {
+      "id": "US-003",
+      "title": "Create Projects workflow execution shell",
+      "description": "As an implementation agent, I need the Projects execution shell so that configured sessions and run views have a stable home.",
+      "acceptanceCriteria": [
+        "Projects area renders a workflow configured-session view container",
+        "Projects area renders a workflow run view container",
+        "Projects area renders a human action area inside the workflow run context",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Projects workflow execution shell now renders configured-session, run-view, and human-action containers in the Workflow/XState Project view."
+    },
+    {
+      "id": "US-004",
+      "title": "Add Project sidebar session kind markers",
+      "description": "As an implementation agent, I need sidebar session markers so that session routing can distinguish workflow and terminal contexts.",
+      "acceptanceCriteria": [
+        "Project sidebar data includes a stable session kind for workflow, nested workflow, agent node, and subagent sessions",
+        "Project sidebar renders distinct icons and accessible labels for each session kind",
+        "Project sidebar excludes logical workflow nodes, edges, guards, adapters, and state elements",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Project sidebar markers are implemented from real Pibo Session workflowSessionKind metadata with distinct visible icons/labels and real-session-only descendants."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement workflow record source/status and entity contracts",
+      "description": "As a storage developer, I need the workflow record model complete so that catalog actions and lifecycle state are deterministic.",
+      "acceptanceCriteria": [
+        "Implement WorkflowRecordSource values code and ui",
+        "Implement WorkflowRecordStatus values draft, published, and archived",
+        "Model workflow identity, draft record, published version record, archive state, and delete/tombstone state distinctly",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Workflow record source/status constants, guards, distinct UI entity stores, and catalog entity tests are implemented."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement workflow catalog lifecycle APIs",
+      "description": "As a UI developer, I need workflow catalog APIs so that Workflows UI can browse and manage definitions.",
+      "acceptanceCriteria": [
+        "Expose callable API surfaces to list, inspect, duplicate, save draft, validate draft, publish, archive, and delete workflows",
+        "API responses include source/status metadata and missing-reference diagnostics",
+        "Archive and delete APIs require authenticated access",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Workflow catalog lifecycle APIs now expose authenticated list, inspect, create draft, duplicate, draft save, validate, publish, archive, delete, and dedicated version list/inspect routes with source/status metadata and missing-reference diagnostics."
+    },
+    {
+      "id": "US-007",
+      "title": "Implement capability picker APIs",
+      "description": "As a UI developer, I need picker APIs so that Workflows UI can compose only registered capabilities.",
+      "acceptanceCriteria": [
+        "Expose callable API surfaces to list handlers, adapters, guards, human actions, prompt assets, workflow versions, and non-archived Agent profiles",
+        "Picker responses include id, displayName, description, and paramsSchema field with schema object or null",
+        "Picker responses exclude archived profiles and archived workflows from default results",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Capability picker APIs are implemented through /api/chat/workflows/pickers/:kind for handlers, adapters, guards, human actions, prompt assets, workflow versions, and active Agent profiles with uniform displayName/description/paramsSchema response fields and archived item filtering."
+    },
+    {
+      "id": "US-008",
+      "title": "Implement Project workflow session creation",
+      "description": "As a runtime developer, I need configured workflow sessions so that execution is explicit and starts only after user action.",
+      "acceptanceCriteria": [
+        "Project workflow session creation supports session name, workflow id/version, input, prompt overrides, model, thinking level, and fast mode",
+        "Session creation persists configured/not-started state without creating a workflow run",
+        "Session creation rejects disallowed overrides for profiles, retry limits, handlers, adapters, guards, and arbitrary options",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Project workflow session creation supports configured/not-started sessions with session title, workflow id/version, allowed input/prompt/model/thinking/fast configuration, and request rejection for disallowed override families."
+    },
+    {
+      "id": "US-009",
+      "title": "Implement Project session snapshot and start",
+      "description": "As a runtime developer, I need snapshots and one-run start behavior so that historical inspection and idempotency are reliable.",
+      "acceptanceCriteria": [
+        "Start creates one workflow run per Project session from the effective snapshot",
+        "Snapshot stores required identity, hashes, input, prompt overrides, model settings, fast mode, and timestamp fields",
+        "Second-start attempts do not create a second workflow run",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Verified Project workflow start uses the immutable effective snapshot, persists exact snapshot identity/configuration/timestamp fields, and second starts return the existing run without creating another run."
+    },
+    {
+      "id": "US-010",
+      "title": "Implement builder graph and inspector panels",
+      "description": "As a workflow author, I need graph and inspector panels so that visual edits update Pibo Workflow IR.",
+      "acceptanceCriteria": [
+        "Builder includes graph canvas, node inspector, edge inspector, and workflow settings panels",
+        "Drafts with zero nodes can be saved",
+        "Graph layout metadata is stored separately from runtime execution semantics",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Verified builder graph canvas, workflow settings, node inspector, edge inspector, zero-node draft save behavior, and layout-as-UI-metadata coverage."
+    },
+    {
+      "id": "US-011",
+      "title": "Implement builder raw/schema/prompt panels",
+      "description": "As a workflow author, I need raw IR, schema, and prompt panels so that advanced authoring still uses Pibo Workflow IR.",
+      "acceptanceCriteria": [
+        "Builder includes raw Workflow IR editor and forbids raw XState editing",
+        "Builder includes raw JSON schema editors using the existing JSON Schema subset validator",
+        "Builder includes prompt editor and prompt asset editor using the existing Markdown editor pattern",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Verified builder raw Workflow IR, raw JSON schema, direct prompt template, and Markdown prompt asset panels through focused source/API coverage plus browser verification."
+    },
+    {
+      "id": "US-012",
+      "title": "Implement builder validation and publish panels",
+      "description": "As a workflow author, I need validation and publish panels so that invalid drafts cannot become runnable versions.",
+      "acceptanceCriteria": [
+        "Builder includes validation panel with structured diagnostics",
+        "Builder includes publish/version panel",
+        "Published/runnable workflows require at least one node plus workflow input and output contracts",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Workflow Builder now exposes a validation panel with validation summary fields and structured diagnostic metadata, and the publish/version panel gates Publish from blocksPublish/error diagnostics while backend before_publish validation rejects zero-node or missing input/output contract drafts. Source-level UI coverage and targeted web-channel validation/publish/version-allocation flows verify the contract."
+    },
+    {
+      "id": "US-013",
+      "title": "Implement agent, code, and workflow node refs",
+      "description": "As a workflow author, I need core node refs so that workflows can use existing agents, handlers, and nested workflows.",
+      "acceptanceCriteria": [
+        "Agent nodes select non-archived private, custom, or global Agent Designer profiles",
+        "Code nodes select registered handlers only",
+        "Workflow nodes select workflow id/version and provide Open workflow navigation",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Verified core node refs through registered Agent profile, code handler, and published workflow-version pickers, plus separate Open workflow navigation and focused coverage tests."
+    },
+    {
+      "id": "US-014",
+      "title": "Implement adapter and human node refs",
+      "description": "As a workflow author, I need adapter and human node refs so that transforms and waits use registered capabilities.",
+      "acceptanceCriteria": [
+        "Adapter nodes select registered adapters only",
+        "Human nodes edit prompt, raw JSON schema, registered human action choices, and timeout",
+        "Missing or invalid adapter/human action refs show diagnostics and block publish/run when executable behavior depends on them",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Verified adapter nodes through registered adapter picker-only selection and human nodes through prompt, raw resume schema, registered action choices, and timeout controls. Focused tests now assert adapter/human UI coverage and publish-blocking diagnostics for missing adapter and human action refs."
+    },
+    {
+      "id": "US-015",
+      "title": "Implement edge adapter, guard, and state editing",
+      "description": "As a workflow author, I need edges and routing controls so that graph composition is explicit and validated.",
+      "acceptanceCriteria": [
+        "Edges connect typed ports and carry guards or adapters only when compatibility validation allows them",
+        "Incompatible ports require explicit registered adapters with Use as edge adapter and Insert adapter node actions",
+        "Guard and adapter params editors require a paramsSchema field; simple state mappings use dropdowns while complex mappings remain raw IR only",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Verified edge adapter, guard, and state editing through focused composition-boundary coverage, including typed edge port fields, registered guard/edge-adapter refs, paramsSchema-gated params editors, adapter output compatibility diagnostics, explicit adapter fix actions, and simple state mapping dropdown controls."
+    },
+    {
+      "id": "US-016",
+      "title": "Implement publish and version lifecycle",
+      "description": "As a workflow author, I need immutable versioning so that workflow changes do not mutate published behavior.",
+      "acceptanceCriteria": [
+        "Publish creates immutable versions with patch default and user-triggered minor/major choices",
+        "Editing a published workflow creates or reuses the next draft path",
+        "Version history and version selection are available for published workflow records",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Added focused lifecycle checklist coverage that binds publish/version UI wiring, immutable version APIs, semantic version intents, next-draft editing, version history, and workflow-version picker behavior to existing integration tests."
+    },
+    {
+      "id": "US-017",
+      "title": "Implement archive and delete lifecycle",
+      "description": "As an operator, I need archive and delete lifecycle actions that preserve historical inspection.",
+      "acceptanceCriteria": [
+        "Archive applies to the whole workflow and hides it from default selection lists",
+        "Authenticated delete removes or tombstones live catalog records",
+        "Delete preserves historical run snapshots and renders definition-deleted state for old runs",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Added focused lifecycle checklist coverage binding archive/delete UI actions and confirmation copy, archive/delete API filtering and tombstone behavior, and Project run snapshot-only definition-deleted links to existing integration tests."
+    },
+    {
+      "id": "US-018",
+      "title": "Implement workflow run inspection view",
+      "description": "As a Project reviewer, I need run details so that workflow execution is inspectable from Projects.",
+      "acceptanceCriteria": [
+        "Run view shows current status, current node, node attempts, edge transfers, output, and errors",
+        "Run view shows nested workflow links and definition links or definition-deleted state",
+        "Run view uses XState projection for visualization only and workflow run records for truth",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "Verified existing Project Workflow/XState run inspection view against the completeness contract: status/current node/run history/node attempts/edge transfers/output/error sections, nested and definition link panels including deleted-definition coverage, and explicit XState-projection-only truth-source copy."
+    },
+    {
+      "id": "US-019",
+      "title": "Implement human action controls",
+      "description": "As a Project reviewer, I need human action controls so that waits can be resolved from the run view.",
+      "acceptanceCriteria": [
+        "Pending human actions display from persisted wait tokens",
+        "Approve, reject, resume, and cancel validate token state before action acceptance",
+        "Resume payload validation runs before action acceptance",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": "Verified Project workflow human action controls: pending persisted wait tokens enrich Project workflow sessions, UI renders approve/reject/resume/cancel controls, resume payload validation blocks invalid payloads, and targeted integration tests cover token state validation and accepted/rejected actions."
+    },
+    {
+      "id": "US-020",
+      "title": "Implement validation and diagnostics contract",
+      "description": "As a QA engineer, I need validation and diagnostics at all authoring and execution boundaries so that invalid workflows are blocked before run.",
+      "acceptanceCriteria": [
+        "Validation runs after draft load, graph/node/edge/schema/prompt/state/raw IR edits, before publish, before Project session creation, and before start",
+        "Diagnostics include code, message, optional path, optional nodeId, optional edgeId, severity, and hint where applicable",
+        "Publish and run/start are blocked while error diagnostics remain",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": "Project workflow session creation now validates the persisted UI-published Workflow IR, snapshots that exact definition, and returns structured diagnostics that block create/start when error diagnostics remain; focused web-channel coverage verifies all draft/edit/publish/project/start validation triggers."
+    },
+    {
+      "id": "US-021",
+      "title": "Implement security boundary contract",
+      "description": "As a security reviewer, I need V2 to preserve existing Pibo boundaries so that workflow authoring is not an execution escape hatch.",
+      "acceptanceCriteria": [
+        "V2 keeps existing auth, Project/session visibility, profile/tool/skill/context, and compute-worker boundaries",
+        "V2 does not allow inline TypeScript, JavaScript eval, arbitrary shell/script nodes, creating handlers/adapters/guards in UI, raw XState editing, or Zod schema authoring",
+        "Inputs, outputs, prompts, prompt assets, state, edge payloads, snapshots, and human action payloads remain sensitive workflow data",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "Security boundary contract is implemented through visible Workflows security copy, root/raw-XState validation diagnostics, registered-ref/inline-execution publish blocking, existing auth and Project/session visibility gates, redacted diagnostics, and focused source/API coverage."
+    },
+    {
+      "id": "US-022",
+      "title": "Add catalog and lifecycle checklist tests",
+      "description": "As a reviewer, I need focused tests for catalog and lifecycle completeness so that storage behavior is reviewable.",
+      "acceptanceCriteria": [
+        "Tests cover registry/store source/status metadata and UI draft save",
+        "Tests cover catalog APIs, duplicate, publish, archive, delete, and missing refs",
+        "Tests cover immutable versions, one-active-draft enforcement, and historical snapshot preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": "Added focused catalog/lifecycle checklist coverage that maps store source/status and draft persistence tests, web-channel catalog/duplicate/publish/archive/delete/missing-ref flows, immutable published-version tests, one-active-draft enforcement, and historical snapshot preservation."
+    },
+    {
+      "id": "US-023",
+      "title": "Add Project and run-view checklist tests",
+      "description": "As a reviewer, I need focused tests for Project execution completeness so that session and run behavior is reviewable.",
+      "acceptanceCriteria": [
+        "Tests cover Project session creation, delayed start, snapshots, immutability, and one-run enforcement",
+        "Tests cover sidebar routing, run inspection, nested workflow links, and deleted-definition inspection",
+        "Tests cover human action approve, reject, resume, cancel, invalid payload, and already-resolved token cases",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": "Added focused Project/run-view checklist coverage that maps Project session creation, delayed start, snapshots, immutability, one-run start, sidebar routing, run inspection, nested links, deleted-definition inspection, and human action token cases to existing source, package, and web-channel tests."
+    },
+    {
+      "id": "US-024",
+      "title": "Add builder and security checklist tests",
+      "description": "As a reviewer, I need focused tests for builder and security completeness so that authoring remains safe.",
+      "acceptanceCriteria": [
+        "Tests cover builder graph editing, raw IR, raw JSON schema editing, prompt editing, composition, and validation diagnostics",
+        "Tests cover adapter compatibility, guard params, state mapping, and missing registered refs",
+        "Tests cover explicit non-goals: no inline code, no raw XState editing, no Zod authoring, no templates, no slash commands, and no workflow tools for agents",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": "Added focused builder/security checklist coverage that maps visual graph editing, raw IR, raw JSON schema, prompt editing, composition, adapter/guard/state boundaries, missing registered refs, and explicit non-goals to existing source, package, deferral, security, and web-channel tests."
+    },
+    {
+      "id": "US-025",
+      "title": "Verify requirement and task traceability remains complete",
+      "description": "As a reviewer, I need traceability so that implementation can be rejected when mandatory V2 requirements are missing.",
+      "acceptanceCriteria": [
+        "Every requirement from spec.md remains mapped to at least one PRD and one completeness section",
+        "Every tasks.md task group remains mapped to an implementation area and validation gate",
+        "Completeness contract checklist items marked MUST can be reviewed as pass/fail items",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "Added focused traceability checklist tests that parse spec requirements, tasks.md task groups, and PRD 09 MUST checklist rows to ensure every requirement maps to PRD coverage and completeness sections, every task group maps to an implementation area and validation gate, and each MUST item remains independently reviewable."
+    }
+  ]
+}

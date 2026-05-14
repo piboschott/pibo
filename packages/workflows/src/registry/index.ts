@@ -1,3 +1,4 @@
+import { hashWorkflowDefinition } from "../definition-hash.js";
 import type {
   AdapterHandler,
   AdapterRef,
@@ -10,15 +11,19 @@ import type {
   WorkflowDefinition,
   WorkflowHumanActionDefinition,
   WorkflowProviders,
+  WorkflowPublishedVersionRecord,
   WorkflowRegistry,
   WorkflowRegistryEntry,
+  WorkflowRegistration,
   WorkflowRegistrationOptions,
+  JsonSchema,
 } from "../types/index.js";
 
 export type WorkflowRegistryEntryOptions = WorkflowRegistrationOptions & {
   title?: string;
   description?: string;
   tags?: string[];
+  paramsSchema?: JsonSchema;
 };
 
 export function createWorkflowRegistry(providers: WorkflowProviders = {}): WorkflowRegistry {
@@ -104,6 +109,41 @@ export function resolveWorkflowDefinition(
   }
 
   return [...versions].sort((left, right) => right.version.localeCompare(left.version))[0];
+}
+
+export function registerWorkflowPublishedVersion(
+  registry: WorkflowRegistry,
+  record: WorkflowPublishedVersionRecord,
+  options: WorkflowRegistrationOptions = {},
+): WorkflowRegistration {
+  assertRegistryPublishedWorkflowVersionRecord(record);
+  registerWorkflowDefinition(registry, record.definition, options);
+  return { id: record.workflowId, version: record.version, hash: record.definitionHash };
+}
+
+export function registerWorkflowPublishedVersions(
+  registry: WorkflowRegistry,
+  records: Iterable<WorkflowPublishedVersionRecord>,
+  options: WorkflowRegistrationOptions = {},
+): WorkflowRegistration[] {
+  const registrations: WorkflowRegistration[] = [];
+  for (const record of records) {
+    registrations.push(registerWorkflowPublishedVersion(registry, record, options));
+  }
+  return registrations;
+}
+
+function assertRegistryPublishedWorkflowVersionRecord(record: WorkflowPublishedVersionRecord): void {
+  if (record.source !== "ui" || record.status !== "published") {
+    throw new Error(`Workflow '${record.workflowId}@${record.version}' is not a UI published version record.`);
+  }
+  if (record.definition.id !== record.workflowId || record.definition.version !== record.version) {
+    throw new Error(`Workflow '${record.workflowId}@${record.version}' published record does not match its definition id/version.`);
+  }
+  const computedHash = hashWorkflowDefinition(record.definition);
+  if (record.definitionHash !== computedHash) {
+    throw new Error(`Workflow '${record.workflowId}@${record.version}' published record has an invalid definition hash.`);
+  }
 }
 
 export function registerWorkflowAgentProfile(
@@ -257,5 +297,6 @@ function withOptionalEntryMetadata<TValue>(
     ...(options.title ? { title: options.title } : {}),
     ...(options.description ? { description: options.description } : {}),
     ...(options.tags ? { tags: options.tags } : {}),
+    ...(options.paramsSchema ? { paramsSchema: options.paramsSchema } : {}),
   };
 }

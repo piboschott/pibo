@@ -1,3 +1,5 @@
+export * from "./diagnostics.js";
+
 import type {
   AdapterRef,
   GuardRef,
@@ -720,6 +722,7 @@ function validateWorkflowGuardRef(
     severity: "error",
     edgeId: target.edgeId,
     path: target.path,
+    registryRef: guard.handler,
     hint: "Register the guard with registerWorkflowGuard/createWorkflowRegistry before validating or executing this workflow, or update the workflow to use a registered guard id.",
   });
 }
@@ -842,18 +845,47 @@ function validateWorkflowAgentNodeRuntimeSelection(
     return;
   }
 
-  if (!options.registry?.profiles || options.registry.profiles.has(profileId)) {
+  if (!options.registry?.profiles) {
     return;
   }
 
-  diagnostics.push({
-    code: "WorkflowGraphError.unknownAgentProfileRef",
-    message: `Workflow agent node '${nodeId}' references Agent Designer profile '${profileId}', but it is not registered in the Workflow Registry.`,
-    severity: "error",
-    nodeId,
-    path: `$.nodes.${nodeId}.profile.id`,
-    hint: "Register the Agent Designer profile with registerWorkflowAgentProfile/createWorkflowRegistry before validating or executing this workflow, or update the node to use a registered fixed profile id.",
-  });
+  const registeredProfile = options.registry.profiles.get(profileId);
+  if (!registeredProfile) {
+    diagnostics.push({
+      code: "WorkflowGraphError.unknownAgentProfileRef",
+      message: `Workflow agent node '${nodeId}' references Agent Designer profile '${profileId}', but it is not registered in the Workflow Registry.`,
+      severity: "error",
+      nodeId,
+      path: `$.nodes.${nodeId}.profile.id`,
+      registryRef: profileId,
+      hint: "Register the Agent Designer profile with registerWorkflowAgentProfile/createWorkflowRegistry before validating or executing this workflow, or update the node to use a registered fixed profile id.",
+    });
+    return;
+  }
+
+  if (isArchivedAgentProfileDefinition(registeredProfile.value)) {
+    diagnostics.push({
+      code: "WorkflowGraphError.archivedAgentProfileRef",
+      message: `Workflow agent node '${nodeId}' references archived Agent Designer profile '${profileId}'.`,
+      severity: "error",
+      nodeId,
+      path: `$.nodes.${nodeId}.profile.id`,
+      registryRef: profileId,
+      hint: "Restore the Agent Designer profile or update the node to select a non-archived fixed profile id before publishing or running this workflow.",
+    });
+  }
+}
+
+function isArchivedAgentProfileDefinition(profile: { status?: string; archivedAt?: string; metadata?: unknown }): boolean {
+  if (profile.status === "archived" || typeof profile.archivedAt === "string") {
+    return true;
+  }
+
+  if (!isRecord(profile.metadata)) {
+    return false;
+  }
+
+  return profile.metadata.archived === true || typeof profile.metadata.archivedAt === "string";
 }
 
 function validateWorkflowAgentNodePromptBuilderRef(
@@ -904,6 +936,7 @@ function validateWorkflowAgentNodePromptBuilderRef(
     severity: "error",
     nodeId,
     path: getPromptBuilderRefPath(node.promptBuilder, nodeId),
+    registryRef: builderId,
     hint: "Register the prompt builder with registerWorkflowPromptBuilder/createWorkflowRegistry before validating or executing this workflow, or update the node to use a registered prompt builder id.",
   });
 }
@@ -947,6 +980,7 @@ function validateWorkflowCodeNodeRef(
     severity: "error",
     nodeId,
     path: `$.nodes.${nodeId}.handler`,
+    registryRef: node.handler,
     hint: "Register the handler with registerWorkflowHandler/createWorkflowRegistry before validating or executing this workflow, or update the workflow to use a registered handler id.",
   });
 }
@@ -1013,6 +1047,7 @@ function validateWorkflowHumanActionRefs(
         severity: "error",
         nodeId,
         path: `${path}.id`,
+        registryRef: actionId,
         hint: "Register approve/reject/resume/cancel or custom actions with registerWorkflowHumanAction/createWorkflowRegistry before validating the workflow.",
       });
       return;
@@ -1025,6 +1060,7 @@ function validateWorkflowHumanActionRefs(
         severity: "error",
         nodeId,
         path: `${path}.kind`,
+        registryRef: actionId,
         hint: "Keep wait-token action refs aligned with their registered action definitions.",
       });
     }
@@ -1052,6 +1088,7 @@ function validateRegisteredAdapterExists(
     nodeId: target.nodeId,
     edgeId: target.edgeId,
     path: target.path,
+    registryRef: ref.id,
     hint: "Register the adapter with registerWorkflowAdapter/createWorkflowRegistry before validating or executing this workflow, or update the workflow to use a registered adapter id.",
   });
 }
@@ -1134,6 +1171,7 @@ function validateWorkflowGlobalStateWriteConflicts(
       message: `Workflow global state path '${statePath}' is written by multiple nodes without an explicit merge policy.`,
       severity: "error",
       path: `$.state.global.${statePath}`,
+      statePath,
       hint: `Declare state.global['${statePath}'].merge, or ensure only one node writes '${statePath}'. Writers: ${[
         ...writers,
       ].join(", ")}.`,
@@ -1186,6 +1224,7 @@ function validateNodeStateAccessList(
         severity: "error",
         nodeId,
         path,
+        statePath: value,
         hint: "State paths must be scoped as 'global.<path>', 'local.<path>', or 'edge.<path>' with a non-empty path.",
       });
       return;
@@ -1198,6 +1237,7 @@ function validateNodeStateAccessList(
         severity: "error",
         nodeId,
         path,
+        statePath: value,
         hint: "Edge payloads are immutable after transfer; write to 'global.<path>' or current-node 'local.<path>' instead.",
       });
     }
@@ -1209,6 +1249,7 @@ function validateNodeStateAccessList(
         severity: "error",
         nodeId,
         path,
+        statePath: value,
         hint: `Declare state.global['${scopedPath.path}'] with a schema before a node can read or write it.`,
       });
     }

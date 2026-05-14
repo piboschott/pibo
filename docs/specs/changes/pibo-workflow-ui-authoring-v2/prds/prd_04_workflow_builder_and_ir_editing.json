@@ -1,0 +1,149 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-workflow-builder-ir-editing",
+  "description": "Workflow Builder and IR editing requirements for visual graph authoring, raw Workflow IR, raw JSON schemas, prompts, validation, and publish gating.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Document builder library and prompt asset persistence decisions",
+      "description": "As an implementation lead, I need builder dependency decisions before editor persistence is built so that UI behavior is explicit.",
+      "acceptanceCriteria": [
+        "Document the selected graph/canvas library and layout metadata contract",
+        "Document whether prompt asset edits mutate the current asset or create asset versions",
+        "Builder implementation stories reference these documented decisions before graph layout or prompt asset persistence is enabled",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Builder canvas, layout metadata, prompt asset revisioning, and dependent-story references are documented in 04-workflow-builder-and-ir-editing.md."
+    },
+    {
+      "id": "US-002",
+      "title": "Add Workflow Builder route and draft loader",
+      "description": "As a workflow author, I need to open a UI draft in the Workflows tab so that I can edit the workflow definition.",
+      "acceptanceCriteria": [
+        "Builder route opens from Workflow Library draft and duplicate actions",
+        "Builder loads the draft wrapper around partial Pibo Workflow IR and diagnostics",
+        "Builder does not open raw XState source as an editable document",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Workflow Builder draft route, loader API, starter draft, and duplicate-to-draft route are implemented; browser verification covered starter and duplicated drafts."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement graph canvas layout editing",
+      "description": "As a workflow author, I need a visual canvas so that I can understand and arrange workflow structure.",
+      "acceptanceCriteria": [
+        "Canvas displays workflow nodes and edges from Pibo Workflow IR",
+        "Users can add, delete, connect, move, and select nodes and edges",
+        "Automatic layout appears for workflows without saved positions and saved UI layout does not affect runtime semantics",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement workflow, node, and edge inspectors",
+      "description": "As a workflow author, I need inspectors so that visual edits update the same underlying Pibo Workflow IR.",
+      "acceptanceCriteria": [
+        "Workflow settings inspector edits title, description, input/output ports, and metadata fields exposed by V2",
+        "Node inspector edits node-specific fields for supported V2 node kinds",
+        "Edge inspector edits source/target ports, kind, guard refs, adapter refs, and diagnostics display",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Workflow settings, node, and edge inspectors are implemented in the builder; inspector saves patch the draft IR through validation triggers and browser verification covered workflow title/metadata, node label, and edge port/guard/adapter edits."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement raw Workflow IR editor with safe sync",
+      "description": "As an advanced user, I need raw Workflow IR editing so that I can fix advanced fields without corrupting drafts.",
+      "acceptanceCriteria": [
+        "Raw editor exposes Pibo Workflow IR only and never raw XState JSON",
+        "Valid raw IR parses into the same draft IR object as visual editing",
+        "Invalid JSON or invalid raw text shows diagnostics and preserves the last valid draft object",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Raw Pibo Workflow IR editor is implemented in the builder. Valid raw JSON saves through the draft PATCH rawDefinitionText path; invalid text returns WorkflowBuilderWarning.invalidRawIrText, preserves the last valid draft definition, and keeps the invalid editor text visible for repair."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement raw JSON schema editors",
+      "description": "As a workflow author, I need raw JSON schema editors so that workflow and node contracts use the existing schema subset.",
+      "acceptanceCriteria": [
+        "Schema editor fields accept raw JSON only",
+        "Schema validation uses the existing custom workflow JSON Schema subset validator",
+        "Unsupported schemas show diagnostics without introducing Zod, AJV, or a form-builder schema layer",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Raw JSON schema editors are implemented for workflow and node JSON contracts, save raw JSON through the draft IR, and surface WorkflowInterfaceError diagnostics from the existing JSON Schema subset validation path without adding Zod, AJV, or form-builder schema authoring."
+    },
+    {
+      "id": "US-007",
+      "title": "Implement prompt template and prompt asset editors",
+      "description": "As a prompt author, I need prompt editing in the builder so that workflow prompts can be maintained with existing editor patterns.",
+      "acceptanceCriteria": [
+        "Prompt template editing updates prompt fields in the draft IR",
+        "Prompt asset editing uses the existing Markdown editor pattern",
+        "Prompt asset persistence follows the documented mutation-versus-versioning decision",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Prompt template saves now use prompt_edit validation, and Agent node inspectors include a Markdown prompt asset editor that creates managed UI prompt asset revisions, updates draft promptBuilder refs, and pins revision/content hashes in Workflow IR metadata."
+    },
+    {
+      "id": "US-008",
+      "title": "Implement publish/version panel gating",
+      "description": "As a workflow author, I need publish gating so that only valid runnable workflow definitions become immutable versions.",
+      "acceptanceCriteria": [
+        "Draft save is allowed while warnings or errors exist",
+        "Publish is blocked while error diagnostics remain",
+        "Publish rejects zero-node drafts and drafts missing workflow input or output contracts",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Workflow Builder publish panel now derives a blocking publish gate from validation.blocksPublish/error diagnostics while preserving draft saves. Publish remains backend-enforced by before_publish validation; integration coverage verifies starter zero-node drafts and missing workflow input/output contracts are rejected."
+    },
+    {
+      "id": "US-009",
+      "title": "Add builder editing and raw IR tests",
+      "description": "As a QA engineer, I need automated coverage for builder editing so that visual and raw editors remain in sync.",
+      "acceptanceCriteria": [
+        "Tests cover duplicate/open builder, add node, connect edge, save layout, edit prompt, edit schema, validate, and publish",
+        "Tests cover raw IR valid sync, invalid JSON warning, invalid workflow diagnostics, and last-valid-object preservation",
+        "Tests verify layout metadata changes do not change serialized runtime semantics",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Added focused builder editing/raw IR coverage that maps duplicate/open builder, graph edits, layout save semantics, prompt/schema edits, validate/publish paths, raw IR valid sync, invalid raw text warnings, invalid workflow diagnostics, and last-valid-object preservation."
+    }
+  ]
+}

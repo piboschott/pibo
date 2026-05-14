@@ -5,6 +5,7 @@
  */
 export type * from "./types/index.js";
 export * from "./api/index.js";
+export * from "./definition-hash.js";
 export * from "./validation/index.js";
 export * from "./runtime/index.js";
 export * from "./store/index.js";

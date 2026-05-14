@@ -9,6 +9,8 @@ import type {
 
 export type { PiboTraceNode, PiboTraceNodeType, PiboTraceNodeStatus, PiboTraceSource, PiboTraceOrderKey, PiboWebSessionStatus };
 
+export type PiboWorkflowSessionKind = "main_workflow" | "nested_workflow" | "agent_node" | "subagent";
+
 export type PiboWebSessionNode = {
 	piboSessionId: string;
 	piSessionId: string;
@@ -17,6 +19,7 @@ export type PiboWebSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	subtitle?: string;
 	archived?: boolean;
@@ -32,6 +35,7 @@ export type PiboWebDerivedSessionNode = {
 	profile: string;
 	activeModel?: ModelProfile;
 	subagentName?: string;
+	workflowSessionKind?: PiboWorkflowSessionKind;
 	title: string;
 	status: "idle" | "running" | "error";
 	lastActivityAt?: string;
@@ -67,20 +71,125 @@ export type PiboProject = {
 	updatedAt: string;
 };
 
+export type PiboProjectWorkflowSessionState = "configured" | "running" | "waiting" | "completed" | "failed" | "cancelled";
+export type PiboProjectLegacySessionState = "simple_chat" | "workflow";
+export type PiboProjectSessionState = PiboProjectWorkflowSessionState | PiboProjectLegacySessionState;
+
+export type PiboProjectWorkflowSessionConfiguration = {
+	inputValues: Record<string, unknown>;
+	promptOverrides: Record<string, string>;
+	promptOverrideEligibleNodeIds: string[];
+	overrideScopes: {
+		promptOverrides: "eligible_agent_node";
+		model: "workflow";
+		thinkingLevel: "workflow";
+		fastMode: "workflow";
+	};
+	model?: ModelProfile;
+	thinkingLevel?: ThinkingLevel;
+	fastMode?: boolean;
+};
+
+export type PiboProjectWorkflowDefinitionLink = {
+	status: "live" | "snapshot_only_definition_deleted";
+	workflowId: "simple-chat" | "standard-project" | string;
+	workflowVersion?: string;
+	title?: string;
+	definitionHash?: string;
+	href?: string;
+	tombstoneLabel?: string;
+};
+
+export type PiboProjectWorkflowPendingHumanActionRef = {
+	id: string;
+	kind?: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: Record<string, unknown> | null;
+	registered: boolean;
+};
+
+export type PiboProjectWorkflowPendingHumanAction = {
+	waitTokenId: string;
+	workflowRunId: string;
+	nodeAttemptId?: string;
+	humanNodeId?: string;
+	prompt: string;
+	schema?: Record<string, unknown>;
+	status: "pending";
+	payloadRequirements: {
+		required: boolean;
+		schema?: Record<string, unknown>;
+		description: string;
+	};
+	availableActions: PiboProjectWorkflowPendingHumanActionRef[];
+	diagnostics: Array<{
+		code: string;
+		message: string;
+		severity: "info" | "warning" | "error";
+		path?: string;
+		registryRef?: string;
+		hint?: string;
+	}>;
+	createdAt: string;
+	expiresAt?: string;
+};
+
 export type PiboProjectSession = {
 	projectId: string;
 	piboSessionId: string;
 	kind: "main" | "sub";
 	workflowId: "simple-chat" | "standard-project" | string;
+	workflowVersion?: string;
 	workflowRunId?: string;
 	parentMainSessionId?: string;
 	title?: string;
-	state?: string;
+	state?: PiboProjectSessionState;
+	configuration?: PiboProjectWorkflowSessionConfiguration;
+	workflowDefinitionLink?: PiboProjectWorkflowDefinitionLink;
+	pendingHumanActions?: PiboProjectWorkflowPendingHumanAction[];
 	retryCount?: number;
 	maxRetries?: number;
 	archived?: boolean;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type WorkflowLifecycleEventRecord = {
+	id: string;
+	type: string;
+	ownerScope: string;
+	actorId?: string;
+	workflowId?: string;
+	workflowVersion?: string;
+	draftId?: string;
+	projectId?: string;
+	piboSessionId?: string;
+	workflowRunId?: string;
+	status?: string;
+	validation?: {
+		trigger: string;
+		checkedAt: string;
+		ok: boolean;
+		validationState: "valid" | "warning" | "error";
+		errorCount: number;
+		warningCount: number;
+		infoCount: number;
+		blocksPublish: boolean;
+		blocksRun: boolean;
+	};
+	diagnostics: Array<{
+		code: string;
+		message: string;
+		severity: "info" | "warning" | "error";
+		path?: string;
+		nodeId?: string;
+		edgeId?: string;
+		registryRef?: string;
+		hint?: string;
+	}>;
+	payload?: Record<string, unknown>;
+	createdAt: string;
 };
 
 export type PiboSession = {
@@ -215,6 +324,7 @@ export type ProjectsBootstrapData = {
 	project?: PiboProject;
 	projects: PiboProject[];
 	projectSessions: PiboProjectSession[];
+	workflowLifecycleEvents: WorkflowLifecycleEventRecord[];
 	session?: PiboSession;
 	selectedProjectId: string;
 	selectedPiboSessionId?: string;
@@ -516,6 +626,10 @@ export type Trace = {
 export type PiboRalphTarget =
 	| { kind: "room"; roomId: string }
 	| { kind: "personal"; principalId: string };
-export type PiboRalphJob = { id: string; ownerScope: string; name: string; description?: string; enabled: boolean; target: PiboRalphTarget; profile: string; prompt: string; maxIterations?: number; modelOverride?: ModelProfile; thinkingLevel?: ThinkingLevel; fastMode?: boolean; state: { runningAt?: string; lastRunAt?: string; lastStatus?: "ok" | "error" | "cancelled"; lastError?: string; lastRunId?: string; lastPiboSessionId?: string; consecutiveErrors?: number; stopRequestedAt?: string; cancelRequestedAt?: string; completedIterations?: number }; createdAt: string; updatedAt: string };
+export type PiboRalphStopConditionInstance = { id: string; type: string; enabled?: boolean; options?: Record<string, unknown>; failClosed?: boolean; timeoutMs?: number };
+export type PiboRalphStopPolicy = { mode: "any" | "all"; conditions: PiboRalphStopConditionInstance[] };
+export type PiboRalphStopConditionInfo = { type: string; name: string; description?: string; phases: Array<"before-run" | "after-run">; optionsSchema?: Record<string, unknown>; defaultOptions?: Record<string, unknown>; pluginId?: string; pluginName?: string };
+export type PiboRalphStopEvaluationSummary = { id: string; phase: "before-run" | "after-run"; at: string; mode: "any" | "all"; finalAction: "continue" | "stop-after-run" | "cancel-current-run"; reason?: string; decisions: Array<{ id: string; type: string; phase: "before-run" | "after-run"; action: "continue" | "stop-after-run" | "cancel-current-run"; reason?: string; details?: Record<string, unknown>; skipped?: boolean; error?: string }> };
+export type PiboRalphJob = { id: string; ownerScope: string; name: string; description?: string; enabled: boolean; target: PiboRalphTarget; profile: string; prompt: string; maxIterations?: number; stopPolicy?: PiboRalphStopPolicy; modelOverride?: ModelProfile; thinkingLevel?: ThinkingLevel; fastMode?: boolean; state: { runningAt?: string; lastRunAt?: string; lastStatus?: "ok" | "error" | "cancelled"; lastError?: string; lastRunId?: string; lastPiboSessionId?: string; consecutiveErrors?: number; stopRequestedAt?: string; cancelRequestedAt?: string; completedIterations?: number; conditionStates?: Record<string, Record<string, unknown>>; lastStopEvaluation?: PiboRalphStopEvaluationSummary }; createdAt: string; updatedAt: string };
 export type PiboRalphRun = { id: string; jobId: string; ownerScope: string; piboSessionId?: string; status: "running" | "ok" | "error" | "cancelled"; reason?: string; error?: string; startedAt?: string; completedAt?: string; createdAt: string; updatedAt: string };
 export type PiboRalphStatus = { enabled: boolean; jobs: number; running: number };

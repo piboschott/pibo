@@ -1,0 +1,133 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-versioning-archive-delete-lifecycle",
+  "description": "Versioning, archive, and delete lifecycle requirements for UI-authored workflow drafts, immutable published versions, and snapshot-backed history.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist immutable published workflow versions",
+      "description": "As a workflow author, I need published versions to be immutable so that active and historical runs remain explainable.",
+      "acceptanceCriteria": [
+        "Publishing creates an immutable workflow version record with version and definition hash",
+        "Published workflow records are registry-resolvable by id/version",
+        "No edit path mutates an existing published definition body",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement edit-published creates next draft path",
+      "description": "As a workflow author, I need edits to published workflows to create a draft so that published behavior is not silently changed.",
+      "acceptanceCriteria": [
+        "Edit on a published workflow creates or reuses the one active draft for the workflow/copy",
+        "The draft is associated with the next version path",
+        "Multiple active drafts for the same workflow/copy are rejected",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement patch, minor, and major version bumps",
+      "description": "As a workflow author, I need version intent choices so that releases communicate change scope.",
+      "acceptanceCriteria": [
+        "Default publish increments patch version",
+        "Publish UI/API supports explicit minor and major version bumps",
+        "Version allocation is transactional and prevents duplicate version numbers under concurrent publish",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add version history and version selection",
+      "description": "As a Pibo user, I need version history so that I can choose and inspect stable published workflow versions.",
+      "acceptanceCriteria": [
+        "Workflow Library or detail view shows published version history in deterministic order",
+        "Project session creation can select a published workflow version",
+        "Archived or deleted state is clearly indicated when relevant",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement workflow-level archive",
+      "description": "As an operator, I need to archive deprecated workflows so that users do not start them by accident.",
+      "acceptanceCriteria": [
+        "Archive applies to the whole workflow identity, not a single version",
+        "Archived workflows are hidden from default run/selection lists",
+        "Archived workflows remain visible through archive filters and historical run links",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented workflow-level archive via authenticated catalog API, identity-scoped archive state, archived filtering in catalog/pickers, and Workflow Library archive action."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement authenticated delete with snapshot preservation",
+      "description": "As an operator, I need to delete workflows without erasing historical run inspection.",
+      "acceptanceCriteria": [
+        "Delete requires authentication and no additional V2 role",
+        "Delete removes or tombstones live catalog records without deleting historical run snapshots",
+        "Historical Project runs show snapshot data and a clear definition-deleted state",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add lifecycle confirmation and permission safeguards",
+      "description": "As a product reviewer, I need lifecycle actions to be deliberate because V2 archive/delete permissions are broad.",
+      "acceptanceCriteria": [
+        "Archive and delete actions include confirmation copy that explains catalog and historical-run effects",
+        "Create/edit/publish actions enforce the documented workflow permission policy from the catalog permission matrix",
+        "Lifecycle APIs reject unauthenticated archive and delete requests",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Added in-page Workflow Library archive/delete confirmation panels with catalog and historical snapshot impact copy plus lifecycle API safeguard assertions for unauthenticated create/edit/publish/archive/delete and code workflow edit rejection."
+    },
+    {
+      "id": "US-008",
+      "title": "Add version, archive, and delete tests",
+      "description": "As a QA engineer, I need lifecycle tests so that published behavior and historical inspection stay stable.",
+      "acceptanceCriteria": [
+        "Tests verify immutable publish records, definition hashes, and registry visibility",
+        "Tests verify patch/minor/major behavior and one-active-draft enforcement",
+        "Tests verify archive filters, delete/tombstone behavior, and historical run inspectability",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Added focused Workflow V2 lifecycle checklist tests that guard immutable publish/hash/registry coverage, patch/minor/major and one-active-draft coverage, archive/delete filtering, tombstones, and historical snapshot inspectability."
+    }
+  ]
+}

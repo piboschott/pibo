@@ -276,6 +276,7 @@ test("subagent runner emits a parent link event before waiting for the child rep
 		assert.equal(linkEvent.threadKey, "inspect");
 		assert.equal(store.get(result.piboSessionId).parentId, "ps_parent");
 		assert.equal(store.get(result.piboSessionId).metadata.chatRoomId, "room_parent");
+		assert.equal(store.get(result.piboSessionId).metadata.workflowSessionKind, "subagent");
 	} finally {
 		await router.disposeAll();
 	}

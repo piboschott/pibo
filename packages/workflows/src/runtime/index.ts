@@ -120,6 +120,11 @@ export type PiboRoutingJsonValue =
 
 export type PiboRoutingJsonObject = { [key: string]: PiboRoutingJsonValue };
 
+export const PIBO_WORKFLOW_SESSION_KIND_METADATA_KEY = "workflowSessionKind" as const;
+export const PIBO_WORKFLOW_SESSION_KINDS = ["main_workflow", "nested_workflow", "agent_node", "subagent"] as const;
+
+export type PiboWorkflowSessionKind = (typeof PIBO_WORKFLOW_SESSION_KINDS)[number];
+
 export type PiboWorkflowSession = {
   id: string;
   piSessionId?: string;
@@ -185,6 +190,7 @@ export type PiboWorkflowSessionRouting = {
 export type PiboWorkflowProjectSessionLinkInput = {
   projectId: string;
   piboSessionId: string;
+  workflowSessionKind?: PiboWorkflowSessionKind;
   workflowRunId: WorkflowRunId;
   workflowId: string;
   workflowVersion: string;
@@ -641,6 +647,7 @@ export function createPiboSessionRoutingAgentExecutor(
       title,
       metadata: {
         ...resolveExecutorMetadata(options.metadata, context),
+        [PIBO_WORKFLOW_SESSION_KIND_METADATA_KEY]: "agent_node",
         workflowRunId: context.run.id,
         workflowId: context.workflow.id,
         workflowVersion: context.workflow.version,
@@ -654,6 +661,7 @@ export function createPiboSessionRoutingAgentExecutor(
       await options.linkProjectSession({
         projectId: context.routing.projectId,
         piboSessionId: session.id,
+        workflowSessionKind: "agent_node",
         workflowRunId: context.run.id,
         workflowId: context.workflow.id,
         workflowVersion: context.workflow.version,
@@ -1243,6 +1251,7 @@ export async function dispatchWorkflowNestedWorkflowNode(
       severity: "error",
       nodeId,
       path: `$.nodes.${nodeId}.workflowId`,
+      registryRef: workflowNode.workflowId,
       hint: "Register the child workflow definition before dispatching the nested workflow node.",
     });
   }

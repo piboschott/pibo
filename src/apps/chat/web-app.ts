@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, gzipSync } from "node:zlib";
@@ -32,6 +32,7 @@ import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStream
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView, type PiboWebSessionNode, type PiboWebSessionStatus } from "./trace.js";
 import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
 import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadata.js";
+import { withWorkflowSessionKind } from "../../sessions/workflow-session-kind.js";
 import {
 	CustomAgentStore,
 	createDefaultCustomAgentStore,
@@ -76,7 +77,7 @@ import { ChatReadStateService } from "./data/read-state-service.js";
 import { ChatRoomService } from "./data/room-service.js";
 import { ChatSessionQueryService } from "./data/session-query-service.js";
 import { ChatTimelineQueryService } from "./data/timeline-query-service.js";
-import { ChatProjectService, type PiboProject, type PiboProjectSession } from "./data/project-service.js";
+import { ChatProjectService, type PiboProject, type PiboProjectSession, type PiboProjectWorkflowHumanActionKind, type PiboProjectWorkflowPendingHumanAction, type PiboProjectWorkflowSessionConfiguration, type PiboProjectWorkflowSessionSnapshot, type PiboProjectWorkflowWaitToken } from "./data/project-service.js";
 import { PiboDataStore } from "../../data/pibo-store.js";
 import { createDefaultPiboCronStore, type PiboCronStore } from "../../cron/store.js";
 import { createDefaultPiboRalphStore, type PiboRalphStore } from "../../ralph/store.js";
@@ -183,6 +184,12 @@ type ChatWebAppState = {
 	persistenceMetrics: ChatPersistenceMetrics;
 	userSkillManager: UserSkillManager;
 	syncedUserSkillNames?: Set<string>;
+	workflowDraftStore: ChatWorkflowDraftStore;
+	workflowPublishedVersionStore: ChatWorkflowPublishedVersionStore;
+	workflowArchiveStore: ChatWorkflowArchiveStore;
+	workflowTombstoneStore: ChatWorkflowTombstoneStore;
+	workflowLifecycleEventStore: ChatWorkflowLifecycleEventStore;
+	workflowPromptAssetStore: ChatWorkflowPromptAssetStore;
 };
 
 type ChatBootstrapCatalog = {
@@ -253,11 +260,25 @@ type ChatProjectDeleteBody = {
 type ChatProjectSessionCreateBody = {
 	profile?: unknown;
 	workflowId?: unknown;
+	workflowVersion?: unknown;
+	title?: unknown;
+	inputValues?: unknown;
+	promptOverrides?: unknown;
+	model?: unknown;
+	thinkingLevel?: unknown;
+	fastMode?: unknown;
 };
 
 type ChatProjectSessionPatchBody = {
 	title?: unknown;
 	archived?: unknown;
+};
+
+type ChatProjectWorkflowHumanActionBody = {
+	waitTokenId?: unknown;
+	actionId?: unknown;
+	kind?: unknown;
+	payload?: unknown;
 };
 
 type ChatSessionDeleteBody = {
@@ -309,6 +330,1350 @@ type ChatAgentBody = {
 	confirmName?: unknown;
 };
 
+type WorkflowProfilePickerOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: PiboJsonObject | null;
+	aliases: string[];
+	source: "custom" | "global";
+	visibility: "private" | "global";
+	archived: false;
+	nativeTools: string[];
+	skills: string[];
+	contextFiles: string[];
+};
+
+type WorkflowPickerDiagnostic = {
+	code: string;
+	message: string;
+	severity: "error";
+	path: string;
+	registryRef: string;
+	hint: string;
+};
+
+type WorkflowProfilePickerResponse = {
+	kind: "profiles";
+	options: WorkflowProfilePickerOption[];
+	selectedProfileId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowHandlerPickerOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: PiboJsonObject | null;
+	inputSchema: PiboJsonObject | null;
+	outputSchema: PiboJsonObject | null;
+};
+
+type WorkflowHandlerPickerResponse = {
+	kind: "handlers";
+	options: WorkflowHandlerPickerOption[];
+	selectedHandlerId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowRegisteredRefOption = {
+	id: string;
+	displayName: string;
+	description?: string;
+	paramsSchema: PiboJsonObject | null;
+	kind?: string;
+};
+
+type WorkflowRegisteredRefPickerResponse = {
+	kind: "guards" | "adapters" | "human-actions" | "prompt-assets";
+	options: WorkflowRegisteredRefOption[];
+	selectedRefId?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowPromptAssetDocument = {
+	id: string;
+	displayName: string;
+	description?: string;
+	source: "code" | "ui";
+	readOnly: boolean;
+	revisionId: string;
+	contentHash: string;
+	markdown: string;
+	createdAt: string;
+	updatedAt: string;
+};
+
+type WorkflowHumanActionOption = WorkflowRegisteredRefOption & {
+	kind: string;
+};
+
+type WorkflowCatalogVersionRecord = {
+	id: string;
+	version: string;
+	title: string;
+	description?: string;
+	source: "code" | "ui";
+	status: "draft" | "published" | "archived" | "deleted";
+	tags: string[];
+};
+
+type WorkflowVersionPickerOption = WorkflowCatalogVersionRecord & {
+	status: "published";
+	displayName: string;
+	paramsSchema: PiboJsonObject | null;
+};
+
+type WorkflowPublishedVersionSelection = WorkflowVersionPickerOption & {
+	definition: PiboJsonObject;
+	definitionHash: string;
+};
+
+type WorkflowVersionPickerResponse = {
+	kind: "workflow-versions";
+	options: WorkflowVersionPickerOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowVersionHistoryOption = WorkflowCatalogVersionRecord & {
+	actions: WorkflowCatalogAction[];
+	editability: WorkflowCatalogEditability;
+};
+
+type WorkflowVersionHistoryResponse = {
+	kind: "version-history";
+	options: WorkflowVersionHistoryOption[];
+	selectedWorkflowId?: string;
+	selectedWorkflowVersion?: string;
+	diagnostics: WorkflowPickerDiagnostic[];
+};
+
+type WorkflowCatalogAction =
+	| "view"
+	| "duplicate"
+	| "create_project_session"
+	| "edit_draft"
+	| "validate"
+	| "publish"
+	| "create_next_draft"
+	| "version_history"
+	| "archive"
+	| "delete";
+
+type WorkflowCatalogEditability = {
+	canView: boolean;
+	canDuplicate: boolean;
+	canEditDraft: boolean;
+	canCreateDraft: boolean;
+	canValidate: boolean;
+	canPublish: boolean;
+	canArchive: boolean;
+	canDelete: boolean;
+	canCreateProjectSession: boolean;
+};
+
+type WorkflowCatalogVersionSummary = WorkflowCatalogVersionRecord & {
+	definitionHash?: string;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+type WorkflowCatalogRecord = {
+	id: string;
+	title: string;
+	description?: string;
+	tags: string[];
+	source: "code" | "ui";
+	status: "draft" | "published" | "archived" | "deleted";
+	versions: WorkflowCatalogVersionSummary[];
+	activeDraftId?: string;
+	editability: WorkflowCatalogEditability;
+	validationState: "unknown" | "valid" | "warning" | "error";
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+	actions: WorkflowCatalogAction[];
+};
+
+type WorkflowCatalogListResponse = {
+	kind: "workflow-catalog";
+	includeArchived: boolean;
+	workflows: WorkflowCatalogRecord[];
+};
+
+type WorkflowCatalogInspectResponse = {
+	kind: "workflow-inspect";
+	workflow: WorkflowCatalogRecord;
+	selected:
+		| { kind: "draft"; draft: WorkflowDraftRecord }
+		| {
+			kind: "publishedVersion";
+			version: WorkflowCatalogVersionRecord & { definitionHash: string };
+			definition: PiboJsonObject;
+			validation: WorkflowValidationSummary;
+		};
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
+type WorkflowVersionListResponse = {
+	kind: "workflow-version-list";
+	workflowId: string;
+	includeArchived: boolean;
+	workflow: WorkflowCatalogRecord;
+	versions: WorkflowCatalogVersionSummary[];
+};
+
+type WorkflowVersionInspectResponse = {
+	kind: "workflow-version-inspect";
+	workflow: WorkflowCatalogRecord;
+	version: WorkflowCatalogVersionRecord & { definitionHash: string };
+	definition: PiboJsonObject;
+	validation: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+	missingRefs: WorkflowDraftDiagnostic[];
+};
+
+type WorkflowCreateDraftResponse = {
+	draft: WorkflowDraftRecord;
+	builderPath: string;
+};
+
+type WorkflowDraftDiagnostic = {
+	code: string;
+	message: string;
+	severity: "info" | "warning" | "error";
+	path?: string;
+	nodeId?: string;
+	edgeId?: string;
+	registryRef?: string;
+	hint?: string;
+};
+
+type WorkflowValidationTrigger =
+	| "draft_load"
+	| "graph_edit"
+	| "node_edit"
+	| "edge_edit"
+	| "schema_edit"
+	| "prompt_edit"
+	| "state_edit"
+	| "raw_ir_edit"
+	| "before_publish"
+	| "before_project_session_creation"
+	| "before_workflow_start";
+
+type WorkflowValidationSummary = {
+	trigger: WorkflowValidationTrigger;
+	checkedAt: string;
+	ok: boolean;
+	validationState: "valid" | "warning" | "error";
+	errorCount: number;
+	warningCount: number;
+	infoCount: number;
+	blocksPublish: boolean;
+	blocksRun: boolean;
+};
+
+type WorkflowValidationResponse = {
+	validation: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+};
+
+type WorkflowDraftRecord = {
+	draftId: string;
+	workflowId: string;
+	source: "ui";
+	status: "draft";
+	baseWorkflowId?: string;
+	baseWorkflowVersion?: string;
+	baseDefinitionHash?: string;
+	targetWorkflowVersion?: string;
+	versionIntent: "patch" | "minor" | "major";
+	definition: PiboJsonObject;
+	diagnostics: WorkflowDraftDiagnostic[];
+	validationState: "unknown" | "valid" | "warning" | "error";
+	validation?: WorkflowValidationSummary;
+	revision: number;
+	createdAt: string;
+	updatedAt: string;
+};
+
+type OwnedWorkflowDraftRecord = WorkflowDraftRecord & {
+	ownerScope: string;
+};
+
+type WorkflowDuplicateBody = {
+	version?: unknown;
+};
+
+type WorkflowNextDraftBody = {
+	version?: unknown;
+};
+
+type WorkflowArchiveBody = {
+	reason?: unknown;
+};
+
+type WorkflowDeleteBody = {
+	confirmWorkflowId?: unknown;
+};
+
+type WorkflowCreateDraftBody = {
+	workflowId?: unknown;
+	title?: unknown;
+	description?: unknown;
+	tags?: unknown;
+	definition?: unknown;
+};
+
+type WorkflowDraftPatchBody = {
+	definition?: unknown;
+	rawDefinitionText?: unknown;
+	editTrigger?: unknown;
+};
+
+type WorkflowDraftValidateBody = {
+	trigger?: unknown;
+};
+
+type WorkflowDraftPublishBody = {
+	versionIntent?: unknown;
+};
+
+type WorkflowPromptAssetSaveBody = {
+	assetId?: unknown;
+	sourceRefId?: unknown;
+	displayName?: unknown;
+	description?: unknown;
+	markdown?: unknown;
+};
+
+type WorkflowDraftStoreRow = {
+	draft_id: string;
+	workflow_id: string;
+	owner_scope: string;
+	source: "ui";
+	status: "draft";
+	base_workflow_id: string | null;
+	base_workflow_version: string | null;
+	base_definition_hash: string | null;
+	target_workflow_version: string | null;
+	version_intent: "patch" | "minor" | "major";
+	definition_json: string;
+	diagnostics_json: string;
+	validation_json: string | null;
+	validation_state: "unknown" | "valid" | "warning" | "error";
+	revision: number;
+	created_at: string;
+	updated_at: string;
+};
+
+type WorkflowPublishedVersionRecord = {
+	workflowId: string;
+	version: string;
+	source: "ui";
+	status: "published";
+	definition: PiboJsonObject;
+	definitionHash: string;
+	publishedFromDraftId?: string;
+	publishedBy?: string;
+	publishedAt: string;
+	createdAt: string;
+};
+
+type WorkflowPromptAssetRecord = {
+	assetId: string;
+	ownerScope: string;
+	source: "ui";
+	displayName: string;
+	description?: string;
+	activeRevisionId?: string;
+	createdAt: string;
+	updatedAt: string;
+};
+
+type WorkflowPromptAssetRevisionRecord = {
+	revisionId: string;
+	assetId: string;
+	ownerScope: string;
+	contentHash: string;
+	markdown: string;
+	createdAt: string;
+	createdBy?: string;
+	basedOnRevisionId?: string;
+};
+
+type WorkflowPromptAssetStoreRow = {
+	asset_id: string;
+	owner_scope: string;
+	source: "ui";
+	display_name: string;
+	description: string | null;
+	active_revision_id: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
+type WorkflowPromptAssetRevisionStoreRow = {
+	revision_id: string;
+	asset_id: string;
+	owner_scope: string;
+	content_hash: string;
+	markdown: string;
+	created_at: string;
+	created_by: string | null;
+	based_on_revision_id: string | null;
+};
+
+type WorkflowPublishedVersionStoreRow = {
+	workflow_id: string;
+	version: string;
+	source: "ui";
+	status: "published";
+	definition_hash: string;
+	definition_json: string;
+	published_from_draft_id: string | null;
+	published_by: string | null;
+	published_at: string;
+	created_at: string;
+};
+
+type WorkflowArchiveStateRecord = {
+	workflowId: string;
+	source: "ui";
+	archived: boolean;
+	archivedAt?: string;
+	archivedBy?: string;
+	archiveReason?: string;
+	updatedAt: string;
+};
+
+type WorkflowArchiveStateStoreRow = {
+	workflow_id: string;
+	source: "ui";
+	archived: number;
+	archived_at: string | null;
+	archived_by: string | null;
+	archive_reason: string | null;
+	updated_at: string;
+};
+
+type WorkflowTombstoneRecord = {
+	workflowId: string;
+	source: "ui";
+	deleted: boolean;
+	deletedAt: string;
+	deletedBy: string;
+	lastKnownTitle: string;
+	lastKnownVersion?: string;
+	lastDefinitionHash?: string;
+	updatedAt: string;
+};
+
+type WorkflowTombstoneStoreRow = {
+	workflow_id: string;
+	source: "ui";
+	deleted: number;
+	deleted_at: string;
+	deleted_by: string;
+	last_known_title: string;
+	last_known_version: string | null;
+	last_definition_hash: string | null;
+	updated_at: string;
+};
+
+type WorkflowLifecycleEventType =
+	| "workflow.draft.saved"
+	| "workflow.validation.completed"
+	| "workflow.publish.accepted"
+	| "workflow.publish.blocked"
+	| "workflow.archive.updated"
+	| "workflow.delete.tombstoned"
+	| "project.workflow_session.created"
+	| "project.workflow_start.accepted"
+	| "project.workflow_start.blocked"
+	| "workflow.run.status_changed"
+	| "workflow.human_action.submitted";
+
+type WorkflowLifecycleEventRecord = {
+	id: string;
+	type: WorkflowLifecycleEventType;
+	ownerScope: string;
+	actorId?: string;
+	workflowId?: string;
+	workflowVersion?: string;
+	draftId?: string;
+	projectId?: string;
+	piboSessionId?: string;
+	workflowRunId?: string;
+	status?: "saved" | "accepted" | "blocked" | "changed" | "submitted";
+	validation?: WorkflowValidationSummary;
+	diagnostics: WorkflowDraftDiagnostic[];
+	payload?: PiboJsonObject;
+	createdAt: string;
+};
+
+type WorkflowLifecycleEventInput = Omit<WorkflowLifecycleEventRecord, "id" | "ownerScope" | "diagnostics" | "createdAt"> & {
+	id?: string;
+	ownerScope: string;
+	diagnostics?: WorkflowDraftDiagnostic[];
+	createdAt?: string;
+};
+
+type WorkflowLifecycleEventStoreRow = {
+	id: string;
+	type: WorkflowLifecycleEventType;
+	owner_scope: string;
+	actor_id: string | null;
+	workflow_id: string | null;
+	workflow_version: string | null;
+	draft_id: string | null;
+	project_id: string | null;
+	pibo_session_id: string | null;
+	workflow_run_id: string | null;
+	status: WorkflowLifecycleEventRecord["status"] | null;
+	validation_json: string | null;
+	diagnostics_json: string;
+	payload_json: string | null;
+	created_at: string;
+};
+
+class ChatWorkflowDraftStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_ui_drafts (
+				draft_id TEXT PRIMARY KEY,
+				workflow_id TEXT NOT NULL,
+				owner_scope TEXT NOT NULL,
+				source TEXT NOT NULL,
+				status TEXT NOT NULL,
+				base_workflow_id TEXT,
+				base_workflow_version TEXT,
+				base_definition_hash TEXT,
+				target_workflow_version TEXT,
+				version_intent TEXT NOT NULL,
+				definition_json TEXT NOT NULL,
+				diagnostics_json TEXT NOT NULL,
+				validation_json TEXT,
+				validation_state TEXT NOT NULL,
+				revision INTEGER NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_ui_drafts_one_active
+				ON workflow_ui_drafts(workflow_id)
+				WHERE status = 'draft';
+			CREATE INDEX IF NOT EXISTS idx_workflow_ui_drafts_updated
+				ON workflow_ui_drafts(updated_at, draft_id);
+		`);
+	}
+
+	getDraft(draftId: string): OwnedWorkflowDraftRecord | undefined {
+		const row = this.dataStore.db.prepare("SELECT * FROM workflow_ui_drafts WHERE draft_id = ?").get(draftId) as WorkflowDraftStoreRow | undefined;
+		return row ? workflowDraftFromStoreRow(row) : undefined;
+	}
+
+	findActiveDraftByWorkflowId(workflowId: string): OwnedWorkflowDraftRecord | undefined {
+		const row = this.dataStore.db
+			.prepare("SELECT * FROM workflow_ui_drafts WHERE workflow_id = ? AND status = 'draft' ORDER BY updated_at DESC, draft_id ASC LIMIT 1")
+			.get(workflowId) as WorkflowDraftStoreRow | undefined;
+		return row ? workflowDraftFromStoreRow(row) : undefined;
+	}
+
+	listDrafts(filter: { workflowId?: string } = {}): OwnedWorkflowDraftRecord[] {
+		const rows = filter.workflowId
+			? this.dataStore.db
+				.prepare("SELECT * FROM workflow_ui_drafts WHERE workflow_id = ? ORDER BY updated_at DESC, draft_id ASC")
+				.all(filter.workflowId) as WorkflowDraftStoreRow[]
+			: this.dataStore.db
+				.prepare("SELECT * FROM workflow_ui_drafts ORDER BY workflow_id ASC, updated_at DESC, draft_id ASC")
+				.all() as WorkflowDraftStoreRow[];
+		return rows.map(workflowDraftFromStoreRow);
+	}
+
+	saveDraft(record: OwnedWorkflowDraftRecord): void {
+		this.dataStore.transaction(() => {
+			const conflict = this.dataStore.db
+				.prepare("SELECT draft_id FROM workflow_ui_drafts WHERE workflow_id = ? AND status = 'draft' AND draft_id <> ? LIMIT 1")
+				.get(record.workflowId, record.draftId) as { draft_id: string } | undefined;
+			if (conflict) {
+				throw new PiboWebHttpError(`Workflow '${record.workflowId}' already has an active draft '${conflict.draft_id}'`, 409);
+			}
+
+			this.dataStore.db.prepare(`
+				INSERT INTO workflow_ui_drafts (
+					draft_id,
+					workflow_id,
+					owner_scope,
+					source,
+					status,
+					base_workflow_id,
+					base_workflow_version,
+					base_definition_hash,
+					target_workflow_version,
+					version_intent,
+					definition_json,
+					diagnostics_json,
+					validation_json,
+					validation_state,
+					revision,
+					created_at,
+					updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(draft_id) DO UPDATE SET
+					workflow_id = excluded.workflow_id,
+					owner_scope = excluded.owner_scope,
+					source = excluded.source,
+					status = excluded.status,
+					base_workflow_id = excluded.base_workflow_id,
+					base_workflow_version = excluded.base_workflow_version,
+					base_definition_hash = excluded.base_definition_hash,
+					target_workflow_version = excluded.target_workflow_version,
+					version_intent = excluded.version_intent,
+					definition_json = excluded.definition_json,
+					diagnostics_json = excluded.diagnostics_json,
+					validation_json = excluded.validation_json,
+					validation_state = excluded.validation_state,
+					revision = excluded.revision,
+					created_at = excluded.created_at,
+					updated_at = excluded.updated_at
+			`).run(
+				record.draftId,
+				record.workflowId,
+				record.ownerScope,
+				record.source,
+				record.status,
+				record.baseWorkflowId ?? null,
+				record.baseWorkflowVersion ?? null,
+				record.baseDefinitionHash ?? null,
+				record.targetWorkflowVersion ?? null,
+				record.versionIntent,
+				JSON.stringify(record.definition),
+				JSON.stringify(sanitizeWorkflowDiagnostics(record.diagnostics)),
+				record.validation ? JSON.stringify(record.validation) : null,
+				record.validationState,
+				record.revision,
+				record.createdAt,
+				record.updatedAt,
+			);
+		});
+	}
+}
+
+function workflowDraftFromStoreRow(row: WorkflowDraftStoreRow): OwnedWorkflowDraftRecord {
+	return {
+		draftId: row.draft_id,
+		workflowId: row.workflow_id,
+		source: row.source,
+		status: row.status,
+		...(row.base_workflow_id ? { baseWorkflowId: row.base_workflow_id } : {}),
+		...(row.base_workflow_version ? { baseWorkflowVersion: row.base_workflow_version } : {}),
+		...(row.base_definition_hash ? { baseDefinitionHash: row.base_definition_hash } : {}),
+		...(row.target_workflow_version ? { targetWorkflowVersion: row.target_workflow_version } : {}),
+		versionIntent: row.version_intent,
+		definition: JSON.parse(row.definition_json) as PiboJsonObject,
+		diagnostics: sanitizeWorkflowDiagnostics(JSON.parse(row.diagnostics_json)),
+		...(row.validation_json ? { validation: JSON.parse(row.validation_json) as WorkflowValidationSummary } : {}),
+		validationState: row.validation_state,
+		revision: row.revision,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		ownerScope: row.owner_scope,
+	};
+}
+
+const WORKFLOW_DIAGNOSTIC_TEXT_MAX_LENGTH = 600;
+const WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH = 240;
+const WORKFLOW_DIAGNOSTIC_SENSITIVE_VALUE_PATTERN = /(["']?)(promptTemplate|promptOverrides|inputValues|input|output|state|payload|edgePayload|humanActionPayload|edge payload|human action payload)\1\s*[:=]\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\{[^{}]{0,500}\}|\[[^[\]]{0,500}\]|[^\s,;]{1,500})/gi;
+
+function sanitizeWorkflowDiagnostics(value: unknown): WorkflowDraftDiagnostic[] {
+	if (!Array.isArray(value)) return [];
+	return value.map(sanitizeWorkflowDiagnostic);
+}
+
+function sanitizeWorkflowDiagnostic(value: unknown): WorkflowDraftDiagnostic {
+	const record = isWorkflowDiagnosticRecord(value) ? value : {};
+	const diagnostic: WorkflowDraftDiagnostic = {
+		code: normalizeWorkflowDiagnosticString(record.code, WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH) ?? "WorkflowDiagnostic.redacted",
+		message: normalizeWorkflowDiagnosticText(record.message) ?? "Workflow diagnostic details were redacted.",
+		severity: normalizeWorkflowDiagnosticSeverity(record.severity),
+	};
+	const path = normalizeWorkflowDiagnosticString(record.path, WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH);
+	if (path) diagnostic.path = path;
+	const nodeId = normalizeWorkflowDiagnosticString(record.nodeId, WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH);
+	if (nodeId) diagnostic.nodeId = nodeId;
+	const edgeId = normalizeWorkflowDiagnosticString(record.edgeId, WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH);
+	if (edgeId) diagnostic.edgeId = edgeId;
+	const registryRef = normalizeWorkflowDiagnosticString(record.registryRef, WORKFLOW_DIAGNOSTIC_REF_MAX_LENGTH);
+	if (registryRef) diagnostic.registryRef = registryRef;
+	const hint = normalizeWorkflowDiagnosticText(record.hint);
+	if (hint) diagnostic.hint = hint;
+	return diagnostic;
+}
+
+function isWorkflowDiagnosticRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeWorkflowDiagnosticSeverity(value: unknown): WorkflowDraftDiagnostic["severity"] {
+	return value === "info" || value === "warning" || value === "error" ? value : "error";
+}
+
+function normalizeWorkflowDiagnosticText(value: unknown): string | undefined {
+	const text = normalizeWorkflowDiagnosticString(value, WORKFLOW_DIAGNOSTIC_TEXT_MAX_LENGTH);
+	if (!text) return undefined;
+	return truncateWorkflowDiagnosticText(redactWorkflowDiagnosticText(text));
+}
+
+function normalizeWorkflowDiagnosticString(value: unknown, maxLength: number): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	if (!trimmed) return undefined;
+	return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}…` : trimmed;
+}
+
+function redactWorkflowDiagnosticText(text: string): string {
+	return text.replace(WORKFLOW_DIAGNOSTIC_SENSITIVE_VALUE_PATTERN, (_match, quote: string, label: string) => `${quote}${label}${quote}: [redacted]`);
+}
+
+function truncateWorkflowDiagnosticText(text: string): string {
+	return text.length > WORKFLOW_DIAGNOSTIC_TEXT_MAX_LENGTH ? `${text.slice(0, WORKFLOW_DIAGNOSTIC_TEXT_MAX_LENGTH)}…` : text;
+}
+
+class ChatWorkflowPublishedVersionStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_published_versions (
+				workflow_id TEXT NOT NULL,
+				version TEXT NOT NULL,
+				source TEXT NOT NULL,
+				status TEXT NOT NULL,
+				definition_hash TEXT NOT NULL,
+				definition_json TEXT NOT NULL,
+				published_from_draft_id TEXT,
+				published_by TEXT,
+				published_at TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (workflow_id, version)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_published_versions_workflow
+				ON workflow_published_versions(workflow_id, version);
+			CREATE INDEX IF NOT EXISTS idx_workflow_published_versions_published_at
+				ON workflow_published_versions(published_at);
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_published_versions_draft
+				ON workflow_published_versions(published_from_draft_id)
+				WHERE published_from_draft_id IS NOT NULL;
+		`);
+	}
+
+	getPublishedVersionByDraftId(draftId: string): WorkflowPublishedVersionRecord | undefined {
+		const row = this.dataStore.db
+			.prepare("SELECT * FROM workflow_published_versions WHERE published_from_draft_id = ? ORDER BY published_at ASC LIMIT 1")
+			.get(draftId) as WorkflowPublishedVersionStoreRow | undefined;
+		return row ? workflowPublishedVersionFromStoreRow(row) : undefined;
+	}
+
+	listPublishedVersions(filter: { workflowId?: string } = {}): WorkflowPublishedVersionRecord[] {
+		const rows = filter.workflowId
+			? this.dataStore.db
+				.prepare("SELECT * FROM workflow_published_versions WHERE workflow_id = ? ORDER BY workflow_id ASC, version ASC")
+				.all(filter.workflowId) as WorkflowPublishedVersionStoreRow[]
+			: this.dataStore.db
+				.prepare("SELECT * FROM workflow_published_versions ORDER BY workflow_id ASC, version ASC")
+				.all() as WorkflowPublishedVersionStoreRow[];
+		return rows.map(workflowPublishedVersionFromStoreRow);
+	}
+
+	publishDraft(input: {
+		draft: OwnedWorkflowDraftRecord;
+		versionIntent: "patch" | "minor" | "major";
+		publishedBy: string;
+		reservedVersions: string[];
+	}): { record: WorkflowPublishedVersionRecord; alreadyPublished: boolean } {
+		return this.dataStore.transaction(() => {
+			const alreadyPublished = this.getPublishedVersionByDraftId(input.draft.draftId);
+			if (alreadyPublished) return { record: alreadyPublished, alreadyPublished: true };
+
+			const existingVersions = [
+				...input.reservedVersions,
+				...this.listPublishedVersions({ workflowId: input.draft.workflowId }).map((record) => record.version),
+			];
+			const version = allocateWorkflowPublishedVersion({
+				draft: input.draft,
+				versionIntent: input.versionIntent,
+				existingVersions,
+			});
+			const definition = workflowDraftDefinitionForPublishedVersion(input.draft.definition, input.draft.workflowId, version);
+			const now = new Date().toISOString();
+			const record: WorkflowPublishedVersionRecord = {
+				workflowId: input.draft.workflowId,
+				version,
+				source: "ui",
+				status: "published",
+				definition,
+				definitionHash: hashWorkflowDefinitionJson(definition),
+				publishedFromDraftId: input.draft.draftId,
+				publishedBy: input.publishedBy,
+				publishedAt: now,
+				createdAt: now,
+			};
+			this.insertPublishedVersion(record);
+			return { record, alreadyPublished: false };
+		});
+	}
+
+	private insertPublishedVersion(record: WorkflowPublishedVersionRecord): void {
+		this.dataStore.db.prepare(`
+			INSERT INTO workflow_published_versions (
+				workflow_id,
+				version,
+				source,
+				status,
+				definition_hash,
+				definition_json,
+				published_from_draft_id,
+				published_by,
+				published_at,
+				created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			record.workflowId,
+			record.version,
+			record.source,
+			record.status,
+			record.definitionHash,
+			canonicalWorkflowDefinitionJson(record.definition),
+			record.publishedFromDraftId ?? null,
+			record.publishedBy ?? null,
+			record.publishedAt,
+			record.createdAt,
+		);
+	}
+}
+
+function workflowPublishedVersionFromStoreRow(row: WorkflowPublishedVersionStoreRow): WorkflowPublishedVersionRecord {
+	return {
+		workflowId: row.workflow_id,
+		version: row.version,
+		source: row.source,
+		status: row.status,
+		definitionHash: row.definition_hash,
+		definition: JSON.parse(row.definition_json) as PiboJsonObject,
+		...(row.published_from_draft_id ? { publishedFromDraftId: row.published_from_draft_id } : {}),
+		...(row.published_by ? { publishedBy: row.published_by } : {}),
+		publishedAt: row.published_at,
+		createdAt: row.created_at,
+	};
+}
+
+class ChatWorkflowPromptAssetStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_prompt_assets (
+				asset_id TEXT PRIMARY KEY,
+				owner_scope TEXT NOT NULL,
+				source TEXT NOT NULL,
+				display_name TEXT NOT NULL,
+				description TEXT,
+				active_revision_id TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+
+			CREATE TABLE IF NOT EXISTS workflow_prompt_asset_revisions (
+				revision_id TEXT PRIMARY KEY,
+				asset_id TEXT NOT NULL,
+				owner_scope TEXT NOT NULL,
+				content_hash TEXT NOT NULL,
+				markdown TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				created_by TEXT,
+				based_on_revision_id TEXT
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_prompt_assets_owner
+				ON workflow_prompt_assets(owner_scope, updated_at DESC);
+			CREATE INDEX IF NOT EXISTS idx_workflow_prompt_asset_revisions_asset
+				ON workflow_prompt_asset_revisions(asset_id, created_at DESC);
+		`);
+	}
+
+	listAssets(ownerScope: string): WorkflowPromptAssetRecord[] {
+		const rows = this.dataStore.db
+			.prepare("SELECT * FROM workflow_prompt_assets WHERE owner_scope = ? ORDER BY display_name ASC, asset_id ASC")
+			.all(ownerScope) as WorkflowPromptAssetStoreRow[];
+		return rows.map(workflowPromptAssetFromStoreRow);
+	}
+
+	getAsset(ownerScope: string, assetId: string): WorkflowPromptAssetRecord | undefined {
+		const row = this.dataStore.db
+			.prepare("SELECT * FROM workflow_prompt_assets WHERE owner_scope = ? AND asset_id = ?")
+			.get(ownerScope, assetId) as WorkflowPromptAssetStoreRow | undefined;
+		return row ? workflowPromptAssetFromStoreRow(row) : undefined;
+	}
+
+	getActiveRevision(ownerScope: string, assetId: string): WorkflowPromptAssetRevisionRecord | undefined {
+		const asset = this.getAsset(ownerScope, assetId);
+		if (!asset?.activeRevisionId) return undefined;
+		const row = this.dataStore.db
+			.prepare("SELECT * FROM workflow_prompt_asset_revisions WHERE owner_scope = ? AND asset_id = ? AND revision_id = ?")
+			.get(ownerScope, assetId, asset.activeRevisionId) as WorkflowPromptAssetRevisionStoreRow | undefined;
+		return row ? workflowPromptAssetRevisionFromStoreRow(row) : undefined;
+	}
+
+	saveRevision(input: {
+		ownerScope: string;
+		assetId?: string;
+		displayName: string;
+		description?: string;
+		markdown: string;
+		actorId?: string;
+	}): WorkflowPromptAssetDocument {
+		return this.dataStore.transaction(() => {
+			const now = new Date().toISOString();
+			const assetId = input.assetId?.trim() || `ui.promptAssets.${randomUUID()}`;
+			const ownerRow = this.dataStore.db
+				.prepare("SELECT owner_scope FROM workflow_prompt_assets WHERE asset_id = ?")
+				.get(assetId) as { owner_scope: string } | undefined;
+			if (ownerRow && ownerRow.owner_scope !== input.ownerScope) throw new PiboWebHttpError("Workflow prompt asset not found", 404);
+			const existing = this.getAsset(input.ownerScope, assetId);
+			const revisionId = `wpar_${randomUUID()}`;
+			const contentHash = hashPromptAssetMarkdown(input.markdown);
+			this.dataStore.db.prepare(`
+				INSERT INTO workflow_prompt_assets (
+					asset_id,
+					owner_scope,
+					source,
+					display_name,
+					description,
+					active_revision_id,
+					created_at,
+					updated_at
+				) VALUES (?, ?, 'ui', ?, ?, ?, ?, ?)
+				ON CONFLICT(asset_id) DO UPDATE SET
+					display_name = excluded.display_name,
+					description = excluded.description,
+					active_revision_id = excluded.active_revision_id,
+					updated_at = excluded.updated_at
+			`).run(
+				assetId,
+				input.ownerScope,
+				normalizeWorkflowPromptAssetLabel(input.displayName),
+				input.description?.trim() || null,
+				revisionId,
+				existing?.createdAt ?? now,
+				now,
+			);
+			this.dataStore.db.prepare(`
+				INSERT INTO workflow_prompt_asset_revisions (
+					revision_id,
+					asset_id,
+					owner_scope,
+					content_hash,
+					markdown,
+					created_at,
+					created_by,
+					based_on_revision_id
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`).run(
+				revisionId,
+				assetId,
+				input.ownerScope,
+				contentHash,
+				input.markdown,
+				now,
+				input.actorId ?? null,
+				existing?.activeRevisionId ?? null,
+			);
+			const asset = this.getAsset(input.ownerScope, assetId);
+			const revision = this.getActiveRevision(input.ownerScope, assetId);
+			if (!asset || !revision) throw new Error(`Failed to save workflow prompt asset '${assetId}'`);
+			return workflowPromptAssetDocumentFromRecords(asset, revision);
+		});
+	}
+}
+
+function workflowPromptAssetFromStoreRow(row: WorkflowPromptAssetStoreRow): WorkflowPromptAssetRecord {
+	return {
+		assetId: row.asset_id,
+		ownerScope: row.owner_scope,
+		source: row.source,
+		displayName: row.display_name,
+		...(row.description ? { description: row.description } : {}),
+		...(row.active_revision_id ? { activeRevisionId: row.active_revision_id } : {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function workflowPromptAssetRevisionFromStoreRow(row: WorkflowPromptAssetRevisionStoreRow): WorkflowPromptAssetRevisionRecord {
+	return {
+		revisionId: row.revision_id,
+		assetId: row.asset_id,
+		ownerScope: row.owner_scope,
+		contentHash: row.content_hash,
+		markdown: row.markdown,
+		createdAt: row.created_at,
+		...(row.created_by ? { createdBy: row.created_by } : {}),
+		...(row.based_on_revision_id ? { basedOnRevisionId: row.based_on_revision_id } : {}),
+	};
+}
+
+function workflowPromptAssetDocumentFromRecords(asset: WorkflowPromptAssetRecord, revision: WorkflowPromptAssetRevisionRecord): WorkflowPromptAssetDocument {
+	return {
+		id: asset.assetId,
+		displayName: asset.displayName,
+		...(asset.description ? { description: asset.description } : {}),
+		source: asset.source,
+		readOnly: false,
+		revisionId: revision.revisionId,
+		contentHash: revision.contentHash,
+		markdown: revision.markdown,
+		createdAt: asset.createdAt,
+		updatedAt: asset.updatedAt,
+	};
+}
+
+class ChatWorkflowArchiveStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_archive_states (
+				workflow_id TEXT PRIMARY KEY,
+				source TEXT NOT NULL,
+				archived INTEGER NOT NULL,
+				archived_at TEXT,
+				archived_by TEXT,
+				archive_reason TEXT,
+				updated_at TEXT NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_archive_states_archived
+				ON workflow_archive_states(archived, updated_at);
+		`);
+	}
+
+	setWorkflowArchived(input: { workflowId: string; archivedBy: string; archiveReason?: string }): WorkflowArchiveStateRecord {
+		const existing = this.getWorkflowArchiveState(input.workflowId);
+		const now = new Date().toISOString();
+		const archiveReason = input.archiveReason ?? existing?.archiveReason;
+		const record: WorkflowArchiveStateRecord = {
+			workflowId: input.workflowId,
+			source: "ui",
+			archived: true,
+			archivedAt: existing?.archivedAt ?? now,
+			archivedBy: input.archivedBy,
+			...(archiveReason ? { archiveReason } : {}),
+			updatedAt: now,
+		};
+		this.saveWorkflowArchiveState(record);
+		return record;
+	}
+
+	saveWorkflowArchiveState(record: WorkflowArchiveStateRecord): void {
+		this.dataStore.db.prepare(`
+			INSERT INTO workflow_archive_states (
+				workflow_id,
+				source,
+				archived,
+				archived_at,
+				archived_by,
+				archive_reason,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(workflow_id) DO UPDATE SET
+				source = excluded.source,
+				archived = excluded.archived,
+				archived_at = excluded.archived_at,
+				archived_by = excluded.archived_by,
+				archive_reason = excluded.archive_reason,
+				updated_at = excluded.updated_at
+		`).run(
+			record.workflowId,
+			record.source,
+			record.archived ? 1 : 0,
+			record.archivedAt ?? null,
+			record.archivedBy ?? null,
+			record.archiveReason ?? null,
+			record.updatedAt,
+		);
+	}
+
+	getWorkflowArchiveState(workflowId: string): WorkflowArchiveStateRecord | undefined {
+		const row = this.dataStore.db.prepare("SELECT * FROM workflow_archive_states WHERE workflow_id = ?").get(workflowId) as WorkflowArchiveStateStoreRow | undefined;
+		return row ? workflowArchiveStateFromStoreRow(row) : undefined;
+	}
+}
+
+function workflowArchiveStateFromStoreRow(row: WorkflowArchiveStateStoreRow): WorkflowArchiveStateRecord {
+	return {
+		workflowId: row.workflow_id,
+		source: row.source,
+		archived: row.archived === 1,
+		...(row.archived_at ? { archivedAt: row.archived_at } : {}),
+		...(row.archived_by ? { archivedBy: row.archived_by } : {}),
+		...(row.archive_reason ? { archiveReason: row.archive_reason } : {}),
+		updatedAt: row.updated_at,
+	};
+}
+
+class ChatWorkflowTombstoneStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_delete_tombstones (
+				workflow_id TEXT PRIMARY KEY,
+				source TEXT NOT NULL,
+				deleted INTEGER NOT NULL,
+				deleted_at TEXT NOT NULL,
+				deleted_by TEXT NOT NULL,
+				last_known_title TEXT NOT NULL,
+				last_known_version TEXT,
+				last_definition_hash TEXT,
+				updated_at TEXT NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_delete_tombstones_deleted
+				ON workflow_delete_tombstones(deleted, updated_at);
+		`);
+	}
+
+	setWorkflowDeleted(input: {
+		workflowId: string;
+		deletedBy: string;
+		lastKnownTitle: string;
+		lastKnownVersion?: string;
+		lastDefinitionHash?: string;
+	}): WorkflowTombstoneRecord {
+		const existing = this.getWorkflowTombstone(input.workflowId);
+		const now = new Date().toISOString();
+		const record: WorkflowTombstoneRecord = {
+			workflowId: input.workflowId,
+			source: "ui",
+			deleted: true,
+			deletedAt: existing?.deletedAt ?? now,
+			deletedBy: input.deletedBy,
+			lastKnownTitle: input.lastKnownTitle,
+			...(input.lastKnownVersion ? { lastKnownVersion: input.lastKnownVersion } : {}),
+			...(input.lastDefinitionHash ? { lastDefinitionHash: input.lastDefinitionHash } : {}),
+			updatedAt: now,
+		};
+		this.saveWorkflowTombstone(record);
+		return record;
+	}
+
+	getWorkflowTombstone(workflowId: string): WorkflowTombstoneRecord | undefined {
+		const row = this.dataStore.db.prepare("SELECT * FROM workflow_delete_tombstones WHERE workflow_id = ? AND deleted = 1").get(workflowId) as WorkflowTombstoneStoreRow | undefined;
+		return row ? workflowTombstoneFromStoreRow(row) : undefined;
+	}
+
+	private saveWorkflowTombstone(record: WorkflowTombstoneRecord): void {
+		this.dataStore.db.prepare(`
+			INSERT INTO workflow_delete_tombstones (
+				workflow_id,
+				source,
+				deleted,
+				deleted_at,
+				deleted_by,
+				last_known_title,
+				last_known_version,
+				last_definition_hash,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(workflow_id) DO UPDATE SET
+				source = excluded.source,
+				deleted = excluded.deleted,
+				deleted_at = excluded.deleted_at,
+				deleted_by = excluded.deleted_by,
+				last_known_title = excluded.last_known_title,
+				last_known_version = excluded.last_known_version,
+				last_definition_hash = excluded.last_definition_hash,
+				updated_at = excluded.updated_at
+		`).run(
+			record.workflowId,
+			record.source,
+			record.deleted ? 1 : 0,
+			record.deletedAt,
+			record.deletedBy,
+			record.lastKnownTitle,
+			record.lastKnownVersion ?? null,
+			record.lastDefinitionHash ?? null,
+			record.updatedAt,
+		);
+	}
+}
+
+function workflowTombstoneFromStoreRow(row: WorkflowTombstoneStoreRow): WorkflowTombstoneRecord {
+	return {
+		workflowId: row.workflow_id,
+		source: row.source,
+		deleted: row.deleted === 1,
+		deletedAt: row.deleted_at,
+		deletedBy: row.deleted_by,
+		lastKnownTitle: row.last_known_title,
+		...(row.last_known_version ? { lastKnownVersion: row.last_known_version } : {}),
+		...(row.last_definition_hash ? { lastDefinitionHash: row.last_definition_hash } : {}),
+		updatedAt: row.updated_at,
+	};
+}
+
+class ChatWorkflowLifecycleEventStore {
+	constructor(private readonly dataStore: PiboDataStore) {
+		this.dataStore.db.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_lifecycle_events (
+				id TEXT PRIMARY KEY,
+				type TEXT NOT NULL,
+				owner_scope TEXT NOT NULL,
+				actor_id TEXT,
+				workflow_id TEXT,
+				workflow_version TEXT,
+				draft_id TEXT,
+				project_id TEXT,
+				pibo_session_id TEXT,
+				workflow_run_id TEXT,
+				status TEXT,
+				validation_json TEXT,
+				diagnostics_json TEXT NOT NULL,
+				payload_json TEXT,
+				created_at TEXT NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_workflow_lifecycle_events_owner
+				ON workflow_lifecycle_events(owner_scope, created_at);
+			CREATE INDEX IF NOT EXISTS idx_workflow_lifecycle_events_type
+				ON workflow_lifecycle_events(type, created_at);
+			CREATE INDEX IF NOT EXISTS idx_workflow_lifecycle_events_workflow
+				ON workflow_lifecycle_events(owner_scope, workflow_id, workflow_version, created_at);
+			CREATE INDEX IF NOT EXISTS idx_workflow_lifecycle_events_project_session
+				ON workflow_lifecycle_events(owner_scope, project_id, pibo_session_id, created_at);
+		`);
+	}
+
+	record(input: WorkflowLifecycleEventInput): WorkflowLifecycleEventRecord {
+		const event: WorkflowLifecycleEventRecord = {
+			id: input.id ?? `wfle_${randomUUID()}`,
+			type: input.type,
+			ownerScope: input.ownerScope,
+			...(input.actorId ? { actorId: input.actorId } : {}),
+			...(input.workflowId ? { workflowId: input.workflowId } : {}),
+			...(input.workflowVersion ? { workflowVersion: input.workflowVersion } : {}),
+			...(input.draftId ? { draftId: input.draftId } : {}),
+			...(input.projectId ? { projectId: input.projectId } : {}),
+			...(input.piboSessionId ? { piboSessionId: input.piboSessionId } : {}),
+			...(input.workflowRunId ? { workflowRunId: input.workflowRunId } : {}),
+			...(input.status ? { status: input.status } : {}),
+			...(input.validation ? { validation: input.validation } : {}),
+			diagnostics: sanitizeWorkflowDiagnostics(input.diagnostics ?? []),
+			...(input.payload ? { payload: input.payload } : {}),
+			createdAt: input.createdAt ?? new Date().toISOString(),
+		};
+		this.dataStore.db.prepare(`
+			INSERT INTO workflow_lifecycle_events (
+				id,
+				type,
+				owner_scope,
+				actor_id,
+				workflow_id,
+				workflow_version,
+				draft_id,
+				project_id,
+				pibo_session_id,
+				workflow_run_id,
+				status,
+				validation_json,
+				diagnostics_json,
+				payload_json,
+				created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			event.id,
+			event.type,
+			event.ownerScope,
+			event.actorId ?? null,
+			event.workflowId ?? null,
+			event.workflowVersion ?? null,
+			event.draftId ?? null,
+			event.projectId ?? null,
+			event.piboSessionId ?? null,
+			event.workflowRunId ?? null,
+			event.status ?? null,
+			event.validation ? JSON.stringify(event.validation) : null,
+			JSON.stringify(event.diagnostics),
+			event.payload ? JSON.stringify(event.payload) : null,
+			event.createdAt,
+		);
+		return event;
+	}
+
+	listEvents(filter: {
+		ownerScope: string;
+		type?: string;
+		workflowId?: string;
+		draftId?: string;
+		projectId?: string;
+		piboSessionId?: string;
+		workflowRunId?: string;
+		limit?: number;
+	}): WorkflowLifecycleEventRecord[] {
+		const clauses = ["owner_scope = ?"];
+		const values: Array<string | number> = [filter.ownerScope];
+		if (filter.type) {
+			clauses.push("type = ?");
+			values.push(filter.type);
+		}
+		if (filter.workflowId) {
+			clauses.push("workflow_id = ?");
+			values.push(filter.workflowId);
+		}
+		if (filter.draftId) {
+			clauses.push("draft_id = ?");
+			values.push(filter.draftId);
+		}
+		if (filter.projectId) {
+			clauses.push("project_id = ?");
+			values.push(filter.projectId);
+		}
+		if (filter.piboSessionId) {
+			clauses.push("pibo_session_id = ?");
+			values.push(filter.piboSessionId);
+		}
+		if (filter.workflowRunId) {
+			clauses.push("workflow_run_id = ?");
+			values.push(filter.workflowRunId);
+		}
+		const rows = this.dataStore.db.prepare(`
+			SELECT * FROM workflow_lifecycle_events
+			WHERE ${clauses.join(" AND ")}
+			ORDER BY created_at DESC, id DESC
+			LIMIT ?
+		`).all(...values, filter.limit ?? 100) as WorkflowLifecycleEventStoreRow[];
+		return rows.map(workflowLifecycleEventFromStoreRow);
+	}
+}
+
+function workflowLifecycleEventFromStoreRow(row: WorkflowLifecycleEventStoreRow): WorkflowLifecycleEventRecord {
+	return {
+		id: row.id,
+		type: row.type,
+		ownerScope: row.owner_scope,
+		...(row.actor_id ? { actorId: row.actor_id } : {}),
+		...(row.workflow_id ? { workflowId: row.workflow_id } : {}),
+		...(row.workflow_version ? { workflowVersion: row.workflow_version } : {}),
+		...(row.draft_id ? { draftId: row.draft_id } : {}),
+		...(row.project_id ? { projectId: row.project_id } : {}),
+		...(row.pibo_session_id ? { piboSessionId: row.pibo_session_id } : {}),
+		...(row.workflow_run_id ? { workflowRunId: row.workflow_run_id } : {}),
+		...(row.status ? { status: row.status } : {}),
+		...(row.validation_json ? { validation: JSON.parse(row.validation_json) as WorkflowValidationSummary } : {}),
+		diagnostics: sanitizeWorkflowDiagnostics(JSON.parse(row.diagnostics_json)),
+		...(row.payload_json ? { payload: JSON.parse(row.payload_json) as PiboJsonObject } : {}),
+		createdAt: row.created_at,
+	};
+}
+
 type ChatMcpServerDescriptionBody = {
 	description?: unknown;
 };
@@ -355,6 +1720,7 @@ type ChatProjectsBootstrap = ChatBootstrapCatalog & {
 	project?: PiboProject;
 	projects: PiboProject[];
 	projectSessions: PiboProjectSession[];
+	workflowLifecycleEvents: WorkflowLifecycleEventRecord[];
 	session?: PiboSession;
 	selectedProjectId: string;
 	selectedPiboSessionId?: string;
@@ -383,6 +1749,7 @@ type PiboRoomNodeWithUnread = PiboRoom & {
 const CHAT_UI_DIST_DIR = resolve(fileURLToPath(new URL("../../../dist/apps/chat-ui", import.meta.url)));
 const compressedAssetCache = new Map<string, Uint8Array>();
 const TRACE_CACHE_MAX_ENTRIES = 24;
+const CHAT_UPLOAD_DIR = resolve(os.homedir(), ".pibo", "uploads");
 
 function writeSse(
 	controller: ReadableStreamDefaultController<Uint8Array>,
@@ -408,9 +1775,17 @@ function writeJsonSse(controller: ReadableStreamDefaultController<Uint8Array>, e
 }
 
 function requireSameOriginJsonRequest(request: Request): void {
+	requireSameOriginRequest(request, "application/json");
+}
+
+function requireSameOriginMultipartRequest(request: Request): void {
+	requireSameOriginRequest(request, "multipart/form-data");
+}
+
+function requireSameOriginRequest(request: Request, expectedContentType: string): void {
 	const contentType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
-	if (contentType !== "application/json") {
-		throw new PiboWebHttpError("Content-Type must be application/json", 415);
+	if (contentType !== expectedContentType) {
+		throw new PiboWebHttpError(`Content-Type must be ${expectedContentType}`, 415);
 	}
 
 	const origin = request.headers.get("origin");
@@ -448,6 +1823,18 @@ function principalIdFor(webSession: PiboWebSession): string {
 	return webSession.ownerScope;
 }
 
+function recordWorkflowLifecycleEvent(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	input: Omit<WorkflowLifecycleEventInput, "ownerScope" | "actorId"> & { actorId?: string },
+): WorkflowLifecycleEventRecord {
+	return state.workflowLifecycleEventStore.record({
+		...input,
+		ownerScope: webSession.ownerScope,
+		actorId: input.actorId ?? principalIdFor(webSession),
+	});
+}
+
 function roomResourcePath(pathname: string): { roomId: string; child?: "events" | "messages" | "read" } | undefined {
 	const prefix = `${CHAT_WEB_API_PREFIX}/rooms/`;
 	if (!pathname.startsWith(prefix)) return undefined;
@@ -475,6 +1862,125 @@ function agentResourceId(pathname: string): string | undefined {
 		return decodeURIComponent(encodedId);
 	} catch {
 		throw new PiboWebHttpError("Invalid agent id", 400);
+	}
+}
+
+function workflowPickerKind(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/pickers/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedKind = pathname.slice(prefix.length);
+	if (!encodedKind || encodedKind.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedKind);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow picker kind", 400);
+	}
+}
+
+function workflowPromptAssetResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/prompt-assets/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow prompt asset id", 400);
+	}
+}
+
+function workflowDraftResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/drafts/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow draft id", 400);
+	}
+}
+
+function workflowDraftActionResource(pathname: string): { draftId: string; action: "validate" | "publish" } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/drafts/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+	try {
+		const action = decodeURIComponent(parts[1]);
+		if (action !== "validate" && action !== "publish") return undefined;
+		return { draftId: decodeURIComponent(parts[0]), action };
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow draft action", 400);
+	}
+}
+
+function workflowDuplicateResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	const suffix = "/duplicate";
+	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+	const encodedId = pathname.slice(prefix.length, -suffix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
+	}
+}
+
+function workflowNextDraftResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	const suffix = "/drafts";
+	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+	const encodedId = pathname.slice(prefix.length, -suffix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
+	}
+}
+
+function workflowArchiveResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	const suffix = "/archive";
+	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+	const encodedId = pathname.slice(prefix.length, -suffix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
+	}
+}
+
+function workflowVersionResource(pathname: string): { workflowId: string; version?: string } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 2 && parts.length !== 3) return undefined;
+	if (!parts[0] || parts[1] !== "versions" || (parts.length === 3 && !parts[2])) return undefined;
+	try {
+		return {
+			workflowId: decodeURIComponent(parts[0]),
+			...(parts[2] ? { version: decodeURIComponent(parts[2]) } : {}),
+		};
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow version route", 400);
+	}
+}
+
+function workflowCatalogResourceId(pathname: string): string | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const encodedId = pathname.slice(prefix.length);
+	if (!encodedId || encodedId.includes("/")) return undefined;
+	try {
+		const workflowId = decodeURIComponent(encodedId);
+		if (workflowId === "drafts" || workflowId === "pickers" || workflowId === "lifecycle-events") return undefined;
+		return workflowId;
+	} catch {
+		throw new PiboWebHttpError("Invalid workflow id", 400);
 	}
 }
 
@@ -1264,6 +2770,26 @@ function requireRoom(
 	return room;
 }
 
+function listOwnedProjects(state: ChatWebAppState, webSession: PiboWebSession, options: { includeArchived?: boolean } = {}): PiboProject[] {
+	return state.projectService.listProjects(options).filter((project) => project.ownerScope === webSession.ownerScope);
+}
+
+function requireOwnedProject(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	projectId: string,
+	options: { includeArchived?: boolean } = {},
+): PiboProject {
+	let project: PiboProject;
+	try {
+		project = state.projectService.requireProject(projectId, options);
+	} catch {
+		throw new PiboWebHttpError("Project not found", 404);
+	}
+	if (project.ownerScope !== webSession.ownerScope) throw new PiboWebHttpError("Project not found", 404);
+	return project;
+}
+
 function createPersonalChatSession(
 	context: PiboWebAppContext,
 	webSession: PiboWebSession,
@@ -1287,35 +2813,415 @@ function createProjectChatSession(input: {
 	project: PiboProject;
 	profile: string;
 	workflowId?: string;
+	workflowVersion?: string;
+	title?: string;
+	configuredWorkflow?: boolean;
+	configuration?: PiboProjectWorkflowSessionConfiguration;
 }): PiboSession {
-	const workflowId = normalizeProjectWorkflowId(input.workflowId);
+	const workflowSelection = resolveProjectWorkflowSelection(input.state, input.workflowId, input.workflowVersion);
 	const session = input.context.channelContext.createSession({
 		channel: CHAT_WEB_CHANNEL,
 		kind: "chat",
 		profile: input.profile,
 		ownerScope: input.webSession.ownerScope,
 		workspace: input.project.projectFolder,
-		metadata: {
+		...(input.title ? { title: input.title } : {}),
+		...(input.configuration?.model ? { activeModel: input.configuration.model } : {}),
+		metadata: withWorkflowSessionKind({
 			projectId: input.project.id,
 			projectSessionKind: "main",
-			projectWorkflowId: workflowId,
-		},
+			projectWorkflowId: workflowSelection.id,
+			projectWorkflowVersion: workflowSelection.version,
+			...(input.configuration ? { projectWorkflowConfiguration: input.configuration } : {}),
+		}, "main_workflow"),
 	});
 	input.state.projectService.addProjectSession({
 		projectId: input.project.id,
 		piboSessionId: session.id,
 		kind: "main",
-		workflowId,
+		workflowId: workflowSelection.id,
+		workflowVersion: workflowSelection.version,
 		title: session.title,
+		state: input.configuredWorkflow ? "configured" : undefined,
+		configuration: input.configuration,
 	});
 	input.state.sessionQuery.upsertSession(session);
 	return session;
 }
 
+function resolveProjectWorkflowSelection(
+	state: ChatWebAppState,
+	workflowIdValue: unknown,
+	workflowVersionValue?: unknown,
+	options: { requireExplicitWorkflowId?: boolean; requireExplicitVersion?: boolean } = {},
+): WorkflowVersionPickerOption {
+	if (options.requireExplicitWorkflowId && (workflowIdValue === undefined || workflowIdValue === null || workflowIdValue === "")) {
+		throw new PiboWebHttpError("Workflow id is required", 400);
+	}
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const workflowVersion = normalizeProjectWorkflowVersion(workflowVersionValue);
+	if (options.requireExplicitVersion && !workflowVersion) {
+		throw new PiboWebHttpError("Workflow version is required", 400);
+	}
+	const candidates = buildProjectWorkflowVersionCatalog(state).filter((option) => option.id === workflowId);
+	const selected = candidates.find((option) => workflowVersion === undefined || option.version === workflowVersion);
+	if (!selected) {
+		throw new PiboWebHttpError(`Unknown workflow version: ${workflowId}${workflowVersion ? `@${workflowVersion}` : ""}`, 400);
+	}
+	if (selected.status === "archived") {
+		throw new PiboWebHttpError(`Workflow version '${selected.id}@${selected.version}' is archived and cannot create a Project session by default`, 400);
+	}
+	if (selected.status !== "published") {
+		throw new PiboWebHttpError(`Workflow version '${selected.id}@${selected.version}' is not published`, 400);
+	}
+	return workflowVersionPickerOptionFromCatalogRecord({ ...selected, status: "published" });
+}
+
+function normalizeLegacyProjectWorkflowId(value: unknown): string {
+	const workflowId = normalizeProjectWorkflowId(value);
+	if (workflowId !== "simple-chat") throw new PiboWebHttpError("Only the simple-chat workflow is available in V1", 400);
+	return workflowId;
+}
+
 function normalizeProjectWorkflowId(value: unknown): string {
 	if (value === undefined || value === null || value === "") return "simple-chat";
-	if (value !== "simple-chat") throw new PiboWebHttpError("Only the simple-chat workflow is available in V1", 400);
+	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Workflow id must be a string", 400);
+	return value.trim();
+}
+
+function normalizeProjectWorkflowVersion(value: unknown): string | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value !== "string" || !value.trim()) throw new PiboWebHttpError("Workflow version must be a string", 400);
+	return value.trim();
+}
+
+function normalizeWorkflowArchiveReason(value: unknown): string | undefined {
+	if (value === undefined || value === null || value === "") return undefined;
+	if (typeof value !== "string") throw new PiboWebHttpError("Workflow archive reason must be a string", 400);
+	const trimmed = value.trim();
+	return trimmed ? trimmed.slice(0, 500) : undefined;
+}
+
+function normalizeWorkflowDraftTitle(value: unknown, fallback?: string): string {
+	const source = value === undefined || value === null || value === "" ? fallback : value;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow title must be a string", 400);
+	const title = source.replace(/\s+/g, " ").trim();
+	if (!title) throw new PiboWebHttpError("Workflow title is required", 400);
+	if (title.length > 160) throw new PiboWebHttpError("Workflow title is too long", 400);
+	return title;
+}
+
+function normalizeWorkflowDraftDescription(value: unknown, fallback?: string): string | undefined {
+	const source = value === undefined || value === null || value === "" ? fallback : value;
+	if (source === undefined || source === null || source === "") return undefined;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow description must be a string", 400);
+	const description = source.replace(/\s+/g, " ").trim();
+	if (!description) return undefined;
+	if (description.length > 1000) throw new PiboWebHttpError("Workflow description is too long", 400);
+	return description;
+}
+
+function normalizeWorkflowDraftTags(value: unknown, fallback: string[] = []): string[] {
+	const source = value === undefined || value === null ? fallback : value;
+	if (!Array.isArray(source)) throw new PiboWebHttpError("Workflow tags must be an array of strings", 400);
+	return [...new Set(source.map((tag) => {
+		if (typeof tag !== "string") throw new PiboWebHttpError("Workflow tags must be strings", 400);
+		return tag.replace(/\s+/g, " ").trim();
+	}).filter(Boolean))].slice(0, 20);
+}
+
+function normalizeWorkflowCreateWorkflowId(value: unknown, fallbackTitle: string): string {
+	const source = value === undefined || value === null || value === ""
+		? `ui-${workflowSlugFromTitle(fallbackTitle)}-${randomUUID().slice(0, 8)}`
+		: value;
+	if (typeof source !== "string") throw new PiboWebHttpError("Workflow id must be a string", 400);
+	const workflowId = source.trim();
+	if (!workflowId) throw new PiboWebHttpError("Workflow id is required", 400);
+	if (workflowId.length > 160 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(workflowId)) {
+		throw new PiboWebHttpError("Workflow id may contain only letters, numbers, dots, underscores, and dashes", 400);
+	}
+	return workflowId;
+}
+
+function workflowSlugFromTitle(title: string): string {
+	const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+	return slug || "workflow";
+}
+
+function requireWorkflowDeleteConfirmation(value: unknown, workflowId: string): void {
+	if (typeof value !== "string" || value.trim() !== workflowId) {
+		throw new PiboWebHttpError(`Type "${workflowId}" to delete this workflow.`, 400);
+	}
+}
+
+const PROJECT_WORKFLOW_SESSION_CREATE_FIELDS = new Set([
+	"profile",
+	"workflowId",
+	"workflowVersion",
+	"title",
+	"inputValues",
+	"promptOverrides",
+	"model",
+	"thinkingLevel",
+	"fastMode",
+]);
+
+const PROJECT_SESSION_PATCH_FIELDS = new Set([
+	"title",
+	"archived",
+]);
+
+const PROJECT_WORKFLOW_SESSION_DISALLOWED_FIELDS = new Map<string, string>([
+	["agentProfileOverrides", "Agent profile overrides are not supported for V2 workflow sessions"],
+	["profileOverrides", "Agent profile overrides are not supported for V2 workflow sessions"],
+	["profileOverride", "Agent profile overrides are not supported for V2 workflow sessions"],
+	["nodeProfileOverrides", "Agent profile overrides are not supported for V2 workflow sessions"],
+	["retryLimit", "Retry limit overrides are not supported for V2 workflow sessions"],
+	["retryLimits", "Retry limit overrides are not supported for V2 workflow sessions"],
+	["maxRetries", "Retry limit overrides are not supported for V2 workflow sessions"],
+	["retryCount", "Retry limit overrides are not supported for V2 workflow sessions"],
+	["handlerOverrides", "Handler overrides are not supported for V2 workflow sessions"],
+	["handlerOverride", "Handler overrides are not supported for V2 workflow sessions"],
+	["adapterOverrides", "Adapter overrides are not supported for V2 workflow sessions"],
+	["adapterOverride", "Adapter overrides are not supported for V2 workflow sessions"],
+	["guardOverrides", "Guard overrides are not supported for V2 workflow sessions"],
+	["guardOverride", "Guard overrides are not supported for V2 workflow sessions"],
+	["nodeOverrides", "Arbitrary node overrides are not supported for V2 workflow sessions"],
+	["overrides", "Arbitrary overrides are not supported for V2 workflow sessions"],
+	["options", "Arbitrary options are not supported for V2 workflow sessions"],
+	["arbitraryOptions", "Arbitrary options are not supported for V2 workflow sessions"],
+]);
+
+function normalizeProjectWorkflowSessionConfiguration(body: ChatProjectSessionCreateBody, definition: PiboJsonObject): PiboProjectWorkflowSessionConfiguration {
+	assertProjectWorkflowSessionCreateFields(body);
+	const inputValues = normalizeProjectWorkflowInputValues(body.inputValues);
+	const promptOverrideEligibleNodeIds = workflowPromptOverrideEligibleNodeIds(definition);
+	const promptOverrides = normalizeProjectWorkflowPromptOverrides(body.promptOverrides, promptOverrideEligibleNodeIds);
+	const model = normalizeWorkflowSessionModel(body.model);
+	const thinkingLevel = normalizeThinkingLevel(body.thinkingLevel, "thinkingLevel");
+	const fastMode = normalizeOptionalBoolean(body.fastMode, "fastMode");
+	return {
+		inputValues,
+		promptOverrides,
+		promptOverrideEligibleNodeIds,
+		overrideScopes: {
+			promptOverrides: "eligible_agent_node",
+			model: "workflow",
+			thinkingLevel: "workflow",
+			fastMode: "workflow",
+		},
+		...(model ? { model } : {}),
+		...(thinkingLevel ? { thinkingLevel } : {}),
+		...(fastMode !== undefined ? { fastMode } : {}),
+	};
+}
+
+function createProjectWorkflowSessionSnapshot(input: {
+	webSession: PiboWebSession;
+	project: PiboProject;
+	session: PiboSession;
+	workflow: WorkflowVersionPickerOption;
+	baseDefinition: PiboJsonObject;
+	configuration: PiboProjectWorkflowSessionConfiguration;
+	validation: WorkflowValidationResponse;
+}): PiboProjectWorkflowSessionSnapshot {
+	const baseDefinition = cloneJsonObject(input.baseDefinition);
+	const effectiveDefinition = applyProjectWorkflowPromptOverrides(baseDefinition, input.configuration.promptOverrides);
+	const baseDefinitionHash = hashWorkflowDefinitionJson(baseDefinition);
+	const effectiveDefinitionHash = hashWorkflowDefinitionJson(effectiveDefinition);
+	const now = new Date().toISOString();
+	return {
+		id: `wfs_${randomUUID()}`,
+		schemaVersion: 1,
+		createdAt: now,
+		createdBy: input.webSession.authSession.identity.userId,
+		ownerScope: input.webSession.ownerScope,
+		projectId: input.project.id,
+		piboSessionId: input.session.id,
+		workflow: {
+			id: input.workflow.id,
+			version: input.workflow.version,
+			source: input.workflow.source,
+			title: input.workflow.title,
+			...(input.workflow.description ? { description: input.workflow.description } : {}),
+			tags: [...input.workflow.tags],
+			baseDefinitionHash,
+			effectiveDefinitionHash,
+		},
+		baseDefinition,
+		effectiveDefinition,
+		inputValues: cloneJsonObject(input.configuration.inputValues),
+		promptOverrides: { ...input.configuration.promptOverrides },
+		overridePolicy: {
+			promptEligibility: "metadata.sessionOverrides.prompt===true-and-direct-promptTemplate",
+			eligiblePromptNodeIds: [...input.configuration.promptOverrideEligibleNodeIds],
+			modelScope: input.configuration.overrideScopes.model,
+			thinkingLevelScope: input.configuration.overrideScopes.thinkingLevel,
+			fastModeScope: input.configuration.overrideScopes.fastMode,
+		},
+		...(input.configuration.model ? { model: input.configuration.model } : {}),
+		...(input.configuration.thinkingLevel ? { thinkingLevel: input.configuration.thinkingLevel } : {}),
+		...(input.configuration.fastMode !== undefined ? { fastMode: input.configuration.fastMode } : {}),
+		promptAssetPins: [],
+		validation: workflowValidationSnapshot(input.validation),
+		deletedDefinitionFallback: {
+			title: input.workflow.title,
+			workflowId: input.workflow.id,
+			workflowVersion: input.workflow.version,
+			effectiveDefinitionHash,
+		},
+	};
+}
+
+function applyProjectWorkflowPromptOverrides(definition: PiboJsonObject, promptOverrides: Record<string, string>): PiboJsonObject {
+	const effectiveDefinition = cloneJsonObject(definition);
+	const nodes = isJsonObject(effectiveDefinition.nodes) ? effectiveDefinition.nodes : undefined;
+	if (!nodes) return effectiveDefinition;
+	for (const [nodeId, promptTemplate] of Object.entries(promptOverrides)) {
+		const node = nodes[nodeId];
+		if (isJsonObject(node)) {
+			nodes[nodeId] = { ...node, promptTemplate };
+		}
+	}
+	return effectiveDefinition;
+}
+
+function workflowValidationSnapshot(validation: WorkflowValidationResponse): PiboJsonObject {
+	return {
+		...validation.validation,
+		validatedAt: validation.validation.checkedAt,
+		diagnostics: sanitizeWorkflowDiagnostics(validation.diagnostics) as unknown as PiboJsonValue[],
+	};
+}
+
+function workflowVersionFromSnapshot(snapshot: PiboProjectWorkflowSessionSnapshot): WorkflowVersionPickerOption {
+	return workflowVersionPickerOptionFromCatalogRecord({
+		id: snapshot.workflow.id,
+		version: snapshot.workflow.version,
+		title: snapshot.workflow.title ?? snapshot.workflow.id,
+		...(snapshot.workflow.description ? { description: snapshot.workflow.description } : {}),
+		source: snapshot.workflow.source,
+		status: "published",
+		tags: [...snapshot.workflow.tags],
+	});
+}
+
+function validateProjectWorkflowSnapshotForStart(
+	snapshot: PiboProjectWorkflowSessionSnapshot,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+): WorkflowValidationResponse {
+	const diagnostics = sanitizeWorkflowDiagnostics(validateWorkflowDefinitionForV2(snapshot.effectiveDefinition, input));
+	return {
+		diagnostics,
+		validation: summarizeWorkflowDiagnostics(diagnostics, "before_workflow_start"),
+	};
+}
+
+function createProjectWorkflowRunCurrent(definition: PiboJsonObject): PiboJsonObject {
+	const initialNodeIds = workflowInitialNodeIds(definition);
+	return {
+		status: "running",
+		initialNodeIds,
+		...(initialNodeIds.length === 1 ? { nodeId: initialNodeIds[0] } : {}),
+	};
+}
+
+function workflowInitialNodeIds(definition: PiboJsonObject): string[] {
+	if (typeof definition.initial === "string" && definition.initial.trim()) return [definition.initial.trim()];
+	if (Array.isArray(definition.initial)) {
+		return definition.initial.filter((nodeId): nodeId is string => typeof nodeId === "string" && Boolean(nodeId.trim())).map((nodeId) => nodeId.trim());
+	}
+	return [];
+}
+
+function updateProjectWorkflowRunSessionMetadata(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	session: PiboSession;
+	workflowRunId: string;
+}): void {
+	if (input.session.metadata?.workflowRunId === input.workflowRunId) return;
+	const updateSession = input.context.channelContext.updateSession;
+	if (!updateSession) return;
+	const updated = updateSession(input.session.id, {
+		metadata: {
+			...(input.session.metadata ?? {}),
+			workflowRunId: input.workflowRunId,
+		},
+	});
+	if (updated) input.state.sessionQuery.upsertSession(updated);
+}
+
+function assertProjectWorkflowSessionCreateFields(body: ChatProjectSessionCreateBody): void {
+	if (!body || typeof body !== "object" || Array.isArray(body)) throw new PiboWebHttpError("Invalid JSON body", 400);
+	for (const key of Object.keys(body)) {
+		const disallowedMessage = PROJECT_WORKFLOW_SESSION_DISALLOWED_FIELDS.get(key);
+		if (disallowedMessage) throw new PiboWebHttpError(disallowedMessage, 400);
+		if (!PROJECT_WORKFLOW_SESSION_CREATE_FIELDS.has(key)) {
+			throw new PiboWebHttpError(`Unsupported workflow session creation field: ${key}`, 400);
+		}
+	}
+}
+
+function assertProjectSessionPatchFields(body: ChatProjectSessionPatchBody): void {
+	if (!body || typeof body !== "object" || Array.isArray(body)) throw new PiboWebHttpError("Invalid JSON body", 400);
+	for (const key of Object.keys(body)) {
+		if (!PROJECT_SESSION_PATCH_FIELDS.has(key)) {
+			throw new PiboWebHttpError(`Unsupported project session update field: ${key}. Project workflow selection and configuration are immutable; create a new configured session to change workflow, input, prompt, model, thinking, or fast-mode values.`, 400);
+		}
+	}
+}
+
+function normalizeProjectWorkflowInputValues(value: unknown): PiboJsonObject {
+	if (value === undefined || value === null) return {};
+	if (!isJsonObject(value)) throw new PiboWebHttpError("inputValues must be a JSON object", 400);
 	return value;
+}
+
+function normalizeProjectWorkflowPromptOverrides(value: unknown, eligibleNodeIds: string[]): Record<string, string> {
+	if (value === undefined || value === null) return {};
+	if (!isJsonObject(value)) throw new PiboWebHttpError("promptOverrides must be a JSON object keyed by eligible node id", 400);
+	const eligible = new Set(eligibleNodeIds);
+	const promptOverrides: Record<string, string> = {};
+	for (const [nodeId, prompt] of Object.entries(value)) {
+		if (!nodeId.trim()) throw new PiboWebHttpError("promptOverrides cannot contain an empty node id", 400);
+		if (!eligible.has(nodeId)) {
+			throw new PiboWebHttpError(`Node '${nodeId}' is not eligible for prompt overrides in this workflow version`, 400);
+		}
+		if (typeof prompt !== "string") {
+			throw new PiboWebHttpError(`Prompt override for node '${nodeId}' must be a string`, 400);
+		}
+		promptOverrides[nodeId] = prompt;
+	}
+	return promptOverrides;
+}
+
+function normalizeWorkflowSessionModel(value: unknown): ModelProfile | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new PiboWebHttpError("model must be an object", 400);
+	const keys = Object.keys(value);
+	const unsupportedKey = keys.find((key) => key !== "provider" && key !== "id");
+	if (unsupportedKey) throw new PiboWebHttpError(`model contains unsupported field: ${unsupportedKey}`, 400);
+	return normalizeModelProfile(value, "model");
+}
+
+function workflowPromptOverrideEligibleNodeIds(definition: PiboJsonObject): string[] {
+	const nodes = definition.nodes;
+	if (!isJsonObject(nodes)) return [];
+	return Object.entries(nodes)
+		.filter(([, node]) => isWorkflowPromptOverrideEligibleNode(node))
+		.map(([nodeId]) => nodeId)
+		.sort();
+}
+
+function isWorkflowPromptOverrideEligibleNode(value: unknown): boolean {
+	if (!isJsonObject(value)) return false;
+	const metadata = isJsonObject(value.metadata) ? value.metadata : undefined;
+	const sessionOverrides = metadata && isJsonObject(metadata.sessionOverrides) ? metadata.sessionOverrides : undefined;
+	return value.kind === "agent"
+		&& value.runtime === "pibo"
+		&& typeof value.promptTemplate === "string"
+		&& sessionOverrides?.prompt === true;
 }
 
 function normalizeProjectPath(value: unknown): string {
@@ -1353,6 +3259,30 @@ function projectResourcePath(pathname: string): { projectId: string; child?: str
 	return { projectId: parts[0], ...(parts[1] ? { child: parts[1] } : {}) };
 }
 
+function projectWorkflowSessionStartResource(pathname: string): { projectId: string; piboSessionId: string } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 4 || !parts[0] || parts[1] !== "workflow-sessions" || !parts[2] || parts[3] !== "start") return undefined;
+	try {
+		return { projectId: decodeURIComponent(parts[0]), piboSessionId: decodeURIComponent(parts[2]) };
+	} catch {
+		throw new PiboWebHttpError("Invalid Project workflow session start path", 400);
+	}
+}
+
+function projectWorkflowHumanActionsResource(pathname: string): { projectId: string; piboSessionId: string } | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 4 || !parts[0] || parts[1] !== "workflow-sessions" || !parts[2] || parts[3] !== "human-actions") return undefined;
+	try {
+		return { projectId: decodeURIComponent(parts[0]), piboSessionId: decodeURIComponent(parts[2]) };
+	} catch {
+		throw new PiboWebHttpError("Invalid Project workflow human-action path", 400);
+	}
+}
+
 function projectSessionResourceId(pathname: string): string | undefined {
 	const prefix = `${CHAT_WEB_API_PREFIX}/project-sessions/`;
 	if (!pathname.startsWith(prefix)) return undefined;
@@ -1363,6 +3293,71 @@ function projectSessionResourceId(pathname: string): string | undefined {
 
 function resolveDownloadPath(path: string, basePath: string): string {
 	return isAbsolute(path) ? resolve(path) : resolve(basePath, path);
+}
+
+type UploadedChatFile = {
+	name: string;
+	size: number;
+	arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+async function saveUploadedChatFiles(request: Request): Promise<{ uploadDir: string; files: Array<{ name: string; path: string; bytes: number }> }> {
+	const form = await request.formData();
+	const files: UploadedChatFile[] = [];
+	for (const value of form.getAll("files")) {
+		if (isUploadedChatFile(value)) files.push(value);
+	}
+	if (!files.length) throw new PiboWebHttpError("No files were uploaded", 400);
+
+	mkdirSync(CHAT_UPLOAD_DIR, { recursive: true });
+	const saved = [];
+	for (const file of files) {
+		const name = sanitizeUploadFilename(file.name);
+		const bytes = Buffer.from(await file.arrayBuffer());
+		const targetPath = writeUploadedChatFile(name, bytes);
+		saved.push({ name, path: targetPath, bytes: bytes.byteLength });
+	}
+	return { uploadDir: CHAT_UPLOAD_DIR, files: saved };
+}
+
+function isUploadedChatFile(value: unknown): value is UploadedChatFile {
+	return typeof value === "object"
+		&& value !== null
+		&& typeof (value as { name?: unknown }).name === "string"
+		&& typeof (value as { size?: unknown }).size === "number"
+		&& typeof (value as { arrayBuffer?: unknown }).arrayBuffer === "function";
+}
+
+function sanitizeUploadFilename(name: string): string {
+	const cleaned = basename(name).replace(/[\u0000-\u001f\u007f]/g, "").trim();
+	const safe = cleaned.replace(/[\\/]/g, "_");
+	if (safe && !/^\.+$/.test(safe)) return safe;
+	return `upload-${Date.now()}`;
+}
+
+function writeUploadedChatFile(filename: string, bytes: Buffer): string {
+	for (let index = 0; index < 10_000; index += 1) {
+		const targetPath = uploadPathForIndex(filename, index);
+		try {
+			writeFileSync(targetPath, bytes, { flag: "wx" });
+			return targetPath;
+		} catch (error) {
+			if (isNodeError(error) && error.code === "EEXIST") continue;
+			throw error;
+		}
+	}
+	throw new PiboWebHttpError("Could not allocate upload filename", 500);
+}
+
+function uploadPathForIndex(filename: string, index: number): string {
+	if (index === 0) return resolve(CHAT_UPLOAD_DIR, filename);
+	const extension = extname(filename);
+	const stem = filename.slice(0, filename.length - extension.length) || "upload";
+	return resolve(CHAT_UPLOAD_DIR, `${stem}-${index}${extension}`);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+	return typeof error === "object" && error !== null && "code" in error;
 }
 
 function contentTypeForDownload(path: string): string {
@@ -1666,6 +3661,3037 @@ async function buildAgentCatalog(context: PiboWebAppContext, state: ChatWebAppSt
 		piPackages: listPiPackages(),
 		userSkills: state.userSkillManager.list(),
 	};
+}
+
+function buildWorkflowProfilePicker(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	selectedProfileId?: string,
+): WorkflowProfilePickerResponse {
+	const customAgents = state.agentStore.list(webSession.ownerScope, { includeArchived: true });
+	const allCustomProfileNames = new Set(customAgents.map((agent) => agent.profileName));
+	const archivedCustomAgents = new Map(
+		customAgents.filter((agent) => agent.archivedAt).map((agent) => [agent.profileName, agent]),
+	);
+	const options: WorkflowProfilePickerOption[] = [];
+
+	for (const agent of customAgents) {
+		if (agent.archivedAt) continue;
+		options.push({
+			id: agent.profileName,
+			displayName: agent.displayName,
+			...(agent.description ? { description: agent.description } : {}),
+			paramsSchema: null,
+			aliases: [],
+			source: "custom",
+			visibility: "private",
+			archived: false,
+			nativeTools: [...agent.nativeTools],
+			skills: [...agent.skills],
+			contextFiles: [...agent.contextFiles],
+		});
+	}
+
+	for (const profile of context.channelContext.getProfiles?.() ?? []) {
+		if (allCustomProfileNames.has(profile.name)) continue;
+		options.push({
+			id: profile.name,
+			displayName: profile.name,
+			...(profile.description ? { description: profile.description } : {}),
+			paramsSchema: null,
+			aliases: [...(profile.aliases ?? [])],
+			source: "global",
+			visibility: "global",
+			archived: false,
+			nativeTools: [...(profile.nativeTools ?? [])],
+			skills: [...(profile.skills ?? [])],
+			contextFiles: [...(profile.contextFiles ?? [])],
+		});
+	}
+
+	options.sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+
+	const normalizedSelection = selectedProfileId?.trim() || undefined;
+	const activeSelection = normalizedSelection && options.some((option) => option.id === normalizedSelection)
+		? normalizedSelection
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedSelection && !activeSelection) {
+		if (archivedCustomAgents.has(normalizedSelection)) {
+			diagnostics.push({
+				code: "WorkflowGraphError.archivedAgentProfileRef",
+				message: `Agent node references archived Agent Designer profile '${normalizedSelection}'.`,
+				severity: "error",
+				path: "$.nodes.agent.profile.id",
+				registryRef: normalizedSelection,
+				hint: "Restore the Agent Designer profile or select a non-archived profile before publishing or running this workflow.",
+			});
+		} else {
+			diagnostics.push({
+				code: "WorkflowGraphError.unknownAgentProfileRef",
+				message: `Agent node references Agent Designer profile '${normalizedSelection}', but it is not available to this user.`,
+				severity: "error",
+				path: "$.nodes.agent.profile.id",
+				registryRef: normalizedSelection,
+				hint: "Select one of the non-archived Agent Designer profiles from the picker.",
+			});
+		}
+	}
+
+	return {
+		kind: "profiles",
+		options,
+		...(activeSelection ? { selectedProfileId: activeSelection } : {}),
+		diagnostics,
+	};
+}
+
+const WORKFLOW_HANDLER_PICKER_OPTIONS: WorkflowHandlerPickerOption[] = [
+	{
+		id: "fixture.handlers.makePlan",
+		displayName: "Make plan",
+		description: "Registered code handler that turns a topic payload into a step plan.",
+		paramsSchema: null,
+		inputSchema: null,
+		outputSchema: null,
+	},
+	{
+		id: "fixture.handlers.reviseDraft",
+		displayName: "Revise draft",
+		description: "Registered code handler that applies review feedback to a draft payload.",
+		paramsSchema: null,
+		inputSchema: null,
+		outputSchema: null,
+	},
+	{
+		id: "fixture.handlers.summarizeDecision",
+		displayName: "Summarize decision",
+		description: "Registered code handler that normalizes a review decision into a workflow summary.",
+		paramsSchema: null,
+		inputSchema: null,
+		outputSchema: null,
+	},
+];
+
+const WORKFLOW_ADAPTER_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.adapters.textToTopic",
+		displayName: "Text to topic",
+		description: "Registered deterministic adapter from the workflow fixtures registry.",
+		paramsSchema: null,
+	},
+	{
+		id: "fixture.adapters.draftToSummary",
+		displayName: "Draft to summary",
+		description: "Registered deterministic adapter from the workflow fixtures registry.",
+		paramsSchema: {
+			type: "object",
+			properties: {
+				format: { type: "string", description: "Presentation format for the summarized payload." },
+			},
+			required: ["format"],
+			additionalProperties: false,
+		},
+	},
+];
+
+const WORKFLOW_GUARD_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.guards.approved",
+		displayName: "Approved",
+		description: "Registered guard from the workflow fixtures registry.",
+		paramsSchema: {
+			type: "object",
+			properties: {
+				expected: { type: "boolean", description: "Expected approval flag for this guarded route." },
+			},
+			required: ["expected"],
+			additionalProperties: false,
+		},
+	},
+	{
+		id: "fixture.guards.needsRevision",
+		displayName: "Needs revision",
+		description: "Registered guard from the workflow fixtures registry.",
+		paramsSchema: null,
+	},
+];
+
+const WORKFLOW_PROMPT_ASSET_REF_OPTIONS: WorkflowRegisteredRefOption[] = [
+	{
+		id: "fixture.promptBuilders.draftPrompt",
+		displayName: "Draft prompt builder",
+		description: "Registered prompt asset/prompt-builder ref from the workflow fixtures registry.",
+		paramsSchema: null,
+		kind: "code",
+	},
+];
+
+const WORKFLOW_STATIC_PROMPT_ASSET_MARKDOWN: Record<string, string> = {
+	"fixture.promptBuilders.draftPrompt": "Draft a concise response from the workflow input.\n\n{{input}}",
+};
+
+const WORKFLOW_HUMAN_ACTION_REF_OPTIONS: WorkflowHumanActionOption[] = [
+	{
+		id: "fixture.humanActions.approve",
+		kind: "approve",
+		displayName: "Approve",
+		description: "Registered human action for approving a pending workflow wait token.",
+		paramsSchema: null,
+	},
+	{
+		id: "fixture.humanActions.reject",
+		kind: "reject",
+		displayName: "Reject",
+		description: "Registered human action for rejecting a pending workflow wait token.",
+		paramsSchema: null,
+	},
+	{
+		id: "fixture.humanActions.resume",
+		kind: "resume",
+		displayName: "Resume",
+		description: "Registered human action for resuming a pending workflow wait token with a payload.",
+		paramsSchema: null,
+	},
+	{
+		id: "fixture.humanActions.cancel",
+		kind: "cancel",
+		displayName: "Cancel",
+		description: "Registered human action for cancelling a pending workflow wait token.",
+		paramsSchema: null,
+	},
+];
+
+function buildWorkflowHandlerPicker(selectedHandlerId?: string): WorkflowHandlerPickerResponse {
+	const options = [...WORKFLOW_HANDLER_PICKER_OPTIONS]
+		.sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+	const normalizedSelection = selectedHandlerId?.trim() || undefined;
+	const activeSelection = normalizedSelection && options.some((option) => option.id === normalizedSelection)
+		? normalizedSelection
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedSelection && !activeSelection) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownHandlerRef",
+			message: `Code node references handler '${normalizedSelection}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.nodes.code.handler",
+			registryRef: normalizedSelection,
+			hint: "Select a registered handler from the code node picker before publishing or running this workflow.",
+		});
+	}
+	return {
+		kind: "handlers",
+		options,
+		...(activeSelection ? { selectedHandlerId: activeSelection } : {}),
+		diagnostics,
+	};
+}
+
+function buildWorkflowRegisteredRefPicker(
+	kind: WorkflowRegisteredRefPickerResponse["kind"],
+	optionsInput: WorkflowRegisteredRefOption[],
+	selectedRefId: string | undefined,
+): WorkflowRegisteredRefPickerResponse {
+	const options = [...optionsInput]
+		.sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+	const normalizedSelection = selectedRefId?.trim() || undefined;
+	const activeSelection = normalizedSelection && options.some((option) => option.id === normalizedSelection)
+		? normalizedSelection
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedSelection && !activeSelection) {
+		diagnostics.push(workflowRegisteredRefPickerDiagnostic(kind, normalizedSelection));
+	}
+	return {
+		kind,
+		options,
+		...(activeSelection ? { selectedRefId: activeSelection } : {}),
+		diagnostics,
+	};
+}
+
+function buildWorkflowPromptAssetPicker(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	selectedRefId: string | undefined,
+): WorkflowRegisteredRefPickerResponse {
+	const uiOptions = state.workflowPromptAssetStore.listAssets(webSession.ownerScope).map((asset): WorkflowRegisteredRefOption => ({
+		id: asset.assetId,
+		displayName: asset.displayName,
+		...(asset.description ? { description: asset.description } : {}),
+		paramsSchema: null,
+		kind: "ui",
+	}));
+	return buildWorkflowRegisteredRefPicker("prompt-assets", [...WORKFLOW_PROMPT_ASSET_REF_OPTIONS, ...uiOptions], selectedRefId);
+}
+
+function getWorkflowPromptAssetDocument(state: ChatWebAppState, webSession: PiboWebSession, assetId: string): WorkflowPromptAssetDocument | undefined {
+	const staticOption = WORKFLOW_PROMPT_ASSET_REF_OPTIONS.find((option) => option.id === assetId);
+	if (staticOption) {
+		const markdown = WORKFLOW_STATIC_PROMPT_ASSET_MARKDOWN[assetId] ?? "";
+		const now = "code";
+		return {
+			id: staticOption.id,
+			displayName: staticOption.displayName,
+			...(staticOption.description ? { description: staticOption.description } : {}),
+			source: "code",
+			readOnly: true,
+			revisionId: `code:${staticOption.id}:1`,
+			contentHash: hashPromptAssetMarkdown(markdown),
+			markdown,
+			createdAt: now,
+			updatedAt: now,
+		};
+	}
+	const asset = state.workflowPromptAssetStore.getAsset(webSession.ownerScope, assetId);
+	const revision = asset ? state.workflowPromptAssetStore.getActiveRevision(webSession.ownerScope, assetId) : undefined;
+	return asset && revision ? workflowPromptAssetDocumentFromRecords(asset, revision) : undefined;
+}
+
+function isWorkflowPromptAssetRegistered(state: ChatWebAppState, webSession: PiboWebSession, assetId: string): boolean {
+	return WORKFLOW_PROMPT_ASSET_REF_OPTIONS.some((option) => option.id === assetId)
+		|| Boolean(state.workflowPromptAssetStore.getAsset(webSession.ownerScope, assetId));
+}
+
+function saveWorkflowPromptAssetRevision(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	body: WorkflowPromptAssetSaveBody,
+): WorkflowPromptAssetDocument {
+	const markdown = typeof body.markdown === "string" ? body.markdown : undefined;
+	if (markdown === undefined) throw new PiboWebHttpError("Workflow prompt asset markdown is required", 400);
+	const requestedAssetId = typeof body.assetId === "string" && body.assetId.trim() ? body.assetId.trim() : undefined;
+	const sourceRefId = typeof body.sourceRefId === "string" && body.sourceRefId.trim() ? body.sourceRefId.trim() : undefined;
+	if (requestedAssetId && !requestedAssetId.startsWith("ui.promptAssets.")) {
+		throw new PiboWebHttpError("Only managed UI prompt assets can receive new revisions", 400);
+	}
+	if (!requestedAssetId && sourceRefId && !isWorkflowPromptAssetRegistered(state, webSession, sourceRefId)) {
+		throw new PiboWebHttpError(`Workflow prompt asset '${sourceRefId}' is not registered`, 404);
+	}
+	const sourceDocument = sourceRefId ? getWorkflowPromptAssetDocument(state, webSession, sourceRefId) : undefined;
+	const displayName = normalizeWorkflowPromptAssetLabel(body.displayName ?? (sourceDocument ? `${sourceDocument.displayName} copy` : undefined));
+	const description = typeof body.description === "string" && body.description.trim()
+		? body.description.trim()
+		: sourceDocument?.description ?? "Managed Workflow Builder prompt asset revision.";
+	return state.workflowPromptAssetStore.saveRevision({
+		ownerScope: webSession.ownerScope,
+		assetId: requestedAssetId,
+		displayName,
+		description,
+		markdown,
+		actorId: webSession.authSession.identity.userId,
+	});
+}
+
+function hashPromptAssetMarkdown(markdown: string): string {
+	return `sha256:${createHash("sha256").update(markdown, "utf8").digest("hex")}`;
+}
+
+function normalizeWorkflowPromptAssetLabel(value: unknown): string {
+	if (typeof value !== "string") return "Workflow prompt asset";
+	const trimmed = value.trim();
+	return trimmed ? trimmed.slice(0, 120) : "Workflow prompt asset";
+}
+
+function workflowRegisteredRefPickerDiagnostic(kind: WorkflowRegisteredRefPickerResponse["kind"], registryRef: string): WorkflowPickerDiagnostic {
+	if (kind === "guards") {
+		return {
+			code: "WorkflowGraphError.unknownGuardRef",
+			message: `Workflow edge references guard '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.edges.edge.guard.handler",
+			registryRef,
+			hint: "Select a registered guard ref before publishing or running this workflow.",
+		};
+	}
+	if (kind === "adapters") {
+		return {
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `Workflow edge references adapter '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.edges.edge.adapter.transform.id",
+			registryRef,
+			hint: "Select a registered adapter ref before publishing or running this workflow.",
+		};
+	}
+	if (kind === "human-actions") {
+		return {
+			code: "WorkflowGraphError.unknownHumanActionRef",
+			message: `Human node references human action '${registryRef}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.nodes.human.actions.0.id",
+			registryRef,
+			hint: "Select a registered human action before publishing or running this workflow.",
+		};
+	}
+	return {
+		code: "WorkflowGraphError.unknownPromptBuilderRef",
+		message: `Agent node references prompt asset '${registryRef}', but it is not registered in the Workflow Registry.`,
+		severity: "error",
+		path: "$.nodes.agent.promptBuilder.id",
+		registryRef,
+		hint: "Select a registered prompt asset ref before publishing or running this workflow.",
+	};
+}
+
+function buildWorkflowVersionPicker(state: ChatWebAppState, selectedWorkflowId?: string, selectedWorkflowVersion?: string): WorkflowVersionPickerResponse {
+	const options = buildProjectWorkflowVersionOptions(state);
+	const normalizedWorkflowId = selectedWorkflowId?.trim() || undefined;
+	const normalizedWorkflowVersion = selectedWorkflowVersion?.trim() || undefined;
+	const selected = normalizedWorkflowId
+		? options.find((option) => option.id === normalizedWorkflowId && (!normalizedWorkflowVersion || option.version === normalizedWorkflowVersion))
+		: options[0];
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedWorkflowId && !selected) {
+		diagnostics.push({
+			code: "WorkflowCatalogError.unknownWorkflowVersion",
+			message: `Workflow version '${normalizedWorkflowId}${normalizedWorkflowVersion ? `@${normalizedWorkflowVersion}` : ""}' is not available for Project session creation.`,
+			severity: "error",
+			path: "$.workflow",
+			registryRef: normalizedWorkflowVersion ? `${normalizedWorkflowId}@${normalizedWorkflowVersion}` : normalizedWorkflowId,
+			hint: "Select a published workflow version from the global workflow catalog.",
+		});
+	}
+	return {
+		kind: "workflow-versions",
+		options,
+		...(selected ? { selectedWorkflowId: selected.id, selectedWorkflowVersion: selected.version } : {}),
+		diagnostics,
+	};
+}
+
+function buildWorkflowVersionHistory(state: ChatWebAppState, selectedWorkflowId?: string, selectedWorkflowVersion?: string): WorkflowVersionHistoryResponse {
+	const options = [...buildProjectWorkflowVersionCatalog(state)]
+		.filter((option) => option.status !== "deleted")
+		.sort(compareWorkflowCatalogVersionRecords)
+		.map(workflowVersionHistoryOptionFromCatalogRecord);
+	const normalizedWorkflowId = selectedWorkflowId?.trim() || undefined;
+	const normalizedWorkflowVersion = selectedWorkflowVersion?.trim() || undefined;
+	const selected = normalizedWorkflowId
+		? options.find((option) => option.id === normalizedWorkflowId && (!normalizedWorkflowVersion || option.version === normalizedWorkflowVersion))
+		: undefined;
+	const diagnostics: WorkflowPickerDiagnostic[] = [];
+	if (normalizedWorkflowId && !selected) {
+		diagnostics.push({
+			code: "WorkflowCatalogError.unknownWorkflowVersion",
+			message: `Workflow version '${normalizedWorkflowId}${normalizedWorkflowVersion ? `@${normalizedWorkflowVersion}` : ""}' is not present in workflow version history.`,
+			severity: "error",
+			path: "$.workflow",
+			registryRef: normalizedWorkflowVersion ? `${normalizedWorkflowId}@${normalizedWorkflowVersion}` : normalizedWorkflowId,
+			hint: "Open a live, archived, or snapshot-backed workflow version record from the catalog history.",
+		});
+	}
+	return {
+		kind: "version-history",
+		options,
+		...(selected ? { selectedWorkflowId: selected.id, selectedWorkflowVersion: selected.version } : {}),
+		diagnostics,
+	};
+}
+
+function buildProjectWorkflowVersionOptions(state?: ChatWebAppState): WorkflowVersionPickerOption[] {
+	return buildProjectWorkflowVersionCatalog(state)
+		.filter((option): option is WorkflowCatalogVersionRecord & { status: "published" } => option.status === "published")
+		.map(workflowVersionPickerOptionFromCatalogRecord);
+}
+
+function workflowVersionPickerOptionFromCatalogRecord(record: WorkflowCatalogVersionRecord & { status: "published" }): WorkflowVersionPickerOption {
+	return {
+		...record,
+		displayName: record.title,
+		paramsSchema: null,
+	};
+}
+
+function workflowVersionHistoryOptionFromCatalogRecord(record: WorkflowCatalogVersionRecord): WorkflowVersionHistoryOption {
+	const actions = workflowCatalogActionsFor(record);
+	return {
+		...record,
+		actions,
+		editability: workflowCatalogEditability(actions),
+	};
+}
+
+const STATIC_WORKFLOW_VERSION_CATALOG: WorkflowCatalogVersionRecord[] = [
+	{
+		id: "standard-project",
+		version: "1.0.0",
+		title: "Standard Project",
+		description: "Configured workflow-backed Project session for feature, bugfix, and review work. Creation saves the configuration without starting a run.",
+		source: "code",
+		status: "published",
+		tags: ["project", "workflow"],
+	},
+	{
+		id: "simple-chat",
+		version: "1.0.0",
+		title: "Simple Chat",
+		description: "Baseline Project chat workflow that preserves the existing one-session chat behavior.",
+		source: "code",
+		status: "published",
+		tags: ["project", "chat"],
+	},
+	{
+		id: "ui-review-workflow",
+		version: "2.0.0",
+		title: "UI Review Workflow",
+		description: "UI-authored published workflow fixture for next-version draft editing.",
+		source: "ui",
+		status: "published",
+		tags: ["workflow-ui", "review"],
+	},
+	{
+		id: "ui-draft-workflow",
+		version: "0.1.0-draft",
+		title: "UI Draft Workflow",
+		description: "Unpublished fixture used to enforce Project session creation boundaries.",
+		source: "ui",
+		status: "draft",
+		tags: ["workflow-ui", "draft"],
+	},
+	{
+		id: "archived-review-workflow",
+		version: "1.0.0",
+		title: "Archived Review Workflow",
+		description: "Archived fixture omitted from default Project session creation choices.",
+		source: "ui",
+		status: "archived",
+		tags: ["workflow-ui", "archived"],
+	},
+];
+
+function buildProjectWorkflowVersionCatalog(state?: ChatWebAppState): WorkflowCatalogVersionRecord[] {
+	const recordsByKey = new Map<string, WorkflowCatalogVersionRecord>();
+	for (const record of STATIC_WORKFLOW_VERSION_CATALOG) {
+		const projected = workflowCatalogRecordWithArchiveState(record, state);
+		recordsByKey.set(workflowCatalogVersionKey(projected.id, projected.version), projected);
+	}
+	if (state) {
+		for (const record of state.workflowPublishedVersionStore.listPublishedVersions()) {
+			const projected = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(record), state);
+			recordsByKey.set(workflowCatalogVersionKey(projected.id, projected.version), projected);
+		}
+	}
+	return [...recordsByKey.values()];
+}
+
+function workflowCatalogRecordWithArchiveState(record: WorkflowCatalogVersionRecord, state?: ChatWebAppState): WorkflowCatalogVersionRecord {
+	if (record.source === "ui" && state?.workflowTombstoneStore.getWorkflowTombstone(record.id)) return { ...record, status: "deleted" };
+	const archiveState = state?.workflowArchiveStore.getWorkflowArchiveState(record.id);
+	if (record.source === "ui" && archiveState?.archived) return { ...record, status: "archived" };
+	return record;
+}
+
+function workflowCatalogVersionKey(workflowId: string, version: string): string {
+	return `${workflowId}@${version}`;
+}
+
+function workflowCatalogRecordFromPublishedVersion(record: WorkflowPublishedVersionRecord): WorkflowCatalogVersionRecord {
+	return {
+		id: record.workflowId,
+		version: record.version,
+		title: typeof record.definition.title === "string" ? record.definition.title : record.workflowId,
+		...(typeof record.definition.description === "string" ? { description: record.definition.description } : {}),
+		source: "ui",
+		status: "published",
+		tags: workflowDefinitionTags(record.definition),
+	};
+}
+
+const WORKFLOW_CATALOG_STATUS_SORT_ORDER: Record<WorkflowCatalogVersionRecord["status"], number> = {
+	published: 0,
+	draft: 1,
+	archived: 2,
+	deleted: 3,
+};
+
+function compareWorkflowCatalogVersionRecords(left: WorkflowCatalogVersionRecord, right: WorkflowCatalogVersionRecord): number {
+	return left.id.localeCompare(right.id)
+		|| compareWorkflowCatalogVersionStrings(left.version, right.version)
+		|| WORKFLOW_CATALOG_STATUS_SORT_ORDER[left.status] - WORKFLOW_CATALOG_STATUS_SORT_ORDER[right.status]
+		|| left.title.localeCompare(right.title);
+}
+
+function compareWorkflowCatalogVersionStrings(left: string, right: string): number {
+	const leftSemver = parseWorkflowSemver(left);
+	const rightSemver = parseWorkflowSemver(right);
+	if (leftSemver && rightSemver) return compareWorkflowSemver(leftSemver, rightSemver);
+	if (leftSemver) return -1;
+	if (rightSemver) return 1;
+	return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function workflowDefinitionTags(definition: PiboJsonObject): string[] {
+	const metadata = isJsonObject(definition.metadata) ? definition.metadata : undefined;
+	const tags = metadata && Array.isArray(metadata.tags) ? metadata.tags : [];
+	return tags.filter((tag): tag is string => typeof tag === "string");
+}
+
+type WorkflowCatalogBuildContext = {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	includeArchived: boolean;
+};
+
+type WorkflowCatalogAccumulator = {
+	id: string;
+	title: string;
+	description?: string;
+	source: "code" | "ui";
+	tags: Set<string>;
+	versions: WorkflowCatalogVersionSummary[];
+	activeDraftId?: string;
+};
+
+function buildWorkflowCatalogList(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	options: { includeArchived?: boolean } = {},
+): WorkflowCatalogListResponse {
+	const includeArchived = options.includeArchived === true;
+	const workflows = new Map<string, WorkflowCatalogAccumulator>();
+	const buildContext: WorkflowCatalogBuildContext = { state, context, webSession, includeArchived };
+
+	for (const record of STATIC_WORKFLOW_VERSION_CATALOG) {
+		if (record.status === "draft") continue;
+		const summary = workflowCatalogVersionSummaryFromCatalogRecord(record, buildContext);
+		if (!isWorkflowCatalogSummaryVisible(summary, includeArchived)) continue;
+		addWorkflowCatalogVersion(workflows, summary);
+	}
+
+	for (const record of state.workflowPublishedVersionStore.listPublishedVersions()) {
+		const summary = workflowCatalogVersionSummaryFromPublishedVersion(record, buildContext);
+		if (!isWorkflowCatalogSummaryVisible(summary, includeArchived)) continue;
+		addWorkflowCatalogVersion(workflows, summary);
+	}
+
+	for (const draft of state.workflowDraftStore.listDrafts()) {
+		const summary = workflowCatalogVersionSummaryFromDraft(draft, state);
+		if (!isWorkflowCatalogSummaryVisible(summary, includeArchived)) continue;
+		addWorkflowCatalogVersion(workflows, summary);
+		const accumulator = workflows.get(draft.workflowId);
+		if (accumulator) accumulator.activeDraftId = draft.draftId;
+	}
+
+	return {
+		kind: "workflow-catalog",
+		includeArchived,
+		workflows: [...workflows.values()]
+			.map(workflowCatalogRecordFromAccumulator)
+			.sort(compareWorkflowCatalogRecords),
+	};
+}
+
+function isWorkflowCatalogSummaryVisible(summary: WorkflowCatalogVersionSummary, includeArchived: boolean): boolean {
+	if (summary.status === "deleted") return false;
+	if (summary.status === "archived" && !includeArchived) return false;
+	return true;
+}
+
+function addWorkflowCatalogVersion(workflows: Map<string, WorkflowCatalogAccumulator>, summary: WorkflowCatalogVersionSummary): void {
+	const existing = workflows.get(summary.id);
+	const accumulator = existing ?? {
+		id: summary.id,
+		title: summary.title,
+		...(summary.description ? { description: summary.description } : {}),
+		source: summary.source,
+		tags: new Set<string>(),
+		versions: [],
+	};
+	if (!existing) workflows.set(summary.id, accumulator);
+	if (summary.source === "ui") accumulator.source = "ui";
+	if (summary.status === "draft") {
+		accumulator.title = summary.title;
+		if (summary.description) accumulator.description = summary.description;
+	}
+	for (const tag of summary.tags) accumulator.tags.add(tag);
+	accumulator.versions.push(summary);
+}
+
+function workflowCatalogRecordFromAccumulator(accumulator: WorkflowCatalogAccumulator): WorkflowCatalogRecord {
+	const versions = [...accumulator.versions].sort(compareWorkflowCatalogVersionRecords);
+	const diagnostics = uniqueWorkflowDiagnostics(versions.flatMap((version) => version.diagnostics));
+	const actions = uniqueWorkflowCatalogActions(versions.flatMap((version) => version.actions));
+	const latest = selectWorkflowCatalogDisplayVersion(versions);
+	return {
+		id: accumulator.id,
+		title: latest?.title ?? accumulator.title,
+		...(latest?.description ?? accumulator.description ? { description: latest?.description ?? accumulator.description } : {}),
+		tags: [...new Set([...accumulator.tags, ...(latest?.tags ?? [])])].sort(),
+		source: accumulator.source,
+		status: deriveWorkflowCatalogStatus(versions),
+		versions,
+		...(accumulator.activeDraftId ? { activeDraftId: accumulator.activeDraftId } : {}),
+		editability: workflowCatalogEditability(actions),
+		validationState: workflowCatalogValidationStateFromVersions(versions),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions,
+	};
+}
+
+function selectWorkflowCatalogDisplayVersion(versions: WorkflowCatalogVersionSummary[]): WorkflowCatalogVersionSummary | undefined {
+	const sorted = [...versions].sort(compareWorkflowCatalogVersionRecords);
+	return [...sorted].reverse().find((version) => version.status === "draft")
+		?? [...sorted].reverse().find((version) => version.status === "published")
+		?? sorted[0];
+}
+
+function deriveWorkflowCatalogStatus(versions: WorkflowCatalogVersionSummary[]): WorkflowCatalogRecord["status"] {
+	if (versions.some((version) => version.status === "draft")) return "draft";
+	if (versions.some((version) => version.status === "published")) return "published";
+	if (versions.some((version) => version.status === "archived")) return "archived";
+	return versions[0]?.status ?? "deleted";
+}
+
+function workflowCatalogVersionSummaryFromCatalogRecord(record: WorkflowCatalogVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
+	const catalogRecord = workflowCatalogRecordWithArchiveState(record, context.state);
+	const definition = catalogRecord.status === "published" || catalogRecord.status === "archived"
+		? createPublishedWorkflowDefinition(catalogRecord, "pibo-agent")
+		: undefined;
+	const diagnostics = definition ? validateWorkflowDefinitionForV2(definition, context) : [];
+	return {
+		...catalogRecord,
+		...(definition ? { definitionHash: hashWorkflowDefinitionJson(definition) } : {}),
+		validationState: workflowCatalogValidationStateFromDiagnostics(diagnostics, definition ? "valid" : "unknown"),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions: workflowCatalogActionsFor(catalogRecord),
+	};
+}
+
+function workflowCatalogVersionSummaryFromPublishedVersion(record: WorkflowPublishedVersionRecord, context: WorkflowCatalogBuildContext): WorkflowCatalogVersionSummary {
+	const catalogRecord = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(record), context.state);
+	const diagnostics = validateWorkflowDefinitionForV2(record.definition, context);
+	return {
+		...catalogRecord,
+		definitionHash: record.definitionHash,
+		validationState: workflowCatalogValidationStateFromDiagnostics(diagnostics, "valid"),
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions: workflowCatalogActionsFor(catalogRecord),
+	};
+}
+
+function workflowCatalogVersionSummaryFromDraft(draft: OwnedWorkflowDraftRecord, state: ChatWebAppState): WorkflowCatalogVersionSummary {
+	const record = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromDraft(draft), state);
+	const diagnostics = sanitizeWorkflowDiagnostics(draft.diagnostics);
+	return {
+		...record,
+		validationState: draft.validationState,
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+		actions: workflowCatalogActionsFor(record),
+	};
+}
+
+function workflowCatalogRecordFromDraft(draft: OwnedWorkflowDraftRecord): WorkflowCatalogVersionRecord {
+	return {
+		id: draft.workflowId,
+		version: workflowDraftVersionLabel(draft),
+		title: typeof draft.definition.title === "string" ? draft.definition.title : draft.workflowId,
+		...(typeof draft.definition.description === "string" ? { description: draft.definition.description } : {}),
+		source: "ui",
+		status: "draft",
+		tags: workflowDefinitionTags(draft.definition),
+	};
+}
+
+function workflowDraftVersionLabel(draft: OwnedWorkflowDraftRecord): string {
+	if (typeof draft.definition.version === "string" && draft.definition.version.trim()) return draft.definition.version.trim();
+	return draft.targetWorkflowVersion ?? "draft";
+}
+
+function workflowCatalogActionsFor(record: Pick<WorkflowCatalogVersionRecord, "source" | "status">): WorkflowCatalogAction[] {
+	if (record.status === "draft") return ["view", "edit_draft", "validate", "publish", "archive", "delete"];
+	if (record.status === "archived") return ["view", "version_history"];
+	if (record.status === "deleted") return ["view"];
+	const actions: WorkflowCatalogAction[] = ["view", "duplicate", "create_project_session", "version_history"];
+	if (record.source === "ui") actions.push("create_next_draft", "archive", "delete");
+	return actions;
+}
+
+function workflowCatalogEditability(actions: WorkflowCatalogAction[]): WorkflowCatalogEditability {
+	return {
+		canView: actions.includes("view"),
+		canDuplicate: actions.includes("duplicate"),
+		canEditDraft: actions.includes("edit_draft"),
+		canCreateDraft: actions.includes("create_next_draft"),
+		canValidate: actions.includes("validate"),
+		canPublish: actions.includes("publish"),
+		canArchive: actions.includes("archive"),
+		canDelete: actions.includes("delete"),
+		canCreateProjectSession: actions.includes("create_project_session"),
+	};
+}
+
+function workflowCatalogValidationStateFromDiagnostics(
+	diagnostics: WorkflowDraftDiagnostic[],
+	fallback: "unknown" | "valid" | "warning" | "error" = "unknown",
+): "unknown" | "valid" | "warning" | "error" {
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return "error";
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "warning")) return "warning";
+	if (diagnostics.some((diagnostic) => diagnostic.severity === "info")) return fallback === "unknown" ? "warning" : fallback;
+	return fallback;
+}
+
+function workflowCatalogValidationStateFromVersions(versions: WorkflowCatalogVersionSummary[]): "unknown" | "valid" | "warning" | "error" {
+	const states = versions.map((version) => version.validationState);
+	if (states.includes("error")) return "error";
+	if (states.includes("warning")) return "warning";
+	if (states.includes("valid")) return "valid";
+	return "unknown";
+}
+
+const WORKFLOW_MISSING_REF_DIAGNOSTIC_CODES = new Set([
+	"WorkflowGraphError.unknownAgentProfileRef",
+	"WorkflowGraphError.archivedAgentProfileRef",
+	"WorkflowGraphError.unknownHandlerRef",
+	"WorkflowGraphError.unknownAdapterRef",
+	"WorkflowGraphError.unknownGuardRef",
+	"WorkflowGraphError.unknownPromptBuilderRef",
+	"WorkflowGraphError.unknownHumanActionRef",
+	"WorkflowCatalogError.unknownWorkflowVersion",
+]);
+
+function workflowMissingRefDiagnostics(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	return uniqueWorkflowDiagnostics(sanitizeWorkflowDiagnostics(diagnostics).filter(isWorkflowMissingRefDiagnostic));
+}
+
+function isWorkflowMissingRefDiagnostic(diagnostic: WorkflowDraftDiagnostic): boolean {
+	return Boolean(diagnostic.registryRef && WORKFLOW_MISSING_REF_DIAGNOSTIC_CODES.has(diagnostic.code));
+}
+
+function uniqueWorkflowDiagnostics(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	const seen = new Set<string>();
+	return diagnostics.filter((diagnostic) => {
+		const key = [diagnostic.code, diagnostic.path ?? "", diagnostic.nodeId ?? "", diagnostic.edgeId ?? "", diagnostic.registryRef ?? "", diagnostic.message].join("\u0000");
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+function uniqueWorkflowCatalogActions(actions: WorkflowCatalogAction[]): WorkflowCatalogAction[] {
+	return [...new Set(actions)].sort();
+}
+
+function compareWorkflowCatalogRecords(left: WorkflowCatalogRecord, right: WorkflowCatalogRecord): number {
+	return left.id.localeCompare(right.id);
+}
+
+function buildWorkflowCatalogInspect(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	options: { includeArchived?: boolean; version?: string; draftId?: string } = {},
+): WorkflowCatalogInspectResponse {
+	let selectedDraft: OwnedWorkflowDraftRecord | undefined;
+	if (options.draftId) {
+		selectedDraft = state.workflowDraftStore.getDraft(options.draftId);
+		if (!selectedDraft || selectedDraft.workflowId !== workflowId) throw new PiboWebHttpError("Workflow draft not found", 404);
+	} else if (!options.version) {
+		selectedDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId);
+	}
+	if (selectedDraft) runWorkflowDraftValidation(state, context, webSession, selectedDraft, "draft_load");
+
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived: options.includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+
+	if (selectedDraft) {
+		return {
+			kind: "workflow-inspect",
+			workflow,
+			selected: { kind: "draft", draft: serializeWorkflowDraft(selectedDraft) },
+			diagnostics: sanitizeWorkflowDiagnostics(selectedDraft.diagnostics),
+		};
+	}
+
+	const version = options.version ?? selectWorkflowCatalogDisplayVersion(workflow.versions)?.version;
+	const published = version ? workflowPublishedVersionInspection(state, context, webSession, workflowId, version, options.includeArchived === true) : undefined;
+	if (published) {
+		return {
+			kind: "workflow-inspect",
+			workflow,
+			selected: {
+				kind: "publishedVersion",
+				version: published.version,
+				definition: published.definition,
+				validation: published.validation,
+			},
+			diagnostics: published.diagnostics,
+		};
+	}
+
+	throw new PiboWebHttpError("Workflow version not found", 404);
+}
+
+function workflowPublishedVersionInspection(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	version: string,
+	includeArchived: boolean,
+): { version: WorkflowCatalogVersionRecord & { definitionHash: string }; definition: PiboJsonObject; validation: WorkflowValidationSummary; diagnostics: WorkflowDraftDiagnostic[] } | undefined {
+	const persisted = state.workflowPublishedVersionStore.listPublishedVersions({ workflowId }).find((record) => record.version === version);
+	if (persisted) {
+		const catalogRecord = workflowCatalogRecordWithArchiveState(workflowCatalogRecordFromPublishedVersion(persisted), state);
+		if (catalogRecord.status === "deleted" || (catalogRecord.status === "archived" && !includeArchived)) return undefined;
+		const diagnostics = validateWorkflowDefinitionForV2(persisted.definition, { state, context, webSession });
+		return {
+			version: { ...catalogRecord, definitionHash: persisted.definitionHash },
+			definition: persisted.definition,
+			validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
+			diagnostics,
+		};
+	}
+
+	const staticRecord = STATIC_WORKFLOW_VERSION_CATALOG.find((record) => record.id === workflowId && record.version === version);
+	const catalogRecord = staticRecord ? workflowCatalogRecordWithArchiveState(staticRecord, state) : undefined;
+	if (!catalogRecord || catalogRecord.status === "draft" || catalogRecord.status === "deleted" || (catalogRecord.status === "archived" && !includeArchived)) return undefined;
+	const definition = createPublishedWorkflowDefinition(catalogRecord, "pibo-agent");
+	const diagnostics = validateWorkflowDefinitionForV2(definition, { state, context, webSession });
+	return {
+		version: { ...catalogRecord, definitionHash: hashWorkflowDefinitionJson(definition) },
+		definition,
+		validation: summarizeWorkflowDiagnostics(diagnostics, "draft_load"),
+		diagnostics,
+	};
+}
+
+function buildWorkflowVersionList(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	options: { includeArchived?: boolean } = {},
+): WorkflowVersionListResponse {
+	const includeArchived = options.includeArchived === true;
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	return {
+		kind: "workflow-version-list",
+		workflowId,
+		includeArchived,
+		workflow,
+		versions: workflow.versions
+			.filter((version) => version.status === "published" || version.status === "archived")
+			.sort(compareWorkflowCatalogVersionRecords),
+	};
+}
+
+function buildWorkflowVersionInspect(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+	version: string,
+	options: { includeArchived?: boolean } = {},
+): WorkflowVersionInspectResponse {
+	const includeArchived = options.includeArchived === true;
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	const published = workflowPublishedVersionInspection(state, context, webSession, workflowId, version, includeArchived);
+	if (!published) throw new PiboWebHttpError("Workflow version not found", 404);
+	const diagnostics = sanitizeWorkflowDiagnostics(published.diagnostics);
+	return {
+		kind: "workflow-version-inspect",
+		workflow,
+		version: published.version,
+		definition: published.definition,
+		validation: published.validation,
+		diagnostics,
+		missingRefs: workflowMissingRefDiagnostics(diagnostics),
+	};
+}
+
+function createWorkflowDraftIdentity(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	body: WorkflowCreateDraftBody,
+): WorkflowCreateDraftResponse {
+	const inputDefinition = body.definition === undefined ? undefined : normalizeWorkflowCreateDefinition(body.definition);
+	const fallbackTitle = inputDefinition && typeof inputDefinition.title === "string" ? inputDefinition.title : undefined;
+	const title = normalizeWorkflowDraftTitle(body.title, fallbackTitle);
+	const workflowId = normalizeWorkflowCreateWorkflowId(body.workflowId ?? inputDefinition?.id, title);
+	const description = normalizeWorkflowDraftDescription(body.description, inputDefinition && typeof inputDefinition.description === "string" ? inputDefinition.description : undefined);
+	const tags = normalizeWorkflowDraftTags(body.tags, inputDefinition ? workflowDefinitionTags(inputDefinition) : ["ui-draft"]);
+	assertWorkflowCreateIdentityAvailable(state, context, webSession, workflowId);
+
+	const now = new Date().toISOString();
+	const draftId = `draft_${workflowId.replace(/[^a-zA-Z0-9_-]/g, "-")}_${randomUUID().slice(0, 8)}`;
+	const definition = inputDefinition
+		? workflowCreateDefinitionWithIdentity(inputDefinition, { workflowId, title, description, tags })
+		: createEmptyWorkflowDraftDefinition({ workflowId, title, description, tags });
+	const draft: OwnedWorkflowDraftRecord = {
+		draftId,
+		workflowId,
+		source: "ui",
+		status: "draft",
+		versionIntent: "patch",
+		definition,
+		diagnostics: [
+			{
+				code: "WorkflowBuilderInfo.createdDraft",
+				message: `Created UI workflow draft '${workflowId}'.`,
+				severity: "info",
+				path: "$.id",
+				hint: "Drafts may be incomplete until validation passes before publish or run.",
+			},
+		],
+		validationState: "warning",
+		revision: 1,
+		createdAt: now,
+		updatedAt: now,
+		ownerScope: webSession.ownerScope,
+	};
+	state.workflowDraftStore.saveDraft(draft);
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.draft.saved",
+		workflowId: draft.workflowId,
+		workflowVersion: typeof draft.definition.version === "string" ? draft.definition.version : undefined,
+		draftId: draft.draftId,
+		status: "saved",
+		diagnostics: draft.diagnostics,
+		payload: { operation: "create" },
+	});
+	runWorkflowDraftValidation(state, context, webSession, draft, "draft_load");
+	return { draft: serializeWorkflowDraft(draft), builderPath: workflowDraftBuilderPath(draft.draftId) };
+}
+
+function normalizeWorkflowCreateDefinition(value: unknown): PiboJsonObject {
+	if (!isJsonObject(value)) throw new PiboWebHttpError("Workflow definition must be a JSON object", 400);
+	return cloneJsonObject(value);
+}
+
+function assertWorkflowCreateIdentityAvailable(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowId: string,
+): void {
+	if (state.workflowTombstoneStore.getWorkflowTombstone(workflowId)) throw new PiboWebHttpError("Workflow id has been deleted", 409);
+	const existing = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true }).workflows.find((record) => record.id === workflowId);
+	if (existing || state.workflowDraftStore.findActiveDraftByWorkflowId(workflowId) || state.workflowPublishedVersionStore.listPublishedVersions({ workflowId }).length) {
+		throw new PiboWebHttpError(`Workflow '${workflowId}' already exists`, 409);
+	}
+}
+
+function workflowCreateDefinitionWithIdentity(
+	definition: PiboJsonObject,
+	input: { workflowId: string; title: string; description?: string; tags: string[] },
+): PiboJsonObject {
+	const next = cloneJsonObject(definition);
+	next.id = input.workflowId;
+	if (typeof next.version !== "string" || !next.version.trim()) next.version = "0.1.0-draft";
+	next.title = input.title;
+	if (input.description) next.description = input.description;
+	else delete next.description;
+	next.metadata = workflowMetadataWithTags(next.metadata, input.tags);
+	if (!isJsonObject(next.nodes)) next.nodes = {};
+	if (!isJsonObject(next.edges)) next.edges = {};
+	if (!isJsonObject(next.ui)) next.ui = { layout: "auto", positions: {} };
+	return next;
+}
+
+function createEmptyWorkflowDraftDefinition(input: { workflowId: string; title: string; description?: string; tags: string[] }): PiboJsonObject {
+	return {
+		id: input.workflowId,
+		version: "0.1.0-draft",
+		title: input.title,
+		...(input.description ? { description: input.description } : {}),
+		metadata: { tags: input.tags },
+		nodes: {},
+		edges: {},
+		ui: { layout: "auto", positions: {} },
+	};
+}
+
+function workflowMetadataWithTags(value: unknown, tags: string[]): PiboJsonObject {
+	const metadata = isJsonObject(value) ? cloneJsonObject(value) : {};
+	metadata.tags = tags;
+	return metadata;
+}
+
+const WORKFLOW_STARTER_DRAFT_ID = "v2-starter-draft";
+
+function workflowDraftBuilderPath(draftId: string): string {
+	return `${CHAT_WEB_MOUNT_PATH}/workflows/drafts/${encodeURIComponent(draftId)}`;
+}
+
+function serializeWorkflowDraft(record: OwnedWorkflowDraftRecord): WorkflowDraftRecord {
+	const { ownerScope: _ownerScope, ...draft } = record;
+	return {
+		...draft,
+		diagnostics: sanitizeWorkflowDiagnostics(draft.diagnostics),
+	};
+}
+
+function requireWorkflowDraft(state: ChatWebAppState, webSession: PiboWebSession, draftId: string): WorkflowDraftRecord {
+	return serializeWorkflowDraft(requireMutableWorkflowDraft(state, webSession, draftId));
+}
+
+function requireValidatedWorkflowDraft(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	draftId: string,
+	trigger: WorkflowValidationTrigger = "draft_load",
+): WorkflowDraftRecord {
+	const record = requireMutableWorkflowDraft(state, webSession, draftId);
+	runWorkflowDraftValidation(state, context, webSession, record, trigger);
+	return serializeWorkflowDraft(record);
+}
+
+function duplicateWorkflowIntoDraft(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	workflowIdValue: unknown,
+	workflowVersionValue: unknown,
+): WorkflowDraftRecord {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const workflowVersion = normalizeProjectWorkflowVersion(workflowVersionValue);
+	const published = selectPublishedWorkflowVersion(state, workflowId, workflowVersion);
+	if (!published) throw new PiboWebHttpError("Published workflow version not found", 404);
+
+	const copyWorkflowId = `ui-${published.id}-copy`;
+	const existingDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(copyWorkflowId);
+	if (existingDraft) return serializeWorkflowDraft(existingDraft);
+
+	const now = new Date().toISOString();
+	const draftId = `draft_${published.id.replace(/[^a-zA-Z0-9_-]/g, "-")}_${published.version.replace(/[^a-zA-Z0-9_-]/g, "-")}_${randomUUID().slice(0, 8)}`;
+	const draft: OwnedWorkflowDraftRecord = {
+		draftId,
+		workflowId: copyWorkflowId,
+		source: "ui",
+		status: "draft",
+		baseWorkflowId: published.id,
+		baseWorkflowVersion: published.version,
+		baseDefinitionHash: published.definitionHash,
+		versionIntent: "patch",
+		definition: createDraftDefinitionFromPublishedWorkflow(published),
+		diagnostics: [
+			{
+				code: "WorkflowBuilderInfo.duplicatedDraft",
+				message: `Duplicated '${published.id}@${published.version}' into a UI draft wrapper.`,
+				severity: "info",
+				path: "$.metadata.migration",
+				hint: "Future stories persist edits, validate every change, and publish immutable UI versions.",
+			},
+		],
+		validationState: "warning",
+		revision: 1,
+		createdAt: now,
+		updatedAt: now,
+		ownerScope: webSession.ownerScope,
+	};
+	state.workflowDraftStore.saveDraft(draft);
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.draft.saved",
+		workflowId: draft.workflowId,
+		workflowVersion: draft.baseWorkflowVersion,
+		draftId: draft.draftId,
+		status: "saved",
+		diagnostics: draft.diagnostics,
+		payload: {
+			operation: "duplicate",
+			baseWorkflowId: published.id,
+			baseWorkflowVersion: published.version,
+		},
+	});
+	return serializeWorkflowDraft(draft);
+}
+
+function createNextVersionDraftFromPublishedWorkflow(
+	state: ChatWebAppState,
+	webSession: PiboWebSession,
+	workflowIdValue: unknown,
+	workflowVersionValue: unknown,
+): { draft: WorkflowDraftRecord; reused: boolean } {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const workflowVersion = normalizeProjectWorkflowVersion(workflowVersionValue);
+	const published = selectPublishedWorkflowVersion(state, workflowId, workflowVersion);
+	if (!published) throw new PiboWebHttpError("Published workflow version not found", 404);
+	if (published.source !== "ui") {
+		throw new PiboWebHttpError("Code workflow projections are read-only; duplicate them to a UI draft before editing", 409);
+	}
+
+	const existingDraft = state.workflowDraftStore.findActiveDraftByWorkflowId(published.id);
+	if (existingDraft) {
+		return { draft: serializeWorkflowDraft(existingDraft), reused: true };
+	}
+
+	const now = new Date().toISOString();
+	const targetWorkflowVersion = nextPatchWorkflowVersion(published.version);
+	const draftId = `draft_${published.id.replace(/[^a-zA-Z0-9_-]/g, "-")}_${published.version.replace(/[^a-zA-Z0-9_-]/g, "-")}_next_${randomUUID().slice(0, 8)}`;
+	const draft: OwnedWorkflowDraftRecord = {
+		draftId,
+		workflowId: published.id,
+		source: "ui",
+		status: "draft",
+		baseWorkflowId: published.id,
+		baseWorkflowVersion: published.version,
+		baseDefinitionHash: published.definitionHash,
+		targetWorkflowVersion,
+		versionIntent: "patch",
+		definition: createNextVersionDraftDefinitionFromPublishedWorkflow(published, targetWorkflowVersion),
+		diagnostics: [
+			{
+				code: "WorkflowBuilderInfo.nextVersionDraft",
+				message: `Editing '${published.id}@${published.version}' created a draft for next version '${targetWorkflowVersion}'.`,
+				severity: "info",
+				path: "$.version",
+				hint: "Published versions stay immutable; save edits in this draft and publish a new version when validation passes.",
+			},
+		],
+		validationState: "warning",
+		revision: 1,
+		createdAt: now,
+		updatedAt: now,
+		ownerScope: webSession.ownerScope,
+	};
+	state.workflowDraftStore.saveDraft(draft);
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.draft.saved",
+		workflowId: draft.workflowId,
+		workflowVersion: draft.baseWorkflowVersion,
+		draftId: draft.draftId,
+		status: "saved",
+		diagnostics: draft.diagnostics,
+		payload: {
+			operation: "edit_published",
+			baseWorkflowId: published.id,
+			baseWorkflowVersion: published.version,
+			targetWorkflowVersion,
+		},
+	});
+	return { draft: serializeWorkflowDraft(draft), reused: false };
+}
+
+function archiveWorkflowIdentity(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowIdValue: unknown,
+	reasonValue: unknown,
+): { workflow: WorkflowCatalogRecord; archiveState: WorkflowArchiveStateRecord } {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	if (workflow.source !== "ui") {
+		throw new PiboWebHttpError("Code workflow projections are read-only; duplicate them to a UI draft before archiving", 409);
+	}
+	const archiveState = state.workflowArchiveStore.setWorkflowArchived({
+		workflowId,
+		archivedBy: principalIdFor(webSession),
+		archiveReason: normalizeWorkflowArchiveReason(reasonValue),
+	});
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.archive.updated",
+		workflowId,
+		status: "accepted",
+		diagnostics: [],
+		payload: {
+			archived: true,
+			archiveReason: archiveState.archiveReason ?? null,
+			archiveScope: "workflow_identity",
+		},
+	});
+	const archivedWorkflow = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true }).workflows.find((record) => record.id === workflowId);
+	if (!archivedWorkflow) throw new PiboWebHttpError("Archived workflow not found", 500);
+	return { workflow: archivedWorkflow, archiveState };
+}
+
+function deleteWorkflowIdentity(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	workflowIdValue: unknown,
+	body: WorkflowDeleteBody,
+): { workflowId: string; deleted: true; tombstone: WorkflowTombstoneRecord } {
+	const workflowId = normalizeProjectWorkflowId(workflowIdValue);
+	const catalog = buildWorkflowCatalogList(state, context, webSession, { includeArchived: true });
+	const workflow = catalog.workflows.find((record) => record.id === workflowId);
+	if (!workflow) throw new PiboWebHttpError("Workflow not found", 404);
+	if (workflow.source !== "ui") {
+		throw new PiboWebHttpError("Code workflow projections are read-only; duplicate them to a UI draft before deleting", 409);
+	}
+	requireWorkflowDeleteConfirmation(body.confirmWorkflowId, workflow.id);
+	const displayVersion = selectWorkflowCatalogDisplayVersion(workflow.versions);
+	const tombstone = state.workflowTombstoneStore.setWorkflowDeleted({
+		workflowId,
+		deletedBy: principalIdFor(webSession),
+		lastKnownTitle: workflow.title,
+		...(displayVersion?.version ? { lastKnownVersion: displayVersion.version } : {}),
+		...(displayVersion?.definitionHash ? { lastDefinitionHash: displayVersion.definitionHash } : {}),
+	});
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.delete.tombstoned",
+		workflowId,
+		workflowVersion: tombstone.lastKnownVersion,
+		status: "accepted",
+		diagnostics: [],
+		payload: {
+			deleted: true,
+			lastKnownTitle: tombstone.lastKnownTitle,
+			lastKnownVersion: tombstone.lastKnownVersion ?? null,
+			lastDefinitionHash: tombstone.lastDefinitionHash ?? null,
+		},
+	});
+	return { workflowId, deleted: true, tombstone };
+}
+
+function selectPublishedWorkflowVersion(state: ChatWebAppState, workflowId: string, version?: string): WorkflowPublishedVersionSelection | undefined {
+	const options = buildProjectWorkflowVersionOptions(state).filter((option) => option.id === workflowId);
+	const selected = version ? options.find((option) => option.version === version) : options[0];
+	if (!selected) return undefined;
+	return resolvePublishedWorkflowDefinitionForProfile(state, selected, "pibo-agent");
+}
+
+function resolvePublishedWorkflowDefinitionForProfile(
+	state: ChatWebAppState,
+	workflow: WorkflowVersionPickerOption,
+	profileId: string,
+): WorkflowPublishedVersionSelection {
+	const persisted = state.workflowPublishedVersionStore
+		.listPublishedVersions({ workflowId: workflow.id })
+		.find((record) => record.version === workflow.version);
+	if (persisted) {
+		return {
+			...workflow,
+			definition: cloneJsonObject(persisted.definition),
+			definitionHash: persisted.definitionHash,
+		};
+	}
+
+	const definition = createPublishedWorkflowDefinition(workflow, profileId);
+	return {
+		...workflow,
+		definition,
+		definitionHash: hashWorkflowDefinitionJson(definition),
+	};
+}
+
+function nextPatchWorkflowVersion(version: string): string {
+	const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version);
+	if (!match) return `${version}.1`;
+	return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
+function createStarterWorkflowDraft(webSession: PiboWebSession): OwnedWorkflowDraftRecord {
+	const now = new Date().toISOString();
+	return {
+		draftId: WORKFLOW_STARTER_DRAFT_ID,
+		workflowId: "ui-starter-workflow",
+		source: "ui",
+		status: "draft",
+		versionIntent: "patch",
+		definition: {
+			id: "ui-starter-workflow",
+			version: "0.1.0-draft",
+			title: "Starter UI Workflow Draft",
+			description: "Partial Pibo Workflow IR loaded by the Workflow Builder route.",
+			metadata: {
+				tags: ["ui-draft", "workflows-v2"],
+			},
+			nodes: {},
+			edges: {},
+			ui: {
+				layout: "auto",
+				positions: {},
+			},
+		},
+		diagnostics: [
+			{
+				code: "WorkflowBuilderWarning.partialDraft",
+				message: "This UI draft is intentionally partial and is not publishable yet.",
+				severity: "warning",
+				path: "$.nodes",
+				hint: "Add workflow input/output contracts and at least one node before publishing in later builder stories.",
+			},
+		],
+		validationState: "warning",
+		revision: 1,
+		createdAt: now,
+		updatedAt: now,
+		ownerScope: webSession.ownerScope,
+	};
+}
+
+function createDraftDefinitionFromPublishedWorkflow(workflow: WorkflowPublishedVersionSelection): PiboJsonObject {
+	return clonePublishedWorkflowDefinitionForDraft(workflow, {
+		workflowId: `ui-${workflow.id}-copy`,
+		version: `${workflow.version}-draft`,
+		title: `${workflow.title} Draft`,
+		description: workflow.description ?? `UI draft copied from ${workflow.id}@${workflow.version}.`,
+		tags: ["ui-draft", ...workflow.tags],
+		migrationNotes: `Duplicated from ${workflow.id}@${workflow.version} for Workflow UI Authoring V2.`,
+	});
+}
+
+function createNextVersionDraftDefinitionFromPublishedWorkflow(workflow: WorkflowPublishedVersionSelection, targetWorkflowVersion: string): PiboJsonObject {
+	return clonePublishedWorkflowDefinitionForDraft(workflow, {
+		workflowId: workflow.id,
+		version: targetWorkflowVersion,
+		title: `${workflow.title} Draft`,
+		description: workflow.description ?? `Next-version draft for ${workflow.id}@${workflow.version}.`,
+		tags: ["ui-draft", "next-version", ...workflow.tags],
+		migrationNotes: `Editing immutable ${workflow.id}@${workflow.version}; next publish targets ${targetWorkflowVersion}.`,
+	});
+}
+
+function clonePublishedWorkflowDefinitionForDraft(
+	workflow: WorkflowPublishedVersionSelection,
+	input: {
+		workflowId: string;
+		version: string;
+		title: string;
+		description: string;
+		tags: string[];
+		migrationNotes: string;
+	},
+): PiboJsonObject {
+	const definition = cloneJsonObject(workflow.definition);
+	definition.id = input.workflowId;
+	definition.version = input.version;
+	definition.title = input.title;
+	definition.description = input.description;
+	delete definition.xstate;
+
+	const existingMetadata = isJsonObject(definition.metadata) ? cloneJsonObject(definition.metadata) : {};
+	const existingTags = Array.isArray(existingMetadata.tags) ? existingMetadata.tags.filter((tag): tag is string => typeof tag === "string") : [];
+	const existingMigration = isJsonObject(existingMetadata.migration) ? cloneJsonObject(existingMetadata.migration) : {};
+	definition.metadata = {
+		...existingMetadata,
+		tags: [...new Set([...input.tags, ...existingTags])],
+		migration: {
+			...existingMigration,
+			fromWorkflowId: workflow.id,
+			fromVersion: workflow.version,
+			fromDefinitionHash: workflow.definitionHash,
+			notes: input.migrationNotes,
+		},
+	};
+	if (!isJsonObject(definition.ui)) {
+		definition.ui = {
+			layout: "auto",
+			positions: {},
+		};
+	}
+	return definition;
+}
+
+function createPublishedWorkflowDefinition(workflow: WorkflowCatalogVersionRecord, profileId: string): PiboJsonObject {
+	return createRunnableWorkflowDefinition({
+		workflowId: workflow.id,
+		version: workflow.version,
+		title: workflow.title,
+		description: workflow.description ?? `${workflow.title} workflow.`,
+		tags: workflow.tags,
+		profileId,
+	});
+}
+
+function createRunnableWorkflowDefinition(input: {
+	workflowId: string;
+	version: string;
+	title: string;
+	description: string;
+	tags: string[];
+	profileId: string;
+	metadata?: PiboJsonObject;
+}): PiboJsonObject {
+	return {
+		id: input.workflowId,
+		version: input.version,
+		title: input.title,
+		description: input.description,
+		input: {
+			kind: "text",
+			description: "Workflow input provided when a Project session starts.",
+		},
+		output: {
+			kind: "text",
+			description: "Workflow output returned to the Project session.",
+		},
+		initial: "agent",
+		nodes: {
+			agent: {
+				kind: "agent",
+				runtime: "pibo",
+				profile: { kind: "fixed", id: input.profileId },
+				promptTemplate: "Use the workflow input to produce a concise answer.\n\n{{input}}",
+				metadata: { sessionOverrides: { prompt: true } },
+				ui: { position: { x: 80, y: 80 } },
+			},
+		},
+		edges: {},
+		metadata: {
+			tags: input.tags,
+			...(input.metadata ?? {}),
+		},
+		ui: {
+			layout: "auto",
+			positions: {
+				agent: { x: 80, y: 80 },
+			},
+		},
+	};
+}
+
+const WORKFLOW_EDIT_VALIDATION_TRIGGERS = new Set<WorkflowValidationTrigger>([
+	"graph_edit",
+	"node_edit",
+	"edge_edit",
+	"schema_edit",
+	"prompt_edit",
+	"state_edit",
+	"raw_ir_edit",
+]);
+
+const WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE = "WorkflowBuilderWarning.invalidRawIrText";
+
+const WORKFLOW_VALIDATION_DIAGNOSTIC_PREFIXES = [
+	"WorkflowValidation",
+	"WorkflowGraphError",
+	"WorkflowSchemaError",
+	"WorkflowCatalogError",
+	"WorkflowInterfaceError",
+	"WorkflowRegistryError",
+	"WorkflowSecurityError",
+];
+
+function normalizeWorkflowEditTrigger(value: unknown): WorkflowValidationTrigger {
+	if (typeof value !== "string" || !WORKFLOW_EDIT_VALIDATION_TRIGGERS.has(value as WorkflowValidationTrigger)) {
+		throw new PiboWebHttpError("Workflow edit trigger must be graph_edit, node_edit, edge_edit, schema_edit, prompt_edit, state_edit, or raw_ir_edit", 400);
+	}
+	return value as WorkflowValidationTrigger;
+}
+
+function normalizeWorkflowValidationTrigger(value: unknown, fallback: WorkflowValidationTrigger): WorkflowValidationTrigger {
+	if (value === undefined || value === null || value === "") return fallback;
+	if (typeof value !== "string") throw new PiboWebHttpError("Workflow validation trigger must be a string", 400);
+	const trigger = value as WorkflowValidationTrigger;
+	if (trigger !== fallback && !WORKFLOW_EDIT_VALIDATION_TRIGGERS.has(trigger)) {
+		throw new PiboWebHttpError(`Workflow validation trigger '${value}' is not allowed for this route`, 400);
+	}
+	return trigger;
+}
+
+function normalizeWorkflowVersionIntent(value: unknown, fallback: "patch" | "minor" | "major"): "patch" | "minor" | "major" {
+	if (value === undefined || value === null || value === "") return fallback;
+	if (value === "patch" || value === "minor" || value === "major") return value;
+	throw new PiboWebHttpError("Workflow version intent must be patch, minor, or major", 400);
+}
+
+type ParsedWorkflowSemver = { major: number; minor: number; patch: number };
+
+function allocateWorkflowPublishedVersion(input: {
+	draft: OwnedWorkflowDraftRecord;
+	versionIntent: "patch" | "minor" | "major";
+	existingVersions: string[];
+}): string {
+	const existing = new Set(input.existingVersions);
+	let base = maxWorkflowSemver([
+		...input.existingVersions,
+		input.draft.baseWorkflowVersion ?? (typeof input.draft.definition.version === "string" ? input.draft.definition.version : undefined),
+	]);
+	base ??= { major: 0, minor: 0, patch: 0 };
+	let candidate = bumpWorkflowSemver(base, input.versionIntent);
+	while (existing.has(formatWorkflowSemver(candidate))) {
+		candidate = bumpWorkflowSemver(candidate, input.versionIntent);
+	}
+	return formatWorkflowSemver(candidate);
+}
+
+function maxWorkflowSemver(versions: Array<string | undefined>): ParsedWorkflowSemver | undefined {
+	let max: ParsedWorkflowSemver | undefined;
+	for (const version of versions) {
+		const parsed = version ? parseWorkflowSemver(version) : undefined;
+		if (parsed && (!max || compareWorkflowSemver(parsed, max) > 0)) max = parsed;
+	}
+	return max;
+}
+
+function parseWorkflowSemver(version: string): ParsedWorkflowSemver | undefined {
+	const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version.trim());
+	if (!match) return undefined;
+	return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+}
+
+function compareWorkflowSemver(left: ParsedWorkflowSemver, right: ParsedWorkflowSemver): number {
+	return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+}
+
+function bumpWorkflowSemver(version: ParsedWorkflowSemver, intent: "patch" | "minor" | "major"): ParsedWorkflowSemver {
+	if (intent === "major") return { major: version.major + 1, minor: 0, patch: 0 };
+	if (intent === "minor") return { major: version.major, minor: version.minor + 1, patch: 0 };
+	return { major: version.major, minor: version.minor, patch: version.patch + 1 };
+}
+
+function formatWorkflowSemver(version: ParsedWorkflowSemver): string {
+	return `${version.major}.${version.minor}.${version.patch}`;
+}
+
+function workflowDraftDefinitionForPublishedVersion(definition: PiboJsonObject, workflowId: string, version: string): PiboJsonObject {
+	return {
+		...cloneJsonObject(definition),
+		id: workflowId,
+		version,
+	};
+}
+
+function hashWorkflowDefinitionJson(definition: PiboJsonObject): string {
+	return `sha256:${createHash("sha256").update(canonicalWorkflowDefinitionJson(definition)).digest("hex")}`;
+}
+
+function canonicalWorkflowDefinitionJson(definition: PiboJsonObject): string {
+	return JSON.stringify(normalizeForCanonicalJson(definition));
+}
+
+function normalizeForCanonicalJson(value: PiboJsonValue | undefined): PiboJsonValue | undefined {
+	if (Array.isArray(value)) {
+		return value.map((item) => normalizeForCanonicalJson(item) ?? null);
+	}
+	if (value && typeof value === "object") {
+		const output: PiboJsonObject = {};
+		for (const key of Object.keys(value).sort()) {
+			const normalized = normalizeForCanonicalJson(value[key]);
+			if (normalized !== undefined) output[key] = normalized;
+		}
+		return output;
+	}
+	return value;
+}
+
+function cloneJsonObject(value: PiboJsonObject): PiboJsonObject {
+	return JSON.parse(JSON.stringify(value)) as PiboJsonObject;
+}
+
+function parseWorkflowDraftDefinitionFromPatch(body: WorkflowDraftPatchBody): { definition?: PiboJsonObject; trigger: WorkflowValidationTrigger; diagnostic?: WorkflowDraftDiagnostic } {
+	const hasRawText = body.rawDefinitionText !== undefined;
+	const hasDefinition = body.definition !== undefined;
+	if (hasRawText && hasDefinition) throw new PiboWebHttpError("Provide either rawDefinitionText or definition, not both", 400);
+	const trigger = normalizeWorkflowEditTrigger(body.editTrigger ?? (hasRawText ? "raw_ir_edit" : "graph_edit"));
+	if (!hasRawText && !hasDefinition) return { trigger };
+	if (hasRawText) return { trigger, ...parseRawWorkflowDefinitionText(body.rawDefinitionText) };
+	if (!isJsonObject(body.definition)) throw new PiboWebHttpError("Workflow draft definition must be a JSON object", 400);
+	return { definition: body.definition, trigger };
+}
+
+function parseRawWorkflowDefinitionText(value: unknown): { definition?: PiboJsonObject; diagnostic?: WorkflowDraftDiagnostic } {
+	if (typeof value !== "string") throw new PiboWebHttpError("Raw Workflow IR text must be a string", 400);
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value) as unknown;
+	} catch {
+		return {
+			diagnostic: createRawWorkflowIrParseDiagnostic("Raw Workflow IR text was not saved because it is not valid JSON."),
+		};
+	}
+	if (!isJsonObject(parsed)) {
+		return {
+			diagnostic: createRawWorkflowIrParseDiagnostic("Raw Workflow IR text was not saved because it must parse to a JSON object."),
+		};
+	}
+	return { definition: parsed };
+}
+
+function createRawWorkflowIrParseDiagnostic(message: string): WorkflowDraftDiagnostic {
+	return {
+		code: WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE,
+		message,
+		severity: "warning",
+		path: "$",
+		hint: "Fix the raw Workflow IR text and save again; the last valid draft object remains unchanged.",
+	};
+}
+
+function withoutRawWorkflowIrParseDiagnostic(diagnostics: WorkflowDraftDiagnostic[]): WorkflowDraftDiagnostic[] {
+	return diagnostics.filter((diagnostic) => diagnostic.code !== WORKFLOW_RAW_IR_PARSE_DIAGNOSTIC_CODE);
+}
+
+function requireMutableWorkflowDraft(state: ChatWebAppState, webSession: PiboWebSession, draftId: string): OwnedWorkflowDraftRecord {
+	let record = state.workflowDraftStore.getDraft(draftId);
+	if (!record && draftId === WORKFLOW_STARTER_DRAFT_ID) {
+		record = createStarterWorkflowDraft(webSession);
+		state.workflowDraftStore.saveDraft(record);
+		recordWorkflowLifecycleEvent(state, webSession, {
+			type: "workflow.draft.saved",
+			workflowId: record.workflowId,
+			workflowVersion: typeof record.definition.version === "string" ? record.definition.version : undefined,
+			draftId: record.draftId,
+			status: "saved",
+			diagnostics: record.diagnostics,
+			payload: { operation: "starter" },
+		});
+	}
+	if (!record) throw new PiboWebHttpError("Workflow draft not found", 404);
+	if (state.workflowTombstoneStore.getWorkflowTombstone(record.workflowId)) {
+		throw new PiboWebHttpError("Workflow has been deleted", 404);
+	}
+	return record;
+}
+
+function runWorkflowDraftValidation(
+	state: ChatWebAppState,
+	context: PiboWebAppContext,
+	webSession: PiboWebSession,
+	record: OwnedWorkflowDraftRecord,
+	trigger: WorkflowValidationTrigger,
+): WorkflowValidationResponse {
+	const diagnostics = sanitizeWorkflowDiagnostics([
+		...record.diagnostics.filter((diagnostic) => !isWorkflowValidationPipelineDiagnostic(diagnostic)),
+		...validateWorkflowDefinitionForV2(record.definition, { state, context, webSession }),
+	]);
+	const validation = summarizeWorkflowDiagnostics(diagnostics, trigger);
+	record.diagnostics = diagnostics;
+	record.validationState = validation.validationState;
+	record.validation = validation;
+	record.updatedAt = validation.checkedAt;
+	state.workflowDraftStore.saveDraft(record);
+	recordWorkflowLifecycleEvent(state, webSession, {
+		type: "workflow.validation.completed",
+		workflowId: record.workflowId,
+		workflowVersion: typeof record.definition.version === "string" ? record.definition.version : undefined,
+		draftId: record.draftId,
+		status: validation.ok ? "accepted" : "blocked",
+		validation,
+		diagnostics,
+		payload: { trigger: validation.trigger },
+	});
+	return { validation, diagnostics };
+}
+
+function validatePublishedWorkflowBoundary(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	definition: PiboJsonObject;
+	trigger: "before_project_session_creation" | "before_workflow_start";
+}): WorkflowValidationResponse {
+	const diagnostics = sanitizeWorkflowDiagnostics(validateWorkflowDefinitionForV2(input.definition, input));
+	return {
+		diagnostics,
+		validation: summarizeWorkflowDiagnostics(diagnostics, input.trigger),
+	};
+}
+
+function summarizeWorkflowDiagnostics(diagnostics: WorkflowDraftDiagnostic[], trigger: WorkflowValidationTrigger): WorkflowValidationSummary {
+	const errorCount = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+	const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+	const infoCount = diagnostics.filter((diagnostic) => diagnostic.severity === "info").length;
+	return {
+		trigger,
+		checkedAt: new Date().toISOString(),
+		ok: errorCount === 0,
+		validationState: errorCount > 0 ? "error" : warningCount > 0 ? "warning" : "valid",
+		errorCount,
+		warningCount,
+		infoCount,
+		blocksPublish: errorCount > 0,
+		blocksRun: errorCount > 0,
+	};
+}
+
+function isWorkflowValidationPipelineDiagnostic(diagnostic: WorkflowDraftDiagnostic): boolean {
+	return WORKFLOW_VALIDATION_DIAGNOSTIC_PREFIXES.some((prefix) => diagnostic.code.startsWith(prefix));
+}
+
+function validateWorkflowDefinitionForV2(
+	definition: PiboJsonObject,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+): WorkflowDraftDiagnostic[] {
+	const diagnostics: WorkflowDraftDiagnostic[] = [];
+	validateWorkflowDefinitionSecurityBoundary(definition, diagnostics);
+	validateRequiredString(definition, "id", "$.id", diagnostics);
+	validateRequiredString(definition, "version", "$.version", diagnostics);
+	validateWorkflowPortLike(definition.input, "$.input", diagnostics);
+	validateWorkflowPortLike(definition.output, "$.output", diagnostics);
+
+	const nodes = definition.nodes;
+	const nodeIds = isJsonObject(nodes) ? Object.keys(nodes) : [];
+	if (!isJsonObject(nodes)) {
+		diagnostics.push({
+			code: "WorkflowValidationError.missingNodes",
+			message: "Workflow IR must include a nodes object.",
+			severity: "error",
+			path: "$.nodes",
+			hint: "Save a Pibo Workflow IR object with nodes before publishing or running.",
+		});
+	} else if (nodeIds.length === 0) {
+		diagnostics.push({
+			code: "WorkflowValidationError.emptyGraph",
+			message: "Runnable workflows must include at least one node.",
+			severity: "error",
+			path: "$.nodes",
+			hint: "Drafts may stay incomplete, but publish and run/start are blocked until at least one node exists.",
+		});
+	}
+
+	const edges = definition.edges;
+	if (!isJsonObject(edges)) {
+		diagnostics.push({
+			code: "WorkflowValidationError.missingEdges",
+			message: "Workflow IR must include an edges object.",
+			severity: "error",
+			path: "$.edges",
+			hint: "Use an empty object when the workflow has no edges.",
+		});
+	}
+
+	for (const [nodeId, node] of isJsonObject(nodes) ? Object.entries(nodes) : []) {
+		validateWorkflowNodeLike(nodeId, node, input, diagnostics);
+	}
+
+	validateWorkflowInitialLike(definition.initial, new Set(nodeIds), diagnostics);
+
+	for (const [edgeId, edge] of isJsonObject(edges) ? Object.entries(edges) : []) {
+		validateWorkflowEdgeLike(edgeId, edge, isJsonObject(nodes) ? nodes : {}, diagnostics);
+	}
+
+	return sanitizeWorkflowDiagnostics(diagnostics);
+}
+
+function validateWorkflowDefinitionSecurityBoundary(definition: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	validateNoInlineExecutableCode(definition, "$", diagnostics, {});
+	validateNoHiddenLlmCoercion(definition, "$", diagnostics, {});
+	for (const key of Object.keys(definition)) {
+		if (!RAW_XSTATE_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
+		diagnostics.push({
+			code: "WorkflowSecurityError.rawXStateAuthoring",
+			message: `Workflow definition declares raw XState field '${key}', which is projection-only and not editable in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `$.${key}`,
+			hint: "Edit and publish Pibo Workflow IR only; XState is generated as a visualization/projection from workflow run records.",
+		});
+	}
+}
+
+function validateWorkflowInitialLike(value: unknown, nodeIds: ReadonlySet<string>, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const initialNodes = typeof value === "string"
+		? [value]
+		: Array.isArray(value) && value.every((entry) => typeof entry === "string")
+			? value
+			: [];
+	if (!initialNodes.length) {
+		diagnostics.push({
+			code: "WorkflowValidationError.missingInitialNode",
+			message: "Workflow IR must choose an initial node.",
+			severity: "error",
+			path: "$.initial",
+			hint: "Set initial to an existing node id before publishing or running.",
+		});
+		return;
+	}
+	for (const nodeId of initialNodes) {
+		if (!nodeIds.has(nodeId)) {
+			diagnostics.push({
+				code: "WorkflowGraphError.unknownInitialNode",
+				message: `Initial workflow node '${nodeId}' does not exist in nodes.`,
+				severity: "error",
+				path: "$.initial",
+				nodeId,
+				hint: "Point initial at an existing node id.",
+			});
+		}
+	}
+}
+
+function validateWorkflowNodeLike(
+	nodeId: string,
+	value: PiboJsonValue,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.nodes.${nodeId}`;
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidNode",
+			message: `Workflow node '${nodeId}' must be a JSON object.`,
+			severity: "error",
+			path,
+			nodeId,
+		});
+		return;
+	}
+	if (value.input !== undefined) validateWorkflowPortLike(value.input, `${path}.input`, diagnostics, { nodeId });
+	if (value.output !== undefined) validateWorkflowPortLike(value.output, `${path}.output`, diagnostics, { nodeId });
+	validateNoInlineExecutableCode(value, path, diagnostics, { nodeId });
+
+	const kind = value.kind;
+	if (kind === "agent") {
+		validateWorkflowAgentNodeLike(nodeId, value, input, diagnostics);
+		return;
+	}
+	if (kind === "code") {
+		validateWorkflowCodeNodeLike(nodeId, value, diagnostics);
+		return;
+	}
+	if (kind === "workflow") {
+		validateWorkflowNestedNodeLike(nodeId, value, input, diagnostics);
+		return;
+	}
+	if (kind === "adapter") {
+		validateWorkflowAdapterNodeLike(nodeId, value, diagnostics);
+		return;
+	}
+	if (kind === "human") {
+		validateWorkflowHumanNodeLike(nodeId, value, diagnostics);
+		return;
+	}
+	diagnostics.push({
+		code: "WorkflowValidationError.unknownNodeKind",
+		message: `Workflow node '${nodeId}' must use kind agent, code, workflow, adapter, or human.`,
+		severity: "error",
+		path: `${path}.kind`,
+		nodeId,
+		hint: "Use one of the registered V2 editable node kinds.",
+	});
+}
+
+function validateWorkflowAgentNodeLike(
+	nodeId: string,
+	node: PiboJsonObject,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.nodes.${nodeId}`;
+	if (node.runtime !== "pibo") {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidAgentRuntime",
+			message: `Agent node '${nodeId}' must use the pibo runtime.`,
+			severity: "error",
+			path: `${path}.runtime`,
+			nodeId,
+		});
+	}
+	const profile = isJsonObject(node.profile) ? node.profile : undefined;
+	const profileId = profile && profile.kind === "fixed" && typeof profile.id === "string" ? profile.id.trim() : undefined;
+	if (!profileId) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownAgentProfileRef",
+			message: `Agent node '${nodeId}' must select a fixed Agent Designer profile.`,
+			severity: "error",
+			path: `${path}.profile.id`,
+			nodeId,
+			hint: "Select a non-archived Agent Designer profile from the picker.",
+		});
+		return;
+	}
+	const picker = buildWorkflowProfilePicker(input.state, input.context, input.webSession, profileId);
+	if (picker.selectedProfileId !== profileId) {
+		const diagnostic = picker.diagnostics[0];
+		diagnostics.push({
+			code: diagnostic?.code ?? "WorkflowGraphError.unknownAgentProfileRef",
+			message: diagnostic?.message ?? `Agent node '${nodeId}' references unavailable profile '${profileId}'.`,
+			severity: "error",
+			path: `${path}.profile.id`,
+			nodeId,
+			registryRef: profileId,
+			hint: diagnostic?.hint ?? "Select a non-archived Agent Designer profile from the picker.",
+		});
+	}
+	if (node.promptTemplate !== undefined && typeof node.promptTemplate !== "string") {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidPromptTemplate",
+			message: `Agent node '${nodeId}' promptTemplate must be a string when present.`,
+			severity: "error",
+			path: `${path}.promptTemplate`,
+			nodeId,
+			hint: "Prompt edits must save text on the Pibo Workflow IR node.",
+		});
+	}
+	if (node.promptTemplate !== undefined && node.promptBuilder !== undefined) {
+		diagnostics.push({
+			code: "WorkflowGraphError.ambiguousAgentPromptSource",
+			message: `Agent node '${nodeId}' declares both promptTemplate and a registered prompt asset ref.`,
+			severity: "error",
+			path,
+			nodeId,
+			hint: "Use either direct promptTemplate text or a registered prompt asset/prompt-builder ref, not both.",
+		});
+	}
+	if (node.promptBuilder !== undefined) validateWorkflowPromptAssetRefLike(nodeId, node.promptBuilder, input, diagnostics);
+}
+
+function validateWorkflowCodeNodeLike(nodeId: string, node: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const path = `$.nodes.${nodeId}`;
+	if (node.language !== "typescript") {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidCodeLanguage",
+			message: `Code node '${nodeId}' must reference a registered TypeScript handler.`,
+			severity: "error",
+			path: `${path}.language`,
+			nodeId,
+			hint: "The UI cannot create inline JavaScript, shell, eval, or arbitrary executable code.",
+		});
+	}
+	const handler = typeof node.handler === "string" ? node.handler.trim() : undefined;
+	if (!handler || !WORKFLOW_HANDLER_PICKER_OPTIONS.some((option) => option.id === handler)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownHandlerRef",
+			message: handler
+				? `Code node '${nodeId}' references handler '${handler}', but it is not registered in the Workflow Registry.`
+				: `Code node '${nodeId}' must select a registered handler ref.`,
+			severity: "error",
+			path: `${path}.handler`,
+			nodeId,
+			...(handler ? { registryRef: handler } : {}),
+			hint: "Select a registered handler from the code node picker before publishing or running this workflow.",
+		});
+	}
+}
+
+function validateWorkflowNestedNodeLike(
+	nodeId: string,
+	node: PiboJsonObject,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.nodes.${nodeId}`;
+	const workflowId = typeof node.workflowId === "string" ? node.workflowId.trim() : undefined;
+	const workflowVersion = typeof node.workflowVersion === "string" ? node.workflowVersion.trim() : undefined;
+	const selected = workflowId
+		? buildProjectWorkflowVersionOptions(input.state).find((option) => option.id === workflowId && (!workflowVersion || option.version === workflowVersion))
+		: undefined;
+	if (!selected) {
+		const registryRef = workflowId ? `${workflowId}${workflowVersion ? `@${workflowVersion}` : ""}` : undefined;
+		diagnostics.push({
+			code: "WorkflowCatalogError.unknownWorkflowVersion",
+			message: registryRef
+				? `Nested workflow node '${nodeId}' references unavailable workflow version '${registryRef}'.`
+				: `Nested workflow node '${nodeId}' must select a published workflow version.`,
+			severity: "error",
+			path: `${path}.workflowId`,
+			nodeId,
+			...(registryRef ? { registryRef } : {}),
+			hint: "Select a published workflow version from the nested workflow picker before publishing or running.",
+		});
+	}
+}
+
+function validateWorkflowAdapterNodeLike(nodeId: string, node: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	validateRegisteredAdapterRefLike(node.handler, diagnostics, {
+		nodeId,
+		path: `$.nodes.${nodeId}.handler`,
+		ownerLabel: `Adapter node '${nodeId}'`,
+	});
+	if (node.mode !== undefined && node.mode !== "deterministic") {
+		diagnostics.push({
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `Adapter node '${nodeId}' must use deterministic registered adapter execution.`,
+			severity: "error",
+			path: `$.nodes.${nodeId}.mode`,
+			nodeId,
+			hint: "Hidden LLM coercion is not a substitute for registered adapters in V2.",
+		});
+	}
+}
+
+function validateWorkflowHumanNodeLike(nodeId: string, node: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	if (typeof node.prompt !== "string" || !node.prompt.trim()) {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidHumanPrompt",
+			message: `Human node '${nodeId}' must include a prompt.`,
+			severity: "error",
+			path: `$.nodes.${nodeId}.prompt`,
+			nodeId,
+		});
+	}
+	if (node.schema !== undefined) validateJsonSchemaObjectLike(node.schema, `$.nodes.${nodeId}.schema`, diagnostics, { nodeId, requireObjectRoot: true });
+	if (node.actions !== undefined) validateWorkflowHumanActionRefsLike(nodeId, node.actions, diagnostics);
+}
+
+function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodes: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const path = `$.edges.${edgeId}`;
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code: "WorkflowValidationError.invalidEdge",
+			message: `Workflow edge '${edgeId}' must be a JSON object.`,
+			severity: "error",
+			path,
+			edgeId,
+		});
+		return;
+	}
+	const nodeIds = new Set(Object.keys(nodes));
+	validateNoInlineExecutableCode(value, path, diagnostics, { edgeId });
+	validateNoHiddenLlmCoercion(value, path, diagnostics, { edgeId });
+	validateWorkflowEdgeEndpoint(edgeId, "from", value.from, nodeIds, diagnostics);
+	validateWorkflowEdgeEndpoint(edgeId, "to", value.to, nodeIds, diagnostics);
+	if (value.guard !== undefined) validateWorkflowGuardRefLike(edgeId, value.guard, diagnostics);
+	if (value.adapter !== undefined) validateWorkflowEdgeAdapterLike(edgeId, value.adapter, nodes, value, diagnostics);
+	else validateWorkflowEdgeDirectCompatibility(edgeId, value, nodes, diagnostics);
+}
+
+const INLINE_EXECUTABLE_FIELD_NAMES = new Set([
+	"code",
+	"script",
+	"command",
+	"eval",
+	"javascript",
+	"shell",
+	"typescript",
+	"inlinecode",
+	"inlinehandler",
+	"inlinetypescript",
+	"inlinejavascript",
+	"inlineshell",
+	"handlersource",
+	"sourcecode",
+]);
+
+const HIDDEN_LLM_COERCION_FIELD_NAMES = new Set([
+	"llmcoercion",
+	"coercewithllm",
+	"hiddenllmcoercion",
+	"autocoerce",
+	"llmadapter",
+]);
+
+const RAW_XSTATE_FIELD_NAMES = new Set([
+	"xstate",
+	"xstatemachine",
+	"xstatesource",
+	"xstatejson",
+]);
+
+function validateNoInlineExecutableCode(
+	value: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
+): void {
+	for (const key of Object.keys(value)) {
+		if (!INLINE_EXECUTABLE_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
+		diagnostics.push({
+			code: "WorkflowSecurityError.inlineExecutableCode",
+			message: `${workflowDiagnosticOwnerLabel(target)} declares inline executable field '${key}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.${key}`,
+			...target,
+			hint: "Use registered handler, adapter, guard, prompt asset, or human action refs selected from V2 pickers instead of inline JavaScript, TypeScript, shell, eval, or arbitrary executable code.",
+		});
+	}
+}
+
+function validateNoHiddenLlmCoercion(
+	value: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
+): void {
+	for (const key of Object.keys(value)) {
+		if (!HIDDEN_LLM_COERCION_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
+		diagnostics.push({
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `${workflowDiagnosticOwnerLabel(target)} declares hidden LLM coercion field '${key}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.${key}`,
+			...target,
+			hint: "Use a visible registered adapter node or edge adapter when schemas are incompatible.",
+		});
+	}
+	const kind = typeof value.kind === "string" ? value.kind.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() : "";
+	if (kind === "llm" || kind === "llmadapter" || kind === "llmcoercion") {
+		diagnostics.push({
+			code: "WorkflowSecurityError.hiddenLlmCoercion",
+			message: `${workflowDiagnosticOwnerLabel(target)} uses LLM coercion kind '${value.kind}', which is not allowed in Workflow UI Authoring V2.`,
+			severity: "error",
+			path: `${path}.kind`,
+			...target,
+			hint: "Use deterministic registered adapters instead of hidden LLM coercion.",
+		});
+	}
+}
+
+function workflowDiagnosticOwnerLabel(target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">): string {
+	if (target.nodeId) return `Workflow node '${target.nodeId}'`;
+	if (target.edgeId) return `Workflow edge '${target.edgeId}'`;
+	return "Workflow definition";
+}
+
+function validateWorkflowPromptAssetRefLike(
+	nodeId: string,
+	value: unknown,
+	input: { state: ChatWebAppState; context: PiboWebAppContext; webSession: PiboWebSession },
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.nodes.${nodeId}.promptBuilder`;
+	const ref = readPromptAssetRef(value);
+	if (!ref.id) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidPromptBuilderRef",
+			message: `Agent node '${nodeId}' must use a registered prompt asset ref when promptBuilder is declared.`,
+			severity: "error",
+			path,
+			nodeId,
+			hint: "Select a registered prompt asset/prompt-builder ref; V2 does not expose inline TypeScript prompt builders.",
+		});
+		return;
+	}
+	if (!ref.valid) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidPromptBuilderRef",
+			message: `Agent node '${nodeId}' prompt asset ref '${ref.id}' must use a registered TypeScript promptBuilder shape.`,
+			severity: "error",
+			path,
+			nodeId,
+			registryRef: ref.id,
+			hint: "Use { kind: 'promptBuilder', language: 'typescript', id: '<registered id>' } or a registered prompt asset id string.",
+		});
+		return;
+	}
+	if (!isWorkflowPromptAssetRegistered(input.state, input.webSession, ref.id)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownPromptBuilderRef",
+			message: `Agent node '${nodeId}' references prompt asset '${ref.id}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: isJsonObject(value) ? `${path}.id` : path,
+			nodeId,
+			registryRef: ref.id,
+			hint: "Select a registered prompt asset ref before publishing or running this workflow.",
+		});
+	}
+}
+
+function readPromptAssetRef(value: unknown): { id?: string; valid: boolean } {
+	if (typeof value === "string") return { id: value.trim() || undefined, valid: Boolean(value.trim()) };
+	if (!isJsonObject(value)) return { valid: false };
+	const id = typeof value.id === "string" ? value.id.trim() : undefined;
+	return {
+		id,
+		valid: value.kind === "promptBuilder" && value.language === "typescript" && Boolean(id),
+	};
+}
+
+function validateRegisteredAdapterRefLike(
+	value: unknown,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId"> & { path: string; ownerLabel: string },
+): void {
+	const ref = readRegisteredAdapterRef(value);
+	if (!ref.id) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `${target.ownerLabel} must select a registered adapter ref.`,
+			severity: "error",
+			path: `${target.path}.id`,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			hint: "Adapter refs must be selected from the registered adapter picker; the UI cannot create inline adapter code.",
+		});
+		return;
+	}
+	if (!ref.valid) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `${target.ownerLabel} must use a registered TypeScript adapter ref shape.`,
+			severity: "error",
+			path: target.path,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: ref.id,
+			hint: "Persist adapter refs as { kind: 'adapter', language: 'typescript', id: '<registered id>' } instead of inline or raw handlers.",
+		});
+		return;
+	}
+	const registered = WORKFLOW_ADAPTER_REF_OPTIONS.find((option) => option.id === ref.id);
+	if (!registered) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownAdapterRef",
+			message: `${target.ownerLabel} references adapter '${ref.id}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: `${target.path}.id`,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: ref.id,
+			hint: "Select a registered adapter ref before publishing or running this workflow.",
+		});
+		return;
+	}
+	validateWorkflowRegisteredRefParamsLike(ref.params, registered.paramsSchema, diagnostics, {
+		kind: "adapter",
+		path: `${target.path}.params`,
+		ownerLabel: target.ownerLabel,
+		registryRef: ref.id,
+		nodeId: target.nodeId,
+		edgeId: target.edgeId,
+	});
+}
+
+function readRegisteredAdapterRef(value: unknown): { id?: string; valid: boolean; params?: unknown } {
+	if (!isJsonObject(value)) return { valid: false };
+	const id = typeof value.id === "string" ? value.id.trim() : undefined;
+	return {
+		id,
+		valid: value.kind === "adapter" && value.language === "typescript" && Boolean(id),
+		...(value.params !== undefined ? { params: value.params } : {}),
+	};
+}
+
+function validateWorkflowGuardRefLike(edgeId: string, value: unknown, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const path = `$.edges.${edgeId}.guard.handler`;
+	if (!isJsonObject(value) || typeof value.handler !== "string" || !value.handler.trim()) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidGuardRef",
+			message: `Workflow edge '${edgeId}' must use a registered guard handler ref.`,
+			severity: "error",
+			path,
+			edgeId,
+			hint: "Select a registered guard ref; V2 does not expose inline guard code.",
+		});
+		return;
+	}
+	const guardId = value.handler.trim();
+	if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isInteger(value.priority) || value.priority < 0)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidGuardPriority",
+			message: `Workflow edge '${edgeId}' guard priority must be a non-negative integer when declared.`,
+			severity: "error",
+			path: `$.edges.${edgeId}.guard.priority`,
+			edgeId,
+		});
+	}
+	const registered = WORKFLOW_GUARD_REF_OPTIONS.find((option) => option.id === guardId);
+	if (!registered) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownGuardRef",
+			message: `Workflow edge '${edgeId}' references guard '${guardId}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path,
+			edgeId,
+			registryRef: guardId,
+			hint: "Select a registered guard ref before publishing or running this workflow.",
+		});
+		return;
+	}
+	validateWorkflowRegisteredRefParamsLike(value.params, registered.paramsSchema, diagnostics, {
+		kind: "guard",
+		path: `$.edges.${edgeId}.guard.params`,
+		ownerLabel: `Workflow edge '${edgeId}' guard`,
+		registryRef: guardId,
+		edgeId,
+	});
+}
+
+function validateWorkflowRegisteredRefParamsLike(
+	value: unknown,
+	paramsSchema: PiboJsonObject | null,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId"> & { kind: "guard" | "adapter"; path: string; ownerLabel: string; registryRef: string },
+): void {
+	if (value === undefined) return;
+	const code = target.kind === "guard" ? "WorkflowGraphError.invalidGuardParams" : "WorkflowGraphError.invalidAdapterParams";
+	if (!paramsSchema) {
+		diagnostics.push({
+			code: target.kind === "guard" ? "WorkflowGraphError.unexpectedGuardParams" : "WorkflowGraphError.unexpectedAdapterParams",
+			message: `${target.ownerLabel} declares params, but registry ref '${target.registryRef}' does not expose a paramsSchema.`,
+			severity: "error",
+			path: target.path,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: target.registryRef,
+			hint: "Remove params or select a registered ref whose picker metadata includes paramsSchema.",
+		});
+		return;
+	}
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code,
+			message: `${target.ownerLabel} params for '${target.registryRef}' must be a JSON object matching the registry paramsSchema.`,
+			severity: "error",
+			path: target.path,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: target.registryRef,
+			hint: "Edit params as JSON object data only; inline handlers or arbitrary code are not allowed.",
+		});
+		return;
+	}
+	validateWorkflowParamsValueAgainstSchema(value, paramsSchema, target.path, diagnostics, target, code);
+}
+
+function validateWorkflowParamsValueAgainstSchema(
+	value: unknown,
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId"> & { ownerLabel: string; registryRef: string },
+	code: "WorkflowGraphError.invalidGuardParams" | "WorkflowGraphError.invalidAdapterParams",
+): void {
+	const typeNames = readParamsSchemaTypes(schema.type);
+	if (typeNames.length && !typeNames.some((typeName) => workflowParamValueMatchesType(value, typeName))) {
+		diagnostics.push({
+			code,
+			message: `${target.ownerLabel} params for '${target.registryRef}' do not match the registry paramsSchema type at '${path}'.`,
+			severity: "error",
+			path,
+			nodeId: target.nodeId,
+			edgeId: target.edgeId,
+			registryRef: target.registryRef,
+			hint: "Use the selected ref's paramsSchema from the picker when editing params.",
+		});
+		return;
+	}
+	if (isJsonObject(value)) {
+		const required = Array.isArray(schema.required) ? schema.required.filter((entry): entry is string => typeof entry === "string") : [];
+		for (const requiredKey of required) {
+			if (Object.hasOwn(value, requiredKey)) continue;
+			diagnostics.push({
+				code,
+				message: `${target.ownerLabel} params for '${target.registryRef}' are missing required registry paramsSchema field '${requiredKey}'.`,
+				severity: "error",
+				path: workflowParamsChildPath(path, requiredKey),
+				nodeId: target.nodeId,
+				edgeId: target.edgeId,
+				registryRef: target.registryRef,
+				hint: "Add the required params field or remove the params block.",
+			});
+		}
+		const properties = isJsonObject(schema.properties) ? schema.properties : {};
+		for (const [key, propertyValue] of Object.entries(value)) {
+			const propertySchema = properties[key];
+			if (isJsonObject(propertySchema)) {
+				validateWorkflowParamsValueAgainstSchema(propertyValue, propertySchema, workflowParamsChildPath(path, key), diagnostics, target, code);
+			} else if (schema.additionalProperties === false) {
+				diagnostics.push({
+					code,
+					message: `${target.ownerLabel} params for '${target.registryRef}' include field '${key}', which is not allowed by the registry paramsSchema.`,
+					severity: "error",
+					path: workflowParamsChildPath(path, key),
+					nodeId: target.nodeId,
+					edgeId: target.edgeId,
+					registryRef: target.registryRef,
+					hint: "Remove fields not declared by the selected ref's paramsSchema.",
+				});
+			}
+		}
+	}
+	if (Array.isArray(value) && isJsonObject(schema.items)) {
+		value.forEach((item, index) => validateWorkflowParamsValueAgainstSchema(item, schema.items as PiboJsonObject, `${path}.${index}`, diagnostics, target, code));
+	}
+}
+
+function readParamsSchemaTypes(value: unknown): string[] {
+	if (typeof value === "string") return [value];
+	if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === "string");
+	return [];
+}
+
+function workflowParamValueMatchesType(value: unknown, typeName: string): boolean {
+	if (typeName === "string") return typeof value === "string";
+	if (typeName === "number") return typeof value === "number";
+	if (typeName === "integer") return typeof value === "number" && Number.isInteger(value);
+	if (typeName === "boolean") return typeof value === "boolean";
+	if (typeName === "object") return isJsonObject(value);
+	if (typeName === "array") return Array.isArray(value);
+	if (typeName === "null") return value === null;
+	return true;
+}
+
+function workflowParamsChildPath(path: string, key: string): string {
+	return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`;
+}
+
+function validateWorkflowHumanActionRefsLike(nodeId: string, value: unknown, diagnostics: WorkflowDraftDiagnostic[]): void {
+	if (!Array.isArray(value)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidHumanActionRef",
+			message: `Human node '${nodeId}' actions must be an array of registered human action refs.`,
+			severity: "error",
+			path: `$.nodes.${nodeId}.actions`,
+			nodeId,
+			hint: "Select registered human actions such as approve/reject/resume/cancel; V2 does not create arbitrary action handlers.",
+		});
+		return;
+	}
+	value.forEach((action, index) => {
+		const path = `$.nodes.${nodeId}.actions.${index}`;
+		if (!isJsonObject(action) || typeof action.id !== "string" || !action.id.trim()) {
+			diagnostics.push({
+				code: "WorkflowGraphError.invalidHumanActionRef",
+				message: `Human node '${nodeId}' declares an invalid human action ref at index ${index}.`,
+				severity: "error",
+				path,
+				nodeId,
+				hint: "Human action refs must contain a non-empty registered action id.",
+			});
+			return;
+		}
+		const actionId = action.id.trim();
+		const registered = WORKFLOW_HUMAN_ACTION_REF_OPTIONS.find((option) => option.id === actionId);
+		if (!registered) {
+			diagnostics.push({
+				code: "WorkflowGraphError.unknownHumanActionRef",
+				message: `Human node '${nodeId}' references human action '${actionId}', but it is not registered in the Workflow Registry.`,
+				severity: "error",
+				path: `${path}.id`,
+				nodeId,
+				registryRef: actionId,
+				hint: "Select a registered human action before publishing or running this workflow.",
+			});
+			return;
+		}
+		if (action.kind !== undefined && action.kind !== registered.kind) {
+			diagnostics.push({
+				code: "WorkflowGraphError.humanActionKindMismatch",
+				message: `Human node '${nodeId}' action '${actionId}' declares kind '${action.kind}', but the registry defines kind '${registered.kind}'.`,
+				severity: "error",
+				path: `${path}.kind`,
+				nodeId,
+				registryRef: actionId,
+				hint: "Keep human action refs aligned with their registered action definitions.",
+			});
+		}
+	});
+}
+
+function validateWorkflowEdgeAdapterLike(
+	edgeId: string,
+	value: unknown,
+	nodes: PiboJsonObject,
+	edge: PiboJsonObject,
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.edges.${edgeId}.adapter`;
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `Workflow edge '${edgeId}' adapter must be a registered edge adapter object.`,
+			severity: "error",
+			path,
+			edgeId,
+			hint: "Use a visible edge adapter with a registered transform ref; hidden LLM coercion is not allowed.",
+		});
+		return;
+	}
+	validateNoInlineExecutableCode(value, path, diagnostics, { edgeId });
+	validateNoHiddenLlmCoercion(value, path, diagnostics, { edgeId });
+	if (value.kind !== undefined && value.kind !== "edgeAdapter") {
+		diagnostics.push({
+			code: "WorkflowGraphError.invalidAdapterRef",
+			message: `Workflow edge '${edgeId}' adapter kind must be edgeAdapter when declared.`,
+			severity: "error",
+			path: `${path}.kind`,
+			edgeId,
+			hint: "Use edgeAdapter with a registered deterministic adapter transform.",
+		});
+	}
+	validateRegisteredAdapterRefLike(value.transform, diagnostics, {
+		edgeId,
+		path: `${path}.transform`,
+		ownerLabel: `Workflow edge '${edgeId}'`,
+	});
+	validateWorkflowPortLike(value.output, `${path}.output`, diagnostics, { edgeId });
+	const targetPort = readEdgeTargetInputPort(edge, nodes);
+	if (targetPort && isJsonObject(value.output) && !areWorkflowPortsDirectlyCompatible(value.output, targetPort)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.incompatibleEdgeAdapterOutput",
+			message: `Workflow edge '${edgeId}' adapter output is incompatible with the target input port.`,
+			severity: "error",
+			path: `${path}.output`,
+			edgeId,
+			hint: "Set the registered adapter output port to the target input contract; do not use hidden LLM coercion.",
+		});
+	}
+}
+
+function validateWorkflowEdgeDirectCompatibility(edgeId: string, edge: PiboJsonObject, nodes: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
+	const sourcePort = readEdgeSourceOutputPort(edge, nodes);
+	const targetPort = readEdgeTargetInputPort(edge, nodes);
+	if (!sourcePort || !targetPort || areWorkflowPortsDirectlyCompatible(sourcePort, targetPort)) return;
+	diagnostics.push({
+		code: "WorkflowGraphError.incompatibleEdgePorts",
+		message: `Workflow edge '${edgeId}' connects incompatible source output and target input ports without a registered adapter.`,
+		severity: "error",
+		path: `$.edges.${edgeId}`,
+		edgeId,
+		hint: "Add a visible registered edge adapter or adapter node. Hidden LLM coercion is not allowed in V2.",
+	});
+}
+
+function readEdgeSourceOutputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const node = readWorkflowEdgeNode(edge.from, nodes);
+	return node && isJsonObject(node.output) ? node.output : undefined;
+}
+
+function readEdgeTargetInputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const node = readWorkflowEdgeNode(edge.to, nodes);
+	return node && isJsonObject(node.input) ? node.input : undefined;
+}
+
+function readWorkflowEdgeNode(endpoint: unknown, nodes: PiboJsonObject): PiboJsonObject | undefined {
+	const nodeId = isJsonObject(endpoint) && typeof endpoint.nodeId === "string" ? endpoint.nodeId.trim() : undefined;
+	const node = nodeId ? nodes[nodeId] : undefined;
+	return isJsonObject(node) ? node : undefined;
+}
+
+function areWorkflowPortsDirectlyCompatible(left: PiboJsonObject, right: PiboJsonObject): boolean {
+	if (left.kind === "text" && right.kind === "text") return true;
+	if (left.kind !== "json" || right.kind !== "json") return false;
+	return JSON.stringify(normalizeForCanonicalJson(left.schema)) === JSON.stringify(normalizeForCanonicalJson(right.schema));
+}
+
+function validateWorkflowEdgeEndpoint(
+	edgeId: string,
+	field: "from" | "to",
+	value: unknown,
+	nodeIds: ReadonlySet<string>,
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	const path = `$.edges.${edgeId}.${field}.nodeId`;
+	const nodeId = isJsonObject(value) && typeof value.nodeId === "string" ? value.nodeId.trim() : undefined;
+	if (!nodeId || !nodeIds.has(nodeId)) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownEdgeNode",
+			message: nodeId
+				? `Edge '${edgeId}' ${field} node '${nodeId}' does not exist.`
+				: `Edge '${edgeId}' must specify a ${field} node id.`,
+			severity: "error",
+			path,
+			edgeId,
+			...(nodeId ? { nodeId } : {}),
+			hint: "Connect edges only to existing workflow nodes.",
+		});
+	}
+}
+
+function validateWorkflowPortLike(value: unknown, path: string, diagnostics: WorkflowDraftDiagnostic[], target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId"> = {}): void {
+	if (!isJsonObject(value)) {
+		diagnostics.push({
+			code: "WorkflowValidationError.missingPort",
+			message: `Workflow port '${path}' must be a JSON object.`,
+			severity: "error",
+			path,
+			...target,
+			hint: "Use a text port or a JSON port with a JSON Schema subset object.",
+		});
+		return;
+	}
+	if (value.kind === "text") return;
+	if (value.kind === "json") {
+		validateJsonSchemaObjectLike(value.schema, `${path}.schema`, diagnostics, { ...target, requireObjectRoot: true });
+		return;
+	}
+	diagnostics.push({
+		code: "WorkflowValidationError.invalidPortKind",
+		message: `Workflow port '${path}' must use kind text or json.`,
+		severity: "error",
+		path: `${path}.kind`,
+		...target,
+		hint: "Use the existing Workflow IR port kinds; do not introduce a new schema layer.",
+	});
+}
+
+const WORKFLOW_JSON_SCHEMA_SUPPORTED_TYPES = new Set(["string", "number", "integer", "boolean", "object", "array", "null"]);
+const WORKFLOW_JSON_SCHEMA_SUPPORTED_KEYS = new Set([
+	"type",
+	"title",
+	"description",
+	"enum",
+	"const",
+	"default",
+	"properties",
+	"required",
+	"additionalProperties",
+	"items",
+	"anyOf",
+	"oneOf",
+	"allOf",
+	"$defs",
+	"$ref",
+]);
+
+type WorkflowJsonSchemaValidationTarget = Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">;
+type WorkflowJsonSchemaValidationContext = { rootSchema: PiboJsonObject; seenRefs: Set<string> };
+
+function validateJsonSchemaObjectLike(
+	value: unknown,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	options: WorkflowJsonSchemaValidationTarget & { requireObjectRoot: boolean },
+): void {
+	const { requireObjectRoot, ...target } = options;
+	if (!isJsonObject(value)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowSchemaError.invalidJsonSchema",
+			message: `JSON schema at '${path}' must be an object.`,
+			path,
+			hint: "Use the existing JSON Schema subset object; Zod schemas are not part of V2 authoring.",
+		});
+		return;
+	}
+	validateWorkflowJsonSchemaSubsetLike(value, path, diagnostics, target, {
+		context: { rootSchema: value, seenRefs: new Set() },
+		root: true,
+		requireObjectRoot,
+	});
+}
+
+function validateWorkflowJsonSchemaSubsetLike(
+	value: unknown,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	options: { context: WorkflowJsonSchemaValidationContext; root: boolean; requireObjectRoot: boolean },
+): void {
+	if (!isJsonObject(value)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.schemaNotObject",
+			message: "JSON schema must be an object in the V1 Structured Outputs subset.",
+			path,
+			hint: "Use an object JSON Schema with a supported type, properties, and required fields.",
+		});
+		return;
+	}
+
+	for (const key of Object.keys(value)) {
+		if (!WORKFLOW_JSON_SCHEMA_SUPPORTED_KEYS.has(key)) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.unsupportedSchemaKeyword",
+				message: `JSON Schema keyword '${key}' is not supported by the V1 Structured Outputs subset.`,
+				path: `${path}.${key}`,
+				hint: "Remove the keyword or model the contract with type, properties, items, enum, const, anyOf, $defs, or $ref.",
+			});
+		}
+	}
+
+	if (value.oneOf !== undefined) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.unsupportedOneOf",
+			message: "oneOf is not supported by the V1 Structured Outputs subset.",
+			path: `${path}.oneOf`,
+			hint: "Use anyOf for supported alternatives, or split the contract into explicit adapter/workflow steps.",
+		});
+	}
+	if (value.allOf !== undefined) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.unsupportedAllOf",
+			message: "allOf is not supported by the V1 Structured Outputs subset.",
+			path: `${path}.allOf`,
+			hint: "Flatten the schema into one object with explicit properties and required fields.",
+		});
+	}
+
+	validateWorkflowJsonSchemaDefsLike(value, path, diagnostics, target, options.context);
+	validateWorkflowJsonSchemaRefLike(value, path, diagnostics, target, options);
+
+	if (value.type === undefined && value.$ref === undefined && value.anyOf === undefined) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.schemaTypeMissing",
+			message: "JSON schemas must declare a supported type unless they are local $ref or anyOf wrappers.",
+			path: `${path}.type`,
+			hint: "Add type: 'object', 'array', 'string', 'number', 'integer', 'boolean', or 'null'.",
+		});
+	}
+
+	const schemaTypes = validateWorkflowJsonSchemaTypeLike(value.type, path, diagnostics, target);
+	if (options.root && value.anyOf !== undefined) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.rootAnyOf",
+			message: "Root anyOf is not supported for workflow structured output schemas.",
+			path: `${path}.anyOf`,
+			hint: "Use a root object and place anyOf inside a property or $defs entry.",
+		});
+	}
+	validateWorkflowJsonSchemaAnyOfLike(value, path, diagnostics, target, options.context);
+
+	if (options.root && options.requireObjectRoot && value.$ref === undefined && !schemaTypes.includes("object")) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.rootMustBeObject",
+			message: "Structured workflow JSON schemas must have an object root in V1.",
+			path: `${path}.type`,
+			hint: "Wrap scalar or array values in an object property, e.g. { type: 'object', properties: { value: ... }, required: ['value'], additionalProperties: false }.",
+		});
+	}
+
+	if (schemaTypes.includes("object") || value.properties !== undefined || value.required !== undefined || value.additionalProperties !== undefined) {
+		validateWorkflowJsonObjectSchemaLike(value, path, diagnostics, target, options.context);
+	}
+	if (schemaTypes.includes("array")) {
+		if (value.items === undefined) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.arrayMissingItems",
+				message: "Array schemas must declare an items schema.",
+				path: `${path}.items`,
+				hint: "Add items with another supported V1 schema.",
+			});
+		} else {
+			validateWorkflowJsonSchemaSubsetLike(value.items, `${path}.items`, diagnostics, target, {
+				context: options.context,
+				root: false,
+				requireObjectRoot: false,
+			});
+		}
+	}
+	if (value.enum !== undefined && !Array.isArray(value.enum)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.invalidEnum",
+			message: "enum must be an array of JSON values.",
+			path: `${path}.enum`,
+			hint: "Use enum: ['one', 'two'] or remove the enum constraint.",
+		});
+	}
+}
+
+function validateWorkflowJsonSchemaDefsLike(
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	context: WorkflowJsonSchemaValidationContext,
+): void {
+	if (schema.$defs === undefined) return;
+	if (!isJsonObject(schema.$defs)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.invalidDefs",
+			message: "$defs must be an object keyed by local definition name.",
+			path: `${path}.$defs`,
+			hint: "Use $defs: { Name: { type: 'object', ... } } for reusable schemas.",
+		});
+		return;
+	}
+	for (const [defName, defSchema] of Object.entries(schema.$defs)) {
+		validateWorkflowJsonSchemaSubsetLike(defSchema, `${path}.$defs.${defName}`, diagnostics, target, {
+			context,
+			root: false,
+			requireObjectRoot: false,
+		});
+	}
+}
+
+function validateWorkflowJsonSchemaRefLike(
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	options: { context: WorkflowJsonSchemaValidationContext; root: boolean; requireObjectRoot: boolean },
+): void {
+	if (schema.$ref === undefined) return;
+	if (typeof schema.$ref !== "string") {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.invalidRef",
+			message: "$ref must be a string local reference.",
+			path: `${path}.$ref`,
+			hint: "Use local references such as '#/$defs/MyObject'.",
+		});
+		return;
+	}
+	const refTarget = resolveWorkflowJsonSchemaLocalRef(options.context.rootSchema, schema.$ref);
+	if (!refTarget) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.unresolvedRef",
+			message: `JSON Schema reference '${schema.$ref}' could not be resolved.`,
+			path: `${path}.$ref`,
+			hint: "Only local $defs references are supported in V1, for example '#/$defs/MyObject'.",
+		});
+		return;
+	}
+	if (options.context.seenRefs.has(schema.$ref)) return;
+	options.context.seenRefs.add(schema.$ref);
+	validateWorkflowJsonSchemaSubsetLike(refTarget, `${path}.$ref(${schema.$ref})`, diagnostics, target, options);
+	options.context.seenRefs.delete(schema.$ref);
+}
+
+function validateWorkflowJsonSchemaAnyOfLike(
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	context: WorkflowJsonSchemaValidationContext,
+): void {
+	if (schema.anyOf === undefined) return;
+	if (!Array.isArray(schema.anyOf) || schema.anyOf.length === 0) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.invalidAnyOf",
+			message: "anyOf must be a non-empty array of schema objects.",
+			path: `${path}.anyOf`,
+			hint: "Provide one or more supported schema alternatives.",
+		});
+		return;
+	}
+	schema.anyOf.forEach((item, index) => validateWorkflowJsonSchemaSubsetLike(item, `${path}.anyOf.${index}`, diagnostics, target, {
+		context,
+		root: false,
+		requireObjectRoot: false,
+	}));
+}
+
+function validateWorkflowJsonSchemaTypeLike(value: unknown, path: string, diagnostics: WorkflowDraftDiagnostic[], target: WorkflowJsonSchemaValidationTarget): string[] {
+	if (value === undefined) return [];
+	const values = Array.isArray(value) ? value : [value];
+	if (values.length === 0) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.emptyType",
+			message: "Schema type arrays must include at least one supported type.",
+			path: `${path}.type`,
+			hint: "Use a supported type such as 'object', or a nullable pair such as ['string', 'null'].",
+		});
+		return [];
+	}
+	const seen = new Set<string>();
+	const validTypes: string[] = [];
+	values.forEach((typeName, index) => {
+		if (typeof typeName !== "string" || !WORKFLOW_JSON_SCHEMA_SUPPORTED_TYPES.has(typeName)) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.unsupportedSchemaType",
+				message: `Schema type '${String(typeName)}' is not supported by the V1 Structured Outputs subset.`,
+				path: Array.isArray(value) ? `${path}.type.${index}` : `${path}.type`,
+				hint: "Use one of string, number, integer, boolean, object, array, or null.",
+			});
+			return;
+		}
+		if (seen.has(typeName)) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.duplicateSchemaType",
+				message: `Schema type '${typeName}' is duplicated.`,
+				path: Array.isArray(value) ? `${path}.type.${index}` : `${path}.type`,
+				hint: "List each schema type only once.",
+			});
+			return;
+		}
+		seen.add(typeName);
+		validTypes.push(typeName);
+	});
+	return validTypes;
+}
+
+function validateWorkflowJsonObjectSchemaLike(
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	context: WorkflowJsonSchemaValidationContext,
+): void {
+	if (schema.additionalProperties !== false) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.objectAdditionalProperties",
+			message: "Object schemas must set additionalProperties: false in the V1 Structured Outputs subset.",
+			path: `${path}.additionalProperties`,
+			hint: "Add additionalProperties: false to every object schema.",
+		});
+	}
+	if (schema.properties !== undefined && !isJsonObject(schema.properties)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.invalidProperties",
+			message: "Object schema properties must be an object.",
+			path: `${path}.properties`,
+			hint: "Use properties: { fieldName: { type: 'string' } }.",
+		});
+		return;
+	}
+	const propertyEntries = Object.entries(isJsonObject(schema.properties) ? schema.properties : {});
+	if (propertyEntries.length > 0 && !Array.isArray(schema.required)) {
+		addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+			code: "WorkflowInterfaceError.objectRequiredMissing",
+			message: "Object schemas must list every property in required.",
+			path: `${path}.required`,
+			hint: "Set required to exactly the object property names; use nullable types for optional semantics.",
+		});
+	}
+	const required = Array.isArray(schema.required) ? schema.required : [];
+	const requiredSet = new Set(required.filter((entry): entry is string => typeof entry === "string"));
+	for (const [propertyName, propertySchema] of propertyEntries) {
+		if (!requiredSet.has(propertyName)) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.objectPropertyNotRequired",
+				message: `Object property '${propertyName}' must be listed in required.`,
+				path: `${path}.required`,
+				hint: "Structured Outputs requires every object field to be required; use a union with null for nullable fields.",
+			});
+		}
+		validateWorkflowJsonSchemaSubsetLike(propertySchema, `${path}.properties.${propertyName}`, diagnostics, target, {
+			context,
+			root: false,
+			requireObjectRoot: false,
+		});
+	}
+	for (const requiredName of required) {
+		if (typeof requiredName !== "string") {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.invalidRequiredEntry",
+				message: "required entries must be strings.",
+				path: `${path}.required`,
+				hint: "List required property names as strings.",
+			});
+			continue;
+		}
+		if (isJsonObject(schema.properties) && !Object.hasOwn(schema.properties, requiredName)) {
+			addWorkflowJsonSchemaDiagnostic(diagnostics, target, {
+				code: "WorkflowInterfaceError.requiredUnknownProperty",
+				message: `Required property '${requiredName}' is not declared in properties.`,
+				path: `${path}.required`,
+				hint: "Remove the unknown required name or add a matching property schema.",
+			});
+		}
+	}
+}
+
+function resolveWorkflowJsonSchemaLocalRef(rootSchema: PiboJsonObject, ref: string): unknown {
+	if (!ref.startsWith("#/$defs/")) return undefined;
+	const defs = isJsonObject(rootSchema.$defs) ? rootSchema.$defs : undefined;
+	if (!defs) return undefined;
+	const pointer = ref.slice("#/$defs/".length).split("/").map((segment) => segment.replace(/~1/g, "/").replace(/~0/g, "~"));
+	let current: unknown = defs;
+	for (const segment of pointer) {
+		if (!isJsonObject(current) || !Object.hasOwn(current, segment)) return undefined;
+		current = current[segment];
+	}
+	return current;
+}
+
+function addWorkflowJsonSchemaDiagnostic(
+	diagnostics: WorkflowDraftDiagnostic[],
+	target: WorkflowJsonSchemaValidationTarget,
+	input: Pick<WorkflowDraftDiagnostic, "code" | "message" | "path" | "hint">,
+): void {
+	diagnostics.push({
+		...input,
+		severity: "error",
+		...target,
+	});
+}
+
+function validateRequiredString(
+	object: PiboJsonObject,
+	key: string,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+): void {
+	if (typeof object[key] !== "string" || !(object[key] as string).trim()) {
+		diagnostics.push({
+			code: "WorkflowValidationError.missingString",
+			message: `Workflow IR field '${path}' must be a non-empty string.`,
+			severity: "error",
+			path,
+		});
+	}
+}
+
+function isJsonObject(value: unknown): value is PiboJsonObject {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value) && isJsonValue(value);
+}
+
+function workflowValidationBlockedResponse(message: string, response: WorkflowValidationResponse, extra: Record<string, unknown> = {}): Response {
+	return responseJson({
+		error: message,
+		validation: response.validation,
+		diagnostics: sanitizeWorkflowDiagnostics(response.diagnostics),
+		...extra,
+	}, { status: 422 });
 }
 
 function agentsSelectingPiPackage(state: ChatWebAppState, packageId: string): CustomAgentDefinition[] {
@@ -2133,9 +7159,9 @@ async function buildProjectsBootstrap(input: {
 	includeArchived?: boolean;
 }): Promise<ChatProjectsBootstrap> {
 	const personalProject = input.state.projectService.ensurePersonalProject({ ownerScope: input.webSession.ownerScope });
-	const selectedProject = input.projectId ? input.state.projectService.requireProject(input.projectId, { includeArchived: true }) : personalProject;
-	let projectSessions = input.state.projectService.listProjectSessions(selectedProject.id, { includeArchived: input.includeArchived });
-	if (selectedProject.id === personalProject.id && projectSessions.length === 0) {
+	const selectedProject = input.projectId ? requireOwnedProject(input.state, input.webSession, input.projectId, { includeArchived: true }) : personalProject;
+	let storedProjectSessions = input.state.projectService.listProjectSessions(selectedProject.id, { includeArchived: input.includeArchived });
+	if (selectedProject.id === personalProject.id && storedProjectSessions.length === 0) {
 		const session = createProjectChatSession({
 			state: input.state,
 			context: input.context,
@@ -2144,27 +7170,550 @@ async function buildProjectsBootstrap(input: {
 			profile: input.defaultProfile,
 			workflowId: "simple-chat",
 		});
-		projectSessions = [input.state.projectService.getProjectSession(session.id)!];
+		storedProjectSessions = [input.state.projectService.getProjectSession(session.id)!];
 	}
-	const sessions = projectSessions
+	const projectSessions = storedProjectSessions.map((projectSession) => enrichProjectSessionWorkflowWaitTokens(input.state, enrichProjectSessionWorkflowDefinitionLink(input.state, projectSession)));
+	const rootSessions = projectSessions
 		.map((projectSession) => input.context.channelContext.getSession(projectSession.piboSessionId))
 		.filter((session): session is PiboSession => Boolean(session));
+	const sessions = collectProjectSessionTreeSessions(
+		rootSessions,
+		input.context.channelContext.findSessions({ ownerScope: input.webSession.ownerScope }),
+	);
 	const requestedSession = input.piboSessionId ? sessions.find((session) => session.id === input.piboSessionId) : undefined;
 	const selectedSession = requestedSession ?? sessions.find((session) => session.id === selectedProject.currentMainSessionId) ?? sessions[0];
 	indexOwnedSessions(input.state.sessionQuery, sessions);
 	const nodes = await buildSessionNodes(sessions, input.state.sessionQuery.listSessions(), selectedProject.projectFolder, new Map(), { skipPiMetadataFallback: true });
 	applyProjectSessionArchiveState(nodes, new Map(projectSessions.map((projectSession) => [projectSession.piboSessionId, Boolean(projectSession.archived)])));
+	const workflowLifecycleEvents = input.state.workflowLifecycleEventStore.listEvents({
+		ownerScope: input.webSession.ownerScope,
+		projectId: selectedProject.id,
+		limit: 100,
+	});
 	return {
 		identity: input.webSession.authSession.identity,
 		personalProject,
 		project: selectedProject,
-		projects: input.state.projectService.listProjects({ includeArchived: input.includeArchived }),
+		projects: listOwnedProjects(input.state, input.webSession, { includeArchived: input.includeArchived }),
 		projectSessions,
+		workflowLifecycleEvents,
 		...(selectedSession ? { session: selectedSession, selectedPiboSessionId: selectedSession.id } : {}),
 		selectedProjectId: selectedProject.id,
 		sessions: nodes,
 		...(await loadBootstrapCatalog(input.state, input.context, input.webSession)),
 	};
+}
+
+function collectProjectSessionTreeSessions(rootSessions: PiboSession[], candidateSessions: PiboSession[]): PiboSession[] {
+	const sessionsById = new Map(rootSessions.map((session) => [session.id, session]));
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const session of candidateSessions) {
+			if (sessionsById.has(session.id)) continue;
+			if (!session.parentId || !sessionsById.has(session.parentId)) continue;
+			sessionsById.set(session.id, session);
+			changed = true;
+		}
+	}
+	return [...sessionsById.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function enrichProjectSessionWorkflowDefinitionLink(state: ChatWebAppState, projectSession: PiboProjectSession): PiboProjectSession {
+	if (!isProjectWorkflowBackedSession(projectSession)) return projectSession;
+	const snapshot = state.projectService.getWorkflowSessionSnapshotForSession(projectSession.piboSessionId);
+	const workflowId = projectSession.workflowId;
+	const workflowVersion = projectSession.workflowVersion ?? snapshot?.workflow.version;
+	const catalogRecord = workflowVersion
+		? buildProjectWorkflowVersionCatalog(state).find((record) => record.id === workflowId && record.version === workflowVersion)
+		: undefined;
+	const snapshotHash = snapshot?.workflow.effectiveDefinitionHash ?? snapshot?.deletedDefinitionFallback.effectiveDefinitionHash;
+	if (catalogRecord && catalogRecord.status !== "deleted") {
+		return {
+			...projectSession,
+			workflowDefinitionLink: {
+				status: "live",
+				workflowId,
+				workflowVersion: catalogRecord.version,
+				title: catalogRecord.title,
+				...(snapshotHash ? { definitionHash: snapshotHash } : {}),
+				href: workflowDefinitionViewerPath(catalogRecord.id, catalogRecord.version),
+			},
+		};
+	}
+	const fallback = snapshot?.deletedDefinitionFallback;
+	const definitionHash = fallback?.effectiveDefinitionHash ?? snapshotHash;
+	return {
+		...projectSession,
+		workflowDefinitionLink: {
+			status: "snapshot_only_definition_deleted",
+			workflowId,
+			...(workflowVersion ? { workflowVersion } : {}),
+			title: fallback?.title ?? snapshot?.workflow.title ?? projectSession.title ?? workflowId,
+			...(definitionHash ? { definitionHash } : {}),
+			tombstoneLabel: fallback?.tombstoneLabel ?? "Definition deleted or no longer available in the live Workflow catalog.",
+		},
+	};
+}
+
+function enrichProjectSessionWorkflowWaitTokens(state: ChatWebAppState, projectSession: PiboProjectSession): PiboProjectSession {
+	if (!projectSession.workflowRunId) return projectSession;
+	const waitTokens = state.projectService.listProjectWorkflowWaitTokens({
+		projectId: projectSession.projectId,
+		piboSessionId: projectSession.piboSessionId,
+		workflowRunId: projectSession.workflowRunId,
+		status: "pending",
+		limit: 20,
+	});
+	if (!waitTokens.length) return projectSession;
+	return {
+		...projectSession,
+		pendingHumanActions: waitTokens.map(projectWorkflowPendingHumanActionFromToken),
+	};
+}
+
+function projectWorkflowPendingHumanActionFromToken(token: PiboProjectWorkflowWaitToken): PiboProjectWorkflowPendingHumanAction {
+	const diagnostics: PiboProjectWorkflowPendingHumanAction["diagnostics"] = [];
+	const availableActions = token.actions.map((action, index) => {
+		const registered = WORKFLOW_HUMAN_ACTION_REF_OPTIONS.find((option) => option.id === action.id);
+		if (!registered) {
+			diagnostics.push({
+				code: "WorkflowGraphError.unknownHumanActionRef",
+				message: `Workflow wait token '${token.id}' references human action '${action.id}', but it is not registered in the Workflow Registry.`,
+				severity: "error",
+				path: `$.waitToken.actions.${index}.id`,
+				registryRef: action.id,
+				hint: "Resolve waits with registered approve/reject/resume/cancel action refs only.",
+			});
+		}
+		if (registered && action.kind && action.kind !== registered.kind) {
+			diagnostics.push({
+				code: "WorkflowGraphError.humanActionKindMismatch",
+				message: `Workflow wait token '${token.id}' action '${action.id}' declares kind '${action.kind}', but the registry defines kind '${registered.kind}'.`,
+				severity: "error",
+				path: `$.waitToken.actions.${index}.kind`,
+				registryRef: action.id,
+				hint: "Keep wait-token action refs aligned with their registered action definitions.",
+			});
+		}
+		return {
+			id: action.id,
+			kind: action.kind ?? registered?.kind ?? "unknown",
+			displayName: registered?.displayName ?? action.id,
+			...(registered?.description ? { description: registered.description } : {}),
+			paramsSchema: registered?.paramsSchema ?? null,
+			registered: Boolean(registered),
+		};
+	});
+	return {
+		waitTokenId: token.id,
+		workflowRunId: token.workflowRunId,
+		...(token.nodeAttemptId ? { nodeAttemptId: token.nodeAttemptId } : {}),
+		...(token.humanNodeId ? { humanNodeId: token.humanNodeId } : {}),
+		prompt: token.prompt,
+		...(token.schema ? { schema: token.schema } : {}),
+		status: "pending",
+		payloadRequirements: {
+			required: Boolean(token.schema),
+			...(token.schema ? { schema: token.schema } : {}),
+			description: token.schema
+				? "Resume requires a JSON payload that matches this wait token schema."
+				: "Approve, reject, resume, and cancel do not require a payload for this wait token.",
+		},
+		availableActions,
+		diagnostics,
+		createdAt: token.createdAt,
+		...(token.expiresAt ? { expiresAt: token.expiresAt } : {}),
+	};
+}
+
+function submitProjectWorkflowHumanAction(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	projectId: string;
+	piboSessionId: string;
+	body: ChatProjectWorkflowHumanActionBody;
+}): Response {
+	const project = requireOwnedProject(input.state, input.webSession, input.projectId);
+	const session = requireOwnedSession(input.context, input.webSession, input.piboSessionId);
+	const projectSession = input.state.projectService.getProjectSession(session.id);
+	if (!projectSession || projectSession.projectId !== project.id) throw new PiboWebHttpError("Project workflow session not found", 404);
+	if (!projectSession.workflowRunId) {
+		return projectWorkflowHumanActionDiagnosticResponse("Project workflow session has no workflow run to resolve", [{
+			code: "WorkflowRuntimeError.workflowRunMissing",
+			message: "This Project workflow session has not started a workflow run, so no human wait token can be resolved.",
+			severity: "error",
+			path: "$.workflowRunId",
+			hint: "Start the configured workflow session before submitting human actions.",
+		}], 409);
+	}
+
+	const normalized = normalizeProjectWorkflowHumanActionBody(input.body);
+	if (normalized.diagnostics.length) {
+		return projectWorkflowHumanActionDiagnosticResponse("Human action request is invalid", normalized.diagnostics, 400);
+	}
+	const request = normalized.request!;
+	const waitToken = input.state.projectService.getProjectWorkflowWaitToken(request.waitTokenId);
+	const validation = validateProjectWorkflowHumanActionRequest({
+		state: input.state,
+		projectSession,
+		waitToken,
+		request,
+	});
+	if (validation.diagnostics.length) {
+		if (waitToken && validation.expiredAt) {
+			input.state.projectService.saveProjectWorkflowWaitToken({ ...waitToken, status: "expired", resolvedAt: validation.checkedAt });
+		}
+		recordWorkflowLifecycleEvent(input.state, input.webSession, {
+			type: "workflow.human_action.submitted",
+			workflowId: projectSession.workflowId,
+			...(projectSession.workflowVersion ? { workflowVersion: projectSession.workflowVersion } : {}),
+			projectId: project.id,
+			piboSessionId: session.id,
+			workflowRunId: projectSession.workflowRunId,
+			status: "blocked",
+			diagnostics: validation.diagnostics,
+			payload: projectWorkflowHumanActionLifecyclePayload(request),
+		});
+		return projectWorkflowHumanActionDiagnosticResponse("Human action was rejected by wait-token validation", validation.diagnostics, validation.httpStatus, waitToken);
+	}
+
+	try {
+		const result = input.state.projectService.resolveProjectWorkflowHumanAction({
+			projectId: project.id,
+			piboSessionId: session.id,
+			workflowRunId: projectSession.workflowRunId,
+			waitTokenId: request.waitTokenId,
+			...(validation.actionRef?.id ? { actionId: validation.actionRef.id } : {}),
+			kind: validation.actionKind!,
+			actor: {
+				ownerScope: input.webSession.ownerScope,
+				userId: input.webSession.authSession.identity.userId,
+				...(input.webSession.authSession.identity.email ? { email: input.webSession.authSession.identity.email } : {}),
+			},
+			...(request.payload !== undefined ? { payload: request.payload } : {}),
+		});
+		const enrichedProjectSession = enrichProjectSessionWorkflowWaitTokens(input.state, enrichProjectSessionWorkflowDefinitionLink(input.state, result.projectSession));
+		recordWorkflowLifecycleEvent(input.state, input.webSession, {
+			type: "workflow.human_action.submitted",
+			workflowId: result.projectSession.workflowId,
+			...(result.projectSession.workflowVersion ? { workflowVersion: result.projectSession.workflowVersion } : {}),
+			projectId: project.id,
+			piboSessionId: session.id,
+			workflowRunId: result.run.id,
+			status: "submitted",
+			diagnostics: [],
+			payload: projectWorkflowHumanActionSubmittedLifecyclePayload(result.waitToken.id, result.action),
+		});
+		return responseJson({
+			ok: true,
+			projectSession: enrichedProjectSession,
+			waitToken: result.waitToken,
+			action: result.action,
+			run: result.run,
+			diagnostics: [],
+		}, { status: result.action.kind === "cancel" ? 200 : 202 });
+	} catch (error) {
+		const diagnostics = [projectWorkflowHumanActionRuntimeDiagnostic(error, request.waitTokenId)];
+		recordWorkflowLifecycleEvent(input.state, input.webSession, {
+			type: "workflow.human_action.submitted",
+			workflowId: projectSession.workflowId,
+			...(projectSession.workflowVersion ? { workflowVersion: projectSession.workflowVersion } : {}),
+			projectId: project.id,
+			piboSessionId: session.id,
+			workflowRunId: projectSession.workflowRunId,
+			status: "blocked",
+			diagnostics,
+			payload: projectWorkflowHumanActionLifecyclePayload(request),
+		});
+		return projectWorkflowHumanActionDiagnosticResponse("Human action was rejected by wait-token validation", diagnostics, 409, waitToken);
+	}
+}
+
+type NormalizedProjectWorkflowHumanActionRequest = {
+	waitTokenId: string;
+	actionId?: string;
+	kind?: PiboProjectWorkflowHumanActionKind;
+	payload?: PiboJsonValue;
+};
+
+function projectWorkflowHumanActionLifecyclePayload(request: NormalizedProjectWorkflowHumanActionRequest): PiboJsonObject {
+	const payload: PiboJsonObject = { waitTokenId: request.waitTokenId };
+	if (request.actionId) payload.actionId = request.actionId;
+	if (request.kind) payload.kind = request.kind;
+	return payload;
+}
+
+function projectWorkflowHumanActionSubmittedLifecyclePayload(waitTokenId: string, action: { actionId?: string; kind: PiboProjectWorkflowHumanActionKind }): PiboJsonObject {
+	const payload: PiboJsonObject = {
+		waitTokenId,
+		kind: action.kind,
+		decision: action.kind === "cancel" ? "cancelled" : "resumed",
+	};
+	if (action.actionId) payload.actionId = action.actionId;
+	return payload;
+}
+
+function normalizeProjectWorkflowHumanActionBody(body: ChatProjectWorkflowHumanActionBody): {
+	request?: NormalizedProjectWorkflowHumanActionRequest;
+	diagnostics: WorkflowDraftDiagnostic[];
+} {
+	const diagnostics: WorkflowDraftDiagnostic[] = [];
+	const waitTokenId = typeof body.waitTokenId === "string" && body.waitTokenId.trim() ? body.waitTokenId.trim() : undefined;
+	const actionId = typeof body.actionId === "string" && body.actionId.trim() ? body.actionId.trim() : undefined;
+	const kind = typeof body.kind === "string" && body.kind.trim() ? body.kind.trim() : undefined;
+	if (!waitTokenId) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.waitTokenIdRequired",
+			message: "Human action requests must include a waitTokenId.",
+			severity: "error",
+			path: "$.waitTokenId",
+			hint: "Submit a pending wait token returned by Project workflow inspection.",
+		});
+	}
+	if (!actionId && !kind) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.humanActionRequired",
+			message: "Human action requests must include an actionId or action kind.",
+			severity: "error",
+			path: "$.actionId",
+			hint: "Use one of the wait token's registered approve/reject/resume/cancel actions.",
+		});
+	}
+	if (body.payload !== undefined && !isJsonValue(body.payload)) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.invalidHumanActionPayload",
+			message: "Human action payload must be valid JSON data.",
+			severity: "error",
+			path: "$.payload",
+			hint: "Submit a JSON value that matches the wait token payload requirements.",
+		});
+	}
+	if (!waitTokenId) return { diagnostics };
+	return {
+		request: {
+			waitTokenId,
+			...(actionId ? { actionId } : {}),
+			...(kind ? { kind } : {}),
+			...(body.payload !== undefined && isJsonValue(body.payload) ? { payload: body.payload } : {}),
+		},
+		diagnostics,
+	};
+}
+
+function validateProjectWorkflowHumanActionRequest(input: {
+	state: ChatWebAppState;
+	projectSession: PiboProjectSession;
+	waitToken?: PiboProjectWorkflowWaitToken;
+	request: NormalizedProjectWorkflowHumanActionRequest;
+}): {
+	diagnostics: WorkflowDraftDiagnostic[];
+	httpStatus: number;
+	checkedAt: string;
+	expiredAt?: string;
+	actionRef?: PiboProjectWorkflowWaitToken["actions"][number];
+	actionKind?: PiboProjectWorkflowHumanActionKind;
+} {
+	const checkedAt = new Date().toISOString();
+	const diagnostics: WorkflowDraftDiagnostic[] = [];
+	if (!input.waitToken) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.unknownWaitToken",
+			message: `Workflow wait token '${input.request.waitTokenId}' does not exist.`,
+			severity: "error",
+			path: "$.waitTokenId",
+			hint: "Refresh the Project run view and submit one of its pending wait tokens.",
+		});
+		return { diagnostics, httpStatus: 404, checkedAt };
+	}
+	if (input.waitToken.projectId !== input.projectSession.projectId || input.waitToken.piboSessionId !== input.projectSession.piboSessionId || input.waitToken.workflowRunId !== input.projectSession.workflowRunId) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.waitTokenSessionMismatch",
+			message: `Workflow wait token '${input.waitToken.id}' does not belong to this Project workflow session.`,
+			severity: "error",
+			path: "$.waitTokenId",
+			registryRef: input.waitToken.id,
+			hint: "Use only wait tokens shown in the selected Project run view.",
+		});
+		return { diagnostics, httpStatus: 403, checkedAt };
+	}
+	if (input.waitToken.status !== "pending") {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.waitTokenNotPending",
+			message: `Workflow wait token '${input.waitToken.id}' is '${input.waitToken.status}' and cannot accept another human action.`,
+			severity: "error",
+			path: "$.waitToken.status",
+			registryRef: input.waitToken.id,
+			hint: "Human wait tokens can only be resolved once while pending.",
+		});
+		return { diagnostics, httpStatus: 409, checkedAt };
+	}
+	if (input.waitToken.expiresAt && Date.parse(input.waitToken.expiresAt) <= Date.parse(checkedAt)) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.waitTokenExpired",
+			message: `Workflow wait token '${input.waitToken.id}' expired at ${input.waitToken.expiresAt}.`,
+			severity: "error",
+			path: "$.waitToken.expiresAt",
+			registryRef: input.waitToken.id,
+			hint: "Create a new human wait or handle the timeout before submitting an action.",
+		});
+		return { diagnostics, httpStatus: 409, checkedAt, expiredAt: input.waitToken.expiresAt };
+	}
+	const actionRef = input.request.actionId
+		? input.waitToken.actions.find((action) => action.id === input.request.actionId)
+		: input.waitToken.actions.find((action) => action.kind === input.request.kind);
+	if (!actionRef) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.humanActionUnavailable",
+			message: input.request.actionId
+				? `Workflow wait token '${input.waitToken.id}' does not offer human action '${input.request.actionId}'.`
+				: `Workflow wait token '${input.waitToken.id}' does not offer a human action of kind '${input.request.kind ?? "<missing>"}'.`,
+			severity: "error",
+			path: input.request.actionId ? "$.actionId" : "$.kind",
+			...(input.request.actionId ? { registryRef: input.request.actionId } : {}),
+			hint: "Use one of the wait token's available action refs.",
+		});
+		return { diagnostics, httpStatus: 422, checkedAt };
+	}
+	const registered = WORKFLOW_HUMAN_ACTION_REF_OPTIONS.find((option) => option.id === actionRef.id);
+	if (!registered) {
+		diagnostics.push({
+			code: "WorkflowGraphError.unknownHumanActionRef",
+			message: `Workflow wait token '${input.waitToken.id}' references human action '${actionRef.id}', but it is not registered in the Workflow Registry.`,
+			severity: "error",
+			path: "$.waitToken.actions",
+			registryRef: actionRef.id,
+			hint: "Register or select a known approve/reject/resume/cancel human action before accepting it.",
+		});
+		return { diagnostics, httpStatus: 422, checkedAt, actionRef };
+	}
+	if (actionRef.kind && actionRef.kind !== registered.kind) {
+		diagnostics.push({
+			code: "WorkflowGraphError.humanActionKindMismatch",
+			message: `Workflow wait token '${input.waitToken.id}' action '${actionRef.id}' declares kind '${actionRef.kind}', but the registry defines kind '${registered.kind}'.`,
+			severity: "error",
+			path: "$.waitToken.actions",
+			registryRef: actionRef.id,
+			hint: "Keep wait-token action refs aligned with their registered action definitions.",
+		});
+	}
+	if (input.request.kind && input.request.kind !== registered.kind) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.humanActionKindMismatch",
+			message: `Requested human action kind '${input.request.kind}' does not match registered action '${registered.id}' kind '${registered.kind}'.`,
+			severity: "error",
+			path: "$.kind",
+			registryRef: registered.id,
+			hint: "Submit the kind returned by the wait token action list.",
+		});
+	}
+	if (registered.kind === "resume" && input.waitToken.schema) {
+		validateWorkflowHumanActionPayloadAgainstSchema(input.request.payload, input.waitToken.schema, "$.payload", diagnostics, {
+			registryRef: registered.id,
+			waitTokenId: input.waitToken.id,
+		});
+	}
+	return {
+		diagnostics,
+		httpStatus: diagnostics.length ? 422 : 200,
+		checkedAt,
+		actionRef,
+		actionKind: registered.kind,
+	};
+}
+
+function validateWorkflowHumanActionPayloadAgainstSchema(
+	value: unknown,
+	schema: PiboJsonObject,
+	path: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	context: { registryRef: string; waitTokenId: string },
+): void {
+	const typeNames = readParamsSchemaTypes(schema.type);
+	if (typeNames.length && !typeNames.some((typeName) => workflowParamValueMatchesType(value, typeName))) {
+		diagnostics.push({
+			code: "WorkflowRuntimeError.invalidHumanActionPayload",
+			message: `Resume payload for wait token '${context.waitTokenId}' does not match schema type at '${path}'.`,
+			severity: "error",
+			path,
+			registryRef: context.registryRef,
+			hint: "Submit a resume payload matching the wait token schema before the action is accepted.",
+		});
+		return;
+	}
+	if (isJsonObject(value)) {
+		const required = Array.isArray(schema.required) ? schema.required.filter((entry): entry is string => typeof entry === "string") : [];
+		for (const requiredKey of required) {
+			if (Object.hasOwn(value, requiredKey)) continue;
+			diagnostics.push({
+				code: "WorkflowRuntimeError.invalidHumanActionPayload",
+				message: `Resume payload for wait token '${context.waitTokenId}' is missing required field '${requiredKey}'.`,
+				severity: "error",
+				path: workflowParamsChildPath(path, requiredKey),
+				registryRef: context.registryRef,
+				hint: "Add the required resume payload field before submitting the action.",
+			});
+		}
+		const properties = isJsonObject(schema.properties) ? schema.properties : {};
+		for (const [key, propertyValue] of Object.entries(value)) {
+			const propertySchema = properties[key];
+			if (isJsonObject(propertySchema)) {
+				validateWorkflowHumanActionPayloadAgainstSchema(propertyValue, propertySchema, workflowParamsChildPath(path, key), diagnostics, context);
+			} else if (schema.additionalProperties === false) {
+				diagnostics.push({
+					code: "WorkflowRuntimeError.invalidHumanActionPayload",
+					message: `Resume payload for wait token '${context.waitTokenId}' includes field '${key}', which is not allowed by the wait token schema.`,
+					severity: "error",
+					path: workflowParamsChildPath(path, key),
+					registryRef: context.registryRef,
+					hint: "Remove fields not declared by the wait token payload schema.",
+				});
+			}
+		}
+	}
+	if (Array.isArray(value) && isJsonObject(schema.items)) {
+		value.forEach((item, index) => validateWorkflowHumanActionPayloadAgainstSchema(item, schema.items as PiboJsonObject, `${path}.${index}`, diagnostics, context));
+	}
+}
+
+function projectWorkflowHumanActionRuntimeDiagnostic(error: unknown, waitTokenId: string): WorkflowDraftDiagnostic {
+	const message = error instanceof Error ? error.message : String(error);
+	let code = "WorkflowRuntimeError.humanActionRejected";
+	if (/not found/i.test(message)) code = "WorkflowRuntimeError.unknownWaitToken";
+	else if (/does not belong/i.test(message)) code = "WorkflowRuntimeError.waitTokenSessionMismatch";
+	else if (/expired/i.test(message)) code = "WorkflowRuntimeError.waitTokenExpired";
+	else if (/cannot be resolved again|not pending/i.test(message)) code = "WorkflowRuntimeError.waitTokenNotPending";
+	else if (/does not offer/i.test(message)) code = "WorkflowRuntimeError.humanActionUnavailable";
+	return {
+		code,
+		message,
+		severity: "error",
+		path: "$.waitTokenId",
+		registryRef: waitTokenId,
+		hint: "Refresh the Project run view and retry with a currently pending wait token/action ref.",
+	};
+}
+
+function projectWorkflowHumanActionDiagnosticResponse(
+	message: string,
+	diagnostics: WorkflowDraftDiagnostic[],
+	status: number,
+	waitToken?: PiboProjectWorkflowWaitToken,
+): Response {
+	return responseJson({
+		error: message,
+		diagnostics: sanitizeWorkflowDiagnostics(diagnostics),
+		...(waitToken?.status === "pending" ? { waitToken: projectWorkflowPendingHumanActionFromToken(waitToken) } : {}),
+	}, { status });
+}
+
+function isProjectWorkflowBackedSession(projectSession: PiboProjectSession): boolean {
+	return Boolean(projectSession.workflowRunId) || projectSession.state === "workflow" || projectSession.workflowId !== "simple-chat";
+}
+
+function workflowDefinitionViewerPath(workflowId: string, workflowVersion: string): string {
+	return `${CHAT_WEB_MOUNT_PATH}/workflows/view/${encodeURIComponent(workflowId)}/${encodeURIComponent(workflowVersion)}`;
 }
 
 function applyProjectSessionArchiveState(nodes: PiboWebSessionNode[], archivedBySessionId: ReadonlyMap<string, boolean>): void {
@@ -3273,6 +8822,12 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		activeTraceSessions: new Set(),
 		persistenceMetrics: createPersistenceMetrics(),
 		userSkillManager: new UserSkillManager(os.homedir()),
+		workflowDraftStore: new ChatWorkflowDraftStore(dataStore),
+		workflowPublishedVersionStore: new ChatWorkflowPublishedVersionStore(dataStore),
+		workflowArchiveStore: new ChatWorkflowArchiveStore(dataStore),
+		workflowTombstoneStore: new ChatWorkflowTombstoneStore(dataStore),
+		workflowLifecycleEventStore: new ChatWorkflowLifecycleEventStore(dataStore),
+		workflowPromptAssetStore: new ChatWorkflowPromptAssetStore(dataStore),
 	};
 
 	const requireSession = (request: Request, context: PiboWebAppContext): Promise<PiboWebSession> =>
@@ -3297,6 +8852,12 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 
 			if (isChatAppPath(url.pathname) && request.method === "GET") {
 				return responseBuiltChatIndex() ?? responseHtml(createChatHtml());
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/upload` && request.method === "POST") {
+				requireSameOriginMultipartRequest(request);
+				await requireSession(request, context);
+				return responseJson(await saveUploadedChatFiles(request), { status: 201 });
 			}
 
 			if (url.pathname === CHAT_WEB_API_PREFIX + "/download" && request.method === "GET") {
@@ -3503,8 +9064,8 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects` && request.method === "GET") {
-				await requireSession(request, context);
-				return responseJson({ projects: state.projectService.listProjects({ includeArchived: parseBooleanSearchParam(url, "includeArchived") }) });
+				const webSession = await requireSession(request, context);
+				return responseJson({ projects: listOwnedProjects(state, webSession, { includeArchived: parseBooleanSearchParam(url, "includeArchived") }) });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects` && request.method === "POST") {
@@ -3528,9 +9089,10 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			const projectResource = projectResourcePath(url.pathname);
 			if (projectResource && projectResource.child === undefined && request.method === "PATCH") {
 				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
+				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<ChatProjectPatchBody>(request);
 				try {
+					requireOwnedProject(state, webSession, projectResource.projectId, { includeArchived: true });
 					const project = state.projectService.updateProject(projectResource.projectId, {
 						...(body.name !== undefined ? { name: normalizeRoomName(body.name) } : {}),
 						...(body.description !== undefined ? { description: normalizeProjectDescription(body.description) ?? null } : {}),
@@ -3546,25 +9108,215 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 
 			if (projectResource && projectResource.child === undefined && request.method === "DELETE") {
 				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
+				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<ChatProjectDeleteBody>(request);
 				try {
+					requireOwnedProject(state, webSession, projectResource.projectId, { includeArchived: true });
 					return responseJson(state.projectService.deleteProject(projectResource.projectId, {
 						confirmName: normalizeRoomDeleteConfirmation(body.confirmName),
 						deleteFiles: body.deleteFiles === true,
 					}));
 				} catch (error) {
+					if (error instanceof PiboWebHttpError) throw error;
 					throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
 				}
+			}
+
+			const workflowHumanActionResource = projectWorkflowHumanActionsResource(url.pathname);
+			if (workflowHumanActionResource && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectWorkflowHumanActionBody>(request);
+				return submitProjectWorkflowHumanAction({
+					state,
+					context,
+					webSession,
+					projectId: workflowHumanActionResource.projectId,
+					piboSessionId: workflowHumanActionResource.piboSessionId,
+					body,
+				});
+			}
+
+			if (projectResource && projectResource.child === "workflow-sessions" && request.method === "POST" && !projectWorkflowSessionStartResource(url.pathname) && !workflowHumanActionResource) {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatProjectSessionCreateBody>(request);
+				const project = requireOwnedProject(state, webSession, projectResource.projectId);
+				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
+				const workflowSelection = resolveProjectWorkflowSelection(state, body.workflowId, body.workflowVersion, { requireExplicitWorkflowId: true, requireExplicitVersion: true });
+				const publishedWorkflow = resolvePublishedWorkflowDefinitionForProfile(state, workflowSelection, profile);
+				const baseDefinition = cloneJsonObject(publishedWorkflow.definition);
+				const configuration = normalizeProjectWorkflowSessionConfiguration(body, baseDefinition);
+				const validation = validatePublishedWorkflowBoundary({
+					state,
+					context,
+					webSession,
+					definition: baseDefinition,
+					trigger: "before_project_session_creation",
+				});
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "workflow.validation.completed",
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					projectId: project.id,
+					status: validation.validation.ok ? "accepted" : "blocked",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: { trigger: validation.validation.trigger, boundary: "project_session_creation" },
+				});
+				if (!validation.validation.ok) {
+					return workflowValidationBlockedResponse("Workflow version has validation errors and cannot be used to create a Project session", validation, { workflow: workflowSelection });
+				}
+				const session = createProjectChatSession({
+					state,
+					context,
+					webSession,
+					project,
+					profile,
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					title: normalizeSessionTitle(body.title) ?? undefined,
+					configuredWorkflow: true,
+					configuration,
+				});
+				const snapshot = state.projectService.saveWorkflowSessionSnapshot(createProjectWorkflowSessionSnapshot({
+					webSession,
+					project,
+					session,
+					workflow: publishedWorkflow,
+					baseDefinition,
+					configuration,
+					validation,
+				}));
+				const projectSession = state.projectService.getProjectSession(session.id);
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "project.workflow_session.created",
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					projectId: project.id,
+					piboSessionId: session.id,
+					status: "accepted",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: { snapshotId: snapshot.id, profile },
+				});
+				return responseJson({ session, projectSession, workflow: workflowSelection, configuration, snapshot, validation: validation.validation, diagnostics: validation.diagnostics }, { status: 201 });
+			}
+
+			const workflowSessionStart = projectWorkflowSessionStartResource(url.pathname);
+			if (workflowSessionStart && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const session = requireOwnedSession(context, webSession, workflowSessionStart.piboSessionId);
+				const project = requireOwnedProject(state, webSession, workflowSessionStart.projectId);
+				const projectSession = state.projectService.getProjectSession(session.id);
+				if (!projectSession || projectSession.projectId !== project.id) throw new PiboWebHttpError("Project workflow session not found", 404);
+				const snapshot = state.projectService.getWorkflowSessionSnapshotForSession(session.id);
+				if (!snapshot) throw new PiboWebHttpError("Project workflow session snapshot not found", 409);
+				const workflowSelection = workflowVersionFromSnapshot(snapshot);
+				if (projectSession.workflowRunId) {
+					const existingRun = state.projectService.getProjectWorkflowRun(projectSession.workflowRunId);
+					if (existingRun) {
+						updateProjectWorkflowRunSessionMetadata({ state, context, session, workflowRunId: existingRun.id });
+						return responseJson({
+							projectSession,
+							workflow: workflowSelection,
+							snapshot,
+							run: existingRun,
+							alreadyStarted: true,
+							validation: existingRun.validation ?? summarizeWorkflowDiagnostics([], "before_workflow_start"),
+							diagnostics: [],
+							message: "Workflow run already exists for this Project session.",
+						}, { status: 200 });
+					}
+				}
+				const validation = validateProjectWorkflowSnapshotForStart(snapshot, { state, context, webSession });
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "workflow.validation.completed",
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					projectId: project.id,
+					piboSessionId: session.id,
+					workflowRunId: projectSession.workflowRunId,
+					status: validation.validation.ok ? "accepted" : "blocked",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: { trigger: validation.validation.trigger, boundary: "workflow_start", snapshotId: snapshot.id },
+				});
+				if (!validation.validation.ok) {
+					recordWorkflowLifecycleEvent(state, webSession, {
+						type: "project.workflow_start.blocked",
+						workflowId: workflowSelection.id,
+						workflowVersion: workflowSelection.version,
+						projectId: project.id,
+						piboSessionId: session.id,
+						workflowRunId: projectSession.workflowRunId,
+						status: "blocked",
+						validation: validation.validation,
+						diagnostics: validation.diagnostics,
+						payload: { snapshotId: snapshot.id, profile: session.profile },
+					});
+					return workflowValidationBlockedResponse("Workflow session has validation errors and cannot be started", validation, { projectSession, workflow: workflowSelection });
+				}
+				const startResult = state.projectService.startWorkflowSessionRun({
+					projectId: project.id,
+					piboSessionId: session.id,
+					runId: `wfr_${randomUUID()}`,
+					workflowId: snapshot.workflow.id,
+					workflowVersion: snapshot.workflow.version,
+					snapshotId: snapshot.id,
+					effectiveDefinitionHash: snapshot.workflow.effectiveDefinitionHash,
+					current: createProjectWorkflowRunCurrent(snapshot.effectiveDefinition),
+					inputValues: snapshot.inputValues,
+					validation: validation.validation as unknown as PiboJsonObject,
+				});
+				updateProjectWorkflowRunSessionMetadata({ state, context, session, workflowRunId: startResult.run.id });
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "project.workflow_start.accepted",
+					workflowId: workflowSelection.id,
+					workflowVersion: workflowSelection.version,
+					projectId: project.id,
+					piboSessionId: session.id,
+					workflowRunId: startResult.run.id,
+					status: "accepted",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: { snapshotId: snapshot.id, profile: session.profile, alreadyStarted: startResult.alreadyStarted },
+				});
+				if (!startResult.alreadyStarted) {
+					recordWorkflowLifecycleEvent(state, webSession, {
+						type: "workflow.run.status_changed",
+						workflowId: workflowSelection.id,
+						workflowVersion: workflowSelection.version,
+						projectId: project.id,
+						piboSessionId: session.id,
+						workflowRunId: startResult.run.id,
+						status: "changed",
+						validation: validation.validation,
+						diagnostics: validation.diagnostics,
+						payload: { snapshotId: snapshot.id, state: startResult.run.status, current: startResult.run.current },
+					});
+				}
+				return responseJson({
+					projectSession: startResult.projectSession,
+					workflow: workflowSelection,
+					snapshot,
+					run: startResult.run,
+					alreadyStarted: startResult.alreadyStarted,
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					message: startResult.alreadyStarted ? "Workflow run already exists for this Project session." : "Workflow run started.",
+				}, { status: startResult.alreadyStarted ? 200 : 202 });
 			}
 
 			if (projectResource && projectResource.child === "sessions" && request.method === "POST") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
 				const body = await readJsonBody<ChatProjectSessionCreateBody>(request);
-				const project = state.projectService.requireProject(projectResource.projectId);
+				const project = requireOwnedProject(state, webSession, projectResource.projectId);
 				const profile = resolveCreateSessionProfile(context, defaultProfile, body.profile);
-				const session = createProjectChatSession({ state, context, webSession, project, profile, workflowId: normalizeProjectWorkflowId(body.workflowId) });
+				const workflowId = normalizeLegacyProjectWorkflowId(body.workflowId);
+				const session = createProjectChatSession({ state, context, webSession, project, profile, workflowId });
 				return responseJson({ session, projectSession: state.projectService.getProjectSession(session.id) }, { status: 201 });
 			}
 
@@ -3574,6 +9326,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const webSession = await requireSession(request, context);
 				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, projectSessionId);
 				const body = await readJsonBody<ChatProjectSessionPatchBody>(request);
+				assertProjectSessionPatchFields(body);
 				const updateSession = context.channelContext.updateSession;
 				if (!updateSession) throw new PiboWebHttpError("Session updates are not available", 501);
 				const title = normalizeSessionTitle(body.title);
@@ -3625,6 +9378,261 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 						connection: "keep-alive",
 					},
 				});
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows` && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(buildWorkflowCatalogList(state, context, webSession, { includeArchived }));
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowCreateDraftBody>(request);
+				return responseJson(createWorkflowDraftIdentity(state, context, webSession, body), { status: 201 });
+			}
+
+			const workflowVersion = workflowVersionResource(url.pathname);
+			if (workflowVersion && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(workflowVersion.version
+					? buildWorkflowVersionInspect(state, context, webSession, workflowVersion.workflowId, workflowVersion.version, { includeArchived })
+					: buildWorkflowVersionList(state, context, webSession, workflowVersion.workflowId, { includeArchived }));
+			}
+
+			const workflowCatalogId = workflowCatalogResourceId(url.pathname);
+			if (workflowCatalogId && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const includeArchived = parseBooleanSearchParam(url, "includeArchived") || parseBooleanSearchParam(url, "archived");
+				return responseJson(buildWorkflowCatalogInspect(state, context, webSession, workflowCatalogId, {
+					includeArchived,
+					version: url.searchParams.get("version") ?? undefined,
+					draftId: url.searchParams.get("draftId") ?? undefined,
+				}));
+			}
+
+			if (workflowCatalogId && request.method === "DELETE") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowDeleteBody>(request);
+				return responseJson(deleteWorkflowIdentity(state, context, webSession, workflowCatalogId, body));
+			}
+
+			const workflowPromptAssetId = workflowPromptAssetResourceId(url.pathname);
+			if (workflowPromptAssetId && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const asset = getWorkflowPromptAssetDocument(state, webSession, workflowPromptAssetId);
+				if (!asset) throw new PiboWebHttpError("Workflow prompt asset not found", 404);
+				return responseJson({ asset });
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows/prompt-assets` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowPromptAssetSaveBody>(request);
+				return responseJson({ asset: saveWorkflowPromptAssetRevision(state, webSession, body) }, { status: 201 });
+			}
+
+			const workflowDraftAction = workflowDraftActionResource(url.pathname);
+			if (workflowDraftAction && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const record = requireMutableWorkflowDraft(state, webSession, workflowDraftAction.draftId);
+				if (workflowDraftAction.action === "validate") {
+					const body = await readJsonBody<WorkflowDraftValidateBody>(request);
+					const trigger = normalizeWorkflowValidationTrigger(body.trigger, "graph_edit");
+					const validation = runWorkflowDraftValidation(state, context, webSession, record, trigger);
+					return responseJson({ draft: serializeWorkflowDraft(record), ...validation });
+				}
+				const body = await readJsonBody<WorkflowDraftPublishBody>(request);
+				record.versionIntent = normalizeWorkflowVersionIntent(body.versionIntent, record.versionIntent);
+				const validation = runWorkflowDraftValidation(state, context, webSession, record, "before_publish");
+				if (!validation.validation.ok) {
+					recordWorkflowLifecycleEvent(state, webSession, {
+						type: "workflow.publish.blocked",
+						workflowId: record.workflowId,
+						workflowVersion: typeof record.definition.version === "string" ? record.definition.version : undefined,
+						draftId: record.draftId,
+						status: "blocked",
+						validation: validation.validation,
+						diagnostics: validation.diagnostics,
+						payload: { versionIntent: record.versionIntent },
+					});
+					return workflowValidationBlockedResponse("Workflow draft has validation errors and cannot be published", validation, { draft: serializeWorkflowDraft(record) });
+				}
+				const publishResult = state.workflowPublishedVersionStore.publishDraft({
+					draft: record,
+					versionIntent: record.versionIntent,
+					publishedBy: principalIdFor(webSession),
+					reservedVersions: STATIC_WORKFLOW_VERSION_CATALOG
+						.filter((workflow) => workflow.id === record.workflowId && workflow.status === "published")
+						.map((workflow) => workflow.version),
+				});
+				record.targetWorkflowVersion = publishResult.record.version;
+				record.definition = publishResult.record.definition;
+				record.updatedAt = publishResult.record.publishedAt;
+				state.workflowDraftStore.saveDraft(record);
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "workflow.publish.accepted",
+					workflowId: publishResult.record.workflowId,
+					workflowVersion: publishResult.record.version,
+					draftId: record.draftId,
+					status: "accepted",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: {
+						versionIntent: record.versionIntent,
+						alreadyPublished: publishResult.alreadyPublished,
+						definitionHash: publishResult.record.definitionHash,
+					},
+				});
+				return responseJson({
+					draft: serializeWorkflowDraft(record),
+					...validation,
+					publishedVersion: publishResult.record,
+					alreadyPublished: publishResult.alreadyPublished,
+					message: publishResult.alreadyPublished
+						? `Workflow draft was already published as ${publishResult.record.workflowId}@${publishResult.record.version}.`
+						: `Published ${publishResult.record.workflowId}@${publishResult.record.version} with a ${record.versionIntent} version bump.`,
+				}, { status: publishResult.alreadyPublished ? 200 : 201 });
+			}
+
+			const workflowDraftId = workflowDraftResourceId(url.pathname);
+			if (workflowDraftId && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				return responseJson({ draft: requireValidatedWorkflowDraft(state, context, webSession, workflowDraftId) });
+			}
+
+			if (workflowDraftId && request.method === "PATCH") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowDraftPatchBody>(request);
+				const record = requireMutableWorkflowDraft(state, webSession, workflowDraftId);
+				const { definition, trigger, diagnostic } = parseWorkflowDraftDefinitionFromPatch(body);
+				if (definition) {
+					record.definition = definition;
+					record.diagnostics = withoutRawWorkflowIrParseDiagnostic(record.diagnostics);
+					record.revision += 1;
+				} else if (diagnostic) {
+					record.diagnostics = [...withoutRawWorkflowIrParseDiagnostic(record.diagnostics), diagnostic];
+				}
+				const validation = runWorkflowDraftValidation(state, context, webSession, record, trigger);
+				recordWorkflowLifecycleEvent(state, webSession, {
+					type: "workflow.draft.saved",
+					workflowId: record.workflowId,
+					workflowVersion: typeof record.definition.version === "string" ? record.definition.version : undefined,
+					draftId: record.draftId,
+					status: "saved",
+					validation: validation.validation,
+					diagnostics: validation.diagnostics,
+					payload: { operation: "patch", trigger, revision: record.revision },
+				});
+				return responseJson({ draft: serializeWorkflowDraft(record), ...validation });
+			}
+
+			const duplicateWorkflowId = workflowDuplicateResourceId(url.pathname);
+			if (duplicateWorkflowId && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowDuplicateBody>(request);
+				const draft = duplicateWorkflowIntoDraft(state, webSession, duplicateWorkflowId, body.version);
+				return responseJson({ draft, builderPath: workflowDraftBuilderPath(draft.draftId) }, { status: 201 });
+			}
+
+			const nextDraftWorkflowId = workflowNextDraftResourceId(url.pathname);
+			if (nextDraftWorkflowId && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowNextDraftBody>(request);
+				const { draft, reused } = createNextVersionDraftFromPublishedWorkflow(state, webSession, nextDraftWorkflowId, body.version);
+				return responseJson({ draft, builderPath: workflowDraftBuilderPath(draft.draftId), reused }, { status: reused ? 200 : 201 });
+			}
+
+			const archiveWorkflowId = workflowArchiveResourceId(url.pathname);
+			if (archiveWorkflowId && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<WorkflowArchiveBody>(request);
+				return responseJson(archiveWorkflowIdentity(state, context, webSession, archiveWorkflowId, body.reason));
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/workflows/lifecycle-events` && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				return responseJson({
+					events: state.workflowLifecycleEventStore.listEvents({
+						ownerScope: webSession.ownerScope,
+						type: url.searchParams.get("type") ?? undefined,
+						workflowId: url.searchParams.get("workflowId") ?? undefined,
+						draftId: url.searchParams.get("draftId") ?? undefined,
+						projectId: url.searchParams.get("projectId") ?? undefined,
+						piboSessionId: url.searchParams.get("piboSessionId") ?? undefined,
+						workflowRunId: url.searchParams.get("workflowRunId") ?? undefined,
+						limit: parsePositiveIntSearchParam(url, "limit", 100, 500),
+					}),
+				});
+			}
+
+			const pickerKind = workflowPickerKind(url.pathname);
+			if (pickerKind && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				if (pickerKind === "profiles") {
+					return responseJson(buildWorkflowProfilePicker(
+						state,
+						context,
+						webSession,
+						url.searchParams.get("selectedProfileId") ?? undefined,
+					));
+				}
+				if (pickerKind === "handlers") {
+					return responseJson(buildWorkflowHandlerPicker(
+						url.searchParams.get("selectedHandlerId") ?? undefined,
+					));
+				}
+				if (pickerKind === "guards") {
+					return responseJson(buildWorkflowRegisteredRefPicker(
+						"guards",
+						WORKFLOW_GUARD_REF_OPTIONS,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "adapters") {
+					return responseJson(buildWorkflowRegisteredRefPicker(
+						"adapters",
+						WORKFLOW_ADAPTER_REF_OPTIONS,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "human-actions") {
+					return responseJson(buildWorkflowRegisteredRefPicker(
+						"human-actions",
+						WORKFLOW_HUMAN_ACTION_REF_OPTIONS,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "prompt-assets") {
+					return responseJson(buildWorkflowPromptAssetPicker(
+						state,
+						webSession,
+						url.searchParams.get("selectedRefId") ?? undefined,
+					));
+				}
+				if (pickerKind === "workflow-versions") {
+					return responseJson(buildWorkflowVersionPicker(
+						state,
+						url.searchParams.get("selectedWorkflowId") ?? undefined,
+						url.searchParams.get("selectedWorkflowVersion") ?? undefined,
+					));
+				}
+				if (pickerKind === "version-history") {
+					return responseJson(buildWorkflowVersionHistory(
+						state,
+						url.searchParams.get("selectedWorkflowId") ?? undefined,
+						url.searchParams.get("selectedWorkflowVersion") ?? undefined,
+					));
+				}
+				throw new PiboWebHttpError(`Workflow picker '${pickerKind}' is not implemented`, 501);
 			}
 
 			if ((url.pathname === `${CHAT_WEB_API_PREFIX}/agent-catalog` || url.pathname === `${CHAT_WEB_API_PREFIX}/catalog`) && request.method === "GET") {

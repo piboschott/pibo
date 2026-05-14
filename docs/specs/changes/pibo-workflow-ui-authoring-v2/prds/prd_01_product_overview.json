@@ -1,0 +1,145 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-product-overview",
+  "description": "Product overview for Workflow UI Authoring V2: Workflows authoring surface plus Projects execution surface for normal Pibo users.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Workflows main-nav product surface",
+      "description": "As a Pibo user, I need a Workflows navigation surface so that global workflow browsing and authoring have a clear home.",
+      "acceptanceCriteria": [
+        "Chat Web main navigation contains a visible Workflows item and selecting it renders the Workflows surface",
+        "The Workflows surface renders Workflow Library and Workflow Builder entry cards or empty-state panels",
+        "The surface is visible to authenticated users using existing Chat Web auth rules",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add Project workflow session creation entry point",
+      "description": "As a Pibo user, I need a Project session creation flow that can choose a workflow before execution.",
+      "acceptanceCriteria": [
+        "Project session creation exposes a workflow-backed session option in the main Project content area",
+        "The creation flow selects a workflow version from the global catalog",
+        "The flow does not start a workflow run during initial session creation",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Separate configured session save from workflow start",
+      "description": "As a Pibo user, I want session creation and workflow start to be separate so that I can review configuration first.",
+      "acceptanceCriteria": [
+        "Creating a workflow Project session leaves it in a configured/not-started state",
+        "The configured session shows an explicit Start action",
+        "No workflow run record is created until Start is accepted",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add duplicate-to-draft authoring path",
+      "description": "As a workflow author, I need to duplicate an existing workflow so that I can create a UI-authored variant without editing code-owned definitions.",
+      "acceptanceCriteria": [
+        "Workflow Library exposes Duplicate for eligible code and UI workflows",
+        "Duplicate creates or opens a UI draft owned by the Workflow Registry/store",
+        "Code-registered workflow definitions remain read-only in the UI",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Show workflow run inspection from Projects",
+      "description": "As a Project reviewer, I need workflow run inspection and human actions in Projects so that I can monitor and control execution.",
+      "acceptanceCriteria": [
+        "Workflow Project sessions route to a Workflow/XState plus run view",
+        "Run view shows separate status, current node, output, error, and pending human action sections with populated values or explicit empty states",
+        "Agent node and subagent sessions continue to route to Terminal view",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Verified existing Projects Workflow/XState run inspection, explicit empty states, human action empty state, and Terminal fallback routing."
+    },
+    {
+      "id": "US-006",
+      "title": "Enforce V2 explicit non-goals in visible surfaces",
+      "description": "As a product reviewer, I need V2 scope boundaries enforced so that authoring does not expand into unsupported features.",
+      "acceptanceCriteria": [
+        "No UI path exposes inline TypeScript, JavaScript, shell, eval, or arbitrary executable code",
+        "No UI path exposes raw XState editing, workflow templates, workflow slash commands, workflow tools for agents, or Zod schema authoring",
+        "YAML/JSON import/export and TypeScript export are absent from V2 product surfaces",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added visible V2 scope-boundary panels to Workflows and Project workflow creation surfaces; verified no UI authoring path exposes the deferred executable, XState, templates, import/export, slash-command/tool, or Zod paths."
+    },
+    {
+      "id": "US-007",
+      "title": "Document Project workflow smoke checklist",
+      "description": "As a QA engineer, I need a focused smoke checklist for Project workflow execution so that manual validation is repeatable.",
+      "acceptanceCriteria": [
+        "Add a documented manual smoke checklist for select workflow, configure session, save, start, and inspect run",
+        "The checklist names the expected configured/not-started state before Start",
+        "The checklist names the expected run status and inspection sections after Start",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Added a Project workflow execution smoke checklist covering select, configure, save, configured/not-started review, start, run inspection sections, and human wait resolution."
+    },
+    {
+      "id": "US-008",
+      "title": "Document builder authoring smoke checklist",
+      "description": "As a QA engineer, I need a focused smoke checklist for workflow authoring so that manual validation is repeatable.",
+      "acceptanceCriteria": [
+        "Add a documented manual smoke checklist for duplicate workflow, edit draft, validate, and publish",
+        "The checklist names the expected draft validation diagnostics behavior",
+        "The checklist names the expected immutable published version result",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Added a Workflow Builder authoring smoke checklist covering duplicate-to-draft, draft edits, validation diagnostics refresh/blocking behavior, publish, immutable version hashes, and version history/picker expectations."
+    },
+    {
+      "id": "US-009",
+      "title": "Document historical lifecycle smoke checklist",
+      "description": "As a QA engineer, I need a focused smoke checklist for lifecycle history so that archive and delete do not break inspection.",
+      "acceptanceCriteria": [
+        "Add a documented manual smoke checklist step for archive/delete historical-run inspection linked to prd_06 lifecycle stories",
+        "The checklist names the expected snapshot-only state after live definition deletion",
+        "The checklist names the expected archived workflow selection behavior",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Added the historical archive/delete lifecycle smoke checklist with PRD 06 linkage, archived selection expectations, and snapshot-only deleted-definition run inspection expectations."
+    }
+  ]
+}

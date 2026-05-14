@@ -76,6 +76,8 @@ type WorkflowSessionOverrides = {
 };
 ```
 
+Prompt overrides are eligible only for selected workflow nodes that resolve to Pibo Agent nodes with direct `promptTemplate` values and opt in through `metadata.sessionOverrides.prompt === true`. Model, thinking level, and fast mode are workflow-session-wide settings. Configured-session values are immutable after creation and before start.
+
 Not allowed in V2:
 
 ```ts
@@ -86,27 +88,48 @@ type DisallowedV2Overrides = {
 };
 ```
 
-Every configured session creates a snapshot.
+Every configured session creates a snapshot. The snapshot is the execution and historical-inspection record, not a pointer to mutable catalog state.
 
 ```ts
 type WorkflowSessionConfigurationSnapshot = {
   id: string;
+  schemaVersion: 1;
+  createdAt: string;
+  createdBy: string;
+  ownerScope: string;
   projectId: string;
   piboSessionId: string;
-  workflowId: string;
-  workflowVersion: string;
-  baseDefinitionHash: string;
-  effectiveDefinitionHash: string;
+  workflow: {
+    id: string;
+    version: string;
+    source: "code" | "ui";
+    title?: string;
+    description?: string;
+    tags?: string[];
+    baseDefinitionHash: string;
+    effectiveDefinitionHash: string;
+  };
+  baseDefinition: WorkflowDefinition;
+  effectiveDefinition: WorkflowDefinition;
   input: WorkflowValue;
   promptOverrides?: Record<NodeId, PromptTemplate>;
+  overridePolicy: {
+    promptEligibility: "metadata.sessionOverrides.prompt===true-and-direct-promptTemplate";
+    eligiblePromptNodeIds: NodeId[];
+    modelScope: "workflow";
+    thinkingLevelScope: "workflow";
+    fastModeScope: "workflow";
+  };
   model?: string;
   thinkingLevel?: string;
   fastMode?: boolean;
-  createdAt: string;
+  promptAssetPins: Array<{ assetId: string; revisionId: string; contentHash: string; source: "code" | "ui" }>;
+  validation: { diagnostics: WorkflowDiagnostic[]; validatedAt: string };
+  deletedDefinitionFallback: { title?: string; workflowId: string; workflowVersion: string; effectiveDefinitionHash: string; tombstoneLabel?: string };
 };
 ```
 
-The runtime executes the effective snapshot. This keeps sessions inspectable after workflow edits or deletion.
+The runtime executes the effective snapshot. This keeps sessions inspectable after workflow edits or deletion. Model, thinking level, and fast mode stay workflow-scoped snapshot settings; they do not mutate node IR.
 
 ## Project Sessions Sidebar Model
 
@@ -321,6 +344,30 @@ Main panels:
 - raw IR editor toggle;
 - publish/version panel.
 
+### Builder Canvas and Layout Metadata
+
+Use `@xyflow/react` for the visual canvas. React Flow owns pan, zoom, selection, node dragging, and edge creation in the browser, but Pibo Workflow IR remains the source of truth.
+
+Persist layout in the existing workflow UI metadata contract:
+
+```ts
+type WorkflowUiMetadata = {
+  layout?: "auto" | "manual";
+  positions?: Record<NodeId, { x: number; y: number }>;
+  collapsed?: NodeId[];
+  color?: string;
+  icon?: string;
+};
+```
+
+Rules:
+
+- `workflow.ui.positions` is the canonical saved node position map for the builder.
+- `node.ui.position` may seed imported or code-defined layouts, but the builder writes workflow-level positions on save.
+- Workflows without complete saved positions receive deterministic auto layout from draft nodes and edges.
+- Auto layout stays ephemeral until the user moves nodes or saves layout.
+- Runtime execution, validation, and publish gating ignore layout metadata except for metadata shape checks.
+
 ## Editing Model
 
 ### Nodes
@@ -446,7 +493,14 @@ The UI validates schemas with the existing JSON Schema subset validator.
 
 ### Prompt Assets
 
-Prompt assets are editable in V2. Reuse the existing Markdown editor pattern from Context Files.
+Prompt assets are editable in V2 through the existing Markdown editor pattern from Context Files. Prompt asset saves create revisions; they do not mutate code/plugin prompt assets or published asset content in place.
+
+Rules:
+
+- Code/plugin prompt assets are read-only in the builder and can be copied into managed UI prompt assets.
+- Each prompt asset save appends a new revision with a content hash and updates the draft reference.
+- Published workflow versions and session snapshots pin prompt asset revision IDs and content hashes.
+- Later prompt asset edits affect only drafts or future workflow versions that reference the new revision.
 
 ### Raw IR Editor
 
@@ -491,29 +545,30 @@ type MissingRefDiagnostic = WorkflowDiagnostic & {
 
 ## Registry Integration
 
-The UI needs read APIs for:
+The UI uses exact same-origin Chat Web API routes under `/api/chat`. All routes require authentication; mutating routes require same-origin JSON.
 
-- workflow definitions and versions;
-- workflow drafts;
-- handlers;
-- adapters;
-- guards;
-- human actions;
-- Agent Designer profiles;
-- prompt assets;
-- schema refs if introduced later.
+Read routes:
 
-The UI needs write APIs for:
+- `GET /api/chat/workflows` lists catalog records, with optional `source`, `status`, and `includeArchived` filters.
+- `GET /api/chat/workflows/:workflowId` inspects one workflow identity.
+- `GET /api/chat/workflows/:workflowId/versions` lists immutable published versions.
+- `GET /api/chat/workflows/:workflowId/versions/:version` inspects one immutable version.
+- `GET /api/chat/workflows/drafts/:draftId` inspects one draft.
+- `GET /api/chat/workflows/pickers/:kind` lists picker choices for `profiles`, `handlers`, `adapters`, `guards`, `human-actions`, `prompt-assets`, or `workflow-versions`.
+- `GET /api/chat/projects/:projectId/workflow-sessions/:piboSessionId` inspects configured or run state for one workflow Project session.
 
-- creating drafts;
-- saving drafts;
-- duplicating workflows;
-- validating drafts;
-- publishing drafts;
-- archiving workflows;
-- deleting workflows;
-- creating configured Project sessions;
-- starting workflow runs for configured Project sessions.
+Write routes:
+
+- `POST /api/chat/workflows` creates a new UI workflow identity and active draft.
+- `POST /api/chat/workflows/:workflowId/duplicate` duplicates a code or UI published version into a UI draft.
+- `POST /api/chat/workflows/:workflowId/drafts` creates or reuses the one active next-version draft.
+- `PATCH /api/chat/workflows/drafts/:draftId` saves parsed draft IR changes without allowing invalid raw text to overwrite the last valid object.
+- `POST /api/chat/workflows/drafts/:draftId/validate` returns grouped diagnostics.
+- `POST /api/chat/workflows/drafts/:draftId/publish` publishes a valid draft as an immutable version.
+- `POST /api/chat/workflows/:workflowId/archive` archives a UI workflow identity.
+- `DELETE /api/chat/workflows/:workflowId` tombstones a UI workflow identity while preserving snapshots.
+- `POST /api/chat/projects/:projectId/workflow-sessions` creates a configured/not-started Project workflow session and snapshot.
+- `POST /api/chat/projects/:projectId/workflow-sessions/:piboSessionId/start` revalidates the snapshot and starts the one allowed run, or returns the existing run with `alreadyStarted: true`.
 
 ## XState Integration
 
@@ -580,11 +635,9 @@ raw XState source editing
 Zod schema layer
 ```
 
-## Open Design Questions
+## Resolved Design Decisions
 
-1. What exact database tables/records should the Workflow Registry store use for UI drafts and UI-published workflows?
-2. What exact snapshot fields are required to keep deleted-workflow runs inspectable?
-3. How should workflow deletion interact with links from old Project sessions?
-4. Which graph library should power the visual editor?
-5. How should model, thinking level, and fast mode apply to multi-agent workflows: globally, per Agent node, or both?
-6. Should prompt asset edits create versions or mutate current prompt assets?
+1. Workflow Registry/store records and permissions are defined in `prds/02-workflow-registry-catalog-and-draft-store.md`.
+2. Snapshot fields are defined by the `WorkflowSessionConfigurationSnapshot` contract above and `prds/09-implementation-completeness-contract.md` Section 4.4.
+3. Historical Project runs link to the Workflows tab only when a live or archived definition exists. Tombstoned or missing definitions render snapshot data with a `definition deleted` state and no broken live-definition link.
+4. Exact catalog, lifecycle, and Project workflow session routes are defined in `prds/09-implementation-completeness-contract.md` Section 4.3.

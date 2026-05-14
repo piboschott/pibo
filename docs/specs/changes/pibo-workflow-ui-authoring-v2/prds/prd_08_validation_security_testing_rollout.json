@@ -1,0 +1,129 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-validation-security-testing-rollout",
+  "description": "Validation, diagnostics, security boundaries, observability, automated tests, manual checks, and rollout gates for Workflow UI Authoring V2.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define shared V2 diagnostic shape and grouping",
+      "description": "As a workflow author, I need consistent diagnostics so that errors are actionable across catalog, builder, publish, session creation, and start.",
+      "acceptanceCriteria": [
+        "Diagnostics include code, message, optional path, optional nodeId, optional edgeId, severity, and hint where applicable",
+        "Diagnostics group by workflow, node, edge, schema path, state path, registry ref, and severity",
+        "Diagnostic data can be consumed by Workflow Library, Builder, Project session creation, run start, and runtime failure states",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented shared V2 diagnostic report/grouping helpers and registry/state annotation fields in workflow diagnostics."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement validation trigger pipeline",
+      "description": "As a developer, I need validation to run at every lifecycle boundary so that invalid definitions do not reach execution.",
+      "acceptanceCriteria": [
+        "Validation runs after draft load, graph edit, node edit, edge edit, schema edit, prompt edit, state edit, and raw IR edit",
+        "Validation runs before publish, before Project session creation, and before workflow start",
+        "Draft save allows diagnostics, but publish and run/start reject error diagnostics",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented Chat Web V2 validation triggers for draft load, draft edit/save, explicit validate, publish blocking, Project session creation, and start-boundary validation."
+    },
+    {
+      "id": "US-003",
+      "title": "Enforce registered-capability security boundary",
+      "description": "As a security reviewer, I need UI authoring to compose only registered refs so that users cannot create arbitrary executable code.",
+      "acceptanceCriteria": [
+        "UI workflows can reference only registered handlers, adapters, guards, workflows, human actions, prompt assets, and non-archived Agent profiles",
+        "The UI does not create handlers, adapters, guards, JavaScript, TypeScript, shell, eval, or arbitrary executable nodes",
+        "Hidden LLM coercion between incompatible schemas is not used as a substitute for registered adapters",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented registered-ref validation for handlers, adapters, guards, nested workflows, human actions, prompt assets, and non-archived Agent profiles; added visible UI security-boundary copy and web-channel coverage for inline executable and hidden LLM coercion rejection."
+    },
+    {
+      "id": "US-004",
+      "title": "Add lifecycle observability signals",
+      "description": "As an operator, I need lifecycle and failure signals so that V2 behavior is inspectable and debuggable.",
+      "acceptanceCriteria": [
+        "Lifecycle event or audit-equivalent records exist for draft save, validation, publish, archive, and delete",
+        "Lifecycle event or audit-equivalent records exist for configured-session creation, run start accepted, run start blocked, run status changes, and human action submission",
+        "Run inspection surfaces start failures and blocked-start diagnostics with the same diagnostic families as API responses",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented durable Chat Web workflow lifecycle events for draft save, validation, publish, Project workflow-session creation, start accepted, and start blocked; Project run inspection now surfaces blocked-start diagnostics from lifecycle events."
+    },
+    {
+      "id": "US-005",
+      "title": "Apply diagnostic redaction and visibility rules",
+      "description": "As a privacy reviewer, I need diagnostics to be useful without leaking hidden workflow data.",
+      "acceptanceCriteria": [
+        "Diagnostics reveal ids, paths, and locations needed to fix errors",
+        "Diagnostics do not dump sensitive prompt, input, output, state, edge payload, or human action payload data in normal UI",
+        "Run and diagnostic visibility follows existing Project/session access rules",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented normal-UI diagnostic sanitization/redaction and enforced owner-scoped Project, draft, and lifecycle diagnostic visibility."
+    },
+    {
+      "id": "US-006",
+      "title": "Add negative tests for explicit V2 deferrals",
+      "description": "As a QA engineer, I need tests for non-goals so that unsupported authoring paths do not appear accidentally.",
+      "acceptanceCriteria": [
+        "Tests assert no inline TypeScript, JavaScript, shell, eval, or arbitrary executable code path exists in V2 UI",
+        "Tests assert no raw XState editing, Zod schema authoring, templates, workflow slash commands, or workflow tools for agents are exposed",
+        "Tests assert YAML/JSON import/export and TypeScript export are absent as V2 product features",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added source-level UI negative tests for explicit V2 deferrals, covering visible scope-boundary copy and ensuring interactive Workflows/Project controls do not expose deferred inline executable, raw XState, Zod, workflow template/slash-command/tool, product import/export, or TypeScript export actions."
+    },
+    {
+      "id": "US-007",
+      "title": "Add V2 automated release test suites",
+      "description": "As a release reviewer, I need test coverage mapped to the main V2 areas before deployment.",
+      "acceptanceCriteria": [
+        "Unit tests cover registry draft/publish lifecycle, catalog APIs, source/status action derivation, validation diagnostics, version bumps, archive, and delete",
+        "Integration tests cover Project session workflow selection, delayed start, snapshot creation, workflow immutability, one-run enforcement, and start validation",
+        "UI tests cover duplicate/edit/validate/publish, raw IR invalid warning, incompatible edge adapter requirement, missing refs, sidebar/view routing, and human action submission",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Document rollout gates and manual validation flow",
+      "description": "As an implementation lead, I need release gates so that V2 ships only after automated and manual checks pass.",
+      "acceptanceCriteria": [
+        "Document MVP, v1.1, v1.2, and release gates for V2 validation",
+        "Document the manual smoke flow for select-configure-save-start-inspect and duplicate-edit-validate-publish",
+        "Release gate requires relevant workflow/package and Chat Web tests plus typecheck",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Documented the V2 rollout gate matrix and canonical manual validation flows for Project execution and Builder authoring."
+    }
+  ]
+}

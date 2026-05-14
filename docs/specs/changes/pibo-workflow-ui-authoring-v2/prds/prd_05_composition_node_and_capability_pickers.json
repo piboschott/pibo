@@ -1,0 +1,135 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-composition-node-capability-pickers",
+  "description": "Composition, node editing, and capability picker requirements for registered Agent, code, workflow, adapter, guard, state, and human action refs.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement Agent node profile picker",
+      "description": "As a workflow author, I need Agent nodes to select existing profiles so that agent execution uses known tools, skills, and context.",
+      "acceptanceCriteria": [
+        "Agent node editor selects only non-archived private, custom, or global Agent Designer profiles",
+        "Agent node editor supports prompt template editing where allowed by the workflow IR",
+        "Archived profiles cannot be selected and produce diagnostics if already referenced",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement code handler node picker",
+      "description": "As a workflow author, I need code nodes to reference registered handlers so that non-agent work is reusable and inspectable.",
+      "acceptanceCriteria": [
+        "Code node editor selects registered handler refs only",
+        "Handler picker displays id, displayName, description, inputSchema, and outputSchema fields; schema fields may be null when registry metadata is absent",
+        "Missing handler refs produce diagnostics and block publish/run when executable behavior depends on them",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement nested workflow node picker and navigation",
+      "description": "As a workflow author, I need workflow nodes to reference existing workflow versions so that parent graphs stay readable.",
+      "acceptanceCriteria": [
+        "Workflow node editor selects a workflow id/version from registry metadata",
+        "Workflow node provides Open workflow navigation to a separate workflow builder/viewer",
+        "Parent graph does not inline-expand nested workflow internals in V2",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement adapter nodes and compatible edge adapter dialog",
+      "description": "As a workflow author, I need adapter choices for incompatible ports so that transformations are explicit and registered.",
+      "acceptanceCriteria": [
+        "Adapter node editor selects registered adapters only",
+        "Incompatible edge diagnostics offer a dialog showing from/to schemas and compatible adapters",
+        "Adapter dialog supports Use as edge adapter and Insert adapter node actions",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement guard selection and params editing",
+      "description": "As a workflow author, I need guard refs and params to be controlled by registry metadata so that routing remains inspectable.",
+      "acceptanceCriteria": [
+        "Edge guard editor selects registered guards only",
+        "Guard and adapter params editors appear only when registry metadata includes paramsSchema",
+        "Invalid guard or adapter params produce diagnostics with path/node/edge location when applicable",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented registry-controlled guard/adapter paramsSchema metadata, conditional params editors, and validation diagnostics for invalid or unsupported params."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement human node action configuration",
+      "description": "As a workflow author, I need human nodes to use registered human actions so that waits and resumes use the V1 wait-token model.",
+      "acceptanceCriteria": [
+        "Human node editor supports prompt, raw JSON resume schema, registered action choices, and timeout",
+        "Human action picker uses registry metadata for action kind, label, and payload requirements",
+        "Missing or invalid human action refs show diagnostics and block publish/run when they affect executable behavior",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement simple state mapping controls",
+      "description": "As a workflow author, I need simple state read/write mapping controls so that common state access does not require raw IR editing.",
+      "acceptanceCriteria": [
+        "State mapping UI supports simple global/local/edge reads and writes through dropdowns",
+        "Complex state mapping DSLs remain editable only through raw Workflow IR",
+        "Schema or state changes can invalidate connected graphs without blocking draft save",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Implemented Workflow Builder simple state mapping controls for node and edge state reads/writes, plus workflow global state field declarations that feed mapping dropdowns."
+    },
+    {
+      "id": "US-008",
+      "title": "Add composition boundary tests",
+      "description": "As a security reviewer, I need tests proving composition only references registered capabilities.",
+      "acceptanceCriteria": [
+        "Positive tests cover each node kind, profile selection, handler/adapter/guard selection, nested workflow selection, and adapter insertion",
+        "Negative tests cover archived profile selection, missing refs, incompatible edge without adapter, invalid params, and inline code attempts",
+        "State mapping tests cover simple visual mapping and raw-IR-only complex mapping",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Added focused V2 composition boundary coverage tests that map registered node/picker paths, negative security diagnostics, adapter insertion, and state mapping raw-IR boundaries."
+    }
+  ]
+}

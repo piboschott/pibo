@@ -7,13 +7,15 @@
 
 ## 0. Spec Discovery and Open Questions
 
-- [ ] 0.1 Confirm Workflow Registry/store schema for UI drafts and UI-published workflows.
-- [ ] 0.2 Define configuration/effective-definition snapshot fields.
-- [ ] 0.3 Define deleted-workflow behavior for historical Project runs.
-- [ ] 0.4 Choose visual graph/canvas library.
-- [ ] 0.5 Define exact API routes and auth/owner behavior.
-- [ ] 0.6 Decide global vs per-node application of model, thinking level, and fast mode overrides.
-- [ ] 0.7 Decide prompt asset versioning/mutation behavior.
+- [x] 0.1 Confirm Workflow Registry/store schema for UI drafts and UI-published workflows. Decision recorded in `prds/02-workflow-registry-catalog-and-draft-store.md`.
+- [x] 0.2 Define configuration/effective-definition snapshot fields. Decision recorded in `prds/09-implementation-completeness-contract.md` Section 4.4 and `prds/03-project-session-selection-and-snapshots.md`.
+- [x] 0.3 Define deleted-workflow behavior for historical Project runs. Decision recorded in `prds/09-implementation-completeness-contract.md` Section 4.8, `prds/06-versioning-archive-delete-lifecycle.md`, and `prds/07-project-run-inspection-sidebar-and-human-actions.md`.
+- [x] 0.4 Choose visual graph/canvas library. Decision recorded in `prds/04-workflow-builder-and-ir-editing.md`: use `@xyflow/react` for builder canvas interactions.
+- [x] 0.5 Define exact API routes and auth/owner behavior. Decision recorded in `prds/09-implementation-completeness-contract.md` Section 4.3.
+- [x] 0.6 Decide global vs per-node application of model, thinking level, and fast mode overrides. Decision recorded in `prds/03-project-session-selection-and-snapshots.md`: model, thinking level, and fast mode are workflow-session-wide.
+- [x] 0.7 Decide prompt asset versioning/mutation behavior. Decision recorded in `prds/04-workflow-builder-and-ir-editing.md`: prompt asset edits create revisions and do not mutate published asset content in place.
+- [x] 0.8 Define prompt override eligibility rules. Decision recorded in `prds/03-project-session-selection-and-snapshots.md`: prompt overrides target explicitly opted-in Pibo Agent nodes with direct `promptTemplate` values.
+- [x] 0.9 Define pre-start configured-session edit policy. Decision recorded in `prds/03-project-session-selection-and-snapshots.md`: configured-session values are immutable before start.
 
 ## 1. Workflow Registry Store and Catalog
 

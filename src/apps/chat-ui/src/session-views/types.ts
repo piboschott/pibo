@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentProfile, PiboProjectSession, PiboSessionSignalSnapshot, PiboSessionTraceView, PiboWebSessionStatus, ThinkingLevel, Trace } from "../types";
+import type { AgentProfile, PiboProjectSession, PiboSessionSignalSnapshot, PiboSessionTraceView, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, Trace, WorkflowLifecycleEventRecord } from "../types";
 import type { SessionBreadcrumbItem, SessionDerivationLink, SessionOriginLink } from "../tracing/TraceTimeline";
 
 export const chatSessionViewIds = ["terminal", "workflow"] as const;
@@ -27,6 +27,8 @@ export type ChatSessionViewProps = {
 	selectedSessionStatus?: PiboWebSessionStatus;
 	selectedSessionSignal?: PiboSessionSignalSnapshot;
 	workflowProjectSession?: PiboProjectSession;
+	workflowLifecycleEvents?: readonly WorkflowLifecycleEventRecord[];
+	sessionNodes: readonly PiboWebSessionNode[];
 	sessionBreadcrumbs: readonly SessionBreadcrumbItem[];
 	originSession?: SessionOriginLink;
 	derivedSessions: readonly SessionDerivationLink[];
@@ -37,6 +39,8 @@ export type ChatSessionViewProps = {
 	onOpenSession(piboSessionId: string): void;
 	onThinkingLevelChange(level: ThinkingLevel): void;
 	onModelChanged?(): Promise<void>;
+	onRefreshBootstrap?(): Promise<unknown>;
+	onError?(message: string | null): void;
 };
 
 export type ChatSessionView = {

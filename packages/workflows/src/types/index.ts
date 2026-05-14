@@ -102,6 +102,8 @@ export type AgentProfileDefinition = {
   nativeTools?: string[];
   skills?: string[];
   contextFiles?: string[];
+  status?: "active" | "archived";
+  archivedAt?: string;
   metadata?: JsonObject;
 };
 
@@ -228,6 +230,7 @@ export type AdapterRef = {
   kind: "adapter";
   language: "typescript";
   id: RegistryRefId;
+  params?: JsonObject;
 };
 
 export type AdapterNodeDefinition = BaseNodeDefinition & {
@@ -254,6 +257,7 @@ export type JoinPolicy = "all_success" | "one_success" | "none_failed_min_one_su
 export type GuardRef = {
   handler: RegistryRefId;
   priority?: number;
+  params?: JsonObject;
 };
 
 export type EdgeAdapterDefinition = {
@@ -362,6 +366,106 @@ export type WorkflowDefinitionSnapshot = {
   createdAt: string;
 };
 
+export type WorkflowRecordSource = "code" | "ui";
+export type WorkflowRecordStatus = "draft" | "published" | "archived";
+export type WorkflowDraftId = string;
+export type WorkflowVersionIntent = "patch" | "minor" | "major";
+export type WorkflowDraftValidationState = "unknown" | "valid" | "warning" | "error";
+
+export type PartialWorkflowDefinition = Partial<WorkflowDefinition> & {
+  id?: WorkflowId;
+  version?: WorkflowVersion;
+};
+
+export type WorkflowIdentityRecord = {
+  workflowId: WorkflowId;
+  source: "ui";
+  title: string;
+  description?: string;
+  tags: string[];
+  currentDraftId?: WorkflowDraftId;
+  latestVersion?: WorkflowVersion;
+  createdBy?: string;
+  createdAt: string;
+  updatedBy?: string;
+  updatedAt: string;
+};
+
+export type WorkflowDraftRecord = {
+  draftId: WorkflowDraftId;
+  workflowId: WorkflowId;
+  source: "ui";
+  status: "draft";
+  baseWorkflowId?: WorkflowId;
+  baseWorkflowVersion?: WorkflowVersion;
+  baseDefinitionHash?: string;
+  versionIntent: WorkflowVersionIntent;
+  definition: PartialWorkflowDefinition;
+  diagnostics: WorkflowDiagnostic[];
+  validationState: WorkflowDraftValidationState;
+  revision: number;
+  createdBy?: string;
+  createdAt: string;
+  updatedBy?: string;
+  updatedAt: string;
+};
+
+export type WorkflowPublishedVersionRecord = {
+  workflowId: WorkflowId;
+  version: WorkflowVersion;
+  source: "ui";
+  status: "published";
+  definition: WorkflowDefinition;
+  definitionHash: string;
+  publishedFromDraftId?: string;
+  publishedBy?: string;
+  publishedAt: string;
+  createdAt: string;
+};
+
+export type WorkflowArchiveStateRecord = {
+  workflowId: WorkflowId;
+  source: "ui";
+  archived: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+  updatedAt: string;
+};
+
+export type WorkflowDeleteTombstoneRecord = {
+  workflowId: WorkflowId;
+  source: "ui";
+  deleted: true;
+  deletedAt?: string;
+  deletedBy?: string;
+  lastKnownTitle: string;
+  lastKnownVersion?: WorkflowVersion;
+  lastDefinitionHash?: string;
+  createdAt: string;
+};
+
+export type WorkflowCatalogRecord = {
+  id: string;
+  workflowId: WorkflowId;
+  version?: WorkflowVersion;
+  draftId?: WorkflowDraftId;
+  title: string;
+  description?: string;
+  tags: string[];
+  source: WorkflowRecordSource;
+  status: WorkflowRecordStatus;
+  versions: WorkflowVersion[];
+  currentDraftId?: WorkflowDraftId;
+  validationState?: WorkflowDraftValidationState;
+  diagnostics?: WorkflowDiagnostic[];
+  definitionHash?: string;
+  editable: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  archivedAt?: string;
+};
+
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
 export type WorkflowDiagnostic = {
@@ -369,8 +473,11 @@ export type WorkflowDiagnostic = {
   message: string;
   severity: DiagnosticSeverity;
   path?: string;
+  workflowId?: WorkflowId;
   nodeId?: NodeId;
   edgeId?: EdgeId;
+  statePath?: StatePath;
+  registryRef?: RegistryRefId;
   hint?: string;
 };
 
@@ -388,6 +495,7 @@ export type WorkflowRegistryEntry<TValue> = {
   title?: string;
   description?: string;
   tags?: string[];
+  paramsSchema?: JsonSchema;
   value: TValue;
 };
 

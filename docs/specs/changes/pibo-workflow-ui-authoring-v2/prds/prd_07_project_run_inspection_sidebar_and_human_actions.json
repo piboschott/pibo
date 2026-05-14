@@ -1,0 +1,134 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-project-run-inspection-sidebar-human-actions",
+  "description": "Project run inspection, Project sidebar routing, Workflow/XState views, Terminal routing, nested sessions, and human action controls.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add session kind metadata for Project sidebar routing",
+      "description": "As a Project user, I need the sidebar to distinguish real session types so that workflow navigation is clear.",
+      "acceptanceCriteria": [
+        "Pibo Session metadata includes a stable session kind enum with values for main workflow, nested workflow, agent node, and subagent sessions",
+        "Sidebar data source returns only real Pibo Sessions and excludes logical workflow nodes, edges, guards, adapters, and state elements",
+        "Session kind metadata is available to Chat Web view routing",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Render real-session-only Project sidebar",
+      "description": "As a Project user, I need sidebar entries to match persisted sessions so that navigation is not confused with logical graph nodes.",
+      "acceptanceCriteria": [
+        "Project sidebar shows main workflow, nested workflow, agent node, and subagent sessions when they exist",
+        "Sidebar uses distinct icons and accessible labels for each session kind",
+        "Logical workflow elements are inspectable only inside Workflow/XState/run views",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented real Pibo Session descendant inclusion for Project bootstrap and UI session-kind markers/labels in the Project sidebar."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement workflow versus terminal view routing",
+      "description": "As a Project user, I need selected session context to choose the right view so that workflow and agent sessions are readable.",
+      "acceptanceCriteria": [
+        "Workflow and nested workflow sessions open Workflow/XState plus run view",
+        "Agent node and subagent sessions open Terminal view",
+        "Unknown or unsupported session kinds fall back safely without exposing wrong data",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Build workflow run inspection panel",
+      "description": "As a Project reviewer, I need run details so that I can understand current and historical workflow execution.",
+      "acceptanceCriteria": [
+        "Run view renders status, current node, node attempts, edge transfers, output, and error sections with populated values or explicit empty states",
+        "Run view uses V1 XState projection for visualization only and kernel/run records for truth",
+        "Run view shows run history for the selected workflow Project session",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented Projects Workflow/XState run inspection panel with status, current node, run history, node attempts, edge transfers, output, error, and explicit empty states."
+    },
+    {
+      "id": "US-005",
+      "title": "Add nested workflow and definition links",
+      "description": "As a debugger, I need links between run view, nested sessions, and workflow definitions so that hierarchy is navigable.",
+      "acceptanceCriteria": [
+        "A nested-workflow fixture creates a child session and the run view links to that child session entry",
+        "Run view links back to the Workflows tab definition when the live definition exists",
+        "Deleted definitions show a snapshot-only definition-deleted state instead of a broken link",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented run-view navigation links for nested workflow child sessions and live/snapshot-only workflow definition states."
+    },
+    {
+      "id": "US-006",
+      "title": "Show configured/not-started pre-run state in Projects",
+      "description": "As a Pibo user, I need pre-run sessions to be understandable before the workflow starts.",
+      "acceptanceCriteria": [
+        "Configured workflow sessions show configuration summary and validation state",
+        "Configured workflow sessions show Start action and no current run attempts",
+        "Start-blocking diagnostics are displayed in the Project session context",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Configured/not-started Project sessions now show configuration and validation summaries, explicit Start, no-current-run-attempts states, and start-blocking diagnostics in the Project context."
+    },
+    {
+      "id": "US-007",
+      "title": "Implement human action controls from wait tokens",
+      "description": "As a reviewer, I need to approve, reject, resume, or cancel waits without leaving the Project run view.",
+      "acceptanceCriteria": [
+        "Run view lists pending registered human actions and payload requirements from persisted wait tokens",
+        "Approve, reject, resume, and cancel validate token state and resume payload before state changes",
+        "Invalid, missing, expired, already-resolved, or unauthorized wait-token/action refs are rejected with diagnostics",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Implemented persisted Project workflow wait-token listing, approve/reject/resume/cancel submission controls, payload/state diagnostics, and tests."
+    },
+    {
+      "id": "US-008",
+      "title": "Add run inspection and human action tests",
+      "description": "As a QA engineer, I need tests for sidebar routing, run views, nested links, and human actions.",
+      "acceptanceCriteria": [
+        "Tests verify sidebar session inclusion/exclusion and visual type markers",
+        "Tests verify workflow/nested sessions route to Workflow/XState view and agent/subagent sessions route to Terminal view",
+        "Tests verify approve, reject, resume, cancel, invalid payload, missing action ref, expired token, already-resolved token, and deleted-definition display",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Added focused V2 run inspection/human action coverage tests, extended integration coverage for missing registered human action refs, and browser-verified the Project Workflow/XState run view with pending human actions and diagnostics."
+    }
+  ]
+}

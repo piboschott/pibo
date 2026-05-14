@@ -1,0 +1,159 @@
+{
+  "project": "Pibo Workflow UI Authoring V2",
+  "branchName": "ralph/pibo-workflow-ui-authoring-v2-workflow-registry-catalog-draft-store",
+  "description": "Workflow Registry, catalog, and draft store requirements for global UI-authored workflows, source/status records, drafts, versions, and picker metadata.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Document registry store schema and permission decisions",
+      "description": "As an implementation lead, I need schema and permission decisions before storage/API work starts so that implementation does not choose silently.",
+      "acceptanceCriteria": [
+        "Add a documented Workflow Registry/store schema for workflow identity, draft record, published version record, archive state, and delete/tombstone state",
+        "Add a documented permission matrix for view, duplicate, create draft, edit draft, publish, archive, and delete actions",
+        "Catalog, draft, publish, archive, and delete implementation stories reference the documented schema and permission matrix",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Schema, permission matrix, and implementation-story references are documented in 02-workflow-registry-catalog-and-draft-store.md."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement workflow catalog entity types",
+      "description": "As a storage developer, I need explicit workflow catalog entities so that drafts, published versions, archive state, and delete state are not conflated.",
+      "acceptanceCriteria": [
+        "Implement separate entities for workflow identity, draft record, published version record, archive state, and delete/tombstone state",
+        "Catalog records expose source code/ui separately from lifecycle status draft/published/archived",
+        "Delete or tombstone state does not remove snapshots required for historical run inspection",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Persist UI drafts in the Workflow Registry store",
+      "description": "As a workflow author, I need UI drafts to persist before they are valid so that I can build incrementally.",
+      "acceptanceCriteria": [
+        "UI drafts are stored in the Workflow Registry/store, not Project session state",
+        "Draft records can contain partial or invalid Workflow IR plus diagnostics",
+        "Each workflow/copy has at most one active draft",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Protect drafts from invalid raw IR text",
+      "description": "As a workflow author, I need invalid raw text to be safe so that raw editing cannot corrupt my last valid draft object.",
+      "acceptanceCriteria": [
+        "Raw IR parse failure returns a warning diagnostic",
+        "Raw IR parse failure does not overwrite the last valid persisted draft object",
+        "Valid raw IR updates the same draft IR object used by visual editing",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Raw IR parse failures now return a warning diagnostic without replacing the persisted draft definition; valid raw IR still updates the shared draft object."
+    },
+    {
+      "id": "US-005",
+      "title": "Expose workflow catalog list and inspect APIs",
+      "description": "As a UI developer, I need catalog APIs so that the Workflow Library can list and inspect code workflows, UI drafts, and UI-published versions.",
+      "acceptanceCriteria": [
+        "List API returns id, title, description, tags, source, status, versions, editability, validation state, missing refs, and actions",
+        "Inspect API returns one workflow draft or published version with diagnostics",
+        "Archived workflows are hidden by default and visible with an explicit archive filter",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Chat Web now exposes authenticated workflow catalog list and inspect APIs with source/status, versions, editability, validation state, missing refs, actions, and archived filtering."
+    },
+    {
+      "id": "US-006",
+      "title": "Implement duplicate-to-draft catalog operation",
+      "description": "As a workflow author, I need to duplicate workflows into drafts so that code-owned and published behavior remains stable.",
+      "acceptanceCriteria": [
+        "Duplicate operation works for eligible code and UI workflows",
+        "Duplicate creates a new UI draft or opens the existing active draft for that copy",
+        "The original workflow version remains immutable and read-only",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Duplicate-to-draft now resolves the source published Workflow IR, clones it into a UI draft for code and UI-published workflows, reuses the existing active copy draft, and preserves the source definition hash for immutability checks."
+    },
+    {
+      "id": "US-007",
+      "title": "Expose capability picker APIs",
+      "description": "As a builder developer, I need picker APIs so that UI composition can select only registered capabilities.",
+      "acceptanceCriteria": [
+        "Picker APIs list registered handlers, adapters, guards, human actions, prompt assets, workflow versions, and non-archived Agent profiles",
+        "Picker results include id, displayName, description, and a paramsSchema field whose value is a schema object or null",
+        "Archived profiles and archived workflow records are excluded from default picker results",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Authenticated picker APIs now expose profiles, handlers, adapters, guards, human actions, prompt assets, and published workflow versions with display names, descriptions, nullable paramsSchema metadata, and diagnostics for unavailable selected refs."
+    },
+    {
+      "id": "US-008",
+      "title": "Return structured missing-reference diagnostics",
+      "description": "As a reviewer, I need missing refs to identify the broken id and location so that drafts can be fixed before publish or run.",
+      "acceptanceCriteria": [
+        "Validation reports missing handlers, adapters, guards, profiles, prompt assets, human actions, and nested workflows",
+        "Each missing-ref diagnostic includes code, message, severity, missing id, and node/edge/path location when applicable",
+        "Missing-ref diagnostics appear in catalog inspect data and builder validation data",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "V2 draft validation now returns structured missing-reference diagnostics for registered profiles, handlers, adapters, guards, prompt assets, human actions, and nested workflow versions, and catalog inspect missingRefs now contains only missing/unavailable reference diagnostics."
+    },
+    {
+      "id": "US-009",
+      "title": "Derive Workflow Library actions from source and status",
+      "description": "As a UI developer, I need stable action derivation so that the catalog does not rely on fragile special cases.",
+      "acceptanceCriteria": [
+        "Code workflow records expose view and duplicate actions but not direct edit/publish mutation actions",
+        "UI draft records expose edit, validate, publish, archive, and delete actions according to the documented permission matrix",
+        "A published, unarchived UI workflow fixture exposes duplicate, version history, archive, delete, and create Project session actions",
+        "Tests pass",
+        "Verify in browser using dev-browser skill",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Version history responses now carry source/status-derived actions and editability, Workflow Library rows render those action labels/buttons, and tests assert code, UI draft, and UI-published action matrices."
+    },
+    {
+      "id": "US-010",
+      "title": "Enforce catalog authentication and permission baseline",
+      "description": "As a product reviewer, I need catalog lifecycle APIs to enforce the V2 permission baseline so that global workflows remain controlled.",
+      "acceptanceCriteria": [
+        "Catalog and picker APIs require authenticated access",
+        "Authenticated users can view global UI-authored workflows and duplicate eligible workflows",
+        "Archive and delete require authentication and preserve historical snapshots",
+        "Create, edit, and publish actions enforce the documented permission matrix",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Catalog and picker APIs now have focused authentication coverage, UI workflow drafts are treated as global authenticated catalog resources, and cross-user edit/publish/duplicate permission-matrix behavior is covered by web-channel tests."
+    }
+  ]
+}

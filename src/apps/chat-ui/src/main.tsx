@@ -34,6 +34,9 @@ function chatRouteFromLocation(pathname: string, search: Record<string, unknown>
 		.map((part) => decodeURIComponent(part));
 	const sessionViewId = parseChatSessionViewId(search.view);
 	if (parts[0] === "context") return { area: "context", ...(contextPiboSessionId ? { piboSessionId: contextPiboSessionId } : {}) };
+	if (parts[0] === "workflows" && parts[1] === "drafts" && parts[2]) return { area: "workflows", draftId: parts[2] };
+	if (parts[0] === "workflows" && parts[1] === "view" && parts[2] && parts[3]) return { area: "workflows", viewWorkflowId: parts[2], viewWorkflowVersion: parts[3] };
+	if (parts[0] === "workflows") return { area: "workflows" };
 	if (parts[0] === "agents") return { area: "agents" };
 	if (parts[0] === "cron") return { area: "cron" };
 	if (parts[0] === "ralph") return { area: "ralph" };
@@ -87,6 +90,18 @@ const projectSessionRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "projects/$projectId/sessions/$piboSessionId",
 });
+const workflowsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "workflows",
+});
+const workflowDraftRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "workflows/drafts/$draftId",
+});
+const workflowViewRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "workflows/view/$workflowId/$workflowVersion",
+});
 const agentsRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "agents",
@@ -120,7 +135,7 @@ const settingsProvidersRoute = createRoute({
 	path: "settings/providers",
 });
 const router = createRouter({
-	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, ralphRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
+	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, workflowsRoute, workflowDraftRoute, workflowViewRoute, agentsRoute, cronRoute, ralphRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
 	basepath: "/apps/chat",
 });
 

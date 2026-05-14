@@ -406,6 +406,8 @@ export class PiboGatewayServer {
 			getProfiles: () => this.pluginRegistry.getProfileInfos(),
 			createProfile: (name) => this.pluginRegistry.createProfile(name),
 			getCapabilityCatalog: () => this.pluginRegistry.getCapabilityCatalog(),
+			getRalphStopConditionDefinitions: () => this.pluginRegistry.getRalphStopConditionDefinitions(),
+			getRalphStopConditionInfos: () => this.pluginRegistry.getRalphStopConditionInfos(),
 			upsertProfile: (profile) => this.pluginRegistry.upsertProfile(profile),
 			removeProfile: (name) => this.pluginRegistry.removeProfile(name),
 			upsertContextFile: (contextFile) => this.pluginRegistry.upsertContextFile(contextFile),

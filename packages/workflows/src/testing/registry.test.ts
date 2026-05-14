@@ -51,6 +51,24 @@ describe("workflow registry adapter resolution", () => {
     assert.deepEqual(result.output, { topic: "Registry adapters" });
   });
 
+  it("stores registry entry paramsSchema metadata for picker-driven params editors", () => {
+    const registry = createWorkflowRegistry();
+    const adapter: AdapterHandler = ({ input }) => ({ output: input });
+    const paramsSchema = {
+      type: "object" as const,
+      properties: {
+        format: { type: "string" as const },
+      },
+      required: ["format"],
+      additionalProperties: false as const,
+    };
+
+    const entry = registerWorkflowAdapter(registry, "fixture.adapters.withParams", adapter, { paramsSchema });
+
+    assert.deepEqual(entry.paramsSchema, paramsSchema);
+    assert.deepEqual(resolveWorkflowAdapter(registry, "fixture.adapters.withParams")?.paramsSchema, paramsSchema);
+  });
+
   it("rejects duplicate adapter registrations unless override is explicit", () => {
     const registry = createWorkflowRegistry();
     const first: AdapterHandler = ({ input }) => ({ output: String(input) });
@@ -121,6 +139,29 @@ describe("workflow registry adapter resolution", () => {
     assert.equal(resolveWorkflowPromptBuilder(registry, "fixture.promptBuilders.duplicate")?.value, second);
   });
 
+  it("validates code node handler refs against the Workflow Registry when one is provided", () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+
+    assert.equal(validateWorkflow(adapterWorkflowFixture, { registry }).ok, true);
+
+    const missingHandlerRegistry = createWorkflowRegistry({
+      adapters: workflowFixtureProviders.adapters,
+      profiles: workflowFixtureProviders.profiles,
+    });
+    const missingRegistryResult = validateWorkflow(adapterWorkflowFixture, { registry: missingHandlerRegistry });
+
+    assert.equal(missingRegistryResult.ok, false);
+    assert.ok(
+      missingRegistryResult.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "WorkflowGraphError.unknownHandlerRef" &&
+          diagnostic.nodeId === "summarize" &&
+          diagnostic.registryRef === workflowFixtureRegistryRefs.handlers.summarizeDecision &&
+          diagnostic.path === "$.nodes.summarize.handler",
+      ),
+    );
+  });
+
   it("validates fixed Agent Designer profile refs against the Workflow Registry when one is provided", () => {
     const registry = createWorkflowRegistry(workflowFixtureProviders);
 
@@ -141,6 +182,30 @@ describe("workflow registry adapter resolution", () => {
         (diagnostic) =>
           diagnostic.code === "WorkflowGraphError.unknownAgentProfileRef" &&
           diagnostic.nodeId === "collect" &&
+          diagnostic.path === "$.nodes.collect.profile.id",
+      ),
+    );
+  });
+
+  it("rejects archived Agent Designer profile refs when the Workflow Registry marks them archived", () => {
+    const registry = createWorkflowRegistry(workflowFixtureProviders);
+    registerWorkflowAgentProfile(registry, "archived-agent", { status: "archived" });
+    const definition = structuredClone(adapterWorkflowFixture) as WorkflowDefinition;
+    const collectNode = definition.nodes.collect;
+    assert.equal(collectNode.kind, "agent");
+    if (collectNode.kind === "agent") {
+      collectNode.profile = { kind: "fixed", id: "archived-agent" };
+    }
+
+    const result = validateWorkflow(definition, { registry });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "WorkflowGraphError.archivedAgentProfileRef" &&
+          diagnostic.nodeId === "collect" &&
+          diagnostic.registryRef === "archived-agent" &&
           diagnostic.path === "$.nodes.collect.profile.id",
       ),
     );
