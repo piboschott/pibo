@@ -5398,7 +5398,7 @@ function Composer({
 				}}
 			/>
 			{uploadStatus ? (
-				<div className={`mb-2 flex items-center gap-2 rounded-sm border px-3 py-2 text-xs ${uploadStatus.error ? "border-red-900 bg-red-950/40 text-red-200" : "border-slate-700 bg-[#0e1116] text-slate-300"}`}>
+				<div className={`mb-2 flex items-center gap-2 rounded-sm border px-3 py-2 text-xs ${uploadStatus.error ? "border-red-900 bg-red-950/40 text-red-200" : uploadStatus.copyText ? "border-green-900/60 bg-green-950/30 text-green-300" : "border-slate-700 bg-[#0e1116] text-slate-300"}`}>
 					<span className="min-w-0 flex-1 truncate">{uploadStatus.message}</span>
 					{uploadStatus.copyText ? (
 						<button
