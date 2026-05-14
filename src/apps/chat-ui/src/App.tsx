@@ -5174,8 +5174,7 @@ function Composer({
 	const [cursorPos, setCursorPos] = useState(0);
 	const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([]);
 	const [uploading, setUploading] = useState(false);
-	const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-	const [uploadError, setUploadError] = useState(false);
+	const [uploadStatus, setUploadStatus] = useState<{ message: string; copyText?: string; error: boolean } | null>(null);
 
 	const skillTrigger = useMemo(() => {
 		for (let i = cursorPos - 1; i >= 0; i--) {
@@ -5344,16 +5343,18 @@ function Composer({
 	const handleFileSelection = async (selectedFiles: readonly File[]) => {
 		if (!selectedFiles.length) return;
 		setUploading(true);
-		setUploadError(false);
-		setUploadStatus(`Uploading ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}...`);
+		setUploadStatus({ message: `Uploading ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}...`, error: false });
 		try {
 			const result = await uploadChatFiles(selectedFiles);
 			const names = result.files.map((file) => file.name).join(", ");
-			setUploadStatus(`Uploaded ${result.files.length} file${result.files.length === 1 ? "" : "s"} to ${result.uploadDir}: ${names}`);
-			setUploadError(false);
+			const paths = result.files.map((file) => file.path);
+			setUploadStatus({
+				message: `Uploaded ${result.files.length} file${result.files.length === 1 ? "" : "s"} to ${result.uploadDir}: ${names}`,
+				copyText: paths.join("\n"),
+				error: false,
+			});
 		} catch (caught) {
-			setUploadStatus(caught instanceof Error ? caught.message : String(caught));
-			setUploadError(true);
+			setUploadStatus({ message: caught instanceof Error ? caught.message : String(caught), error: true });
 		} finally {
 			setUploading(false);
 		}
@@ -5398,8 +5399,28 @@ function Composer({
 				}}
 			/>
 			{uploadStatus ? (
-				<div className={`mb-2 rounded-sm border px-3 py-2 text-xs ${uploadError ? "border-red-900 bg-red-950/40 text-red-200" : "border-slate-700 bg-[#0e1116] text-slate-300"}`}>
-					{uploadStatus}
+				<div className={`mb-2 flex items-start gap-2 rounded-sm border px-3 py-2 text-xs ${uploadStatus.error ? "border-red-900 bg-red-950/40 text-red-200" : "border-slate-700 bg-[#0e1116] text-slate-300"}`}>
+					<button
+						type="button"
+						disabled={!uploadStatus.copyText}
+						onClick={() => {
+							if (!uploadStatus.copyText) return;
+							void copyTextToClipboard(uploadStatus.copyText);
+						}}
+						title={uploadStatus.copyText ? "Copy uploaded file path" : undefined}
+						className={`min-w-0 flex-1 text-left ${uploadStatus.copyText ? "cursor-pointer hover:text-[#11a4d4]" : "cursor-default"}`}
+					>
+						{uploadStatus.message}
+					</button>
+					<button
+						type="button"
+						onClick={() => setUploadStatus(null)}
+						title="Hide upload status"
+						aria-label="Hide upload status"
+						className="shrink-0 rounded-sm p-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+					>
+						<X size={13} />
+					</button>
 				</div>
 			) : null}
 			{filteredSkills.length ? (
