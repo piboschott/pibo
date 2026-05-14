@@ -1,12 +1,89 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DEV_PUBLIC_URL="${PIBO_DEV_PUBLIC_URL:-https://dev.pibo.neuralnexus.me/apps/chat}"
+DEV_BRANCH="${PIBO_DEV_BRANCH:-dev}"
+DEV_REMOTE="${PIBO_DEV_REMOTE:-origin}"
 
 cd "$ROOT_DIR"
+REPO_COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir)"
+REPO_ROOT="$(dirname "$REPO_COMMON_DIR")"
+DEV_WORKTREE="${PIBO_DEV_WORKTREE:-$REPO_ROOT/.worktrees/$DEV_BRANCH}"
+DEV_WORKTREE="$(mkdir -p "$(dirname "$DEV_WORKTREE")" && cd "$(dirname "$DEV_WORKTREE")" && pwd -P)/$(basename "$DEV_WORKTREE")"
 
-echo "==> Building dev web gateway"
+require_clean_worktree() {
+	local worktree_path="$1"
+	if [[ -n "$(git -C "$worktree_path" status --porcelain --untracked-files=all)" ]]; then
+		echo "Dev deploy requires a clean '$DEV_BRANCH' worktree at $worktree_path." >&2
+		git -C "$worktree_path" status --short >&2
+		exit 1
+	fi
+}
+
+sync_dev_worktree() {
+	local worktree_path="$1"
+	local current_branch
+	current_branch="$(git -C "$worktree_path" branch --show-current)"
+	if [[ "$current_branch" != "$DEV_BRANCH" ]]; then
+		echo "Dev deploy must run from branch '$DEV_BRANCH' so the hosted dev server mirrors that branch." >&2
+		echo "Worktree: $worktree_path" >&2
+		echo "Current branch: ${current_branch:-detached}" >&2
+		exit 1
+	fi
+	require_clean_worktree "$worktree_path"
+	echo "==> Syncing $DEV_BRANCH with $DEV_REMOTE/$DEV_BRANCH"
+	git -C "$worktree_path" fetch "$DEV_REMOTE" "$DEV_BRANCH"
+	git -C "$worktree_path" merge --ff-only "$DEV_REMOTE/$DEV_BRANCH"
+	if [[ "$(git -C "$worktree_path" rev-parse HEAD)" != "$(git -C "$worktree_path" rev-parse "$DEV_REMOTE/$DEV_BRANCH")" ]]; then
+		echo "Dev deploy refused: local '$DEV_BRANCH' does not exactly match '$DEV_REMOTE/$DEV_BRANCH'." >&2
+		exit 1
+	fi
+}
+
+ensure_dev_worktree() {
+	if [[ -e "$DEV_WORKTREE" ]]; then
+		if git -C "$DEV_WORKTREE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+			sync_dev_worktree "$DEV_WORKTREE"
+			return
+		fi
+		echo "Dev worktree path exists but is not a Git worktree: $DEV_WORKTREE" >&2
+		exit 1
+	fi
+
+	local existing_dev_worktree
+	existing_dev_worktree="$(git worktree list --porcelain | awk -v branch="refs/heads/${DEV_BRANCH}" '
+		$1 == "worktree" { path = $2 }
+		$1 == "branch" && $2 == branch { print path; exit }
+	')"
+	if [[ -n "$existing_dev_worktree" && "$existing_dev_worktree" != "$DEV_WORKTREE" ]]; then
+		echo "Branch '$DEV_BRANCH' is already checked out at: $existing_dev_worktree" >&2
+		echo "The hosted dev server is pinned to the canonical worktree: $DEV_WORKTREE" >&2
+		echo "Move it with: git worktree move '$existing_dev_worktree' '$DEV_WORKTREE'" >&2
+		exit 1
+	fi
+
+	echo "==> Creating canonical $DEV_BRANCH worktree at $DEV_WORKTREE"
+	git fetch "$DEV_REMOTE" "$DEV_BRANCH"
+	if git show-ref --verify --quiet "refs/heads/$DEV_BRANCH"; then
+		git worktree add "$DEV_WORKTREE" "$DEV_BRANCH"
+	else
+		git worktree add -b "$DEV_BRANCH" "$DEV_WORKTREE" "$DEV_REMOTE/$DEV_BRANCH"
+	fi
+	sync_dev_worktree "$DEV_WORKTREE"
+}
+
+current_branch="$(git branch --show-current)"
+current_root="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
+if [[ "$current_branch" != "$DEV_BRANCH" || "$current_root" != "$DEV_WORKTREE" ]]; then
+	ensure_dev_worktree
+	echo "==> Re-running dev deploy from canonical $DEV_BRANCH worktree: $DEV_WORKTREE"
+	exec "$DEV_WORKTREE/scripts/deploy-web-dev.sh"
+fi
+
+sync_dev_worktree "$ROOT_DIR"
+
+echo "==> Building dev web gateway from $(git rev-parse --short HEAD) on $DEV_BRANCH"
 npm run build
 
 echo "==> Verifying dev public web app without restarting"
