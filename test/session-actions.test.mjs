@@ -51,10 +51,11 @@ function enableFastModeSupport(runtime) {
 	runtime.session.state.model = { api: "openai-codex-responses", provider: "openai-codex", id: "gpt-5.4", reasoning: true };
 }
 
-async function createSessionHarness() {
+async function createSessionHarness(configureRuntime) {
 	const cwd = await mkdtemp(join(tmpdir(), "pibo-session-actions-"));
 	const profile = new InitialSessionContextBuilder("session-actions-test").createSession();
 	const runtime = await createPiboRuntime({ cwd, persistSession: true, profile });
+	await configureRuntime?.(runtime);
 	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
 	const events = [];
 	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
@@ -185,6 +186,48 @@ test("fast mode applies OpenAI priority service tier to provider payloads", asyn
 			harness.routed.runtime.session.model,
 		);
 		assert.equal(unsupported.service_tier, undefined);
+	} finally {
+		await harness.dispose();
+	}
+});
+
+test("fast mode forwards OpenAI priority service tier through stream options", async () => {
+	let capturedOptions;
+	const fakeStream = {
+		async *[Symbol.asyncIterator]() {},
+		async result() {
+			return undefined;
+		},
+	};
+	const harness = await createSessionHarness((runtime) => {
+		runtime.session.agent.streamFn = (_model, _context, options) => {
+			capturedOptions = options;
+			return fakeStream;
+		};
+	});
+	try {
+		enableFastModeSupport(harness.routed.runtime);
+
+		harness.routed.runtime.session.agent.streamFn(
+			harness.routed.runtime.session.model,
+			{ systemPrompt: "", messages: [], tools: [] },
+			{ reasoning: "medium" },
+		);
+		assert.equal(capturedOptions.serviceTier, undefined);
+
+		await harness.routed.executeAction({
+			type: "execution",
+			piboSessionId: "route:test",
+			action: "fast_mode",
+		});
+
+		harness.routed.runtime.session.agent.streamFn(
+			harness.routed.runtime.session.model,
+			{ systemPrompt: "", messages: [], tools: [] },
+			{ reasoning: "medium" },
+		);
+		assert.equal(capturedOptions.reasoning, "medium");
+		assert.equal(capturedOptions.serviceTier, "priority");
 	} finally {
 		await harness.dispose();
 	}

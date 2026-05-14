@@ -450,6 +450,16 @@ export class RoutedSession {
 			if (!modelSupportsFastServiceTier(model)) return nextPayload;
 			return withFastServiceTier(nextPayload);
 		};
+
+		if (typeof agent.streamFn === "function") {
+			const originalStreamFn = agent.streamFn.bind(agent);
+			agent.streamFn = (model, context, options) => {
+				if (this.getFastModeResult().mode !== "fast") return originalStreamFn(model, context, options);
+				if (!modelSupportsFastServiceTier(model)) return originalStreamFn(model, context, options);
+				const fastOptions = { ...(options ?? {}), serviceTier: FAST_SERVICE_TIER };
+				return originalStreamFn(model, context, fastOptions);
+			};
+		}
 	}
 
 	private patchAgentContinue(): void {
