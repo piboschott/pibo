@@ -34,6 +34,7 @@ import { getDefaultPiboWorkspace } from "./workspace.js";
 import { loadPiboModelDefaults, selectRequestedFastMode, type PiboModelDefaults } from "./model-defaults.js";
 import { loadPiboUserSettings } from "./user-settings.js";
 import { resolvePiboSessionActiveModel } from "./session-model.js";
+import { isPiboThinkingLevel, type PiboThinkingLevel } from "./thinking.js";
 import { RuntimeSessionRegistry } from "../tools/runtime/registry.js";
 
 export type {
@@ -62,6 +63,16 @@ export type PiboSessionRouterOptions = Omit<
 };
 
 const DEFAULT_SUBAGENT_REPLY_TIMEOUT_MS = 10 * 60 * 1000;
+
+export function resolvePiboSessionInitialThinkingLevel(session: Pick<PiboSession, "metadata">): PiboThinkingLevel | undefined {
+	const value = session.metadata?.initialThinkingLevel;
+	return typeof value === "string" && isPiboThinkingLevel(value) ? value : undefined;
+}
+
+export function resolvePiboSessionInitialFastMode(session: Pick<PiboSession, "metadata">): boolean | undefined {
+	const value = session.metadata?.initialFastMode;
+	return typeof value === "boolean" ? value : undefined;
+}
 
 function profileForSession(
 	baseProfile: InitialSessionContext,
@@ -378,11 +389,12 @@ export class PiboSessionRouter {
 			: undefined;
 		const modelDefaults = this.resolveModelDefaults();
 		const activeModel = this.ensureSessionActiveModel(piboSession, profile, parentPiSessionId, modelDefaults);
+		const initialThinkingLevel = resolvePiboSessionInitialThinkingLevel(piboSession);
 		const userSettings = loadPiboUserSettings(piboSession.ownerScope ?? "user:unknown");
 		const runtime = await createPiboRuntime({
 			cwd: piboSession.workspace ?? this.options.cwd,
 			persistSession: this.options.persistSession,
-			thinkingLevel: this.options.thinkingLevel,
+			thinkingLevel: initialThinkingLevel ?? this.options.thinkingLevel,
 			profile: profileForSession(profile, piboSession.piSessionId, parentPiSessionId),
 			subagentRunner: this.createSubagentRunner(piboSession.id),
 			runToolController: this.createRunToolController(piboSession.id),
@@ -397,7 +409,7 @@ export class PiboSessionRouter {
 				timezone: userSettings.timezone,
 			},
 		});
-		const initialFastMode = selectRequestedFastMode(profileForSession(profile, piboSession.piSessionId, parentPiSessionId), modelDefaults) ?? false;
+		const initialFastMode = resolvePiboSessionInitialFastMode(piboSession) ?? selectRequestedFastMode(profileForSession(profile, piboSession.piSessionId, parentPiSessionId), modelDefaults) ?? false;
 		const session = new RoutedSession(
 			piboSession.id,
 			runtime,

@@ -57,7 +57,24 @@ export class PiboRalphService {
 	}
 	private async executeJob(job: PiboRalphJob, run: PiboRalphRun): Promise<{ piboSessionId: string; finalAnswer: string }> {
 		const target = this.resolveTarget(job);
-		const session = this.options.context.createSession({ channel: CHAT_WEB_CHANNEL, kind: 'ralph', profile: job.profile, ownerScope: job.ownerScope, workspace: target.workspace ?? getDefaultPiboWorkspace(), title: job.name, metadata: { ...(target.metadata ?? {}), chatRoomId: target.roomId, ralphJobId: job.id, ralphRunId: run.id, ralphTargetKind: job.target.kind } });
+		const session = this.options.context.createSession({
+			channel: CHAT_WEB_CHANNEL,
+			kind: 'ralph',
+			profile: job.profile,
+			ownerScope: job.ownerScope,
+			workspace: target.workspace ?? getDefaultPiboWorkspace(),
+			title: job.name,
+			activeModel: job.modelOverride ? { ...job.modelOverride } : undefined,
+			metadata: {
+				...(target.metadata ?? {}),
+				chatRoomId: target.roomId,
+				ralphJobId: job.id,
+				ralphRunId: run.id,
+				ralphTargetKind: job.target.kind,
+				...(job.thinkingLevel ? { initialThinkingLevel: job.thinkingLevel } : {}),
+				...(job.fastMode !== undefined ? { initialFastMode: job.fastMode } : {}),
+			},
+		});
 		this.store.attachRunSession(job.id, run.id, session.id);
 		const finalAnswer = await this.emitMessageAndWait(session.id, buildRalphPrompt(job), { isCancelled: () => this.cancelledRuns.has(run.id) }); return { piboSessionId: session.id, finalAnswer };
 	}

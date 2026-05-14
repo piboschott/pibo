@@ -1,4 +1,6 @@
 import type { PiboJsonObject } from '../core/events.js';
+import type { ModelProfile } from '../core/profiles.js';
+import type { PiboThinkingLevel } from '../core/thinking.js';
 
 export type PiboRalphTarget =
 	| { kind: 'room'; roomId: string }
@@ -27,6 +29,9 @@ export type PiboRalphJob = {
 	profile: string;
 	prompt: string;
 	maxIterations?: number;
+	modelOverride?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
+	fastMode?: boolean;
 	state: PiboRalphJobState;
 	createdAt: string;
 	updatedAt: string;
@@ -57,9 +62,23 @@ export type PiboRalphJobCreateInput = {
 	profile: string;
 	prompt: string;
 	maxIterations?: number;
+	modelOverride?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
+	fastMode?: boolean;
 };
 
-export type PiboRalphJobPatchInput = Partial<Pick<PiboRalphJobCreateInput, 'name' | 'description' | 'enabled' | 'target' | 'profile' | 'prompt' | 'maxIterations'>>;
+export type PiboRalphJobPatchInput = {
+	name?: string;
+	description?: string;
+	enabled?: boolean;
+	target?: PiboRalphTarget;
+	profile?: string;
+	prompt?: string;
+	maxIterations?: number | null;
+	modelOverride?: ModelProfile | null;
+	thinkingLevel?: PiboThinkingLevel | null;
+	fastMode?: boolean | null;
+};
 
 export type PiboRalphStatus = {
 	enabled: boolean;

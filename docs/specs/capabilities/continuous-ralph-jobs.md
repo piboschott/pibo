@@ -45,11 +45,11 @@ Chat Web exposes `/api/chat/ralph/*` endpoints and a `/ralph` UI area. The CLI e
 
 ### Requirement: Ralph jobs are durable owner-scoped product records
 
-The system MUST persist each Ralph job with a stable id, owner scope, name, optional description, enabled flag, target, profile, prompt, optional maximum iterations, state, and timestamps.
+The system MUST persist each Ralph job with a stable id, owner scope, name, optional description, enabled flag, target, profile, prompt, optional maximum iterations, optional runtime overrides, state, and timestamps.
 
 #### Current
 
-`PiboRalphStore` stores jobs in `pibo_ralph_jobs` under `pibo-ralph.sqlite` by default. Job ids use the `ralph_` prefix. Empty owner scope, profile, prompt, room target id, or personal principal id are rejected. `maxIterations` must be a positive integer when provided.
+`PiboRalphStore` stores jobs in `pibo_ralph_jobs` under `pibo-ralph.sqlite` by default. Job ids use the `ralph_` prefix. Empty owner scope, profile, prompt, room target id, or personal principal id are rejected. `maxIterations` must be a positive integer when provided. Runtime overrides may include `modelOverride`, `thinkingLevel`, and tri-state `fastMode`.
 
 #### Target
 
@@ -59,6 +59,8 @@ All Ralph job management surfaces preserve the same ownership and validation sem
 
 - Creating a job with a blank prompt fails.
 - Creating a job with `maxIterations: 0` fails.
+- Creating or editing a job with runtime overrides persists and returns those overrides.
+- Editing a job can clear `modelOverride`, `thinkingLevel`, `fastMode`, and `maxIterations` to return to inherited defaults.
 - Listing jobs for one owner scope does not return another owner's jobs.
 - A job without an explicit name receives a name derived from the prompt, capped by current store behavior.
 
@@ -129,7 +131,7 @@ The system MUST execute each reserved run through a new routed Pibo Session and 
 
 #### Current
 
-`executeJob()` creates a session with channel `pibo.chat-web`, kind `ralph`, the job profile, owner scope, target workspace, title, and metadata including `chatRoomId`, `ralphJobId`, `ralphRunId`, and `ralphTargetKind`. `emitMessageAndWait()` emits a `message` input with source `service` and an event id prefixed by `ralph_msg_`, then listens only to output events with the same Pibo Session id and event id when present.
+`executeJob()` creates a session with channel `pibo.chat-web`, kind `ralph`, the job profile, owner scope, target workspace, title, optional active model override, and metadata including `chatRoomId`, `ralphJobId`, `ralphRunId`, `ralphTargetKind`, and optional initial thinking/fast-mode overrides. `emitMessageAndWait()` emits a `message` input with source `service` and an event id prefixed by `ralph_msg_`, then listens only to output events with the same Pibo Session id and event id when present.
 
 #### Target
 
@@ -138,6 +140,8 @@ A Ralph run is visible as normal Chat Web session activity while still preservin
 #### Acceptance
 
 - The run record receives the created Pibo Session id after session creation.
+- A job model override becomes the created session's active model.
+- Job thinking and fast-mode overrides become the created session's initial runtime settings.
 - Assistant deltas and final messages from unrelated sessions do not complete the run.
 - The run completes when the correlated session emits `message_finished`.
 - The final answer is the final assistant message when present, otherwise accumulated deltas.
@@ -148,6 +152,13 @@ A Ralph run is visible as normal Chat Web session activity while still preservin
 - WHEN that session emits a correlated assistant message followed by `message_finished`
 - THEN the Ralph run completes with status `ok`
 - AND the run stores `piboSessionId: "ps_1"`.
+
+#### Scenario: Runtime overrides apply to a run
+
+- GIVEN a Ralph job has `modelOverride`, `thinkingLevel`, and `fastMode`
+- WHEN Ralph starts a new run
+- THEN the created Pibo Session uses the job model override as its active model
+- AND the session starts with the job thinking and fast-mode settings instead of inherited defaults.
 
 ### Requirement: Completion controls stop continuous work deterministically
 
@@ -263,7 +274,7 @@ The system MUST expose Ralph status, job management, and run history through bot
 
 #### Current
 
-`pibo ralph` prints a compact discovery surface. Commands include `status`, `list`, `add`, `edit`, `start`, `stop`, `cancel`, `remove`, and `runs`, with JSON output options on command paths. Chat Web includes a `/ralph` route and `RalphArea` that lists jobs, shows running counts, edits job details, performs start/stop/cancel/delete, and lists runs.
+`pibo ralph` prints a compact discovery surface. Commands include `status`, `list`, `add`, `edit`, `start`, `stop`, `cancel`, `remove`, and `runs`, with JSON output options on command paths. Chat Web includes a `/ralph` route and `RalphArea` that lists jobs, shows running counts, edits job details, edits per-job model/thinking/fast-mode overrides, performs start/stop/cancel/delete, and lists runs.
 
 #### Target
 
@@ -276,6 +287,7 @@ Agents and users can operate Ralph without reading source code.
 - Chat Web displays an empty state when no Ralph jobs exist.
 - Chat Web refreshes status, jobs, and run history periodically.
 - Chat Web exposes the exact promise-complete token to users creating jobs.
+- Chat Web lets users set or unset per-job model, thinking-level, and fast-mode overrides.
 
 #### Scenario: User opens Ralph area with no jobs
 
@@ -300,11 +312,12 @@ Agents and users can operate Ralph without reading source code.
 - **Performance:** The service polls on a timer and limits concurrent active runs by configuration.
 - **Durability:** `pibo-ralph.sqlite` is a Pibo-owned store under Pibo home unless an explicit path is provided.
 - **Routing:** Ralph-created sessions use Pibo Session IDs and Chat room metadata; Pi Session IDs are not the public run identity.
+- **Runtime defaults:** Unset Ralph runtime overrides inherit the selected agent and current model defaults.
 
 ## Success Criteria
 
 - [ ] SC-001: A Ralph job can be created, listed, started, stopped, cancelled, and removed through owner-scoped API or CLI surfaces.
-- [ ] SC-002: Each successful run creates a visible routed Pibo Session with Ralph metadata and a stored run record.
+- [ ] SC-002: Each successful run creates a visible routed Pibo Session with Ralph metadata, selected runtime overrides, and a stored run record.
 - [ ] SC-003: Stop, cancel, max iterations, timeout, restart recovery, and promise-complete outcomes are distinguishable in job/run state.
 - [ ] SC-004: Cross-owner, cross-origin, invalid target, and invalid profile operations fail without creating or mutating jobs.
 - [ ] SC-005: Chat Web and CLI expose enough status and run history to diagnose the current Ralph loop state.
@@ -314,12 +327,13 @@ Agents and users can operate Ralph without reading source code.
 
 ### Directly Tested
 
-- No focused Ralph tests were found under `test/*.test.mjs` in the current workspace.
+- `test/ralph-runtime-overrides.test.mjs` verifies Ralph store persistence and clearing for runtime overrides.
+- `test/ralph-runtime-overrides.test.mjs` verifies the Ralph service passes model, thinking-level, and fast-mode overrides to created sessions.
 
 ### Source-Inspected Only
 
-- Store validation, owner-scoped listing, run reservation, completion state, restart recovery, and run history are source-inspected from `src/ralph/store.ts`.
-- Routed session creation, target resolution, message correlation, timeout, stop, cancel, and promise-complete behavior are source-inspected from `src/ralph/service.ts`.
+- Store validation, owner-scoped listing, run reservation, completion state, restart recovery, and run history beyond runtime override persistence are source-inspected from `src/ralph/store.ts`.
+- Routed session creation, target resolution, message correlation, timeout, stop, cancel, and promise-complete behavior beyond runtime override propagation are source-inspected from `src/ralph/service.ts`.
 - Chat Web API ownership, same-origin mutation checks, profile validation, room access checks, and run listing are source-inspected from `src/apps/chat/ralph-api.ts`.
 - CLI discovery and management command output are source-inspected from `src/ralph/cli.ts` and `src/cli.ts`.
 - Chat Web Ralph navigation, empty state, form behavior, and run display are source-inspected from `src/apps/chat-ui/src/RalphArea.tsx`, `src/apps/chat-ui/src/api.ts`, `src/apps/chat-ui/src/types.ts`, `src/apps/chat-ui/src/App.tsx`, and `src/apps/chat-ui/src/main.tsx`.
@@ -336,7 +350,7 @@ Agents and users can operate Ralph without reading source code.
 
 | Test target | Required cases | Primary requirements | Suggested file |
 |---|---|---|---|
-| Store validation and ownership | Reject blank owner/profile/prompt/target ids; reject non-positive `maxIterations`; default names are prompt-derived and capped; owner-scoped `listJobs`, `getOwnedJob`, `updateJob`, `removeJob`, and `listRuns` exclude other owners. | REQ-001, REQ-008 | `test/ralph-store.test.mjs` |
+| Store validation and ownership | Reject blank owner/profile/prompt/target ids; reject non-positive `maxIterations`; persist and clear runtime overrides; default names are prompt-derived and capped; owner-scoped `listJobs`, `getOwnedJob`, `updateJob`, `removeJob`, and `listRuns` exclude other owners. | REQ-001, REQ-008 | `test/ralph-store.test.mjs`, `test/ralph-runtime-overrides.test.mjs` |
 | Store reservation and state transitions | Reserve only enabled non-running jobs; return no reservation at capacity-equivalent duplicate reservation; block jobs that reached `maxIterations`; `requestStop` disables without clearing `runningAt`; `requestCancel` records both stop and cancel timestamps. | REQ-003, REQ-005, REQ-006 | `test/ralph-store.test.mjs` |
 | Store completion and recovery | Successful completion increments `completedIterations`; error completion increments `consecutiveErrors`; later success resets `consecutiveErrors`; promise-complete and max-iteration paths disable the job; `recoverInterruptedRuns` marks stale running runs as `error` with reason `interrupted`. | REQ-005, REQ-007 | `test/ralph-store.test.mjs` |
 | Service target and session creation | Room target fails for missing or archived rooms; personal target creates/reuses default room; created sessions use channel `pibo.chat-web`, kind `ralph`, owner scope, profile, workspace, title, `chatRoomId`, `ralphJobId`, `ralphRunId`, and `ralphTargetKind`. | REQ-002, REQ-004 | `test/ralph-service.test.mjs` |
