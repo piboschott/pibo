@@ -251,9 +251,13 @@ function isThinkingResult(value: unknown): value is { level: string; supported: 
 }
 
 function createExecutionParams(slashCommand: string, args = ""): PiboJsonValue | undefined {
-	if (slashCommand !== "/thinking") return undefined;
-	const level = args.trim();
-	return level ? { level: parsePiboThinkingLevel(level) } : undefined;
+	const trimmedArgs = args.trim();
+	if (slashCommand === "/thinking") {
+		const level = trimmedArgs.split(/\s+/, 1)[0];
+		return level ? { level: parsePiboThinkingLevel(level) } : undefined;
+	}
+	if (slashCommand === "/compact") return trimmedArgs ? { customInstructions: trimmedArgs } : undefined;
+	return undefined;
 }
 
 function formatExecutionResult(event: Extract<PiboOutputEvent, { type: "execution_result" }>): string {

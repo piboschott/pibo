@@ -695,8 +695,8 @@ function createQueuedCompactRuntime(order, promptBlocks, compactBlock) {
 				const block = promptBlocks.shift();
 				if (block) await block.promise;
 			},
-			async compact() {
-				order.push("compact");
+			async compact(customInstructions) {
+				order.push(customInstructions ? `compact:${customInstructions}` : "compact");
 				await compactBlock.promise;
 				return { summary: "summary", firstKeptEntryId: "kept", tokensBefore: 123 };
 			},
@@ -751,6 +751,7 @@ test("compact action is serialized between queued messages", async () => {
 		piboSessionId: "route:test",
 		id: "compact-1",
 		action: "compact",
+		params: { customInstructions: "Fokus auf offene TODOs" },
 	});
 	assert.deepEqual(queuedCompact.result, { queued: true, queuedMessages: 1 });
 
@@ -766,14 +767,14 @@ test("compact action is serialized between queued messages", async () => {
 
 	firstPrompt.resolve();
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(order, ["prompt:A", "compact"], "compact starts after A finishes");
+	assert.deepEqual(order, ["prompt:A", "compact:Fokus auf offene TODOs"], "compact starts after A finishes");
 
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(order, ["prompt:A", "compact"], "B must wait for compact");
+	assert.deepEqual(order, ["prompt:A", "compact:Fokus auf offene TODOs"], "B must wait for compact");
 
 	compactBlock.resolve();
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.deepEqual(order, ["prompt:A", "compact", "prompt:B"]);
+	assert.deepEqual(order, ["prompt:A", "compact:Fokus auf offene TODOs", "prompt:B"]);
 
 	secondPrompt.resolve();
 	await new Promise((resolve) => setImmediate(resolve));

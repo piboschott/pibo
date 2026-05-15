@@ -1289,8 +1289,13 @@ export function App({ route }: { route: ChatAppRoute }) {
 			}
 			return true;
 		}
-		const level = text.match(/^\/thinking\s+(\S+)/)?.[1];
-		const result = await postAction(selectedPiboSessionId, command.action, level ? { level } : undefined);
+		const commandArgs = text.slice(commandText.length).trim();
+		const params = command.action === "thinking" && commandArgs
+			? { level: commandArgs.split(/\s+/, 1)[0] }
+			: command.action === "compact" && commandArgs
+				? { customInstructions: commandArgs }
+				: undefined;
+		const result = await postAction(selectedPiboSessionId, command.action, params);
 		const derivedPiboSessionId = getResultPiboSessionId(result);
 		if ((command.action === "session.clone" || command.action === "session.fork") && derivedPiboSessionId) {
 			await selectSession(derivedPiboSessionId);

@@ -8675,8 +8675,12 @@ function createChatHtml(): string {
 				await refreshTrace();
 				return;
 			}
-			const levelMatch = text.match(/^\\/thinking\\s+(\\S+)/);
-			const params = levelMatch ? { level: levelMatch[1] } : undefined;
+			const commandArgs = text.slice(command.slash.length).trim();
+			const params = command.action === "thinking" && commandArgs
+				? { level: commandArgs.split(/\\s+/, 1)[0] }
+				: command.action === "compact" && commandArgs
+					? { customInstructions: commandArgs }
+					: undefined;
 			const result = await postJson("/api/chat/action", { piboSessionId: selectedPiboSessionId, action: command.action, params: params });
 			appendRawEvent({ type: "command_result", payload: result });
 			if (command.action === "session.clone" && result && result.result && result.result.piboSessionId) {
