@@ -51,3 +51,6 @@ Source context:
 ## Progress log
 
 - 2026-05-16: Created dedicated Docker dev worker/worktree, copied Web Annotations PRDs, and prepared Ralph setup metadata.
+
+- 2026-05-16: Selected PRD01 US-001 through US-004 as the first coherent documentation guardrail batch. Plan: add canonical capability documentation, record the debug-web helper defer decision, add rollout/deployment checklist, update README links/assumptions, run typecheck, mark stories passed, and commit.
+- 2026-05-16: Completed PRD01 US-001 through US-004. Files changed: `docs/specs/capabilities/web-annotations-plugin.md`, `docs/specs/changes/web-annotations-plugin/prds/README.md`, `docs/specs/changes/web-annotations-plugin/prds/prd_01_product_overview.json`, `docs/specs/changes/web-annotations-plugin/prds/progress.txt`. Validation: refreshed Docker worker dependencies with `npm install` because `ink` was missing from `node_modules`; then `docker exec pibo-dev-web-annotations-plugin bash -lc 'cd /workspace && npm run typecheck'` passed. Browser verification: not required for docs-only product guardrail batch. Commit: `200d4f9` (`docs: PRD01 - Web Annotations product guardrails`). Next remaining story: PRD02 US-001 Add Web Annotation domain types.

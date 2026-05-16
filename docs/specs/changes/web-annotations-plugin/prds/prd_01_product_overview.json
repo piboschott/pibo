@@ -15,8 +15,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by PRD README V1 scope matrix, execution order, assumptions/TBD, and debug CLI defer decision; docs-only runtime behavior unchanged."
     },
     {
       "id": "US-002",
@@ -29,8 +29,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by docs/specs/capabilities/web-annotations-plugin.md and README link."
     },
     {
       "id": "US-003",
@@ -43,8 +43,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by README Debug-Web CLI Decision and capability doc Debug CLI Boundary; helpers deferred for V1 and must reuse the shared store/API if added."
     },
     {
       "id": "US-004",
@@ -57,8 +57,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by README Rollout Checklist covering Docker worker validation, typecheck, focused tests, Chat Web checks, browser/CDP validation, isolation, bounds, redaction, dev deployment, production approval, and V1 non-goals."
     }
   ]
 }
