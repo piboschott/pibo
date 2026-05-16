@@ -32,7 +32,7 @@
 
 ## Phase 3: Session controller and interactive app
 
-- [ ] T3.1 Define `CliSessionSource` and fake test source.
+- [x] T3.1 Define `CliSessionSource` and fake test source.
 - [ ] T3.2 Implement controller state for current room, session, agent, status, rows, input, picker mode, and errors.
 - [ ] T3.3 Implement Slash Command parser and command results.
 - [ ] T3.4 Implement `/help`, `/status`, `/clear`, `/exit`, `/quit`.

@@ -14,8 +14,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented CliSessionSource types and deterministic FakeCliSessionSource with room/session/agent/status/trace fixtures, update subscription behavior, source errors, and cleanup tests. Validation: npm run typecheck; focused cli-session-source test; full npm test."
     },
     {
       "id": "US-002",
