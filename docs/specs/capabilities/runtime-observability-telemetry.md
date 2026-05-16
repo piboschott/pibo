@@ -3,7 +3,7 @@
 **Status:** Draft  
 **Created:** 2026-05-16  
 **Owner / Source:** Observability and Debug Telemetry change set  
-**Related docs:** `GLOSSARY.md`, [Debug CLI](./debug-cli.md), [Pibo Data Store and Ingestion](./pibo-data-store-and-ingestion.md), [Pibo Event Contract](./pibo-event-contract.md), [Pibo Session Signals](./pibo-session-signals.md), `../changes/pibo-observability-debug-telemetry/spec.md`
+**Related docs:** `GLOSSARY.md`, [Debug CLI](./debug-cli.md), [Pibo Data Store and Ingestion](./pibo-data-store-and-ingestion.md), [Pibo Event Contract](./pibo-event-contract.md), [Pibo Session Signals](./pibo-session-signals.md), `../changes/pibo-observability-debug-telemetry/spec.md`, `../../project/observability-telemetry-playbooks.md`, `../../project/observability-telemetry-rollout-verification.md`
 
 ## Why
 
@@ -156,6 +156,8 @@ Every list/detail command supports JSON where agents need drill-down ids. Summar
 - Provider event summaries: 7 days when stored per event or aggregate.
 - Payload previews: 24 hours if explicitly enabled later.
 - Incident retention class: kept until explicit prune.
+
+Use `pibo debug telemetry stats` to inspect counts and byte estimates. Use `pibo debug telemetry prune --retention <class> --before <iso-date>` for a dry-run cleanup plan, then add `--apply` only after reviewing the plan. See `docs/project/observability-telemetry-playbooks.md` for retention cleanup examples.
 
 ## Constraints
 

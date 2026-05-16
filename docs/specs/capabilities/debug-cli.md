@@ -371,6 +371,26 @@ pibo debug telemetry tool <tool-call-id>
 | REQ-010 Live signals require explicit gateway URL | Missing gateway URL | `src/debug/index.ts` | Draft |
 | REQ-011 Telemetry diagnostics are summary-first and read-oriented | Agent drills down from a stuck session; prune is deliberate | `src/debug/*`, future telemetry service | Draft |
 
+## Operational Examples
+
+Telemetry playbooks live in `docs/project/observability-telemetry-playbooks.md`. Start with bounded summary commands:
+
+```text
+pibo debug telemetry session <pibo-session-id> --json
+pibo debug telemetry turn <turn-id> --json
+pibo debug telemetry provider <provider-request-id> events --limit 20 --json
+pibo debug telemetry tool <tool-call-id> --json
+```
+
+For retention work, inspect stats first and run prune without `--apply` before any destructive cleanup:
+
+```text
+pibo debug telemetry stats
+pibo debug telemetry prune --retention provider_event --before <iso-date>
+```
+
+The final rollout checklist lives in `docs/project/observability-telemetry-rollout-verification.md`.
+
 ## Verification Basis
 
 - `npm test -- --test-name-pattern "debug"` or the project-equivalent filtered test command for `test/debug-cli.test.mjs`.

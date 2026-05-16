@@ -16,6 +16,8 @@ This directory translates the observability/debug telemetry proposal, spec, desi
 - `../../../../reports/incident-2026-05-16-stuck-toolcall-stream.md`
 - `../../../capabilities/runtime-observability-telemetry.md`
 - `../../../capabilities/debug-cli.md`
+- `../../../../project/observability-telemetry-playbooks.md`
+- `../../../../project/observability-telemetry-rollout-verification.md`
 
 ## PRDs
 
@@ -101,7 +103,7 @@ The source specs intentionally left several choices open. These PRDs use the fol
 
 ## Rollout Checklist
 
-Use this checklist before enabling observability telemetry beyond local development:
+Use this checklist before enabling observability telemetry beyond local development. The canonical expanded checklist lives in `docs/project/observability-telemetry-rollout-verification.md`:
 
 - [ ] Run `npm run typecheck` in the Docker compute worker.
 - [ ] Run the debug CLI test suite, including telemetry text and JSON output tests.

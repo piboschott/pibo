@@ -17,7 +17,8 @@
       "priority": 1,
       "passes": true,
       "notes": "Run before implementation PRDs; documentation/contract only. Completed in docs batch on 2026-05-16; validated with npm run typecheck in Docker worker.",
-      "status": "complete"
+      "status": "complete",
+      "pass": true
     },
     {
       "id": "US-002",
@@ -32,7 +33,8 @@
       "priority": 2,
       "passes": true,
       "notes": "Completed in docs batch on 2026-05-16; validated with npm run typecheck in Docker worker.",
-      "status": "complete"
+      "status": "complete",
+      "pass": true
     },
     {
       "id": "US-003",
@@ -47,7 +49,8 @@
       "priority": 3,
       "passes": true,
       "notes": "Completed in docs batch on 2026-05-16; validated with npm run typecheck in Docker worker.",
-      "status": "complete"
+      "status": "complete",
+      "pass": true
     },
     {
       "id": "US-004",
@@ -62,7 +65,8 @@
       "priority": 4,
       "passes": true,
       "notes": "Completed in docs batch on 2026-05-16; validated with npm run typecheck in Docker worker.",
-      "status": "complete"
+      "status": "complete",
+      "pass": true
     }
   ]
 }

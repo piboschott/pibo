@@ -32,7 +32,7 @@
 - [x] 4.1 Add active phase and last progress summary to runtime status or signal projection.
 - [x] 4.2 Add provider/profile-aware stale threshold settings, including a minimal Provider Settings option.
 - [x] 4.3 Add stale work detector that reads telemetry without aborting work.
-- [ ] 4.4 Expose stale hints through gateway status when available.
+- [x] 4.4 Expose stale hints through gateway status when available.
 - [x] 4.5 Add tests for active stale session, non-stale active session, and provider-specific threshold behavior.
 
 ## 5. Debug CLI
@@ -60,7 +60,7 @@
 
 ## 7. Documentation and Handoff
 
-- [ ] 7.1 Add examples to the Debug CLI capability spec or a dedicated telemetry capability spec.
-- [ ] 7.2 Add an incident-debug playbook: stuck streaming session, partial tool call, provider parse error, stale tool execution.
-- [ ] 7.3 Document retention defaults and pruning commands.
-- [ ] 7.4 Document how agents should drill down without overflowing context.
+- [x] 7.1 Add examples to the Debug CLI capability spec or a dedicated telemetry capability spec.
+- [x] 7.2 Add an incident-debug playbook: stuck streaming session, partial tool call, provider parse error, stale tool execution.
+- [x] 7.3 Document retention defaults and pruning commands.
+- [x] 7.4 Document how agents should drill down without overflowing context.
