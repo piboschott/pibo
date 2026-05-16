@@ -158,6 +158,10 @@ function asJsonObject(value: PiboJsonObject | undefined): PiboJsonObject {
 	return value ?? {};
 }
 
+function shouldResetSessionAfterAction(action: string): boolean {
+	return action === "login.complete" || action === "login.apikey" || action === "logout";
+}
+
 function userIdFromOwnerScope(ownerScope: string | undefined): string | undefined {
 	if (!ownerScope) return undefined;
 	return ownerScope.startsWith("user:") ? ownerScope.slice("user:".length) : ownerScope;
@@ -218,6 +222,8 @@ export class PiboSessionRouter {
 		}
 		if (event.action === "dispose") {
 			this.disposeSignalSubtree(event.piboSessionId, "dispose action");
+		} else if (shouldResetSessionAfterAction(event.action)) {
+			await this.resetCachedSession(event.piboSessionId, "provider auth changed");
 		}
 		return output;
 	}
@@ -494,11 +500,12 @@ export class PiboSessionRouter {
 		});
 	}
 
-	private async resetCachedSession(piboSessionId: string): Promise<void> {
+	private async resetCachedSession(piboSessionId: string, reason?: string): Promise<void> {
 		const cached = this.sessions.get(piboSessionId);
 		this.sessions.delete(piboSessionId);
 		await this.runtimeRegistry.closeOwnerSessions(piboSessionId, { force: true });
 		await cached?.dispose();
+		if (reason) this.signalRegistry.project({ type: "session_disposed", piboSessionId, reason });
 	}
 
 	private resolvePiboSession(piboSessionId: string): PiboSession {

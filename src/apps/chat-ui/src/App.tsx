@@ -823,6 +823,12 @@ export function App({ route }: { route: ChatAppRoute }) {
 		() => loadNavigation(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { force: true }),
 		[loadNavigation, selectedPiboSessionId, selectedRoomId],
 	);
+	const refreshAfterProviderAuthChanged = useCallback(async () => {
+		setError(null);
+		const targetPiboSessionId = selectedPiboSessionId ?? undefined;
+		await loadBootstrap(targetPiboSessionId, showArchivedRef.current, selectedRoomId ?? undefined, { force: true, selectSession: false });
+		if (targetPiboSessionId) await refreshTrace(targetPiboSessionId);
+	}, [loadBootstrap, refreshTrace, selectedPiboSessionId, selectedRoomId]);
 
 	const updateBootstrapCache = useCallback((updater: (data: BootstrapData) => BootstrapData) => {
 		setBootstrap((current) => current ? updater(current) : current);
@@ -1892,6 +1898,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 									onUserSkillChanged={upsertUserSkillInBootstrap}
 									onUserSkillRemoved={removeUserSkillFromBootstrap}
 									piboSessionId={selectedPiboSessionId}
+									onProviderAuthChanged={refreshAfterProviderAuthChanged}
 								/>
 							)}
 						</main>
@@ -7211,6 +7218,7 @@ function SettingsView({
 	onUserSkillChanged,
 	onUserSkillRemoved,
 	piboSessionId,
+	onProviderAuthChanged,
 }: {
 	activePanel: SettingsPanel;
 	showThinking: boolean;
@@ -7227,6 +7235,7 @@ function SettingsView({
 	onUserSkillChanged: (skill: UserSkill) => void;
 	onUserSkillRemoved: (skillId: string) => void;
 	piboSessionId?: string | null;
+	onProviderAuthChanged?: () => void | Promise<void>;
 }) {
 	if (activePanel === "pi-packages") {
 		return (
@@ -7259,7 +7268,7 @@ function SettingsView({
 					<Key size={16} />
 					Providers
 				</h1>
-				<ProviderSettingsView piboSessionId={piboSessionId} />
+				<ProviderSettingsView piboSessionId={piboSessionId} onProviderAuthChanged={onProviderAuthChanged} />
 			</div>
 		);
 	}

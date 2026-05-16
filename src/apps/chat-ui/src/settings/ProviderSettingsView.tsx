@@ -38,7 +38,13 @@ type ProviderRowState =
 	| { type: "oauth_flow"; url: string; state?: string; userCode?: string; instructions?: string; flow?: string }
 	| { type: "api_key" };
 
-export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string | null }) {
+export function ProviderSettingsView({
+	piboSessionId,
+	onProviderAuthChanged,
+}: {
+	piboSessionId?: string | null;
+	onProviderAuthChanged?: () => void | Promise<void>;
+}) {
 	const [statuses, setStatuses] = useState<Record<string, boolean>>({});
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -133,7 +139,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				setStatuses((prev) => ({ ...prev, [provider]: true }));
 				setRowStates((prev) => ({ ...prev, [provider]: { type: "collapsed" } }));
 				setCodes((prev) => ({ ...prev, [provider]: "" }));
-				await refreshStatus();
+				await onProviderAuthChanged?.();
 				window.setTimeout(() => setSuccess((current) => (current === `${name} login completed.` ? null : current)), 5000);
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
@@ -141,7 +147,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				setActionLoading((prev) => ({ ...prev, [provider]: false }));
 			}
 		},
-		[piboSessionId, refreshStatus],
+		[onProviderAuthChanged, piboSessionId],
 	);
 
 	const saveApiKey = useCallback(
@@ -157,7 +163,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				setStatuses((prev) => ({ ...prev, [provider]: true }));
 				setRowStates((prev) => ({ ...prev, [provider]: { type: "collapsed" } }));
 				setApiKeys((prev) => ({ ...prev, [provider]: "" }));
-				await refreshStatus();
+				await onProviderAuthChanged?.();
 				window.setTimeout(() => setSuccess((current) => (current === `${name} API key saved.` ? null : current)), 5000);
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
@@ -165,7 +171,7 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 				setActionLoading((prev) => ({ ...prev, [provider]: false }));
 			}
 		},
-		[piboSessionId, refreshStatus],
+		[onProviderAuthChanged, piboSessionId],
 	);
 
 	const removeProvider = useCallback(
@@ -177,14 +183,14 @@ export function ProviderSettingsView({ piboSessionId }: { piboSessionId?: string
 			try {
 				await postAction(piboSessionId, "logout", { provider });
 				setStatuses((prev) => ({ ...prev, [provider]: false }));
-				await refreshStatus();
+				await onProviderAuthChanged?.();
 			} catch (caught) {
 				setError(caught instanceof Error ? caught.message : String(caught));
 			} finally {
 				setActionLoading((prev) => ({ ...prev, [provider]: false }));
 			}
 		},
-		[piboSessionId, refreshStatus],
+		[onProviderAuthChanged, piboSessionId],
 	);
 
 	const copyUrl = async (url: string) => {
