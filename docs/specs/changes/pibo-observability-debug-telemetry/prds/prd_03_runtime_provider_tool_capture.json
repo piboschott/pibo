@@ -45,8 +45,19 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "Minimum required phase set must be stable for CLI tests; extra visible phases are allowed."
+      "passes": true,
+      "notes": "Minimum required phase set must be stable for CLI tests; extra visible phases are allowed.",
+      "status": "complete",
+      "pass": true,
+      "validation": [
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run typecheck'",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm test' (412 passing tests)"
+      ],
+      "implementationNotes": [
+        "Added normalized-event phase capture in src/core/runtime-telemetry.ts for assistant_text, reasoning, tool_args, tool_execution, provider_stream, finish, abort, and error phase timelines.",
+        "Phase rows are metadata-only, link to the Pibo turn and toolCallId when known, and never store assistant text, reasoning content, raw provider payloads, or full tool arguments.",
+        "Open phases remain inspectable until terminal events close them; terminal turn outcomes close all open phases with ok/error/aborted status as appropriate."
+      ]
     },
     {
       "id": "US-003",
