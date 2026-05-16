@@ -1,0 +1,80 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-ssh-recovery-hardening",
+  "description": "Harden the Ink CLI Session UI for SSH, bootstrap, recovery, non-TTY behavior, cleanup, bounded rendering, and documentation.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add TTY detection and non-TTY behavior",
+      "description": "As a shell user, I want the CLI to avoid starting a broken interactive UI when stdout is not a TTY.",
+      "acceptanceCriteria": [
+        "Command startup detects non-interactive stdout/stdin where appropriate",
+        "Non-TTY mode exits with a clear documented error or documented plain-output behavior",
+        "Behavior is covered by a unit test or scripted smoke check where feasible",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Run after the command is registered."
+    },
+    {
+      "id": "US-002",
+      "title": "Ensure clean shutdown and source cleanup",
+      "description": "As a terminal user, I want Ctrl+C, /exit, and /quit to restore terminal state and close subscriptions.",
+      "acceptanceCriteria": [
+        "Ctrl+C, /exit, and /quit trigger the same cleanup path",
+        "Cleanup closes open CliSessionSource subscriptions and source resources",
+        "Cleanup is idempotent when called more than once",
+        "Tests cover cleanup with fake source",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add empty and error states",
+      "description": "As an operator in a recovery scenario, I want clear messages when sessions, rooms, profiles, or the source are unavailable.",
+      "acceptanceCriteria": [
+        "No sessions state shows how to create a session with /new",
+        "No rooms or unsupported rooms state is handled without crashing",
+        "No profiles state is handled without opening a broken picker",
+        "Source unavailable errors include concise recovery hints and redact secrets",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add large-session and narrow-terminal bounds",
+      "description": "As a user with a large session or small SSH window, I want the CLI to remain responsive and readable.",
+      "acceptanceCriteria": [
+        "Transcript renderer uses a documented default row window or viewport limit",
+        "Large row fixture test verifies the renderer does not render all rows by default",
+        "Narrow terminal width is handled by wrapping or truncation without crashing",
+        "Status/input lines remain usable at small widths within documented limits",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Document SSH recovery usage and validation checklist",
+      "description": "As a maintainer, I want docs and validation steps so the CLI stays reliable as a recovery interface.",
+      "acceptanceCriteria": [
+        "Add documentation for starting the CLI over SSH and using /help, /new, /session, /agent, /status, /clear, and /exit",
+        "Docs explicitly state Web Chat remains the main interface and list Web-only exclusions",
+        "Add validation checklist covering typecheck, tests, TTY smoke test, non-TTY behavior, Web Chat unchanged, and unsupported feature exclusions",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

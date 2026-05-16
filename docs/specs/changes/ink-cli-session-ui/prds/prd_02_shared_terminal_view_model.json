@@ -1,0 +1,52 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-shared-terminal-view-model",
+  "description": "Extract or expose renderer-neutral compact terminal rows for both Web Chat and Ink CLI renderers.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create renderer-neutral terminal view-model boundary",
+      "description": "As a CLI implementer, I need compact terminal row generation in a shared module so Ink rendering can reuse Web Chat trace mapping without importing Web components.",
+      "acceptanceCriteria": [
+        "Create a shared terminal view-model boundary such as src/session-ui or an approved equivalent",
+        "Expose compact row, line, token, status, and detail types through the shared boundary",
+        "Expose buildCompactTerminalRows and value normalization helpers through the shared boundary",
+        "Shared modules do not import React DOM, browser APIs, Tailwind/CSS, Virtuoso, lucide-react, or Ink",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate Web compact terminal to shared row model",
+      "description": "As a Web UI maintainer, I want the Web compact terminal to consume the shared row model without changing browser behavior.",
+      "acceptanceCriteria": [
+        "Update Web compact terminal imports to use the shared boundary or compatibility re-exports",
+        "Do not intentionally change Web compact terminal presentation or registry behavior",
+        "Chat Web typecheck passes",
+        "Root typecheck passes",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-001."
+    },
+    {
+      "id": "US-003",
+      "title": "Add compact row fixture tests",
+      "description": "As a runtime engineer, I want deterministic tests for compact row generation so Web and CLI rendering stay consistent.",
+      "acceptanceCriteria": [
+        "Add tests or fixtures for user message, assistant message, tool call, tool result, yielded run, and error rows",
+        "Tests cover long text truncation, JSON-like values, empty values, and missing optional fields",
+        "Tests assert deterministic row output without rendering React",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-001."
+    }
+  ]
+}

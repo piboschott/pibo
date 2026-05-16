@@ -1,0 +1,101 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-interactive-commands",
+  "description": "Wire the Ink app, CLI command registration, Slash Commands, pickers, input handling, and live transcript updates.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Register the CLI Session UI command",
+      "description": "As a CLI user, I want the new session UI command to be discoverable from the pibo command line.",
+      "acceptanceCriteria": [
+        "Register the agreed CLI Session UI command in src/cli.ts",
+        "Add command help output describing the reduced Web Chat-derived session UI",
+        "Update root CLI discovery text without removing existing pibo tui or pibo tui:routed commands",
+        "Command startup is separated from implementation details enough to test or smoke test",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Depends on final command-name decision from PRD 01."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement interactive Ink app shell",
+      "description": "As a CLI user, I want a status bar, transcript viewport, and input line so I can operate a session from the terminal.",
+      "acceptanceCriteria": [
+        "App shell renders status bar, bounded transcript viewport, and input line",
+        "App shell can run against fake CliSessionSource data",
+        "Keyboard handling supports Enter for input and Esc for canceling picker/detail mode where applicable",
+        "Manual TTY smoke test instructions are documented",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on Ink renderer and CliSessionSource fake source."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement Slash Command parser and local commands",
+      "description": "As a CLI user, I want clear Slash Commands for help, status, clear, and exit behavior.",
+      "acceptanceCriteria": [
+        "Command parser distinguishes normal messages from leading slash commands",
+        "/help lists /help, /new, /session, /agent, /status, /clear, /exit, and /quit plus Web-only exclusions",
+        "/status shows redacted source/session/agent/model state where known",
+        "/clear clears local display state without deleting session data",
+        "/exit and /quit close the app cleanly",
+        "Unknown commands show a clear error and are not sent as normal messages",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-002."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement session picker and new-session flow",
+      "description": "As a CLI user, I want to choose an existing session or start a new one from the terminal.",
+      "acceptanceCriteria": [
+        "/session opens a keyboard-selectable session flow using CliSessionSource data",
+        "/new creates a session through CliSessionSource and opens it",
+        "Picker supports cancellation and returns to the transcript",
+        "Empty session/room states show actionable messages",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-002 and PRD 04 session source work."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement agent picker",
+      "description": "As a CLI user, I want to select an existing agent/profile from the terminal without editing agents.",
+      "acceptanceCriteria": [
+        "/agent opens a keyboard-selectable existing profile list",
+        "Selecting an agent applies it through CliSessionSource according to supported source behavior",
+        "Empty or unsupported agent states show clear messages",
+        "No profile create/edit/delete UI is added",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Depends on PRD 04 agent source work."
+    },
+    {
+      "id": "US-006",
+      "title": "Wire normal message sending and live row refresh",
+      "description": "As a CLI user, I want normal text input to send messages and update the transcript as the agent responds.",
+      "acceptanceCriteria": [
+        "Pressing Enter on non-command text sends the message to the selected session",
+        "Input is cleared after successful send",
+        "Live source updates refresh shared compact rows and the Ink transcript",
+        "Send failures display a bounded error message",
+        "Manual TTY smoke test verifies message send and live transcript update",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-002, US-003, and PRD 04 live updates."
+    }
+  ]
+}
