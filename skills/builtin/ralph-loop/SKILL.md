@@ -204,6 +204,7 @@ Include:
 - Progress file path.
 - Commit policy.
 - Test/build policy.
+- Real-path validation policy for user-facing work.
 - Safety restrictions.
 - What to do first.
 - When to stop the current session.
@@ -237,6 +238,7 @@ Operating rules:
 - Keep telemetry/privacy/product constraints from the PRDs.
 - If using promise-complete, never quote, negate, explain, or mention the literal completion marker unless all completion criteria are satisfied; for incomplete work, say "completion marker omitted".
 - Update IMPLEMENTATION_PROGRESS.md with decisions, completed stories, validation, commits, blockers, and next steps.
+- For each completed story, record concrete evidence: commands run, fake/demo/real path, browser/PTY/manual checks, and observed result.
 - Commit after every completed story or coherent story group.
 
 First actions:
@@ -251,10 +253,26 @@ Completion rules for each story group:
 - Implement the smallest coherent slice.
 - Run focused tests first.
 - Run typecheck/build when appropriate.
+- For user-facing CLI, TUI, Web UI, gateway, runtime, auth, persistence, or agent-routing behavior, exercise the closest practical default path when feasible. Fake/demo/mocked checks are useful but should not be the only evidence for default-path behavior.
 - Commit from the host worktree with a clear message.
-- Update progress with validation and commit hash.
+- Update progress with validation, evidence tier, observed result, and commit hash.
 - Stop the session if the coherent batch is complete or if blocked.
 ```
+
+## Validation Evidence Audit
+
+Use this audit lightly, not as a rigid ceremony. It exists to catch false confidence before a Ralph job marks user-facing work complete.
+
+Before the final story group is marked complete, or before emitting a completion marker, have Ralph list the top user-facing happy paths and the evidence for each. Classify each check as one of:
+
+- unit/fixture
+- fake/demo
+- integration-lite
+- real default path
+- browser/PTY/manual verified
+- not verified, with reason
+
+For user-facing CLI, TUI, Web UI, gateway, runtime, auth, persistence, or agent-routing features, demo/fake-only validation should trigger a pause or explicit risk note if the real default path is locally testable. Do not require heavyweight E2E tests for every helper or internal refactor; scale the audit to the risk and scope.
 
 ## Monitoring Checklist
 

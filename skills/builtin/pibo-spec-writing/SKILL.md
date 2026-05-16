@@ -19,6 +19,7 @@ Write specs so another agent can implement and verify the work without reading t
 6. Track assumptions and open questions instead of hiding them.
 7. Link requirements to phases, tasks, or plans when the work is large.
 8. Use clear prose: active voice, concrete words, short paragraphs, and no puffery.
+9. For user-facing UI, CLI, TUI, gateway, runtime, or agent-routing changes, name the expected verification level instead of assuming unit tests are enough.
 
 ## Where specs live
 
@@ -212,6 +213,20 @@ Make gateway status better and more robust.
 ```
 
 A requirement is ready when a reviewer can say pass or fail without guessing.
+
+## Reuse, parity, and verification clarity
+
+When a feature is described as "same as Web", "derived from Web", "reuse the view", "shared UI", "Terminal View", or similar, do not silently reduce that to shared data. State the intended reuse level:
+
+- data/state only
+- renderer-neutral view model
+- interaction/controller logic
+- renderer/component logic
+- visual and behavioral parity
+
+If visual or behavioral parity is required, add acceptance checks that compare the relevant surfaces with the same fixture or user flow. If parity is intentionally out of scope, say so and describe the user-visible difference.
+
+For user-facing UI, CLI, TUI, gateway, runtime, auth, or agent-routing specs, include at least one realistic validation scenario for the default user path when feasible. Fake data, demo mode, mocks, and render snapshots are useful, but they should not be the only acceptance evidence for behavior users will exercise directly unless the real path is unavailable or explicitly out of scope.
 
 ## Scenario rules
 

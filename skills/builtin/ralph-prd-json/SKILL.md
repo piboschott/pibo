@@ -82,7 +82,23 @@ Bad:
 - `Good UX`.
 - `Handles everything`.
 
-Always include `Typecheck passes`. Add `Tests pass` for logic. Add browser verification only for UI stories.
+Always include `Typecheck passes`. Add `Tests pass` for logic. Add browser verification when a browser UI is affected, and PTY or interactive verification when a CLI/TUI flow is affected.
+
+### Real-path criteria for user-facing work
+
+For CLI, TUI, Web UI, gateway, auth, runtime, persistence, or agent-routing stories, include an acceptance criterion for the closest practical default user path. Keep it proportional: a small component may only need a render test, while a messaging or navigation feature should exercise the real command, route, API, or runtime path when feasible.
+
+Fake sources, demo mode, mocks, and snapshots are good supporting evidence, but avoid making them the only evidence for behavior users will exercise directly. If the real path cannot be tested in the story, add an explicit criterion or note explaining why and what later story will cover it.
+
+Name the observable result, not just the mechanism. Prefer criteria like:
+
+- `Running pibo tui:sessions without --demo can create/select a session, send a message through the real router, and show an assistant reply`.
+- `The agent picker lists custom agents from the canonical custom-agent store, including an existing pibo-agent fixture or documented local equivalent`.
+- `Opening /sessions/<id> in the worker Web UI shows the session created by the CLI flow`.
+
+### Evidence notes
+
+When a story is marked `passes: true`, notes should record the concrete evidence: commands run, whether the path was fake/demo/real, browser or PTY checks performed, and any manual observation. `Tests pass` alone is not enough for user-facing integration stories.
 
 ## Conversion Rules
 
@@ -100,5 +116,8 @@ Always include `Typecheck passes`. Add `Tests pass` for logic. Add browser verif
 - [ ] Acceptance criteria are verifiable.
 - [ ] Every story has `Typecheck passes`.
 - [ ] Logic stories include `Tests pass`.
-- [ ] UI stories include browser verification.
+- [ ] UI stories include browser verification when a browser surface is affected.
+- [ ] CLI/TUI stories include PTY or interactive validation when the interactive path is in scope and feasible.
+- [ ] User-facing integration stories include a real/default-path check or an explicit reason it is deferred.
+- [ ] Fake/demo/mocked checks are not the only evidence for default-path behavior unless documented as a deliberate limitation.
 - [ ] No story depends on a later story.
