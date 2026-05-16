@@ -5,6 +5,11 @@ import { createDefaultPiboDataSessionStore } from "../sessions/pibo-data-store.j
 import type { PiboSession, PiboSessionStore } from "../sessions/store.js";
 import type { PiboEventListener, PiboInputEvent, PiboOutputEvent, PiboSessionStatus } from "../core/events.js";
 import { getDefaultPiboWorkspace } from "../core/workspace.js";
+import { buildTraceView } from "../apps/chat/trace.js";
+import { storedPiboEventFromV2Row, type EventLogRow } from "../apps/chat/data/chat-data-mappers.js";
+import { ChatDataIngestService } from "../data/ingest-service.js";
+import type { StoredPiboEventLogRow } from "../data/event-log.js";
+import type { PiboDataStore } from "../data/pibo-store.js";
 import type { PiboSessionTraceView, PiboTraceNode, PiboTraceNodeStatus } from "../shared/trace-types.js";
 import {
 	CliSourceError,
@@ -40,6 +45,9 @@ export type LocalCliSessionSourceOptions = {
 	ownsRouter?: boolean;
 	now?: () => string;
 	statusMessage?: string;
+	dataStore?: PiboDataStore;
+	ownsDataStore?: boolean;
+	agentSummaries?: readonly CliAgentSummary[];
 };
 
 export class LocalCliSessionSource implements CliSessionSource {
@@ -53,6 +61,10 @@ export class LocalCliSessionSource implements CliSessionSource {
 	private readonly unsubscribeRouter?: () => void;
 	private readonly now: () => string;
 	private readonly statusMessage?: string;
+	private readonly dataStore?: PiboDataStore;
+	private readonly ownsDataStore: boolean;
+	private readonly ingestService?: ChatDataIngestService;
+	private readonly agentSummaries?: readonly CliAgentSummary[];
 	private readonly traceViews = new Map<string, PiboSessionTraceView>();
 	private readonly listeners = new Map<string, Set<CliSessionUpdateListener>>();
 	private readonly openHandles = new Set<{ sessionId: string; close: () => void }>();
@@ -69,6 +81,10 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.unsubscribeRouter = this.router?.subscribe((event) => this.handleRouterEvent(event));
 		this.now = options.now ?? (() => new Date().toISOString());
 		this.statusMessage = options.statusMessage;
+		this.dataStore = options.dataStore;
+		this.ownsDataStore = options.ownsDataStore === true;
+		this.ingestService = options.dataStore ? new ChatDataIngestService(options.dataStore) : undefined;
+		this.agentSummaries = options.agentSummaries ? [...options.agentSummaries] : undefined;
 	}
 
 	async listRooms(): Promise<readonly CliRoomSummary[]> {
@@ -127,9 +143,11 @@ export class LocalCliSessionSource implements CliSessionSource {
 			},
 		};
 		this.openHandles.add(handle);
+		const traceView = await this.loadTraceView(session);
+		this.traceViews.set(sessionId, traceView);
 		return {
 			session: sessionToSummary(session),
-			traceView: cloneJson(this.traceViews.get(sessionId) ?? emptyTraceView(session)),
+			traceView: cloneJson(traceView),
 			status: await this.getStatus({ sessionId }),
 			subscribe: (listener) => {
 				if (handleClosed) throw new CliSourceError("session_closed", `CLI session handle for "${sessionId}" is closed`);
@@ -155,8 +173,9 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.assertOpen();
 		const trimmed = text.trim();
 		if (!trimmed) throw new CliSourceError("empty_message", "Message text is empty");
-		this.resolveSession(sessionId);
+		const session = this.resolveSession(sessionId);
 		const eventId = randomUUID();
+		this.ingestUserMessage(session, eventId, trimmed);
 		if (this.router) {
 			try {
 				await this.router.emit({ type: "message", piboSessionId: sessionId, id: eventId, text: trimmed, source: "ui" });
@@ -172,6 +191,7 @@ export class LocalCliSessionSource implements CliSessionSource {
 
 	async listAgents(): Promise<readonly CliAgentSummary[]> {
 		this.assertOpen();
+		if (this.agentSummaries) return this.agentSummaries.map(cloneJson);
 		return this.pluginRegistry.getProfileInfos().map((profile) => ({
 			id: profile.name,
 			name: profile.name,
@@ -180,10 +200,12 @@ export class LocalCliSessionSource implements CliSessionSource {
 		}));
 	}
 
-	async setSessionAgent(_sessionId: string, agentId: string): Promise<CliSessionSummary> {
+	async setSessionAgent(sessionId: string, agentId: string): Promise<CliSessionSummary> {
 		this.assertOpen();
-		this.resolveAgent(agentId);
-		throw new CliSourceError("unsupported", "Changing an existing local session profile is not supported by the CLI source");
+		const session = this.resolveSession(sessionId);
+		const agent = this.resolveAgent(agentId);
+		if (agent.profileName === session.profile || agent.id === session.profile) return sessionToSummary(session);
+		throw new CliSourceError("unsupported", "Changing an existing local session profile is not supported by the CLI source. Use /new after selecting the desired profile, or start a new session with that profile.");
 	}
 
 	async getStatus(input: { sessionId?: string } = {}): Promise<CliRuntimeStatus> {
@@ -214,6 +236,7 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.unsubscribeRouter?.();
 		if (this.ownsRouter) await this.router?.disposeAll?.();
 		if (this.ownsSessionStore) this.sessionStore.close?.();
+		if (this.ownsDataStore) this.dataStore?.close();
 	}
 
 	listenerCount(sessionId?: string): number {
@@ -239,6 +262,8 @@ export class LocalCliSessionSource implements CliSessionSource {
 	}
 
 	private resolveAgent(agentId: string): CliAgentSummary {
+		const summary = this.agentSummaries?.find((candidate) => candidate.id === agentId || candidate.profileName === agentId || candidate.name === agentId);
+		if (summary) return cloneJson(summary);
 		const agent = this.pluginRegistry.getProfileInfos().find((candidate) => candidate.name === agentId || candidate.aliases.includes(agentId));
 		if (!agent) throw new CliSourceError("agent_not_found", `No local profile found for "${agentId}"`);
 		return { id: agent.name, name: agent.name, description: agent.description, profileName: agent.name };
@@ -261,6 +286,7 @@ export class LocalCliSessionSource implements CliSessionSource {
 		if (this.closed) return;
 		const session = this.sessionStore.get(event.piboSessionId);
 		if (!session || (this.ownerScope !== undefined && session.ownerScope !== this.ownerScope)) return;
+		this.ingestOutputEvent(session, event);
 		this.recordOutputEvent(event);
 	}
 
@@ -396,6 +422,51 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.emit(sessionId, { type: "session", session: summary, status: this.buildStatus(updated) });
 	}
 
+	private async loadTraceView(session: PiboSession): Promise<PiboSessionTraceView> {
+		if (!this.dataStore) return cloneJson(this.traceViews.get(session.id) ?? emptyTraceView(session));
+		const rows = this.dataStore.eventLog.listEvents({ sessionId: session.id, limit: 500 });
+		const events = rows.map((row) => storedPiboEventFromV2Row(eventLogRowToV2MapperRow(row))).filter((event) => event !== undefined);
+		return await buildTraceView({
+			session,
+			sessions: this.readSessions(),
+			events,
+			status: statusFromSession(session) === "running" ? "running" : statusFromSession(session) === "error" ? "error" : "idle",
+			cwd: session.workspace ?? getDefaultPiboWorkspace(),
+		});
+	}
+
+	private ingestUserMessage(session: PiboSession, eventId: string, text: string): void {
+		const roomId = roomIdFromSession(session);
+		if (!this.ingestService || !roomId) return;
+		try {
+			this.ingestService.ingestUserMessageAccepted({
+				session,
+				roomId,
+				actorId: this.ownerScope ?? session.ownerScope ?? "cli",
+				text,
+				clientTxnId: eventId,
+				legacyEvent: { eventId, createdAt: this.now() },
+			});
+		} catch {
+			// Persistence is best-effort; live local rendering still proceeds through router events.
+		}
+	}
+
+	private ingestOutputEvent(session: PiboSession, event: PiboOutputEvent): void {
+		if (!this.ingestService) return;
+		try {
+			this.ingestService.ingestOutputEvent({
+				session,
+				roomId: roomIdFromSession(session),
+				actorId: session.profile,
+				event,
+				createdAt: this.now(),
+			});
+		} catch {
+			// Persistence is best-effort; live local rendering still proceeds through in-memory trace updates.
+		}
+	}
+
 	private buildStatus(session: PiboSession): CliRuntimeStatus {
 		const runtime = this.router?.getSessionRuntimeStatus?.(session.id);
 		return {
@@ -483,6 +554,24 @@ function buildSessionMetadata(roomId: string | undefined, status: CliSessionSumm
 	return roomId
 		? { chatRoomId: roomId, roomId, status, source: "pibo tui:sessions" }
 		: { status, source: "pibo tui:sessions" };
+}
+
+function eventLogRowToV2MapperRow(row: StoredPiboEventLogRow): EventLogRow {
+	return {
+		stream_id: row.streamId,
+		session_id: row.sessionId ?? null,
+		session_sequence: row.sessionSequence ?? null,
+		room_id: row.roomId ?? null,
+		type: row.type,
+		actor_type: row.actorType ?? null,
+		actor_id: row.actorId ?? null,
+		event_id: row.eventId ?? null,
+		idempotency_key: row.idempotencyKey ?? null,
+		retention_class: row.retentionClass,
+		preview_text: row.previewText ?? null,
+		attributes_json: JSON.stringify(row.attributes ?? {}),
+		created_at: row.createdAt,
+	};
 }
 
 function emptyTraceView(session: PiboSession): PiboSessionTraceView {
