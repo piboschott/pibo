@@ -133,6 +133,8 @@ export type ContextBuildNode = {
 	key?: string;
 	provider?: string;
 	bytes?: number;
+	estimatedTokens?: number;
+	estimatedSubtreeTokens?: number;
 	children?: ContextBuildNode[];
 	hydratedText?: string;
 	schemaJson?: unknown;
@@ -153,6 +155,7 @@ export type ContextBuildSnapshot = {
 	summary: {
 		topLevelNodes: number;
 		totalNodes: number;
+		estimatedTokens: number;
 		warnings: number;
 		errors: number;
 	};

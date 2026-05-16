@@ -41,16 +41,20 @@ test("context build snapshot exposes runtime context and provider-backed web sea
 	assert.equal(snapshot.profileName, "context-build-test");
 	assert.equal(snapshot.piboSessionId, "ps_test");
 	assert.ok(snapshot.summary.totalNodes > snapshot.summary.topLevelNodes);
+	assert.ok(snapshot.summary.estimatedTokens > 0, "summary should include estimated token usage");
 	assert.equal(findNode(snapshot.nodes, (node) => /final prompt|full prompt/i.test(node.title)), undefined);
 
 	const runtimeContext = findNode(snapshot.nodes, (node) => node.path === "pibo://runtime/session-context.md");
 	assert.ok(runtimeContext, "runtime session context node should exist");
 	assert.match(runtimeContext.hydratedText, /Pibo Session ID: ps_test/);
 	assert.match(runtimeContext.hydratedText, /Pibo Room ID: room_test/);
+	assert.ok(runtimeContext.estimatedTokens > 0, "context file node should include direct estimated tokens");
+	assert.ok(runtimeContext.estimatedSubtreeTokens >= runtimeContext.estimatedTokens, "context file node should include subtree estimated tokens");
 
 	const webSearch = findNode(snapshot.nodes, (node) => node.id === "tools/web_search");
 	assert.ok(webSearch, "web_search tool node should exist");
 	assert.ok(webSearch.badges.includes("PROVIDER-BACKED"));
+	assert.ok(webSearch.estimatedSubtreeTokens > 0, "tool parent should aggregate child estimated tokens");
 
 	const providerPayload = findNode([webSearch], (node) => node.kind === "provider_payload");
 	assert.equal(providerPayload.payloadJson.provider, "openai");
