@@ -37,3 +37,8 @@ Implement all PRDs under:
 
 - 2026-05-16: Created dedicated worktree and Docker dev worker. Initial dev gateway validated on host port `4802`.
 - 2026-05-16: Clarified Ralph operating contract: reuse the existing Docker dev worker for runtime/tests/gateway restarts, keep Git/commits in the host worktree, and never touch host `pibo-web.service`.
+- 2026-05-16: Reviewed recent commits (`fa1f460`, `735f554`), clean branch status, glossary, source telemetry specs/design/tasks/decisions, all Markdown PRDs, and all Ralph PRD JSON files. Selected a documentation-only first batch covering PRD 01 US-001 through US-004 because it has no code dependencies and establishes V1 guardrails before storage/runtime work.
+- 2026-05-16: Implemented PRD 01 documentation batch draft: added `docs/specs/capabilities/runtime-observability-telemetry.md`, updated `docs/specs/capabilities/debug-cli.md` with the planned `pibo debug telemetry` branch, and expanded the telemetry PRD README with execution readiness notes plus rollout checklist.
+- 2026-05-16: Validation passed for PRD 01 docs batch with `docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run typecheck'`.
+- 2026-05-16: Re-ran `npm run typecheck` in the Docker worker after final documentation cleanup; validation still passed.
+- 2026-05-16: Committed PRD 01 documentation batch with message `Document telemetry V1 guardrails PRD01`.
