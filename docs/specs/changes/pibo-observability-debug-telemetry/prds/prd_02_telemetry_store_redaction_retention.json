@@ -17,7 +17,8 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Completed in storage foundation batch on 2026-05-16: added shared TypeScript telemetry types, correlation fields, status enums, retention classes including incident, preview-unavailable result type, and best-effort service wrapper. Validated with Docker npm run typecheck and npm test."
+      "notes": "Completed in storage foundation batch on 2026-05-16: added shared TypeScript telemetry types, correlation fields, status enums, retention classes including incident, preview-unavailable result type, and best-effort service wrapper. Validated with Docker npm run typecheck and npm test.",
+      "status": "complete"
     },
     {
       "id": "US-002",
@@ -35,7 +36,8 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Completed in storage foundation batch on 2026-05-16: added additive pibo.sqlite telemetry tables and indexes for turns, phases, provider requests, provider event summaries, tool calls, retention classes, and session/event/payload/provider/tool lookup paths. Migration idempotency covered by tests. Validated with Docker npm run typecheck and npm test."
+      "notes": "Completed in storage foundation batch on 2026-05-16: added additive pibo.sqlite telemetry tables and indexes for turns, phases, provider requests, provider event summaries, tool calls, retention classes, and session/event/payload/provider/tool lookup paths. Migration idempotency covered by tests. Validated with Docker npm run typecheck and npm test.",
+      "status": "complete"
     },
     {
       "id": "US-003",
@@ -51,7 +53,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Completed in storage foundation batch on 2026-05-16: implemented typed upsert/write APIs for turns, phases, provider requests, provider event summaries/counters, tool calls, preview-disabled reads, and a best-effort wrapper that swallows unavailable-store/write failures. Store contract tests cover insert/update/terminal status/missing optional correlation ids. Validated with Docker npm run typecheck and npm test."
+      "notes": "Completed in storage foundation batch on 2026-05-16: implemented typed upsert/write APIs for turns, phases, provider requests, provider event summaries/counters, tool calls, preview-disabled reads, and a best-effort wrapper that swallows unavailable-store/write failures. Store contract tests cover insert/update/terminal status/missing optional correlation ids. Validated with Docker npm run typecheck and npm test.",
+      "status": "complete"
     },
     {
       "id": "US-004",
@@ -67,7 +70,8 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Completed in storage read/retention batch on 2026-05-16: added bounded read APIs for telemetry sessions, session details, turn timelines, provider event cursor pages, stale work, stats, and preview-unavailable reads. APIs enforce default/hard limits and provider event sequence cursors. Tests cover unknown ids, bounded session/turn reads, cursors, and correlation lookup. Validated with Docker npm run typecheck and npm test (406 passing tests)."
+      "notes": "Completed in storage read/retention batch on 2026-05-16: added bounded read APIs for telemetry sessions, session details, turn timelines, provider event cursor pages, stale work, stats, and preview-unavailable reads. APIs enforce default/hard limits and provider event sequence cursors. Tests cover unknown ids, bounded session/turn reads, cursors, and correlation lookup. Validated with Docker npm run typecheck and npm test (406 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-005",
@@ -82,7 +86,8 @@
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Completed in storage read/retention batch on 2026-05-16: added centralized telemetry bounded-preview and safe-field/top-level-key helpers for optional preview paths and header/payload/tool-argument display values. Tests cover large JSON-like tool args, header-like values, truncation metadata, and safe field/key extraction while default persistence remains metadata-only. Validated with Docker npm run typecheck and npm test (406 passing tests)."
+      "notes": "Completed in storage read/retention batch on 2026-05-16: added centralized telemetry bounded-preview and safe-field/top-level-key helpers for optional preview paths and header/payload/tool-argument display values. Tests cover large JSON-like tool args, header-like values, truncation metadata, and safe field/key extraction while default persistence remains metadata-only. Validated with Docker npm run typecheck and npm test (406 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-006",
@@ -99,7 +104,8 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Completed in storage read/retention batch on 2026-05-16: kept V1 preview capture disabled by default, preserved typed disabled/unavailable preview reads, and added bounded preview helper types for any later explicit preview mode without falling back to arbitrary raw provider payload reads. Tests prove disabled reads and bounded preview behavior. Validated with Docker npm run typecheck and npm test (406 passing tests)."
+      "notes": "Completed in storage read/retention batch on 2026-05-16: kept V1 preview capture disabled by default, preserved typed disabled/unavailable preview reads, and added bounded preview helper types for any later explicit preview mode without falling back to arbitrary raw provider payload reads. Tests prove disabled reads and bounded preview behavior. Validated with Docker npm run typecheck and npm test (406 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-007",
@@ -115,7 +121,8 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Completed in storage read/retention batch on 2026-05-16: added telemetry retention stats grouped by retention class/table with byte counts where available, dry-run-first prune planning, and explicit apply pruning for telemetry tables only. Tests cover stale read, stats, dry-run, apply, cutoff/retention filtering, and preservation of unrelated retention classes. Validated with Docker npm run typecheck and npm test (406 passing tests)."
+      "notes": "Completed in storage read/retention batch on 2026-05-16: added telemetry retention stats grouped by retention class/table with byte counts where available, dry-run-first prune planning, and explicit apply pruning for telemetry tables only. Tests cover stale read, stats, dry-run, apply, cutoff/retention filtering, and preservation of unrelated retention classes. Validated with Docker npm run typecheck and npm test (406 passing tests).",
+      "status": "complete"
     }
   ]
 }

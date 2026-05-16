@@ -136,3 +136,5 @@ Implement all PRDs under:
 - 2026-05-16: Full Docker validation passed for PRD 04 US-008/US-010 final CLI batch: `npm run typecheck && npm test` completed with 432 passing tests. Marked PRD 04 US-008, US-009, and US-010 complete/pass in JSON and checked tasks 5.4 through 5.8. Reloading Docker gateway next.
 - 2026-05-16: Reloaded Docker dev gateway inside `pibo-dev-ralph-observability-telemetry` after PRD 04 final CLI changes and verified Chat Web health at `http://127.0.0.1:4802/apps/chat`.
 - 2026-05-16: Committed PRD 04 US-008/US-010 final telemetry CLI batch with message `Implement telemetry CLI tools PRD04 US-008-US-010`. PRD 04 is now fully passing; next coherent work should start PRD 05 fixture/validation/docs stories (US-004 onward) and remaining gateway status stale-hint task 4.4.
+- 2026-05-16: Normalized PRD 01 and PRD 02 JSON story statuses to `complete` for stories that were already marked `passes=true` by earlier validated batches, so future Ralph runs do not treat completed documentation/storage work as incomplete.
+- 2026-05-16: Committed PRD status normalization with message `Mark completed telemetry PRD statuses`.
