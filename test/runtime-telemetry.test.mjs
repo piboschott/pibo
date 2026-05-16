@@ -234,6 +234,50 @@ test("provider telemetry records completed request lifecycle from provider hooks
 	}
 });
 
+test("runtime telemetry records bounded Pi provider event metadata without payload bodies", () => {
+	const store = createStore();
+	try {
+		const runtime = new PiboRuntimeTelemetryRecorder(store.telemetry);
+		const provider = providerRecorder(store);
+		const eventId = "evt_provider_event_metadata";
+		runtime.recordOutput({ type: "message_queued", piboSessionId: session.id, eventId, queuedMessages: 1, text: "tool", source: "user" }, { session, status: status(1) });
+		runtime.recordOutput({ type: "message_started", piboSessionId: session.id, eventId, text: "tool", source: "user" }, { session, status: status(0) });
+		provider.recordRequestStart({ model: "gpt-test" }, { at: "2026-05-16T00:00:01.000Z" });
+		provider.recordResponse({ status: 200, headers: {}, at: "2026-05-16T00:00:02.000Z" });
+		runtime.recordPiEvent(session.id, {
+			type: "message_update",
+			assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: '{"command":"secret value"}' },
+			message: {
+				role: "assistant",
+				responseId: "resp_provider_event_metadata",
+				content: [{ type: "toolCall", id: "call_runtime_meta|item_runtime_meta", name: "bash", arguments: { command: "secret value" } }],
+			},
+		}, { session, status: status(0), activeEventId: eventId });
+
+		const timeline = store.telemetry.getTurnTimeline(turnIdForEvent(eventId));
+		assert.ok(timeline);
+		const request = timeline.providerRequests[0];
+		assert.equal(request.rawEventCount, 1);
+		assert.equal(request.normalizedEventCount, 0);
+		assert.equal(request.upstreamResponseId, "resp_provider_event_metadata");
+		assert.ok(request.lastRawEventAt);
+		assert.deepEqual(request.eventTypeCounts, { "pi.toolcall_delta": 1 });
+		const events = store.telemetry.listProviderEvents(request.providerRequestId);
+		assert.equal(events.length, 1);
+		assert.equal(events[0].eventType, "pi.toolcall_delta");
+		assert.equal(events[0].parseStatus, "ok");
+		assert.equal(events[0].normalizedType, "tool_call");
+		assert.equal(events[0].toolCallId, "call_runtime_meta|item_runtime_meta");
+		assert.equal(events[0].itemId, "item_runtime_meta");
+		assert.equal(events[0].safeFields.toolName, "bash");
+		assert.equal(typeof events[0].safeFields.deltaBytes, "number");
+		assert.equal(typeof events[0].safeFields.argsBytes, "number");
+		assert.equal(JSON.stringify(events[0]).includes("secret value"), false);
+	} finally {
+		store.close();
+	}
+});
+
 test("provider telemetry marks active provider requests aborted with no raw payload capture", () => {
 	const store = createStore();
 	try {

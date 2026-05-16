@@ -449,6 +449,9 @@ export class PiboSessionRouter {
 			this.emitOutput,
 			this.pluginRegistry,
 			this.options.forwardPiEvents ?? false,
+			this.telemetryRecorder
+				? (id, event, context) => this.telemetryRecorder?.recordPiEvent(id, event, { session: this.sessionStore.get(id), status: context.status, activeEventId: context.activeEventId })
+				: undefined,
 			initialFastMode,
 			(result, event) => this.handleSessionOperation(result, event),
 			(id, opts) => this.killChildSessions(id, opts),

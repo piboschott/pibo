@@ -144,16 +144,30 @@ test("telemetry store records provider request counters and provider event metad
 			parseStatus: "unknown_type",
 		});
 
+		store.telemetry.appendProviderEventSummary({
+			rawEventId: "raw_3",
+			providerRequestId: "pr_test_1",
+			sequence: 3,
+			receivedAt: "2026-05-16T00:00:04.000Z",
+			eventType: "response.malformed",
+			byteSize: 32,
+			parseStatus: "invalid_json",
+			normalizedType: "ignored",
+			normalizedEventDelta: 0,
+		});
+
 		const provider = store.telemetry.getProviderRequest("pr_test_1");
-		assert.equal(provider?.rawEventCount, 2);
+		assert.equal(provider?.rawEventCount, 3);
 		assert.equal(provider?.normalizedEventCount, 1);
+		assert.equal(provider?.parseErrorCount, 1);
 		assert.equal(provider?.unknownEventCount, 1);
-		assert.equal(provider?.bytesReceived, 192);
+		assert.equal(provider?.bytesReceived, 224);
 		assert.deepEqual(provider?.eventTypeCounts, {
 			"response.output_item.added": 1,
 			"response.unknown": 1,
+			"response.malformed": 1,
 		});
-		assert.deepEqual(store.telemetry.listProviderEvents("pr_test_1", { afterSequence: 1 }).map((event) => event.rawEventId), ["raw_2"]);
+		assert.deepEqual(store.telemetry.listProviderEvents("pr_test_1", { afterSequence: 1 }).map((event) => event.rawEventId), ["raw_2", "raw_3"]);
 
 		const completed = store.telemetry.upsertProviderRequest({
 			providerRequestId: "pr_test_1",
@@ -165,7 +179,7 @@ test("telemetry store records provider request counters and provider event metad
 			status: "completed",
 			completedAt: "2026-05-16T00:00:04.000Z",
 		});
-		assert.equal(completed.rawEventCount, 2);
+		assert.equal(completed.rawEventCount, 3);
 		assert.equal(completed.status, "completed");
 	} finally {
 		store.close();

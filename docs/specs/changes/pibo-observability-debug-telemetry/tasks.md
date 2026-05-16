@@ -21,8 +21,8 @@
 - [x] 3.1 Capture queue and turn lifecycle in session router / routed session.
 - [x] 3.2 Capture phase transitions from normalized events.
 - [x] 3.3 Capture provider request lifecycle around stream calls.
-- [ ] 3.4 Capture bounded provider event metadata/summaries in OpenAI/Codex Responses stream parser without duplicating raw provider bodies.
-- [ ] 3.5 Capture parse error and unknown-event counters.
+- [x] 3.4 Capture bounded provider event metadata/summaries in OpenAI/Codex Responses stream parser without duplicating raw provider bodies.
+- [x] 3.5 Capture parse error and unknown-event counters.
 - [ ] 3.6 Capture tool-call argument progress metadata, including deltas as counters and timestamps.
 - [ ] 3.7 Capture tool execution start/update/finish summaries.
 - [ ] 3.8 Add tests for partial tool-call stream, malformed SSE event, unknown event type, and interleaved tool calls where feasible.

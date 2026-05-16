@@ -371,6 +371,8 @@ export type TelemetryProviderEventInput = {
 	byteSize?: number;
 	parseStatus?: TelemetryProviderEventParseStatus;
 	normalizedType?: string;
+	/** Optional counter delta for provider request normalized events. Defaults to 1 when normalizedType is present. */
+	normalizedEventDelta?: number;
 	eventStreamId?: number;
 	eventId?: string;
 	itemId?: string;
@@ -1059,7 +1061,8 @@ export class TelemetryStore {
 			input.createdAt ?? now,
 			now,
 		);
-		if (!existingEvent) this.incrementProviderCounters(input.providerRequestId, input.eventType, receivedAt, byteSize, parseStatus, input.normalizedType ? 1 : 0);
+		const normalizedDelta = input.normalizedEventDelta ?? (input.normalizedType ? 1 : 0);
+		if (!existingEvent) this.incrementProviderCounters(input.providerRequestId, input.eventType, receivedAt, byteSize, parseStatus, normalizedDelta);
 		return this.getProviderEvent(rawEventId) ?? fail(`Failed to append telemetry provider event ${rawEventId}`);
 	}
 

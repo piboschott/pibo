@@ -102,8 +102,20 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Storage shape comes from PRD 02; CLI listing comes from PRD 04."
+      "passes": true,
+      "notes": "Completed in provider event metadata batch on 2026-05-16. Current Pi extension API does not expose raw OpenAI SSE bodies, so Pibo captures bounded provider parser metadata from Pi assistant stream events and store-level parse/unknown counters without editing node_modules or storing payload bodies.",
+      "status": "complete",
+      "pass": true,
+      "validation": [
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run typecheck'",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run build >/tmp/pibo-test-build.log 2>&1 && node --test test/runtime-telemetry.test.mjs test/telemetry-store.test.mjs' (22 passing tests)",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm test' (418 passing tests)"
+      ],
+      "implementationNotes": [
+        "Added PiboRuntimeTelemetryRecorder.recordPiEvent and wired RoutedSession/SessionRouter to capture bounded Pi assistant stream event metadata for active provider requests.",
+        "Provider event rows store event type, sequence, timestamps, byte sizes, parse status, safe structural fields, upstream response id, item/tool ids, and counters only; full provider bodies, assistant text, and full tool arguments are not stored.",
+        "Extended telemetry provider event writes with normalizedEventDelta so parser metadata can link to normalized types without double-counting normalized output events; store tests cover unknown and invalid_json counters."
+      ]
     },
     {
       "id": "US-005",

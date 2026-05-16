@@ -5,6 +5,7 @@ import {
 	type StoredTelemetryProviderRequest,
 	type TelemetryPhaseName,
 	type TelemetryPhaseStatus,
+	type TelemetryProviderEventParseStatus,
 	type TelemetryProviderRequestStatus,
 	type TelemetryStore,
 	type TelemetryTurnSource,
@@ -15,6 +16,18 @@ import { isTerminalProviderStatus } from "./provider-telemetry.js";
 type RuntimeTelemetryContext = {
 	session?: PiboSession;
 	status?: PiboSessionStatus;
+	activeEventId?: string;
+};
+
+type PiProviderEventSummary = {
+	eventType: string;
+	parseStatus: TelemetryProviderEventParseStatus;
+	normalizedType?: string;
+	byteSize: number;
+	itemId?: string;
+	toolCallId?: string;
+	safeFields: PiboJsonObject;
+	upstreamResponseId?: string;
 };
 
 type TurnContext = {
@@ -40,6 +53,15 @@ export class PiboRuntimeTelemetryRecorder {
 		if (!this.store) return;
 		try {
 			this.recordOutputUnsafe(event, context);
+		} catch (error) {
+			this.onError?.(error);
+		}
+	}
+
+	recordPiEvent(piboSessionId: string, event: unknown, context: RuntimeTelemetryContext = {}): void {
+		if (!this.store) return;
+		try {
+			this.recordPiEventUnsafe(piboSessionId, event, context);
 		} catch (error) {
 			this.onError?.(error);
 		}
@@ -89,6 +111,38 @@ export class PiboRuntimeTelemetryRecorder {
 			default:
 				return;
 		}
+	}
+
+	private recordPiEventUnsafe(piboSessionId: string, event: unknown, context: RuntimeTelemetryContext): void {
+		const summary = providerEventSummaryForPiEvent(event);
+		if (!summary) return;
+		const turn = context.activeEventId
+			? this.turnContextForEvent(piboSessionId, context.activeEventId, undefined, context)
+			: this.activeTurnContext(piboSessionId, context);
+		if (!turn) return;
+		const providerRequest = this.activeProviderRequestForTurn(turn.turnId);
+		if (!providerRequest) return;
+		const now = new Date().toISOString();
+		if (summary.upstreamResponseId && summary.upstreamResponseId !== providerRequest.upstreamResponseId) {
+			this.upsertProviderRequestFromExisting(providerRequest, { upstreamResponseId: summary.upstreamResponseId });
+		}
+		this.telemetry.appendProviderEventSummary({
+			providerRequestId: providerRequest.providerRequestId,
+			piboSessionId: turn.piboSessionId,
+			turnId: turn.turnId,
+			phaseId: providerRequest.phaseId,
+			receivedAt: now,
+			eventType: summary.eventType,
+			byteSize: summary.byteSize,
+			parseStatus: summary.parseStatus,
+			normalizedType: summary.normalizedType,
+			normalizedEventDelta: 0,
+			eventId: turn.eventId,
+			itemId: summary.itemId,
+			toolCallId: summary.toolCallId,
+			safeFields: summary.safeFields,
+		});
+		this.startOrProgressPhase(turn, "provider_stream", now, "provider event metadata", { providerRequestId: providerRequest.providerRequestId });
 	}
 
 	private recordMessageQueued(
@@ -411,7 +465,7 @@ export class PiboRuntimeTelemetryRecorder {
 
 	private upsertProviderRequestFromExisting(
 		request: StoredTelemetryProviderRequest,
-		input: Partial<Pick<StoredTelemetryProviderRequest, "status" | "lastNormalizedEventAt" | "normalizedEventCount" | "completedAt" | "errorCategory" | "errorMessage">>,
+		input: Partial<Pick<StoredTelemetryProviderRequest, "status" | "lastNormalizedEventAt" | "normalizedEventCount" | "completedAt" | "upstreamResponseId" | "errorCategory" | "errorMessage">>,
 	): void {
 		this.telemetry.upsertProviderRequest({
 			providerRequestId: request.providerRequestId,
@@ -432,7 +486,7 @@ export class PiboRuntimeTelemetryRecorder {
 			lastNormalizedEventAt: input.lastNormalizedEventAt ?? request.lastNormalizedEventAt,
 			completedAt: input.completedAt ?? request.completedAt,
 			httpStatus: request.httpStatus,
-			upstreamResponseId: request.upstreamResponseId,
+			upstreamResponseId: input.upstreamResponseId ?? request.upstreamResponseId,
 			rawEventCount: request.rawEventCount,
 			normalizedEventCount: input.normalizedEventCount ?? request.normalizedEventCount,
 			parseErrorCount: request.parseErrorCount,
@@ -482,6 +536,137 @@ export class PiboRuntimeTelemetryRecorder {
 			queueDepth: context.status?.queuedMessages ?? active.queueDepth,
 		};
 	}
+}
+
+function providerEventSummaryForPiEvent(event: unknown): PiProviderEventSummary | undefined {
+	if (!event || typeof event !== "object") return undefined;
+	const candidate = event as {
+		type?: unknown;
+		message?: unknown;
+		assistantMessageEvent?: {
+			type?: unknown;
+			contentIndex?: unknown;
+			delta?: unknown;
+			content?: unknown;
+			toolCall?: { id?: unknown; name?: unknown; arguments?: unknown };
+		};
+		toolCallId?: unknown;
+		toolName?: unknown;
+	};
+	if (candidate.type !== "message_update" && candidate.type !== "message_end") return undefined;
+	const assistantType = typeof candidate.assistantMessageEvent?.type === "string" ? candidate.assistantMessageEvent.type : undefined;
+	const eventType = assistantType ? `pi.${assistantType}` : `pi.${String(candidate.type)}`;
+	const parseStatus = assistantType && !KNOWN_PI_ASSISTANT_EVENTS.has(assistantType) ? "unknown_type" : "ok";
+	const toolCall = candidate.assistantMessageEvent?.toolCall;
+	const toolCallId = stringValue(toolCall?.id) ?? stringValue(candidate.toolCallId) ?? toolCallIdFromMessage(candidate.message);
+	const toolName = stringValue(toolCall?.name) ?? stringValue(candidate.toolName) ?? toolNameFromMessage(candidate.message);
+	const deltaBytes = typeof candidate.assistantMessageEvent?.delta === "string" ? utf8Bytes(candidate.assistantMessageEvent.delta) : undefined;
+	const contentBytes = typeof candidate.assistantMessageEvent?.content === "string" ? utf8Bytes(candidate.assistantMessageEvent.content) : undefined;
+	const argsBytes = toolCall?.arguments === undefined ? argsBytesFromMessage(candidate.message) : safeJsonByteSize(toolCall.arguments);
+	const upstreamResponseId = responseIdFromMessage(candidate.message);
+	const safeFields: PiboJsonObject = {
+		piEventType: String(candidate.type),
+	};
+	if (assistantType) safeFields.assistantEventType = assistantType;
+	if (typeof candidate.assistantMessageEvent?.contentIndex === "number") safeFields.contentIndex = candidate.assistantMessageEvent.contentIndex;
+	if (deltaBytes !== undefined) safeFields.deltaBytes = deltaBytes;
+	if (contentBytes !== undefined) safeFields.contentBytes = contentBytes;
+	if (argsBytes !== undefined) safeFields.argsBytes = argsBytes;
+	if (toolName) safeFields.toolName = toolName;
+	if (toolCallId) safeFields.toolCallId = toolCallId;
+	if (upstreamResponseId) safeFields.upstreamResponseId = upstreamResponseId;
+	const byteSize = safeJsonByteSize(safeFields);
+	return {
+		eventType,
+		parseStatus,
+		normalizedType: normalizedTypeForPiAssistantEvent(assistantType),
+		byteSize,
+		itemId: itemIdFromToolCallId(toolCallId),
+		toolCallId,
+		safeFields,
+		upstreamResponseId,
+	};
+}
+
+const KNOWN_PI_ASSISTANT_EVENTS = new Set([
+	"start",
+	"text_start",
+	"text_delta",
+	"text_end",
+	"thinking_start",
+	"thinking_delta",
+	"thinking_end",
+	"toolcall_start",
+	"toolcall_delta",
+	"toolcall_end",
+	"done",
+	"error",
+]);
+
+function normalizedTypeForPiAssistantEvent(type: string | undefined): string | undefined {
+	if (!type) return undefined;
+	if (type === "text_delta") return "assistant_delta";
+	if (type === "text_end") return "assistant_message";
+	if (type === "thinking_start") return "thinking_started";
+	if (type === "thinking_delta") return "thinking_delta";
+	if (type === "thinking_end") return "thinking_finished";
+	if (type === "toolcall_start" || type === "toolcall_delta" || type === "toolcall_end") return "tool_call";
+	return undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function responseIdFromMessage(message: unknown): string | undefined {
+	if (!message || typeof message !== "object") return undefined;
+	const value = (message as { responseId?: unknown }).responseId;
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function toolCallIdFromMessage(message: unknown): string | undefined {
+	const block = lastToolCallBlock(message);
+	return stringValue(block?.id);
+}
+
+function toolNameFromMessage(message: unknown): string | undefined {
+	const block = lastToolCallBlock(message);
+	return stringValue(block?.name);
+}
+
+function argsBytesFromMessage(message: unknown): number | undefined {
+	const block = lastToolCallBlock(message);
+	return block && "arguments" in block ? safeJsonByteSize(block.arguments) : undefined;
+}
+
+function lastToolCallBlock(message: unknown): { id?: unknown; name?: unknown; arguments?: unknown } | undefined {
+	if (!message || typeof message !== "object") return undefined;
+	const content = (message as { content?: unknown }).content;
+	if (!Array.isArray(content)) return undefined;
+	for (let index = content.length - 1; index >= 0; index -= 1) {
+		const block = content[index];
+		if (!block || typeof block !== "object") continue;
+		if ((block as { type?: unknown }).type === "toolCall") return block as { id?: unknown; name?: unknown; arguments?: unknown };
+	}
+	return undefined;
+}
+
+function itemIdFromToolCallId(toolCallId: string | undefined): string | undefined {
+	if (!toolCallId) return undefined;
+	const [, itemId] = toolCallId.split("|");
+	return itemId && itemId.length > 0 ? itemId : undefined;
+}
+
+function safeJsonByteSize(value: unknown): number {
+	try {
+		return utf8Bytes(JSON.stringify(value));
+	} catch {
+		return 0;
+	}
+}
+
+function utf8Bytes(value: string): number {
+	return Buffer.byteLength(value, "utf8");
 }
 
 export function turnIdForEvent(eventId: string): string {
