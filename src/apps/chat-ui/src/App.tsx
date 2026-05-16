@@ -1427,7 +1427,13 @@ export function App({ route }: { route: ChatAppRoute }) {
 					Recovery Mode: Main gateway is down. You are connected to a fallback instance.
 				</div>
 			)}
-			<div className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_auto_1fr]">
+			<div
+				data-pibo-debug="chat-app"
+				data-pibo-area={area}
+				data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+				data-pibo-selected-session-id={selectedPiboSessionId ?? bootstrap.selectedPiboSessionId ?? undefined}
+				className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_auto_1fr]"
+			>
 				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:flex-wrap max-[980px]:py-2">
 					<div className="flex items-center gap-2">
 						<button
@@ -1481,6 +1487,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 			<div>{error ? <AppErrorBanner message={error} onDismiss={() => setError(null)} /> : null}</div>
 
 			<div
+				data-pibo-debug="route-shell"
+				data-pibo-area={area}
+				data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+				data-pibo-selected-session-id={selectedPiboSessionId ?? undefined}
 				className={`min-h-0 ${
 					(area === "agents" || area === "workflows" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
 						(area === "sessions" || area === "projects") && showRawEvents
@@ -1557,6 +1567,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 					onClick={() => setMobileSidebarOpen(false)}
 				/>
 				<aside
+					data-pibo-debug="sidebar-shell"
+					data-pibo-area={area}
+					data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+					data-pibo-selected-session-id={selectedPiboSessionId ?? undefined}
+					data-pibo-state={mobileSidebarOpen ? "open" : "closed"}
 					className={`min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800 max-[980px]:fixed max-[980px]:left-0 max-[980px]:top-0 max-[980px]:bottom-0 max-[980px]:z-40 max-[980px]:w-[280px] max-[980px]:transition-transform max-[980px]:duration-200 ${
 						mobileSidebarOpen ? "max-[980px]:translate-x-0" : "max-[980px]:-translate-x-full"
 					}`}
@@ -1592,7 +1607,13 @@ export function App({ route }: { route: ChatAppRoute }) {
 						</div>
 					</div>
 					{area === "sessions" ? (
-						<div className="p-2 space-y-3">
+						<div
+							data-pibo-debug="session-list"
+							data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+							data-pibo-selected-session-id={selectedPiboSessionId ?? undefined}
+							data-pibo-state={showArchived ? "archived-visible" : "active-only"}
+							className="p-2 space-y-3"
+						>
 								{roomsSupported ? (
 									<div>
 										{personalRoom ? (
@@ -1687,6 +1708,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 											))}
 										</select>
 										<button
+											data-pibo-debug="new-session-button"
+											data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+											data-pibo-state={creatingSession ? "creating" : selectedRoomArchived ? "archived-disabled" : "ready"}
 											type="button"
 											onClick={() => void createSession()}
 											disabled={creatingSession || selectedRoomArchived}
@@ -3406,7 +3430,14 @@ function SessionTracePane({
 
 	return (
 		<>
-			<main className="min-h-0 flex flex-col">
+			<main
+				data-pibo-debug="chat-shell"
+				data-pibo-session-id={selectedPiboSessionId ?? undefined}
+				data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+				data-pibo-view-id={sessionViewId}
+				data-pibo-state={loadingTrace ? "loading" : traceError ? "error" : selectedPiboSessionId ? "ready" : "empty"}
+				className="min-h-0 flex flex-col"
+			>
 				<div className="h-14 px-4 bg-[#151f24] border-b border-slate-800 flex items-center justify-between max-[980px]:h-auto max-[980px]:flex-wrap max-[980px]:py-2 max-[980px]:gap-2">
 					<div className="min-w-0">
 						<h1 className="text-base font-semibold truncate">
@@ -4618,6 +4649,13 @@ function SessionNode({
 	return (
 		<div>
 			<div
+				data-pibo-debug="session-row"
+				data-pibo-session-id={node.piboSessionId}
+				data-pibo-title={safeTitle}
+				data-pibo-selected={node.piboSessionId === selectedPiboSessionId ? "true" : "false"}
+				data-pibo-state={loading ? "loading" : node.status ?? "idle"}
+				data-pibo-archived={node.archived ? "true" : "false"}
+				data-pibo-unread-count={node.unreadCount ?? 0}
 				className={`group w-full grid grid-cols-[1fr_auto] gap-1 items-center mb-1 border rounded-sm ${
 					node.piboSessionId === selectedPiboSessionId ? "border-[#11a4d4] bg-[#11a4d4]/10" : "border-transparent"
 				}`}
@@ -5437,7 +5475,13 @@ function Composer({
 	};
 
 	return (
-		<div ref={composerRootRef} className="relative p-3 bg-[#151f24] border-t border-slate-800 max-[980px]:p-2">
+		<div
+			ref={composerRootRef}
+			data-pibo-debug="composer"
+			data-pibo-session-id={sessionId ?? undefined}
+			data-pibo-state={disabled ? "disabled" : value ? "non-empty" : "empty"}
+			className="relative p-3 bg-[#151f24] border-t border-slate-800 max-[980px]:p-2"
+		>
 			<input
 				ref={fileInputRef}
 				type="file"
@@ -5547,6 +5591,9 @@ function Composer({
 			<div className="grid grid-cols-[1fr_auto] items-end gap-2">
 				<textarea
 					ref={inputRef}
+					data-pibo-debug="composer-input"
+					data-pibo-session-id={sessionId ?? undefined}
+					data-pibo-state={disabled ? "disabled" : value ? "non-empty" : "empty"}
 					rows={1}
 					value={value}
 					disabled={disabled}
