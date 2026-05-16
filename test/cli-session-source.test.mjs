@@ -235,7 +235,7 @@ test("local CLI session source can project router live events into trace updates
 
 test("local CLI session source reports clear errors and current-session agent limits", async () => {
 	const store = new InMemoryPiboSessionStore();
-	const source = new LocalCliSessionSource({ sessionStore: store, now: () => fixedNow });
+	const source = new LocalCliSessionSource({ sessionStore: store, now: () => fixedNow, agentSummaries: [{ id: "codex-compat-openai-web", name: "codex-compat-openai-web", profileName: "codex-compat-openai-web", description: "Built-in" }, { id: "custom-agent", name: "custom-agent", profileName: "custom-agent", description: "Custom agent" }] });
 	assert.deepEqual(await source.listRooms(), []);
 	assert.deepEqual(await source.listSessions(), []);
 	const status = await source.getStatus();
@@ -246,9 +246,11 @@ test("local CLI session source reports clear errors and current-session agent li
 	await assert.rejects(() => source.sendMessage("missing", "hello"), (error) => error instanceof CliSourceError && error.code === "session_not_found");
 	await assert.rejects(() => source.sendMessage("missing", "   "), (error) => error instanceof CliSourceError && error.code === "empty_message");
 	await assert.rejects(() => source.createSession({ agentId: "missing-agent" }), (error) => error instanceof CliSourceError && error.code === "agent_not_found");
+	assert.deepEqual((await source.listAgents()).map((agent) => agent.id), ["codex-compat-openai-web", "custom-agent"]);
 
 	const created = await source.createSession({ title: "Agent unchanged", profile: "codex-compat-openai-web" });
-	await assert.rejects(() => source.setSessionAgent(created.id, "codex-compat-openai-web"), (error) => error instanceof CliSourceError && error.code === "unsupported");
+	assert.equal((await source.setSessionAgent(created.id, "codex-compat-openai-web")).profile, "codex-compat-openai-web");
+	await assert.rejects(() => source.setSessionAgent(created.id, "custom-agent"), (error) => error instanceof CliSourceError && error.code === "unsupported");
 
 	await source.close();
 	await assert.rejects(() => source.listSessions(), (error) => error instanceof CliSourceError && error.code === "source_closed");

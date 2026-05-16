@@ -1,6 +1,12 @@
 import React from "react";
 import { render } from "ink";
+import { createCustomAgentProfileDefinition } from "../../apps/chat/agent-profiles.js";
+import { createDefaultCustomAgentStore } from "../../apps/chat/agent-store.js";
 import { createDefaultFakeCliSessionSource, LocalCliSessionSource, type CliSessionSource } from "../../cli-session/index.js";
+import { PiboSessionRouter } from "../../core/session-router.js";
+import { PiboDataStore } from "../../data/pibo-store.js";
+import { createDefaultPiboPluginRegistry } from "../../plugins/builtin.js";
+import { PiboDataSessionStore } from "../../sessions/pibo-data-store.js";
 import { InkSessionApp } from "./InkSessionApp.js";
 
 export type RunCliSessionsUiOptions = {
@@ -27,7 +33,7 @@ export async function runCliSessionsUi(options: RunCliSessionsUiOptions = {}): P
 	}
 	const source = options.source ?? (options.useFakeSource
 		? createDefaultFakeCliSessionSource()
-		: new LocalCliSessionSource({ ownerScope: options.ownerScope }));
+		: createDefaultLocalCliSessionSource({ ownerScope: options.ownerScope }));
 	const instance = render(React.createElement(InkSessionApp, {
 		initialSessionId: options.initialSessionId,
 		maxLineChars: options.maxLineChars ?? terminalLineLimitFromColumns(stdout.columns),
@@ -39,6 +45,36 @@ export async function runCliSessionsUi(options: RunCliSessionsUiOptions = {}): P
 		stderr,
 	});
 	await instance.waitUntilExit();
+}
+
+export function createDefaultLocalCliSessionSource(options: { ownerScope?: string } = {}): LocalCliSessionSource {
+	const dataStore = new PiboDataStore();
+	const sessionStore = new PiboDataSessionStore(dataStore);
+	const pluginRegistry = createDefaultPiboPluginRegistry();
+	const builtInAgentSummaries = pluginRegistry.getProfileInfos().map((profile) => ({ id: profile.name, name: profile.name, description: profile.description, profileName: profile.name }));
+	const customAgentStore = createDefaultCustomAgentStore();
+	const customAgents = customAgentStore.list();
+	try {
+		for (const agent of customAgents) pluginRegistry.upsertProfile(createCustomAgentProfileDefinition(agent));
+	} finally {
+		customAgentStore.close();
+	}
+	const agentSummaries = [
+		...builtInAgentSummaries,
+		...customAgents.map((agent) => ({ id: agent.profileName, name: agent.profileName, description: agent.description || agent.displayName, profileName: agent.profileName })),
+	];
+	const router = new PiboSessionRouter({ sessionStore, pluginRegistry });
+	return new LocalCliSessionSource({
+		ownerScope: options.ownerScope,
+		sessionStore,
+		ownsSessionStore: true,
+		pluginRegistry,
+		router,
+		ownsRouter: true,
+		dataStore,
+		ownsDataStore: true,
+		agentSummaries,
+	});
 }
 
 export function terminalLineLimitFromColumns(columns: number | undefined): number | undefined {
