@@ -109,7 +109,7 @@ export function ContextBuildView({ piboSessionId }: ContextBuildViewProps) {
 				) : snapshot ? (
 					<div className="grid gap-3">
 						<div className="border border-slate-800 bg-[#151f24] px-4 py-3 text-sm text-slate-400">
-							Read-only startup context snapshot. Expand the tree to inspect each contribution; no duplicate final prompt block is rendered.
+							Read-only startup context snapshot. Token counts are approximate estimates per contribution; no duplicate final prompt block is rendered.
 						</div>
 						<div className="grid min-w-0 gap-2">
 							{snapshot.nodes.map((node) => (
@@ -153,7 +153,7 @@ function SummaryPill({ snapshot }: { snapshot: ContextBuildSnapshot }) {
 	return (
 		<span className={`inline-flex h-8 items-center gap-1.5 border px-2.5 text-xs ${hasIssues ? "border-[#f59e0b]/60 bg-[#f59e0b]/10 text-amber-100" : "border-slate-700 bg-[#101d22] text-slate-300"}`}>
 			{hasIssues ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} className="text-[#0bda57]" />}
-			<span className="font-mono">{snapshot.summary.totalNodes} nodes · {snapshot.summary.warnings}w · {snapshot.summary.errors}e</span>
+			<span className="font-mono">{snapshot.summary.totalNodes} nodes · ~{formatTokens(snapshot.summary.estimatedTokens)} · {snapshot.summary.warnings}w · {snapshot.summary.errors}e</span>
 		</span>
 	);
 }
@@ -201,6 +201,8 @@ function ContextBuildNodeCard({
 							{node.key ? <span>{node.key}</span> : null}
 							{node.provider ? <span>{node.provider}</span> : null}
 							{node.bytes !== undefined ? <span>{formatBytes(node.bytes)}</span> : null}
+							{node.estimatedTokens !== undefined ? <span>~{formatTokens(node.estimatedTokens)}</span> : null}
+							{hasChildren && node.estimatedSubtreeTokens !== undefined ? <span>Σ ~{formatTokens(node.estimatedSubtreeTokens)}</span> : null}
 							{hasChildren ? <span>{node.children!.length} children</span> : null}
 						</div>
 					</div>
@@ -312,6 +314,8 @@ function renderNodeForCopy(node: ContextBuildNode, depth = 0): string {
 	if (node.path) lines.push(`${prefix}  path: ${node.path}`);
 	if (node.key) lines.push(`${prefix}  key: ${node.key}`);
 	if (node.provider) lines.push(`${prefix}  provider: ${node.provider}`);
+	if (node.estimatedTokens !== undefined) lines.push(`${prefix}  estimatedTokens: ${node.estimatedTokens}`);
+	if (node.estimatedSubtreeTokens !== undefined) lines.push(`${prefix}  estimatedSubtreeTokens: ${node.estimatedSubtreeTokens}`);
 	if (node.notes?.length) lines.push(...node.notes.map((note) => `${prefix}  note: ${note}`));
 	if (node.hydratedText) lines.push(`${prefix}  content:\n${indent(node.hydratedText, `${prefix}    `)}`);
 	if (node.schemaJson !== undefined) lines.push(`${prefix}  schema:\n${indent(JSON.stringify(node.schemaJson, null, 2), `${prefix}    `)}`);
@@ -328,6 +332,10 @@ function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function formatTokens(tokens: number): string {
+	return `${tokens.toLocaleString()} tokens`;
 }
 
 function formatValue(value: unknown): string {

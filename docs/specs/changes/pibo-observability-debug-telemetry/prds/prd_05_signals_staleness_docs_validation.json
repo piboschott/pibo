@@ -1,7 +1,7 @@
 {
   "project": "Pibo Observability and Debug Telemetry",
   "branchName": "ralph/pibo-observability-signals-validation",
-  "description": "Signal/status active-phase hints, stale detection validation, incident playbooks, synthetic fixtures, and rollout safety checks for Pibo debug telemetry.",
+  "description": "Signal/status active-phase hints, provider/profile stale threshold settings, stale detection, incident playbooks, synthetic fixtures, and rollout safety checks for Pibo debug telemetry.",
   "userStories": [
     {
       "id": "US-001",
@@ -9,7 +9,7 @@
       "description": "As an operator, I want live status to show active phase and stale age hints so that I know whether to inspect telemetry.",
       "acceptanceCriteria": [
         "Add active phase, last progress timestamp, stale age, active turn id, and queue depth to the appropriate session status or signal projection when telemetry is available",
-        "Signal/status payloads do not include raw provider events, payload previews, headers, transcripts, or full tool arguments",
+        "Signal/status payloads do not include raw provider events, bounded previews, headers, transcripts, normalized event payloads, or full tool arguments",
         "If telemetry is unavailable, status output remains backward-compatible and does not fail",
         "Tests cover active non-stale, active stale, and telemetry-unavailable cases",
         "Tests pass",
@@ -17,100 +17,145 @@
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "No Chat Web telemetry drill-down UI in V1."
     },
     {
       "id": "US-002",
-      "title": "Implement read-only stale work detector service",
-      "description": "As an agent, I want a stale detector over telemetry so that I can find stuck active work without mutating sessions.",
+      "title": "Add provider/profile stale threshold settings",
+      "description": "As an operator, I want minimal provider/profile stale threshold config so long-running providers are not judged by one global timeout.",
       "acceptanceCriteria": [
-        "Implement a stale detector that reads telemetry open phases and active work state using a configurable threshold with a safe default",
-        "Detector results include piboSessionId, turnId, phase, staleForMs, lastProgressAt, queue depth when known, and next command metadata",
-        "Detector never calls abort, clear, dispose, prune, or any mutating session operation",
-        "Tests cover below-threshold active work, above-threshold stale work, missing lastProgressAt, and completed turns",
+        "Add a minimal Provider Settings config option for telemetry stale threshold per provider/profile",
+        "Config supports a safe default and provider/profile overrides without requiring a Chat Web telemetry UI in V1",
+        "Settings read path returns the applied threshold and threshold source for stale/status output",
+        "Tests cover default threshold, provider/profile override, invalid config fallback, and missing config fallback",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "Run before PRD 04 stale command."
     },
     {
       "id": "US-003",
-      "title": "Add telemetry fixture builders for CLI and service tests",
-      "description": "As a QA engineer, I want reusable telemetry fixtures so that command behavior can be tested without live provider calls.",
+      "title": "Implement provider-aware stale work detector service",
+      "description": "As an agent, I want a stale detector over telemetry so that I can find stuck active work without mutating sessions.",
       "acceptanceCriteria": [
-        "Add fixture helpers that create a normal completed assistant turn, a partial tool-call/stuck turn, an unknown provider event case, a malformed provider JSON case, and a stale tool execution case",
-        "Fixtures populate correlated session, turn, phase, provider request, provider event, tool-call, and optional payload preview records",
-        "Fixtures use fake secret values for redaction tests and never require real credentials",
-        "Fixture tests prove each fixture can be inserted and queried through the telemetry service",
+        "Implement a stale detector that reads telemetry open phases and active work state using provider/profile-aware thresholds",
+        "Detector results include piboSessionId, turnId, phase, staleForMs, lastProgressAt, queue depth when known, applied threshold, threshold source, and next command metadata",
+        "Detector never calls abort, clear, dispose, prune, or any mutating session operation",
+        "Tests cover below-threshold active work, above-threshold stale work, missing lastProgressAt, provider/profile override, and completed turns",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "Depends on PRD 02 read APIs and US-002 settings."
     },
     {
       "id": "US-004",
-      "title": "Validate agent drill-down path from session id",
-      "description": "As an AI operator, I want an automated check that the telemetry CLI can diagnose a stuck session in a small number of bounded commands.",
+      "title": "Add core telemetry fixture builders for CLI and service tests",
+      "description": "As a QA engineer, I want reusable normal and partial-toolcall fixtures so command behavior can be tested without live provider calls.",
       "acceptanceCriteria": [
-        "Add a test or scripted fixture that starts with only a piboSessionId from the partial tool-call fixture",
-        "Verify the drill-down path reaches the active stale phase using no more than session, turn, provider, and tool command outputs",
-        "Verify each command output includes the ids needed for the next command in text or JSON mode",
-        "Verify default outputs are bounded and report truncation where applicable",
+        "Add fixture helpers that create a normal completed assistant turn and a partial tool-call/stuck turn",
+        "Fixtures populate correlated session, turn, phase, provider request, provider event metadata/aggregate, and tool-call records",
+        "Fixtures include stale-capable timestamps and existing session/event/payload links without copying full content bodies",
+        "Fixture tests prove each fixture can be inserted and queried through the telemetry service",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "Builds on PRD 03 incident fixture where available."
     },
     {
       "id": "US-005",
-      "title": "Add secret-safety validation for telemetry outputs",
-      "description": "As a security reviewer, I want tests proving default telemetry outputs do not print secrets or raw payload bodies.",
+      "title": "Add provider error and no-telemetry fixtures",
+      "description": "As a QA engineer, I want malformed-provider, unknown-event, stale-tool, and no-telemetry fixtures for negative-path validation.",
       "acceptanceCriteria": [
-        "Add tests that seed telemetry fixtures with fake authorization headers, cookies, bearer tokens, API-key-like strings, OAuth token fields, and secret-like JSON keys",
-        "Verify sessions, session, turn, provider, provider events, tool, stale, and stats default outputs do not contain fake secret values",
-        "Verify payload preview output contains redacted markers and not raw fake secret values",
-        "Verify summary commands do not print full raw provider JSON payload bodies or full tool argument bodies",
+        "Add fixtures for malformed provider JSON, unknown provider event, stale tool execution, no telemetry available, and preview disabled/unavailable",
+        "Fixtures use fake large payloads/tool arguments for bounded-output/storage tests and never require real credentials",
+        "Fixture tests prove each fixture can be inserted and queried or produces the expected no-telemetry diagnostic",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 5,
       "passes": false,
-      "notes": ""
+      "notes": "Do not add raw preview fixtures unless preview mode is explicitly enabled."
     },
     {
       "id": "US-006",
-      "title": "Write telemetry incident-debug playbooks",
-      "description": "As a maintainer, I want repeatable playbooks so that future incidents are debugged safely and consistently.",
+      "title": "Validate agent drill-down path from session id",
+      "description": "As an AI operator, I want an automated check that the telemetry CLI can diagnose a stuck session in a small number of bounded commands.",
       "acceptanceCriteria": [
-        "Add documentation for stuck streaming session, partial tool-call args, provider parse error, unknown provider event, stale tool execution, disabled payload preview, and telemetry retention cleanup",
-        "Each playbook starts with bounded summary commands before any payload preview command",
-        "Playbooks include JSON-mode examples for agents and text-mode examples for humans",
-        "Prune playbook shows dry-run before apply and warns about destructive behavior",
+        "Add a test or scripted fixture that starts with only a piboSessionId from the partial tool-call fixture",
+        "Verify the drill-down path reaches the active stale phase using no more than session, turn, provider, and tool command outputs",
+        "Verify each command output includes the ids needed for the next command in text and JSON mode",
+        "Verify default outputs are bounded and report truncation/aggregation where applicable",
+        "Tests pass",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": false,
-      "notes": ""
+      "notes": "Depends on PRD 04 core commands and US-004 fixtures."
     },
     {
       "id": "US-007",
-      "title": "Add final observability rollout verification task",
-      "description": "As an engineering lead, I want one final verification checklist so that the telemetry feature is complete before production use.",
+      "title": "Validate bounded output for telemetry commands",
+      "description": "As a maintainer, I want tests proving default telemetry outputs do not print large content bodies.",
       "acceptanceCriteria": [
-        "Add a documented final verification checklist covering npm run typecheck, relevant tests, synthetic stuck-session drill-down, redaction safety, bounded output, stats, prune dry-run, and backward compatibility for existing debug commands",
-        "Checklist references the PRD files and source specs for traceability",
-        "Checklist states that automatic timeout/recovery work is separate from telemetry observability",
+        "Seed telemetry fixtures with large provider payloads, large tool arguments, header-like metadata, and existing session/event payload links",
+        "Verify sessions, session, turn, provider, provider events, tool, stale, and stats default outputs do not contain full payload bodies or full tool arguments",
+        "Verify JSON outputs include limit/truncation/cursor metadata where applicable",
+        "Tests pass",
         "Typecheck passes"
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
+      "notes": "Depends on PRD 04 CLI commands."
+    },
+    {
+      "id": "US-008",
+      "title": "Validate storage non-duplication and preview-unavailable behavior",
+      "description": "As a maintainer, I want tests proving telemetry links to existing content instead of duplicating it.",
+      "acceptanceCriteria": [
+        "Verify telemetry rows link to existing session/event/payload evidence instead of duplicating full normalized event payloads",
+        "Verify default preview reads return unavailable/disabled metadata and do not read arbitrary raw provider payloads",
+        "If preview mode is explicitly enabled later, verify preview output contains bounded preview/truncation metadata and no full payload bodies by default",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Depends on PRD 02 store contract and optional PRD 04 preview command if present."
+    },
+    {
+      "id": "US-009",
+      "title": "Write telemetry incident-debug playbooks",
+      "description": "As a maintainer, I want repeatable playbooks so future incidents are debugged safely and consistently.",
+      "acceptanceCriteria": [
+        "Add documentation for stuck streaming session, partial tool-call args, provider parse error, unknown provider event, stale tool execution, preview unavailable, and telemetry retention cleanup",
+        "Each playbook starts with bounded summary commands before any optional bounded preview command",
+        "Playbooks include JSON-mode examples for agents and text-mode examples for humans",
+        "Prune playbook shows dry-run before apply and warns about destructive behavior",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Depends on PRD 04 command surface."
+    },
+    {
+      "id": "US-010",
+      "title": "Add final observability rollout verification task",
+      "description": "As an engineering lead, I want one final verification checklist so the telemetry feature is complete before production use.",
+      "acceptanceCriteria": [
+        "Add a documented final verification checklist covering npm run typecheck, relevant tests, synthetic stuck-session drill-down, bounded-output/storage safety, stats, prune dry-run, stale threshold-source output, preview-unavailable behavior, and backward compatibility for existing debug commands",
+        "Checklist references the PRD files and source specs for traceability",
+        "Checklist states that automatic timeout/recovery work is separate from telemetry observability",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Run near the end after PRDs 02-04 and validation stories."
     }
   ]
 }

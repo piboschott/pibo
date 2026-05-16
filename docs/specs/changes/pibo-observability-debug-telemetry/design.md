@@ -9,7 +9,7 @@ The design follows the current Debug CLI pattern:
 1. Start with compact discovery.
 2. Select one object.
 3. Drill into bounded child rows.
-4. Fetch payload previews only by explicit id.
+4. Treat payload previews as disabled/unavailable by default; if enabled later, fetch them only by explicit id.
 5. Prefer JSON for agent-driven loops.
 
 ## Goals / Non-Goals
@@ -33,7 +33,7 @@ The design follows the current Debug CLI pattern:
 
 ### Decision: Use telemetry records, not raw logs, as the primary model
 
-**Choice:** Store structured telemetry rows for phases, provider requests, provider raw-event summaries, tool-call progress, and payload previews.
+**Choice:** Store structured telemetry rows for phases, provider requests, provider raw-event summaries, and tool-call progress. Payload preview APIs may exist, but preview capture/storage is disabled or unavailable by default unless explicitly enabled later.
 
 **Rationale:** Rows are queryable, bounded, and easy to expose through CLI pages. Raw log files are hard to correlate and easy to over-dump.
 
@@ -42,16 +42,16 @@ The design follows the current Debug CLI pattern:
 - Plain text logs only: simpler, but weak for agent drill-down.
 - Full OpenTelemetry stack: too heavy and external for local-first debugging.
 
-### Decision: Separate summaries from payload previews
+### Decision: Separate diagnostic metadata from content payloads
 
-**Choice:** Store summaries in primary telemetry tables and optional redacted payload previews in payload storage with shorter retention.
+**Choice:** Store diagnostic metadata, counters, timings, safe structural fields, and links in primary telemetry tables. Do not store full provider payloads, transcripts, normalized event payloads, or full tool arguments by default. Optional bounded previews remain a later/explicit choice.
 
-**Rationale:** Most diagnosis needs event type, timing, ids, byte sizes, and counts. Raw payloads are rare, risky, and expensive.
+**Rationale:** Most diagnosis needs event type, timing, ids, byte sizes, counts, parser status, and links back to existing session/event evidence. Full raw payloads would duplicate data, grow the local volume, and make debug commands too large.
 
 **Alternatives considered:**
 
-- Store all raw SSE JSON: high storage risk and likely secret/transcript exposure.
-- Store no payload samples: safer, but makes unknown event/parser bugs harder to diagnose.
+- Store all raw SSE JSON: high storage risk and redundant with existing session/event content.
+- Store no payload samples ever: safest for volume, but may make unknown event/parser bugs harder to diagnose.
 
 ### Decision: CLI output is cursor-oriented
 
@@ -73,7 +73,9 @@ The design follows the current Debug CLI pattern:
 
 ## Conceptual Data Model
 
-Names are illustrative. Implementation may reuse existing stores and naming conventions.
+V1 stores telemetry in the unified `pibo.sqlite` data store with dedicated telemetry tables. Names below are illustrative and should follow existing Pibo store naming conventions where practical.
+
+The telemetry tables are intentionally separate from session and event rows, but they live in the same SQLite database so debug commands can join session, room, event-log, payload, and telemetry evidence directly. Telemetry must store links and diagnostic metadata, not duplicate full transcripts, normalized event payloads, or full tool arguments.
 
 ### `telemetry_turns`
 
@@ -164,7 +166,7 @@ type TelemetryProviderRequest = {
   bytesReceived?: number;
   errorCategory?: string;
   errorMessage?: string;
-  redactionMode: "summary_only" | "redacted_preview" | "disabled";
+  captureMode: "metadata_only" | "bounded_preview" | "disabled";
 };
 ```
 
@@ -218,7 +220,7 @@ type TelemetryToolCall = {
 
 ### `telemetry_payload_previews`
 
-Optional redacted payload previews. This can be implemented through existing payload storage if the schema supports retention and metadata.
+Optional bounded payload previews. V1 should avoid payload previews unless explicitly approved; most diagnosis should rely on metadata, counters, safe fields, and links back to existing session/event/payload evidence. If previews are implemented, they should be short-lived, bounded, and clearly marked.
 
 ```ts
 type TelemetryPayloadPreview = {
@@ -228,7 +230,7 @@ type TelemetryPayloadPreview = {
   createdAt: string;
   byteSize: number;
   truncated: boolean;
-  redacted: boolean;
+  redacted?: boolean;
   contentType: "application/json" | "text/plain";
   previewText: string;
   retentionClass: "payload_preview";
@@ -407,9 +409,9 @@ Payload fetch is explicit:
 pibo debug telemetry provider pr_... payload raw_42 --max-bytes 2048
 ```
 
-## Redaction Rules
+## Payload and Redaction Rules
 
-Redaction runs before persistence for payload previews and before display for any generated output.
+Default telemetry stores metadata and links, not full content bodies. Redaction is only relevant for optional preview paths or display of header/payload-like values. Volume control is the primary V1 requirement.
 
 Always redact values for keys or headers matching:
 
@@ -433,7 +435,7 @@ Also redact common bearer/key patterns in strings:
 - `sk-...`
 - OAuth access token shapes where safely detectable.
 
-Redaction must mark output as redacted. It must prefer false positives over leaking secrets.
+Optional preview output must mark truncation and, when redaction is applied, mark that redaction happened. Redaction should prefer false positives over leaking secrets, but V1 should avoid needing preview content for normal diagnostics.
 
 ## Retention
 
@@ -471,15 +473,14 @@ Retention classes:
 
 ## Risks / Trade-offs
 
-- Capturing too much raw provider data can leak sensitive content. Mitigate with summary-first storage and redacted previews.
+- Capturing too much raw provider data can duplicate existing content and grow local databases quickly. Mitigate with metadata-first storage, aggregation/sampling, links, and optional bounded previews only when needed.
 - Telemetry writes can add overhead to streaming. Mitigate with batched or best-effort writes and bounded payload work.
 - Parallel tool-call streams can interleave. Mitigate by tracking provider item ids and tool call ids, not one global current item.
 - Too many CLI commands can reduce discoverability. Mitigate with compact help and `next` suggestions.
 
 ## Open Questions
 
-- Store telemetry in `pibo.sqlite` or `pibo-events.sqlite`?
-- Should provider event summaries be per-event or aggregated after a threshold?
-- Should payload previews default to disabled or redacted-on?
-- Should stale detection thresholds live in user settings or system config?
-- Should incident pinning be a V1 feature or later?
+- Should a later release enable payload previews as explicit bounded samples for parser/unknown-event diagnostics?
+- Should provider event summaries be per-event for all events, aggregated by default, or sampled only for unusual/error events to control disk growth?
+- What exact provider/profile settings shape should expose telemetry stale thresholds?
+- What provider/phase-specific stale thresholds should ship in V1?

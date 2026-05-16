@@ -6,8 +6,7 @@
   "files": [
     "dist",
     "context",
-    "skills/builtin/pi-agent-harness/SKILL.md",
-    "skills/builtin/pi-agent-harness/agents/openai.yaml",
+    "skills/builtin/**",
     "README.md",
     "src/mcp/LICENSE.mcp-cli"
   ],
@@ -39,8 +38,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.70.2",
-    "@mariozechner/pi-coding-agent": "^0.70.2",
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "@mdxeditor/editor": "^3.55.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/vite": "^4.2.4",

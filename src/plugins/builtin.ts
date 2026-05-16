@@ -1,3 +1,5 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPiboGatewayToolProfiles } from "../gateway/tool.js";
 import type {
 	PiboExecutionEvent,
@@ -18,6 +20,11 @@ import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 
 const GATEWAY_PROFILE_TOOLS = ["pibo_gateway_send"] as const;
+const PIBO_PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+function builtinSkillPath(name: string): string {
+	return resolve(PIBO_PACKAGE_ROOT, "skills", "builtin", name, "SKILL.md");
+}
 
 const LOGIN_PROVIDERS = [
 	{ id: "openai-codex", name: "OpenAI (ChatGPT Plus/Pro)", authMethods: ["device_code"] },
@@ -130,7 +137,27 @@ export const piboCorePlugin = definePiboPlugin({
 	register(api) {
 		api.registerSkill({
 			name: "pi-agent-harness",
-			path: "skills/builtin/pi-agent-harness/SKILL.md",
+			path: builtinSkillPath("pi-agent-harness"),
+			kind: "builtin",
+		});
+		api.registerSkill({
+			name: "pibo-spec-writing",
+			path: builtinSkillPath("pibo-spec-writing"),
+			kind: "builtin",
+		});
+		api.registerSkill({
+			name: "prd",
+			path: builtinSkillPath("prd"),
+			kind: "builtin",
+		});
+		api.registerSkill({
+			name: "ralph-loop",
+			path: builtinSkillPath("ralph-loop"),
+			kind: "builtin",
+		});
+		api.registerSkill({
+			name: "ralph-prd-json",
+			path: builtinSkillPath("ralph-prd-json"),
 			kind: "builtin",
 		});
 		api.registerTool(createWebSearchToolProfile());

@@ -72,6 +72,8 @@ export type PiboContextBuildNode = {
 	key?: string;
 	provider?: string;
 	bytes?: number;
+	estimatedTokens?: number;
+	estimatedSubtreeTokens?: number;
 	children?: PiboContextBuildNode[];
 	hydratedText?: string;
 	schemaJson?: unknown;
@@ -92,6 +94,7 @@ export type PiboContextBuildSnapshot = {
 	summary: {
 		topLevelNodes: number;
 		totalNodes: number;
+		estimatedTokens: number;
 		warnings: number;
 		errors: number;
 	};
@@ -112,6 +115,33 @@ const SECRET_TEXT_PATTERNS: RegExp[] = [
 
 function byteLength(text: string): number {
 	return Buffer.byteLength(text, "utf-8");
+}
+
+function estimateTokens(text: string): number {
+	if (text.length === 0) return 0;
+	return Math.ceil(text.length / 4);
+}
+
+function jsonText(value: unknown): string {
+	return JSON.stringify(value, null, 2);
+}
+
+function estimateDirectNodeTokens(node: PiboContextBuildNode): number {
+	let tokens = 0;
+	if (node.hydratedText) tokens += estimateTokens(node.hydratedText);
+	if (node.schemaJson !== undefined) tokens += estimateTokens(jsonText(node.schemaJson));
+	if (node.payloadJson !== undefined) tokens += estimateTokens(jsonText(node.payloadJson));
+	if (node.notes?.length) tokens += estimateTokens(node.notes.join("\n"));
+	return tokens;
+}
+
+function applyTokenEstimates(node: PiboContextBuildNode): PiboContextBuildNode {
+	const estimatedTokens = estimateDirectNodeTokens(node);
+	const estimatedChildrenTokens = (node.children ?? []).reduce((total, child) => total + (child.estimatedSubtreeTokens ?? child.estimatedTokens ?? 0), 0);
+	const estimatedSubtreeTokens = estimatedTokens + estimatedChildrenTokens;
+	if (estimatedTokens > 0) node.estimatedTokens = estimatedTokens;
+	if (estimatedSubtreeTokens > 0) node.estimatedSubtreeTokens = estimatedSubtreeTokens;
+	return node;
 }
 
 function redactText(text: string): { value: string; redacted: boolean } {
@@ -196,7 +226,7 @@ function sanitizeNode(input: NodeInput, parentId?: string, order = 0): PiboConte
 		node.children = children.map((child, childIndex) => sanitizeNode(child, input.id, childIndex));
 	}
 	if (redacted) node.redacted = true;
-	return node;
+	return applyTokenEstimates(node);
 }
 
 function countNodes(nodes: readonly PiboContextBuildNode[]): number {
@@ -720,6 +750,7 @@ export async function inspectPiboContextBuild(options: PiboRuntimeOptions = {}):
 		];
 
 		const nodes = topLevel.map((node, index) => sanitizeNode(node, undefined, index));
+		const estimatedTokens = nodes.reduce((total, node) => total + (node.estimatedSubtreeTokens ?? node.estimatedTokens ?? 0), 0);
 		const redactedDiagnostics = diagnostics.map((diagnostic) => {
 			const result = redactText(diagnostic.message);
 			return { ...diagnostic, message: result.value };
@@ -735,6 +766,7 @@ export async function inspectPiboContextBuild(options: PiboRuntimeOptions = {}):
 			summary: {
 				topLevelNodes: nodes.length,
 				totalNodes: countNodes(nodes),
+				estimatedTokens,
 				warnings: redactedDiagnostics.filter((diagnostic) => diagnostic.type === "warning").length,
 				errors: redactedDiagnostics.filter((diagnostic) => diagnostic.type === "error").length,
 			},

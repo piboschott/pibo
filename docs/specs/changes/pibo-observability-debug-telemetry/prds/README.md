@@ -12,6 +12,7 @@ This directory translates the observability/debug telemetry proposal, spec, desi
 - `../spec.md`
 - `../design.md`
 - `../tasks.md`
+- `../decisions.md`
 - `../../../../reports/incident-2026-05-16-stuck-toolcall-stream.md`
 
 ## PRDs
@@ -19,48 +20,80 @@ This directory translates the observability/debug telemetry proposal, spec, desi
 | PRD | Scope | Primary implementers | Ralph JSON |
 |---|---|---|---|
 | `01-product-overview.md` | End-to-end product, personas, success criteria, rollout decisions | Product, engineering leads | `prd_01_product_overview.json` |
-| `02-telemetry-store-redaction-retention.md` | Telemetry schema, typed store/service, redaction, retention, pruning | Storage/runtime engineers | `prd_02_telemetry_store_redaction_retention.json` |
+| `02-telemetry-store-redaction-retention.md` | Telemetry schema, typed store/service, correlation links, volume control, retention, pruning | Storage/runtime engineers | `prd_02_telemetry_store_redaction_retention.json` |
 | `03-runtime-provider-tool-capture.md` | Queue/turn/phase capture, provider stream diagnostics, tool-call progress, tool execution | Runtime/provider engineers | `prd_03_runtime_provider_tool_capture.json` |
 | `04-debug-telemetry-cli.md` | Progressive `pibo debug telemetry` command surface, bounded output, JSON output | CLI/debug engineers | `prd_04_debug_telemetry_cli.json` |
 | `05-signals-staleness-docs-validation.md` | Live hints, stale detection, operational playbooks, validation fixtures, rollout checks | Full-stack/QA/SRE engineers | `prd_05_signals_staleness_docs_validation.json` |
 
 ## Global Decisions Inherited by All PRDs
 
-- Telemetry follows the existing `pibo debug` progressive-discovery pattern: broad summaries first, drill-down by id, explicit payload fetches only.
-- Default command output must be bounded and must not print full provider payloads, headers, transcripts, or secrets.
-- Raw provider payload storage is not a product goal. V1 stores structured summaries and optional redacted bounded previews only.
-- Telemetry records must be explicitly correlated through Pibo Session, room, turn, phase, provider request, upstream response, tool call, run, and event-stream identifiers when available.
+- Telemetry follows the existing `pibo debug` progressive-discovery pattern: broad summaries first, drill-down by id, optional preview fetches only if preview storage is explicitly enabled.
+- Default command output must be bounded and must not print or duplicate full provider payloads, headers, transcripts, normalized event payloads, or full tool arguments.
+- Raw provider payload storage is not a product goal. V1 stores structured summaries, counters, safe structural fields, and links. Payload previews are disabled/unavailable by default unless a later explicit decision enables bounded preview storage.
+- Telemetry records must be explicitly correlated through Pibo Session, room, turn, phase, normalized event, payload metadata, provider request, upstream response, tool call, run, and event-stream identifiers when available.
+- Telemetry must link to existing session/event/payload evidence instead of duplicating full transcripts, normalized event payloads, provider payloads, or tool arguments.
 - Signals and Chat Web status surfaces may expose compact active-phase/stale hints, but detailed evidence lives in telemetry commands.
 - Runtime hardening such as automatic abort/retry on provider inactivity is separate from this telemetry feature.
 - External observability SaaS integration is out of scope; V1 is local-first.
+
+## Authoritative V1 Scope Matrix
+
+| Capability | V1 scope | Later / optional |
+|---|---|---|
+| Storage | Dedicated additive telemetry tables inside unified `pibo.sqlite`; no separate telemetry DB | External observability stores |
+| Content policy | Metadata, counters, byte sizes, safe structural fields, and links only by default | Explicit bounded payload previews if approved later |
+| Runtime capture | Queue/turn/phase, provider request, provider event metadata/aggregates, tool-arg progress, tool execution | Automatic provider recovery/abort/retry |
+| CLI | `pibo debug telemetry` help, sessions, session, turn, provider, provider events, tool, stale, stats, prune; text and `--json` | Chat Web telemetry drill-down UI |
+| Staleness | Read-only provider/profile-aware detection with minimal settings/config and threshold source shown in output | Mutating remediation |
+| Retention | Retention classes, stats, dry-run-first prune, and `incident` retention class | Incident export/pinning workflows beyond retention class |
+| Signals/status | Compact active-phase/stale hints only | Rich UI evidence panel |
+
+## Shared QA Conventions
+
+- **Bounded output:** every list command needs a default limit, hard maximum, truncation/cursor metadata, and JSON equivalent. Use existing debug CLI conventions; if none exist, use default `20` rows and hard maximum `200` rows.
+- **Bounded storage:** telemetry tables store metadata and links, not full content bodies. Byte counts are allowed; body copies are not.
+- **Preview contract:** V1 must handle preview-disabled/unavailable states cleanly. Preview persistence and preview CLI output are optional and must not be implemented as automatic raw capture unless explicitly approved. If enabled later, use default preview size `2048` bytes and hard maximum `16384` bytes unless existing debug conventions already define stricter limits.
+- **Stale threshold output:** stale/status JSON should include the applied threshold and its source: provider/profile override or default.
+- **Dependency policy:** instrumentation must use Pibo-owned wrappers/seams where possible and must not edit `node_modules`.
 
 ## Assumptions / TBD
 
 The source specs intentionally left several choices open. These PRDs use the following implementation assumptions so Ralph can proceed in small loops. Update before execution if the project decides differently.
 
-- **Telemetry storage:** implement in the existing local SQLite store boundary that best matches current debug/event storage conventions; keep schema additive and idempotent.
-- **Payload preview mode:** default to `summary_only`; enable redacted previews only through explicit config or command path.
-- **Default stale threshold:** use 5 minutes unless an existing config value is available.
-- **Chat Web V1 scope:** expose compact signal/status hints only; no full telemetry drill-down panel in V1.
-- **Incident pinning:** defer beyond V1 unless it falls out naturally from retention classes.
+- **Telemetry storage:** use dedicated telemetry tables inside the unified `pibo.sqlite` data store; keep schema additive and idempotent.
+- **Session/event links:** telemetry tables must support bidirectional lookup from sessions/events/payload metadata to telemetry and from telemetry back to session/event evidence.
+- **Payload preview mode:** V1 implements summary-only storage and clear preview-unavailable behavior. Bounded preview persistence is a later opt-in unless explicitly approved before execution.
+- **Default stale threshold:** provider/profile-aware rather than one universal threshold; expose a minimal Provider Settings config option.
+- **Chat Web V1 scope:** no telemetry UI in V1; CLI-only drill-down.
+- **Incident pinning:** include a simple `incident` retention class in V1.
+- **Runtime enablement:** telemetry should be on by default and write failures must be best-effort/non-fatal.
 
 ## Traceability Matrix
 
 | Spec requirement | PRD coverage |
 |---|---|
 | Progressive telemetry discovery | `01`, `04`, `05` |
-| Correlated telemetry records | `02`, `03`, `04` |
+| Correlated telemetry records and bidirectional session/event links | `02`, `03`, `04` |
 | Explicit runtime phases | `02`, `03`, `04`, `05` |
 | Provider request lifecycle | `02`, `03`, `04` |
-| Raw provider summaries, not dumps | `02`, `03`, `04` |
+| Provider event metadata/summaries, not dumps | `02`, `03`, `04` |
 | Tool-call argument progress | `02`, `03`, `04` |
 | Stale active work discovery | `03`, `04`, `05` |
 | Context-budget protection | `01`, `04`, `05` |
-| Safe-by-default redaction | `02`, `03`, `04`, `05` |
+| Safe-by-default bounded output and storage | `02`, `03`, `04`, `05` |
 | Explicit retention and prune behavior | `02`, `04`, `05` |
 | Signal hints with telemetry evidence | `05` |
 | Stable JSON output for agents | `04`, `05` |
 
 ## Ralph Execution Note
 
-Use the JSON files in dependency order. Earlier PRDs establish schema/services before capture and CLI stories consume them. Each story is intended to fit into one Ralph iteration and includes `Typecheck passes` as a completion gate.
+Recommended order:
+
+1. `prd_01_product_overview.json` — documentation/contract guardrails only.
+2. `prd_02_telemetry_store_redaction_retention.json` — schema, service, retention, preview-disabled contract.
+3. `prd_03_runtime_provider_tool_capture.json` — runtime/provider/tool capture on top of the service.
+4. `prd_05_signals_staleness_docs_validation.json` stories for stale settings/detector before CLI stale work.
+5. `prd_04_debug_telemetry_cli.json` — CLI commands consuming store/capture/stale services.
+6. Remaining `prd_05_*` validation/docs stories.
+
+Each story is intended to fit into one Ralph iteration and includes `Typecheck passes` as a completion gate. If a story depends on another PRD, its JSON `notes` field calls that out.

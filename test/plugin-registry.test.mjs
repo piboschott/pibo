@@ -49,6 +49,12 @@ test("default plugin registry builds profiles from registered resources", () => 
 		tool.name === "web_search" && tool.pluginId === "pibo.core" && tool.hasDefinition === false
 	)));
 	assert.deepEqual(registry.getChannels().map((channel) => channel.name), []);
+	assert.deepEqual(
+		registry.getCapabilityCatalog().skills
+			.filter((skill) => skill.kind === "builtin")
+			.map((skill) => skill.name),
+		["pi-agent-harness", "pibo-spec-writing", "prd", "ralph-loop", "ralph-prd-json"],
+	);
 	assert.deepEqual(registry.getGatewayActionInfos(), [
 		{
 			name: "status",
@@ -197,10 +203,14 @@ test("capability catalog exposes installed pibo tool context hints", async () =>
 		const registry = createDefaultPiboPluginRegistry();
 		const catalog = registry.getCapabilityCatalog();
 		const browserUseCatalogEntry = catalog.piboTools.find((tool) => tool.name === "browser-use");
+		const ralphCatalogEntry = catalog.piboTools.find((tool) => tool.name === "ralph");
 
 		assert.ok(browserUseCatalogEntry);
 		assert.match(browserUseCatalogEntry.snippet, /tools env browser-use/);
 		assert.match(browserUseCatalogEntry.snippet, /tools browser-use lease acquire/);
+		assert.ok(ralphCatalogEntry);
+		assert.match(ralphCatalogEntry.snippet, /pibo ralph templates/);
+		assert.match(ralphCatalogEntry.snippet, /pibo tools guide ralph ralph/);
 
 		rmSync(paths.rootDir, { recursive: true, force: true });
 	});

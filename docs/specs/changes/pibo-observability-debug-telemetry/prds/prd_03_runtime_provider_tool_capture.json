@@ -18,14 +18,14 @@
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "Depends on PRD 02 write APIs."
     },
     {
       "id": "US-002",
       "title": "Capture turn phase transitions from runtime events",
       "description": "As an operator, I want explicit phase timelines so that I do not have to infer active state from normalized event names.",
       "acceptanceCriteria": [
-        "Create telemetry phases for queued, message_started, provider_request or provider_stream, reasoning, assistant_text, tool_args, tool_execution, continuation, abort, finish, and error when inferable",
+        "Create telemetry phases for queued, message_started, provider_request or provider_stream, assistant_text, tool_args, tool_execution, finish, abort, error, and timeout when those states occur; capture prompt_build, reasoning, and continuation when visible through existing runtime events",
         "Open phases include startedAt and lastProgressAt; closed phases include endedAt, durationMs, and terminal status",
         "Missing terminal events remain visible as open phases instead of being silently hidden",
         "Phase records link to providerRequestId or toolCallId when known",
@@ -35,41 +35,42 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "Minimum required phase set must be stable for CLI tests; extra visible phases are allowed."
     },
     {
       "id": "US-003",
       "title": "Capture provider request lifecycle telemetry",
       "description": "As a provider engineer, I want lifecycle telemetry for each model request so that I can distinguish no response, partial stream, completion, abort, and error cases.",
       "acceptanceCriteria": [
-        "Assign a local providerRequestId before the provider call starts",
-        "Record provider, API, model, transport, service tier when known, startedAt, response status, redacted header summary, first byte time, completion time, and terminal status where available",
+        "Record provider, API, model, transport, service tier when known, startedAt, HTTP/status summary, header/status summary, first byte time, completion time, terminal status, and links to normalized events where available",
         "Record lastRawEventAt, lastNormalizedEventAt, upstreamResponseId when observed, bytesReceived when feasible, rawEventCount, normalizedEventCount, parseErrorCount, and unknownEventCount",
+        "Metadata telemetry is captured independently of raw Pi event forwarding settings unless telemetry itself is explicitly disabled",
         "Provider telemetry updates are best-effort and do not throw into the streaming path",
-        "Tests cover completed, aborted, errored, and partial/still-open provider request states",
+        "Tests cover completed, aborted, errored, no-first-byte, and partial/still-open provider request states",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "Use Pibo-owned provider wrappers/seams where feasible; do not edit node_modules."
     },
     {
       "id": "US-004",
-      "title": "Capture raw provider event summaries",
-      "description": "As a parser engineer, I want raw event metadata so that I can diagnose unknown or malformed provider events without dumping full payloads.",
+      "title": "Capture bounded provider event metadata",
+      "description": "As a provider engineer, I want provider event metadata, counters, and optional samples so that stream behavior is diagnosable without storing full raw event bodies.",
       "acceptanceCriteria": [
         "For each parsed or attempted provider SSE event, record sequence, receivedAt, eventType, byteSize, parseStatus, normalizedType when produced, item id when known, and toolCallId when known",
         "Increment provider request counters for raw events, normalized events, parse errors, and unknown event types",
         "Malformed JSON records parseStatus invalid_json without crashing the stream parser",
         "Unknown provider event types are counted and listed in event summaries",
+        "Per-event rows may be aggregated or sampled when volume limits require it, but counters and first/last timestamps remain queryable",
         "Tests cover normal event, malformed JSON event, unknown event type, ignored/heartbeat-like event if applicable, and bounded event summary persistence",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "Storage shape comes from PRD 02; CLI listing comes from PRD 04."
     },
     {
       "id": "US-005",
@@ -79,6 +80,7 @@
         "Create or update telemetry tool-call rows when tool-call construction starts",
         "Track firstDeltaAt, lastDeltaAt, argsBytes, args completion time, parseStatus, and safe top-level argument keys when parseable",
         "Track status values for args_started, args_partial, args_complete, executing, ok, error, aborted, and timeout where observable",
+        "Link tool-call telemetry to provider item id/output index when available to avoid interleaved-call mis-correlation",
         "Do not store full tool argument bodies by default",
         "Tests cover empty, partial, valid-but-incomplete, invalid, complete, and never-executed tool-call argument states",
         "Tests pass",
@@ -86,7 +88,7 @@
       ],
       "priority": 5,
       "passes": false,
-      "notes": ""
+      "notes": "Must not store full tool argument bodies by default."
     },
     {
       "id": "US-006",
@@ -96,7 +98,7 @@
         "Record tool execution start time linked to toolCallId, turnId, and piboSessionId where available",
         "Record update count or last update time for long-running tool executions where observable",
         "Record execution end time, duration, status, and safe error category/message for ok, error, and aborted outcomes",
-        "Tool execution telemetry does not include full stdout/stderr or secret-bearing payloads by default",
+        "Tool execution telemetry does not include full stdout/stderr or large payload bodies by default",
         "Tests cover successful tool execution, failed tool execution, and started-without-finish state",
         "Tests pass",
         "Typecheck passes"
@@ -119,7 +121,7 @@
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
+      "notes": "Incident-specific fixture only. Reusable fixture builders and broad validation live in PRD 05."
     }
   ]
 }
