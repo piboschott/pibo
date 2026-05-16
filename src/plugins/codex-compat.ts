@@ -1,6 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { InitialSessionContextBuilder } from "../core/profiles.js";
+import { addPiboNativeToolingContext } from "./native-tooling.js";
 import { definePiboPlugin } from "./registry.js";
 
 const CODEX_COMPAT_TOOL_NAMES = [
@@ -17,10 +18,8 @@ const CODEX_COMPAT_REGISTERED_TOOL_NAMES = [
 const CODEX_COMPAT_SUBAGENTS = ["default", "explorer", "worker"] as const;
 
 const CODEX_BASE_PROMPT_CONTEXT_FILE_KEY = "Codex Base Prompt";
-const PIBO_DEBUG_TOOLING_CONTEXT_FILE_KEY = "Pibo Debug Tooling";
 const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const CODEX_BASE_PROMPT_CONTEXT_FILE_PATH = resolve(PROJECT_ROOT, "context/codex-base-prompt.md");
-const PIBO_DEBUG_TOOLING_CONTEXT_FILE_PATH = resolve(PROJECT_ROOT, "context/pibo-debug-tooling.md");
 
 const toolDescriptions: Record<(typeof CODEX_COMPAT_REGISTERED_TOOL_NAMES)[number], string> = {
 	apply_patch: "Applies a Codex-style patch to workspace files.",
@@ -43,12 +42,6 @@ export const piboCodexCompatPlugin = definePiboPlugin({
 			label: "Codex Base Prompt",
 			path: CODEX_BASE_PROMPT_CONTEXT_FILE_PATH,
 		});
-		api.registerContextFile({
-			key: PIBO_DEBUG_TOOLING_CONTEXT_FILE_KEY,
-			label: "Pibo Debug Tooling",
-			path: PIBO_DEBUG_TOOLING_CONTEXT_FILE_PATH,
-		});
-
 		api.registerSubagents([
 			{
 				name: "default",
@@ -72,7 +65,7 @@ export const piboCodexCompatPlugin = definePiboPlugin({
 			aliases: ["codex"],
 			description: "Codex-compatible Pibo profile with native provider-backed web_search.",
 			create(context) {
-				return new InitialSessionContextBuilder("codex-compat-openai-web")
+				const builder = new InitialSessionContextBuilder("codex-compat-openai-web")
 					.withBuiltinToolNames(["read", "edit", "write"])
 					.withToolPackages({
 						codexCompat: true,
@@ -80,9 +73,8 @@ export const piboCodexCompatPlugin = definePiboPlugin({
 					})
 					.addTools(context.getTools(CODEX_COMPAT_TOOL_NAMES))
 					.addSubagents(context.getSubagents(CODEX_COMPAT_SUBAGENTS))
-					.addContextFile(context.getContextFile(CODEX_BASE_PROMPT_CONTEXT_FILE_KEY))
-					.addContextFile(context.getContextFile(PIBO_DEBUG_TOOLING_CONTEXT_FILE_KEY))
-					.createSession();
+					.addContextFile(context.getContextFile(CODEX_BASE_PROMPT_CONTEXT_FILE_KEY));
+				return addPiboNativeToolingContext(builder, context).createSession();
 			},
 		});
 	},

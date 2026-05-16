@@ -1,8 +1,8 @@
-# Pibo Debug Tooling
+# Pibo Native Tooling
 
 Start with `pibo debug --help`.
 
-Use:
+Use Pibo-owned operator/debug CLI capabilities before ad hoc scripts:
 - `pibo debug session <ps_...>` for session metadata and event summaries.
 - `pibo debug trace <ps_...> --check` for Chat Web trace reconstruction.
 - `pibo debug events <ps_...>` for compact event payload inspection.

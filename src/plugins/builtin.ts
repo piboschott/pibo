@@ -16,6 +16,7 @@ import { createRuntimeToolProfile } from "../tools/runtime/tool.js";
 import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } from "../auth/login-actions.js";
 import { loadModelCatalog } from "../apps/chat/model-catalog.js";
 import { piboCodexCompatPlugin } from "./codex-compat.js";
+import { addPiboNativeToolingContext, registerPiboNativeTooling } from "./native-tooling.js";
 import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 
@@ -127,8 +128,11 @@ function createBaseProfileBuilder(
 	profileName: string,
 	context: PiboProfileBuildContext,
 ): InitialSessionContextBuilder {
-	return new InitialSessionContextBuilder(profileName)
-		.addSkill(context.getSkill("pi-agent-harness"));
+	return addPiboNativeToolingContext(
+		new InitialSessionContextBuilder(profileName)
+			.addSkill(context.getSkill("pi-agent-harness")),
+		context,
+	);
 }
 
 export const piboCorePlugin = definePiboPlugin({
@@ -162,6 +166,7 @@ export const piboCorePlugin = definePiboPlugin({
 		});
 		api.registerTool(createWebSearchToolProfile());
 		api.registerTool(createRuntimeToolProfile());
+		registerPiboNativeTooling(api);
 		api.registerProfile({
 			name: "pibo-kimi-coding",
 			aliases: ["kimi", "kimi-coding"],

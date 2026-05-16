@@ -17,14 +17,15 @@ function findNode(nodes, predicate) {
 	return undefined;
 }
 
-test("codex context build includes compact Pibo debug tooling context", async () => {
+test("codex context build includes compact Pibo native tooling context", async () => {
 	const snapshot = await inspectPiboContextBuild({ profile: createDefaultPiboPluginRegistry().createProfile("codex") });
-	const debugTooling = findNode(snapshot.nodes, (node) => node.path?.endsWith("context/pibo-debug-tooling.md"));
+	const nativeTooling = findNode(snapshot.nodes, (node) => node.path?.endsWith("context/pibo-native-tooling.md"));
 
-	assert.ok(debugTooling, "debug tooling context file should exist");
-	assert.match(debugTooling.hydratedText, /Start with `pibo debug --help`/);
-	assert.match(debugTooling.hydratedText, /`pibo debug web \.\.\.`/);
-	assert.doesNotMatch(debugTooling.hydratedText, /AGENTS\.md/);
+	assert.ok(nativeTooling, "native tooling context file should exist");
+	assert.match(nativeTooling.hydratedText, /^# Pibo Native Tooling/m);
+	assert.match(nativeTooling.hydratedText, /Start with `pibo debug --help`/);
+	assert.match(nativeTooling.hydratedText, /`pibo debug web \.\.\.`/);
+	assert.doesNotMatch(nativeTooling.hydratedText, /AGENTS\.md/);
 });
 
 test("context build snapshot exposes runtime context and provider-backed web search without final prompt duplicate", async () => {
