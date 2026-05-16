@@ -177,6 +177,95 @@ test("runtime telemetry keeps partial tool args open and links completed tool ex
 	}
 });
 
+test("runtime telemetry captures tool-call argument progress metadata without storing args", () => {
+	const store = createStore();
+	try {
+		const recorder = new PiboRuntimeTelemetryRecorder(store.telemetry);
+		const eventId = "evt_tool_arg_metadata";
+		recorder.recordOutput({ type: "message_queued", piboSessionId: session.id, eventId, queuedMessages: 1, text: "tools", source: "user" }, { session, status: status(1) });
+		recorder.recordOutput({ type: "message_started", piboSessionId: session.id, eventId, text: "tools", source: "user" }, { session, status: status(0) });
+
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_empty", toolName: "bash", args: "", argsComplete: false }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_partial", toolName: "bash", args: "{\"command\":", argsComplete: false }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_invalid", toolName: "bash", args: "{not json]", argsComplete: false }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_valid_incomplete", toolName: "bash", args: { command: "secret value" }, argsComplete: false }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_complete", toolName: "read", args: { path: "secret/path.txt" }, argsComplete: true }, { session, status: status(0) });
+
+		assert.equal(store.telemetry.getToolCall("call_empty").status, "args_started");
+		assert.equal(store.telemetry.getToolCall("call_empty").parseStatus, "empty");
+		assert.equal(store.telemetry.getToolCall("call_partial").parseStatus, "partial");
+		assert.equal(store.telemetry.getToolCall("call_invalid").parseStatus, "invalid");
+		const incomplete = store.telemetry.getToolCall("call_valid_incomplete");
+		assert.equal(incomplete.status, "args_partial");
+		assert.equal(incomplete.parseStatus, "valid");
+		assert.deepEqual(incomplete.safeArgKeys, ["command"]);
+		assert.ok(incomplete.firstDeltaAt);
+		assert.ok(incomplete.lastDeltaAt);
+		const complete = store.telemetry.getToolCall("call_complete");
+		assert.equal(complete.status, "args_complete");
+		assert.equal(complete.parseStatus, "complete");
+		assert.ok(complete.argsCompletedAt);
+		assert.deepEqual(complete.safeArgKeys, ["path"]);
+		assert.equal(JSON.stringify(store.telemetry.getTurnTimeline(turnIdForEvent(eventId))).includes("secret value"), false);
+		assert.equal(JSON.stringify(complete).includes("secret/path.txt"), false);
+	} finally {
+		store.close();
+	}
+});
+
+test("runtime telemetry captures tool execution lifecycle rows", () => {
+	const store = createStore();
+	try {
+		const recorder = new PiboRuntimeTelemetryRecorder(store.telemetry);
+		const eventId = "evt_tool_execution_rows";
+		recorder.recordOutput({ type: "message_queued", piboSessionId: session.id, eventId, queuedMessages: 1, text: "exec", source: "user" }, { session, status: status(1) });
+		recorder.recordOutput({ type: "message_started", piboSessionId: session.id, eventId, text: "exec", source: "user" }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_exec_ok", toolName: "bash", args: { command: "echo secret" }, argsComplete: true }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_started", piboSessionId: session.id, eventId, toolCallId: "call_exec_ok", toolName: "bash", args: { command: "echo secret" } }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_updated", piboSessionId: session.id, eventId, toolCallId: "call_exec_ok", toolName: "bash", args: { command: "echo secret" }, partialResult: "large stdout not persisted" }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_finished", piboSessionId: session.id, eventId, toolCallId: "call_exec_ok", toolName: "bash", result: "full stdout not persisted", isError: false }, { session, status: status(0) });
+
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_exec_error", toolName: "read", args: { path: "secret.txt" }, argsComplete: true }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_started", piboSessionId: session.id, eventId, toolCallId: "call_exec_error", toolName: "read", args: { path: "secret.txt" } }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_finished", piboSessionId: session.id, eventId, toolCallId: "call_exec_error", toolName: "read", result: { message: "permission denied", stdout: "large secret stdout" }, isError: true }, { session, status: status(0) });
+
+		const ok = store.telemetry.getToolCall("call_exec_ok");
+		assert.equal(ok.status, "ok");
+		assert.ok(ok.executionStartedAt);
+		assert.ok(ok.executionEndedAt);
+		assert.equal(typeof ok.durationMs, "number");
+		assert.equal(JSON.stringify(ok).includes("echo secret"), false);
+		assert.equal(JSON.stringify(ok).includes("full stdout"), false);
+		const failed = store.telemetry.getToolCall("call_exec_error");
+		assert.equal(failed.status, "error");
+		assert.equal(failed.errorCategory, "tool_error");
+		assert.equal(failed.errorMessage, "permission denied");
+		assert.equal(JSON.stringify(failed).includes("large secret stdout"), false);
+	} finally {
+		store.close();
+	}
+});
+
+test("runtime telemetry marks started tool execution aborted when the turn aborts", () => {
+	const store = createStore();
+	try {
+		const recorder = new PiboRuntimeTelemetryRecorder(store.telemetry);
+		const eventId = "evt_tool_execution_abort";
+		recorder.recordOutput({ type: "message_queued", piboSessionId: session.id, eventId, queuedMessages: 1, text: "abort exec", source: "user" }, { session, status: status(1) });
+		recorder.recordOutput({ type: "message_started", piboSessionId: session.id, eventId, text: "abort exec", source: "user" }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_call", piboSessionId: session.id, eventId, toolCallId: "call_abort_exec", toolName: "bash", args: { command: "sleep 10" }, argsComplete: true }, { session, status: status(0) });
+		recorder.recordOutput({ type: "tool_execution_started", piboSessionId: session.id, eventId, toolCallId: "call_abort_exec", toolName: "bash", args: { command: "sleep 10" } }, { session, status: status(0) });
+		recorder.recordOutput({ type: "execution_result", piboSessionId: session.id, action: "abort", result: { aborted: true } }, { session, status: status(0) });
+
+		const aborted = store.telemetry.getToolCall("call_abort_exec");
+		assert.equal(aborted.status, "aborted");
+		assert.equal(aborted.errorCategory, "runtime_aborted");
+		assert.ok(aborted.executionEndedAt);
+	} finally {
+		store.close();
+	}
+});
+
 test("runtime telemetry marks open normalized phases errored when the turn errors", () => {
 	const store = createStore();
 	try {

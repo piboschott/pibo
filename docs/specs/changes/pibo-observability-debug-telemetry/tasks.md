@@ -23,8 +23,8 @@
 - [x] 3.3 Capture provider request lifecycle around stream calls.
 - [x] 3.4 Capture bounded provider event metadata/summaries in OpenAI/Codex Responses stream parser without duplicating raw provider bodies.
 - [x] 3.5 Capture parse error and unknown-event counters.
-- [ ] 3.6 Capture tool-call argument progress metadata, including deltas as counters and timestamps.
-- [ ] 3.7 Capture tool execution start/update/finish summaries.
+- [x] 3.6 Capture tool-call argument progress metadata, including deltas as counters and timestamps.
+- [x] 3.7 Capture tool execution start/update/finish summaries.
 - [ ] 3.8 Add tests for partial tool-call stream, malformed SSE event, unknown event type, and interleaved tool calls where feasible.
 
 ## 4. Signals and Staleness Hints

@@ -132,8 +132,20 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Must not store full tool argument bodies by default."
+      "passes": true,
+      "notes": "Completed in tool telemetry batch on 2026-05-16. Captures normalized tool_call snapshots and Pi toolcall provider metadata without storing full argument bodies.",
+      "status": "complete",
+      "pass": true,
+      "validation": [
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run typecheck'",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run build >/tmp/pibo-runtime-tool-build.log 2>&1 && node --test test/runtime-telemetry.test.mjs test/telemetry-store.test.mjs' (25 passing tests)",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm test' (421 passing tests)"
+      ],
+      "implementationNotes": [
+        "Runtime telemetry now upserts telemetry_tool_calls rows for tool_call and Pi toolcall_start/toolcall_delta/toolcall_end metadata with toolCallId, providerRequestId, provider item id, status, first/last delta timestamps, argsBytes, argsCompletedAt, parseStatus, and safe top-level argument keys.",
+        "Tool argument telemetry stores byte counts, parse state, safe keys, ids, and timestamps only; full argument bodies are not persisted in telemetry rows.",
+        "Tests cover empty, partial JSON, invalid JSON, valid-but-incomplete, complete, and never-executed argument states."
+      ]
     },
     {
       "id": "US-006",
@@ -149,8 +161,20 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in tool telemetry batch on 2026-05-16. Uses normalized tool execution events and runtime terminal events to summarize starts, progress, finishes, errors, and aborts without stdout/stderr dumps.",
+      "status": "complete",
+      "pass": true,
+      "validation": [
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run typecheck'",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm run build >/tmp/pibo-runtime-tool-build.log 2>&1 && node --test test/runtime-telemetry.test.mjs test/telemetry-store.test.mjs' (25 passing tests)",
+        "docker exec pibo-dev-ralph-observability-telemetry bash -lc 'cd /workspace && npm test' (421 passing tests)"
+      ],
+      "implementationNotes": [
+        "Tool execution start/update/finish events now update telemetry_tool_calls with executionStartedAt, executionEndedAt, durationMs, status, updatedAt as the last-progress timestamp, and safe tool error category/message.",
+        "Runtime abort/error/timeout terminal paths now mark non-terminal tool calls with aborted/error/timeout status where observable.",
+        "Tests cover successful execution, failed execution with safe error summary, and started-without-finish execution aborted by the turn."
+      ]
     },
     {
       "id": "US-007",

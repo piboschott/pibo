@@ -8,6 +8,8 @@ import {
 	type TelemetryProviderEventParseStatus,
 	type TelemetryProviderRequestStatus,
 	type TelemetryStore,
+	type TelemetryToolArgsParseStatus,
+	type TelemetryToolCallStatus,
 	type TelemetryTurnSource,
 	type TelemetryTurnStatus,
 } from "../data/telemetry.js";
@@ -21,11 +23,15 @@ type RuntimeTelemetryContext = {
 
 type PiProviderEventSummary = {
 	eventType: string;
+	assistantEventType?: string;
 	parseStatus: TelemetryProviderEventParseStatus;
 	normalizedType?: string;
 	byteSize: number;
 	itemId?: string;
 	toolCallId?: string;
+	toolName?: string;
+	argsBytes?: number;
+	safeArgKeys?: string[];
 	safeFields: PiboJsonObject;
 	upstreamResponseId?: string;
 };
@@ -142,6 +148,9 @@ export class PiboRuntimeTelemetryRecorder {
 			toolCallId: summary.toolCallId,
 			safeFields: summary.safeFields,
 		});
+		if (summary.toolCallId && summary.assistantEventType?.startsWith("toolcall_")) {
+			this.recordPiToolCallProgress(turn, providerRequest.providerRequestId, summary, now);
+		}
 		this.startOrProgressPhase(turn, "provider_stream", now, "provider event metadata", { providerRequestId: providerRequest.providerRequestId });
 	}
 
@@ -270,8 +279,16 @@ export class PiboRuntimeTelemetryRecorder {
 		this.closeOpenPhasesByName(turn.turnId, "message_started", "ok", now);
 		this.closeOpenPhasesByName(turn.turnId, "assistant_text", "ok", now);
 		this.closeOpenPhasesByName(turn.turnId, "reasoning", "ok", now);
-		const providerRequest = this.activeProviderRequestForTurn(turn.turnId);
-		this.progressProviderRequest(providerRequest, now);
+		const providerRequest = this.activeProviderRequestForTurn(turn.turnId) ?? this.latestProviderRequestForTurn(turn.turnId);
+		this.progressProviderRequest(providerRequest && !isTerminalProviderStatus(providerRequest.status) ? providerRequest : undefined, now);
+		this.upsertToolCallArgs(turn, {
+			toolCallId: event.toolCallId,
+			toolName: event.toolName,
+			args: event.args,
+			argsComplete: event.argsComplete,
+			providerRequestId: providerRequest?.providerRequestId,
+			now,
+		});
 		this.startOrProgressPhase(turn, "provider_stream", now, "normalized provider stream progress", { providerRequestId: providerRequest?.providerRequestId });
 		const phase = this.startOrProgressPhase(turn, "tool_args", now, event.argsComplete ? "tool arguments complete" : "tool arguments in progress", {
 			providerRequestId: providerRequest?.providerRequestId,
@@ -290,7 +307,30 @@ export class PiboRuntimeTelemetryRecorder {
 		const turn = this.turnContextForEvent(event.piboSessionId, event.eventId, undefined, context) ?? this.activeTurnContext(event.piboSessionId, context);
 		if (!turn) return;
 		const now = new Date().toISOString();
+		const existing = this.store?.getToolCall(event.toolCallId);
+		const args = toolArgsMetadata(event.args, true);
+		const providerRequestId = existing?.providerRequestId ?? this.latestProviderRequestForTurn(turn.turnId)?.providerRequestId;
 		this.closeOpenPhasesByName(turn.turnId, "tool_args", "ok", now);
+		this.telemetry.upsertToolCall({
+			toolCallId: event.toolCallId,
+			piboSessionId: turn.piboSessionId,
+			rootSessionId: turn.rootSessionId,
+			roomId: turn.roomId,
+			turnId: turn.turnId,
+			providerRequestId,
+			providerItemId: itemIdFromToolCallId(event.toolCallId),
+			toolName: event.toolName,
+			status: "executing",
+			argsStartedAt: existing?.argsStartedAt ?? now,
+			firstDeltaAt: existing?.firstDeltaAt ?? (args.argsBytes > 0 ? now : undefined),
+			lastDeltaAt: existing?.lastDeltaAt ?? (args.argsBytes > 0 ? now : undefined),
+			argsCompletedAt: existing?.argsCompletedAt ?? now,
+			executionStartedAt: existing?.executionStartedAt ?? now,
+			argsBytes: Math.max(existing?.argsBytes ?? 0, args.argsBytes),
+			parseStatus: args.parseStatus === "empty" ? existing?.parseStatus ?? "complete" : args.parseStatus,
+			safeArgKeys: args.safeArgKeys.length > 0 ? args.safeArgKeys : existing?.safeArgKeys,
+			eventId: turn.eventId,
+		});
 		this.startOrProgressPhase(turn, "tool_execution", now, event.type === "tool_execution_started" ? "tool execution started" : "tool execution progress", {
 			toolCallId: event.toolCallId,
 			updateTurn: true,
@@ -304,11 +344,88 @@ export class PiboRuntimeTelemetryRecorder {
 		const turn = this.turnContextForEvent(event.piboSessionId, event.eventId, undefined, context) ?? this.activeTurnContext(event.piboSessionId, context);
 		if (!turn) return;
 		const now = new Date().toISOString();
+		const existing = this.store?.getToolCall(event.toolCallId);
+		const executionStartedAt = existing?.executionStartedAt;
+		this.telemetry.upsertToolCall({
+			toolCallId: event.toolCallId,
+			piboSessionId: turn.piboSessionId,
+			rootSessionId: turn.rootSessionId,
+			roomId: turn.roomId,
+			turnId: turn.turnId,
+			providerRequestId: existing?.providerRequestId ?? this.latestProviderRequestForTurn(turn.turnId)?.providerRequestId,
+			providerItemId: existing?.providerItemId ?? itemIdFromToolCallId(event.toolCallId),
+			toolName: event.toolName,
+			status: event.isError ? "error" : "ok",
+			executionStartedAt,
+			executionEndedAt: now,
+			durationMs: durationMs(executionStartedAt, now),
+			argsBytes: existing?.argsBytes ?? 0,
+			parseStatus: existing?.parseStatus ?? "empty",
+			safeArgKeys: existing?.safeArgKeys ?? [],
+			eventId: turn.eventId,
+			errorCategory: event.isError ? "tool_error" : undefined,
+			errorMessage: event.isError ? safeErrorMessage(event.result) : undefined,
+		});
 		this.startOrProgressPhase(turn, "tool_execution", now, event.isError ? "tool execution failed" : "tool execution finished", {
 			toolCallId: event.toolCallId,
 			updateTurn: true,
 		});
 		this.closeOpenPhasesByName(turn.turnId, "tool_execution", event.isError ? "error" : "ok", now, event.isError ? "tool execution failed" : "tool execution finished");
+	}
+
+	private recordPiToolCallProgress(turn: TurnContext, providerRequestId: string, summary: PiProviderEventSummary, now: string): void {
+		if (!summary.toolCallId) return;
+		const existing = this.store?.getToolCall(summary.toolCallId);
+		const argsBytes = Math.max(existing?.argsBytes ?? 0, summary.argsBytes ?? 0, numericSafeField(summary.safeFields.deltaBytes));
+		const status = toolStatusForPiAssistantEvent(summary.assistantEventType, argsBytes, existing?.status);
+		const parseStatus = summary.assistantEventType === "toolcall_end" ? "complete" : argsBytes > 0 ? existing?.parseStatus === "complete" ? "complete" : "partial" : existing?.parseStatus ?? "empty";
+		this.telemetry.upsertToolCall({
+			toolCallId: summary.toolCallId,
+			piboSessionId: turn.piboSessionId,
+			rootSessionId: turn.rootSessionId,
+			roomId: turn.roomId,
+			turnId: turn.turnId,
+			providerRequestId,
+			providerItemId: summary.itemId ?? itemIdFromToolCallId(summary.toolCallId),
+			toolName: summary.toolName ?? existing?.toolName ?? "tool",
+			status,
+			argsStartedAt: existing?.argsStartedAt ?? now,
+			firstDeltaAt: existing?.firstDeltaAt ?? (argsBytes > 0 ? now : undefined),
+			lastDeltaAt: argsBytes > 0 ? now : existing?.lastDeltaAt,
+			argsCompletedAt: summary.assistantEventType === "toolcall_end" ? now : existing?.argsCompletedAt,
+			argsBytes,
+			parseStatus,
+			safeArgKeys: summary.safeArgKeys && summary.safeArgKeys.length > 0 ? summary.safeArgKeys : existing?.safeArgKeys ?? [],
+			eventId: turn.eventId,
+		});
+	}
+
+	private upsertToolCallArgs(
+		turn: TurnContext,
+		input: { toolCallId: string; toolName: string; args: unknown; argsComplete: boolean; providerRequestId?: string; now: string },
+	): void {
+		const existing = this.store?.getToolCall(input.toolCallId);
+		const args = toolArgsMetadata(input.args, input.argsComplete);
+		const hasArgsProgress = args.argsBytes > 0;
+		this.telemetry.upsertToolCall({
+			toolCallId: input.toolCallId,
+			piboSessionId: turn.piboSessionId,
+			rootSessionId: turn.rootSessionId,
+			roomId: turn.roomId,
+			turnId: turn.turnId,
+			providerRequestId: input.providerRequestId,
+			providerItemId: itemIdFromToolCallId(input.toolCallId),
+			toolName: input.toolName,
+			status: input.argsComplete ? "args_complete" : hasArgsProgress ? "args_partial" : "args_started",
+			argsStartedAt: existing?.argsStartedAt ?? input.now,
+			firstDeltaAt: existing?.firstDeltaAt ?? (hasArgsProgress ? input.now : undefined),
+			lastDeltaAt: hasArgsProgress ? input.now : existing?.lastDeltaAt,
+			argsCompletedAt: input.argsComplete ? input.now : existing?.argsCompletedAt,
+			argsBytes: Math.max(existing?.argsBytes ?? 0, args.argsBytes),
+			parseStatus: args.parseStatus,
+			safeArgKeys: args.safeArgKeys.length > 0 ? args.safeArgKeys : existing?.safeArgKeys ?? [],
+			eventId: turn.eventId,
+		});
 	}
 
 	private recordTurnProgress(
@@ -334,6 +451,7 @@ export class PiboRuntimeTelemetryRecorder {
 		const now = new Date().toISOString();
 		this.finishOpenPhases(turn.turnId, terminalPhaseStatus(status), now);
 		this.finishActiveProviderRequests(turn.turnId, providerStatusForTurnStatus(status), now, summary);
+		this.finishActiveToolCalls(turn.turnId, status, now, summary);
 		this.telemetry.upsertPhase({
 			phaseId: phaseId(turn.turnId, phaseName),
 			turnId: turn.turnId,
@@ -441,6 +559,11 @@ export class PiboRuntimeTelemetryRecorder {
 		return [...(timeline?.providerRequests ?? [])].reverse().find((request) => !isTerminalProviderStatus(request.status));
 	}
 
+	private latestProviderRequestForTurn(turnId: string): StoredTelemetryProviderRequest | undefined {
+		const timeline = this.store?.getTurnTimeline(turnId, { limit: 100 });
+		return timeline?.providerRequests.at(-1);
+	}
+
 	private progressProviderRequest(request: StoredTelemetryProviderRequest | undefined, now: string): void {
 		if (!request) return;
 		this.upsertProviderRequestFromExisting(request, {
@@ -459,6 +582,36 @@ export class PiboRuntimeTelemetryRecorder {
 				completedAt: now,
 				errorCategory: status === "error" ? "runtime_error" : undefined,
 				errorMessage: status === "error" ? safeSummary(summary) : undefined,
+			});
+		}
+	}
+
+	private finishActiveToolCalls(turnId: string, status: TelemetryTurnStatus, now: string, summary: string): void {
+		if (status === "ok") return;
+		const timeline = this.store?.getTurnTimeline(turnId, { limit: 100 });
+		for (const toolCall of timeline?.toolCalls ?? []) {
+			if (isTerminalToolCallStatus(toolCall.status)) continue;
+			const terminalStatus = terminalToolCallStatus(status);
+			this.telemetry.upsertToolCall({
+				toolCallId: toolCall.toolCallId,
+				piboSessionId: toolCall.piboSessionId,
+				rootSessionId: toolCall.rootSessionId,
+				roomId: toolCall.roomId,
+				turnId: toolCall.turnId,
+				providerRequestId: toolCall.providerRequestId,
+				providerItemId: toolCall.providerItemId,
+				outputIndex: toolCall.outputIndex,
+				toolName: toolCall.toolName,
+				status: terminalStatus,
+				executionStartedAt: toolCall.executionStartedAt,
+				executionEndedAt: toolCall.executionStartedAt ? now : toolCall.executionEndedAt,
+				durationMs: toolCall.executionStartedAt ? durationMs(toolCall.executionStartedAt, now) : toolCall.durationMs,
+				argsBytes: toolCall.argsBytes,
+				parseStatus: toolCall.parseStatus,
+				safeArgKeys: toolCall.safeArgKeys,
+				eventId: toolCall.eventId,
+				errorCategory: terminalStatus === "error" ? "runtime_error" : terminalStatus === "aborted" ? "runtime_aborted" : "runtime_timeout",
+				errorMessage: terminalStatus === "error" ? safeSummary(summary) : undefined,
 			});
 		}
 	}
@@ -562,7 +715,9 @@ function providerEventSummaryForPiEvent(event: unknown): PiProviderEventSummary 
 	const toolName = stringValue(toolCall?.name) ?? stringValue(candidate.toolName) ?? toolNameFromMessage(candidate.message);
 	const deltaBytes = typeof candidate.assistantMessageEvent?.delta === "string" ? utf8Bytes(candidate.assistantMessageEvent.delta) : undefined;
 	const contentBytes = typeof candidate.assistantMessageEvent?.content === "string" ? utf8Bytes(candidate.assistantMessageEvent.content) : undefined;
-	const argsBytes = toolCall?.arguments === undefined ? argsBytesFromMessage(candidate.message) : safeJsonByteSize(toolCall.arguments);
+	const argsValue = toolCall?.arguments === undefined ? argsFromMessage(candidate.message) : toolCall.arguments;
+	const argsBytes = argsValue === undefined ? undefined : safeJsonByteSize(argsValue);
+	const safeArgKeys = argsValue === undefined ? undefined : toolArgsMetadata(argsValue, assistantType === "toolcall_end").safeArgKeys;
 	const upstreamResponseId = responseIdFromMessage(candidate.message);
 	const safeFields: PiboJsonObject = {
 		piEventType: String(candidate.type),
@@ -578,11 +733,15 @@ function providerEventSummaryForPiEvent(event: unknown): PiProviderEventSummary 
 	const byteSize = safeJsonByteSize(safeFields);
 	return {
 		eventType,
+		assistantEventType: assistantType,
 		parseStatus,
 		normalizedType: normalizedTypeForPiAssistantEvent(assistantType),
 		byteSize,
 		itemId: itemIdFromToolCallId(toolCallId),
 		toolCallId,
+		toolName,
+		argsBytes,
+		safeArgKeys,
 		safeFields,
 		upstreamResponseId,
 	};
@@ -614,6 +773,71 @@ function normalizedTypeForPiAssistantEvent(type: string | undefined): string | u
 	return undefined;
 }
 
+function toolArgsMetadata(args: unknown, argsComplete: boolean): { argsBytes: number; parseStatus: TelemetryToolArgsParseStatus; safeArgKeys: string[] } {
+	if (args === undefined || args === null || args === "") return { argsBytes: 0, parseStatus: argsComplete ? "invalid" : "empty", safeArgKeys: [] };
+	const argsBytes = typeof args === "string" ? utf8Bytes(args) : safeJsonByteSize(args);
+	if (typeof args === "string") {
+		const trimmed = args.trim();
+		if (!trimmed) return { argsBytes: 0, parseStatus: argsComplete ? "invalid" : "empty", safeArgKeys: [] };
+		try {
+			const parsed = JSON.parse(trimmed) as unknown;
+			return { argsBytes, parseStatus: argsComplete ? "complete" : "valid", safeArgKeys: safeTopLevelKeys(parsed) };
+		} catch (error) {
+			return { argsBytes, parseStatus: isLikelyPartialJson(trimmed, error) ? "partial" : "invalid", safeArgKeys: [] };
+		}
+	}
+	return { argsBytes, parseStatus: argsComplete ? "complete" : "valid", safeArgKeys: safeTopLevelKeys(args) };
+}
+
+function safeTopLevelKeys(value: unknown, limit = 50): string[] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+	return Object.keys(value).filter((key) => key.length <= 128).slice(0, limit);
+}
+
+function isLikelyPartialJson(value: string, error: unknown): boolean {
+	if (error instanceof SyntaxError && /end of JSON input/i.test(error.message)) return true;
+	const opens = (value.match(/[\[{]/g) ?? []).length;
+	const closes = (value.match(/[\]}]/g) ?? []).length;
+	return opens > closes || /[:,]$/.test(value);
+}
+
+function toolStatusForPiAssistantEvent(type: string | undefined, argsBytes: number, existingStatus?: TelemetryToolCallStatus): TelemetryToolCallStatus {
+	if (type === "toolcall_end") return "args_complete";
+	if (type === "toolcall_delta") return argsBytes > 0 ? "args_partial" : existingStatus ?? "args_started";
+	return existingStatus ?? "args_started";
+}
+
+function isTerminalToolCallStatus(status: TelemetryToolCallStatus): boolean {
+	return status === "ok" || status === "error" || status === "aborted" || status === "timeout";
+}
+
+function terminalToolCallStatus(status: TelemetryTurnStatus): Extract<TelemetryToolCallStatus, "error" | "aborted" | "timeout"> {
+	if (status === "aborted") return "aborted";
+	if (status === "timeout") return "timeout";
+	return "error";
+}
+
+function durationMs(startedAt: string | undefined, endedAt: string): number | undefined {
+	if (!startedAt) return undefined;
+	const startMs = Date.parse(startedAt);
+	const endMs = Date.parse(endedAt);
+	return Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : undefined;
+}
+
+function numericSafeField(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function safeErrorMessage(value: unknown): string | undefined {
+	if (typeof value === "string") return safeSummary(value);
+	if (value && typeof value === "object") {
+		const record = value as { message?: unknown; error?: unknown; status?: unknown };
+		const message = stringValue(record.message) ?? stringValue(record.error) ?? stringValue(record.status);
+		return message ? safeSummary(message) : undefined;
+	}
+	return undefined;
+}
+
 function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -634,9 +858,9 @@ function toolNameFromMessage(message: unknown): string | undefined {
 	return stringValue(block?.name);
 }
 
-function argsBytesFromMessage(message: unknown): number | undefined {
+function argsFromMessage(message: unknown): unknown {
 	const block = lastToolCallBlock(message);
-	return block && "arguments" in block ? safeJsonByteSize(block.arguments) : undefined;
+	return block && "arguments" in block ? block.arguments : undefined;
 }
 
 function lastToolCallBlock(message: unknown): { id?: unknown; name?: unknown; arguments?: unknown } | undefined {
