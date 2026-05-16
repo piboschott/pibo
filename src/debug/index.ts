@@ -177,9 +177,15 @@ async function runDebugTelemetry(args: string[]): Promise<void> {
 	const options = parseOptions(args.slice(1));
 	const { formatJson } = await import("./sql.js");
 	const {
+		formatTelemetryProvider,
+		formatTelemetryProviderEvents,
+		formatTelemetryProviderPayload,
 		formatTelemetrySession,
 		formatTelemetrySessions,
 		formatTelemetryTurn,
+		inspectTelemetryProvider,
+		inspectTelemetryProviderEvents,
+		inspectTelemetryProviderPayload,
 		inspectTelemetrySession,
 		inspectTelemetrySessions,
 		inspectTelemetryTurn,
@@ -205,6 +211,30 @@ async function runDebugTelemetry(args: string[]): Promise<void> {
 		const result = inspectTelemetryTurn(store, turnIdOrEventId, { limit: options.limit, events: options.events });
 		if (options.json) console.log(formatJson(result));
 		else console.log(formatTelemetryTurn(result));
+		return;
+	}
+	if (command === "provider") {
+		const providerRequestId = options.positionals[0];
+		if (!providerRequestId) throw new Error("pibo debug telemetry provider requires <provider-request-id>");
+		const subcommand = options.positionals[1];
+		if (subcommand === "events") {
+			const result = inspectTelemetryProviderEvents(store, providerRequestId, { limit: options.limit, after: options.after, fields: options.fields });
+			if (options.json) console.log(formatJson(result));
+			else console.log(formatTelemetryProviderEvents(result));
+			return;
+		}
+		if (subcommand === "payload") {
+			const payloadRef = options.positionals[2];
+			if (!payloadRef) throw new Error("pibo debug telemetry provider <provider-request-id> payload requires <preview-or-event-summary-id>");
+			const result = inspectTelemetryProviderPayload(store, providerRequestId, payloadRef);
+			if (options.json) console.log(formatJson(result));
+			else console.log(formatTelemetryProviderPayload(result));
+			return;
+		}
+		if (subcommand) throw new Error(`Unknown pibo debug telemetry provider subcommand "${subcommand}". Run pibo debug telemetry --help.`);
+		const result = inspectTelemetryProvider(store, providerRequestId);
+		if (options.json) console.log(formatJson(result));
+		else console.log(formatTelemetryProvider(result));
 		return;
 	}
 	throw new Error(`Unknown pibo debug telemetry command "${command}". Run pibo debug telemetry --help.`);
@@ -663,6 +693,8 @@ Usage:
   pibo debug telemetry session <pibo-session-id> [--limit n] [--json]
   pibo debug telemetry turn <turn-id-or-event-id> [--events] [--limit n] [--json]
   pibo debug telemetry provider <provider-request-id> [--json]
+  pibo debug telemetry provider <provider-request-id> events [--after seq] [--fields a,b] [--limit n] [--json]
+  pibo debug telemetry provider <provider-request-id> payload <preview-or-event-summary-id> [--json]
   pibo debug telemetry tool <tool-call-id> [--json]
   pibo debug telemetry stale [--limit n] [--json]
   pibo debug telemetry stats [--json]
@@ -672,7 +704,7 @@ Commands:
   sessions  List recent, active, or stale telemetry sessions
   session   Show compact session telemetry and next turn/provider/tool commands
   turn      Show a phase timeline for one turn or event id
-  provider  Show provider request summary and provider event pages
+  provider  Show provider request summary, event pages, and preview-unavailable diagnostics
   tool      Show tool-call argument and execution telemetry
   stale     List read-only stale active work
   stats     Show telemetry retention counts and byte estimates
@@ -682,6 +714,7 @@ Next:
   pibo debug telemetry sessions --active
   pibo debug telemetry session ps_...
   pibo debug telemetry turn turn_...
+  pibo debug telemetry provider pr_... events --limit 20
 `);
 }
 

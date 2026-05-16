@@ -1,7 +1,10 @@
 import type {
 	StoredTelemetryPhase,
+	StoredTelemetryProviderEvent,
 	StoredTelemetryProviderRequest,
 	StoredTelemetryToolCall,
+	TelemetryPreviewUnavailableResult,
+	TelemetryProviderEventsPage,
 	StoredTelemetryTurn,
 	TelemetrySessionDetail,
 	TelemetrySessionSummary,
@@ -21,6 +24,12 @@ export type DebugTelemetryListOptions = {
 export type DebugTelemetryDetailOptions = {
 	limit?: string;
 	events?: boolean;
+};
+
+export type DebugTelemetryProviderOptions = {
+	limit?: string;
+	after?: string;
+	fields?: string[];
 };
 
 const DEFAULT_TELEMETRY_CLI_LIMIT = 20;
@@ -75,6 +84,36 @@ export type DebugTelemetryTurnResult = {
 	timeline: TelemetryTurnTimeline;
 	openPhases: number;
 	missingTerminalEvent: boolean;
+	nextCommands: string[];
+} | DebugTelemetryUnavailable;
+
+export type DebugTelemetryProviderResult = {
+	available: true;
+	command: "provider";
+	providerRequestId: string;
+	request: StoredTelemetryProviderRequest;
+	eventTypeRows: Array<{ eventType: string; count: number }>;
+	nextCommands: string[];
+} | DebugTelemetryUnavailable;
+
+export type DebugTelemetryProviderEventsResult = {
+	available: true;
+	command: "provider events";
+	providerRequestId: string;
+	limit: number;
+	afterSequence: number;
+	requestedFields: string[];
+	page: TelemetryProviderEventsPage;
+	rows: Array<StoredTelemetryProviderEvent & { selectedSafeFields: Record<string, string | number | boolean | null> }>;
+	nextCommands: string[];
+} | DebugTelemetryUnavailable;
+
+export type DebugTelemetryProviderPayloadResult = {
+	available: true;
+	command: "provider payload";
+	providerRequestId: string;
+	payloadRef: string;
+	preview: TelemetryPreviewUnavailableResult;
 	nextCommands: string[];
 } | DebugTelemetryUnavailable;
 
@@ -145,6 +184,62 @@ export function inspectTelemetryTurn(store: ResolvedPiboDebugStore, turnIdOrEven
 			openPhases,
 			missingTerminalEvent,
 			nextCommands: timeline.nextCommands,
+		};
+	});
+}
+
+export function inspectTelemetryProvider(store: ResolvedPiboDebugStore, providerRequestId: string): DebugTelemetryProviderResult {
+	return withTelemetryStore(store, (telemetry) => {
+		const request = telemetry.getProviderRequest(providerRequestId);
+		if (!request) return notFound(`No telemetry found for provider request ${providerRequestId}.`);
+		return {
+			available: true,
+			command: "provider",
+			providerRequestId,
+			request,
+			eventTypeRows: providerEventTypeRows(request),
+			nextCommands: providerNextCommands(request),
+		};
+	});
+}
+
+export function inspectTelemetryProviderEvents(store: ResolvedPiboDebugStore, providerRequestId: string, options: DebugTelemetryProviderOptions = {}): DebugTelemetryProviderEventsResult {
+	const limit = parseTelemetryLimit(options.limit);
+	const afterSequence = parseTelemetryCursor(options.after);
+	return withTelemetryStore(store, (telemetry) => {
+		const request = telemetry.getProviderRequest(providerRequestId);
+		if (!request) return notFound(`No telemetry found for provider request ${providerRequestId}.`);
+		const requestedFields = normalizeSafeFields(options.fields);
+		const page = telemetry.listProviderEventsPage(providerRequestId, { limit, afterSequence });
+		const rows = page.rows.map((row) => ({
+			...row,
+			selectedSafeFields: selectSafeFields(row.safeFields, requestedFields),
+		}));
+		return {
+			available: true,
+			command: "provider events",
+			providerRequestId,
+			limit,
+			afterSequence,
+			requestedFields,
+			page,
+			rows,
+			nextCommands: providerNextCommands(request, page.nextAfterSequence),
+		};
+	});
+}
+
+export function inspectTelemetryProviderPayload(store: ResolvedPiboDebugStore, providerRequestId: string, payloadRef: string): DebugTelemetryProviderPayloadResult {
+	return withTelemetryStore(store, (telemetry) => {
+		const request = telemetry.getProviderRequest(providerRequestId);
+		if (!request) return notFound(`No telemetry found for provider request ${providerRequestId}.`);
+		return {
+			available: true,
+			command: "provider payload",
+			providerRequestId,
+			payloadRef,
+			preview: telemetry.getPayloadPreview(payloadRef),
+			nextCommands: providerNextCommands(request),
 		};
 	});
 }
@@ -221,6 +316,71 @@ export function formatTelemetryTurn(result: DebugTelemetryTurnResult): string {
 		`truncated\tphases=${result.truncated.phases}\tproviderRequests=${result.truncated.providerRequests}\ttoolCalls=${result.truncated.toolCalls}`,
 		"Next:",
 		...(result.nextCommands.length > 0 ? result.nextCommands.map((command) => `  ${command}`) : [`  pibo debug telemetry session ${timeline.turn.piboSessionId}`]),
+	].join("\n");
+}
+
+export function formatTelemetryProvider(result: DebugTelemetryProviderResult): string {
+	if (!result.available) return formatUnavailable(result);
+	const request = result.request;
+	return [
+		`pibo debug telemetry provider ${result.providerRequestId}`,
+		`session\t${request.piboSessionId}`,
+		`turn\t${request.turnId}`,
+		`phase\t${request.phaseId ?? "-"}`,
+		`status\t${request.status}`,
+		`provider\t${request.provider}`,
+		`api\t${request.api}`,
+		`model\t${request.model}`,
+		`transport\t${request.transport}`,
+		`serviceTier\t${request.serviceTier ?? "-"}`,
+		`httpStatus\t${request.httpStatus ?? "-"}`,
+		`startedAt\t${request.startedAt}`,
+		`responseHeadersAt\t${request.responseHeadersAt ?? "-"}`,
+		`firstByteAt\t${request.firstByteAt ?? "-"}`,
+		`lastRawEventAt\t${request.lastRawEventAt ?? "-"}`,
+		`lastNormalizedEventAt\t${request.lastNormalizedEventAt ?? "-"}`,
+		`completedAt\t${request.completedAt ?? "-"}`,
+		`upstreamResponseId\t${request.upstreamResponseId ?? "-"}`,
+		`captureMode\t${request.captureMode}`,
+		`rawEventCount\t${request.rawEventCount}`,
+		`normalizedEventCount\t${request.normalizedEventCount}`,
+		`parseErrorCount\t${request.parseErrorCount}`,
+		`unknownEventCount\t${request.unknownEventCount}`,
+		`bytesReceived\t${request.bytesReceived ?? 0}`,
+		"event_types:",
+		formatRows(result.eventTypeRows),
+		"Next:",
+		...result.nextCommands.map((command) => `  ${command}`),
+	].join("\n");
+}
+
+export function formatTelemetryProviderEvents(result: DebugTelemetryProviderEventsResult): string {
+	if (!result.available) return formatUnavailable(result);
+	return [
+		`pibo debug telemetry provider ${result.providerRequestId} events`,
+		`limit\t${result.limit}`,
+		`afterSequence\t${result.afterSequence}`,
+		`storageMode\t${result.page.storageMode}`,
+		`hasMore\t${result.page.hasMore}`,
+		`nextAfterSequence\t${result.page.nextAfterSequence ?? "-"}`,
+		`fields\t${result.requestedFields.length > 0 ? result.requestedFields.join(",") : "all-safe"}`,
+		formatRows(result.rows.map(compactProviderEventRow)),
+		`truncated\t${result.page.truncated}`,
+		"Next:",
+		...result.nextCommands.map((command) => `  ${command}`),
+	].join("\n");
+}
+
+export function formatTelemetryProviderPayload(result: DebugTelemetryProviderPayloadResult): string {
+	if (!result.available) return formatUnavailable(result);
+	return [
+		`pibo debug telemetry provider ${result.providerRequestId} payload ${result.payloadRef}`,
+		`status\t${result.preview.status}`,
+		`reason\t${result.preview.reason}`,
+		`captureMode\t${result.preview.captureMode}`,
+		result.preview.message,
+		"Next:",
+		...result.nextCommands.map((command) => `  ${command}`),
 	].join("\n");
 }
 
@@ -325,6 +485,24 @@ function compactProviderRow(provider: StoredTelemetryProviderRequest): Record<st
 	};
 }
 
+function compactProviderEventRow(event: StoredTelemetryProviderEvent & { selectedSafeFields: Record<string, string | number | boolean | null> }): Record<string, unknown> {
+	return {
+		sequence: event.sequence,
+		rawEventId: event.rawEventId,
+		receivedAt: event.receivedAt,
+		eventType: event.eventType,
+		byteSize: event.byteSize,
+		parseStatus: event.parseStatus,
+		normalizedType: event.normalizedType,
+		itemId: event.itemId,
+		toolCallId: event.toolCallId,
+		eventId: event.eventId,
+		eventStreamId: event.eventStreamId,
+		payloadPreviewRef: event.payloadPreviewRef,
+		safeFields: formatSafeFields(event.selectedSafeFields),
+	};
+}
+
 function compactToolRow(tool: StoredTelemetryToolCall): Record<string, unknown> {
 	return {
 		toolCallId: tool.toolCallId,
@@ -352,4 +530,50 @@ function formatAgeMs(timestamp: string | undefined): number | "-" {
 
 function firstId<T extends Record<string, unknown>>(items: T[], key: keyof T): unknown {
 	return items.length > 0 ? items[0]?.[key] : undefined;
+}
+
+function parseTelemetryCursor(value: string | undefined): number {
+	if (value === undefined) return -1;
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--after must be a non-negative provider event sequence");
+	return parsed;
+}
+
+const SAFE_FIELD_NAME_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+function normalizeSafeFields(fields: string[] | undefined): string[] {
+	return [...new Set((fields ?? []).filter((field) => SAFE_FIELD_NAME_PATTERN.test(field)))];
+}
+
+function selectSafeFields(value: Record<string, unknown>, requestedFields: string[]): Record<string, string | number | boolean | null> {
+	const selected: Record<string, string | number | boolean | null> = {};
+	const entries = requestedFields.length > 0
+		? requestedFields.map((field) => [field, value[field]] as const)
+		: Object.entries(value).slice(0, 20);
+	for (const [key, raw] of entries) {
+		if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean" || raw === null) selected[key] = raw;
+	}
+	return selected;
+}
+
+function formatSafeFields(value: Record<string, string | number | boolean | null>): string {
+	const entries = Object.entries(value);
+	if (entries.length === 0) return "-";
+	return entries.map(([key, raw]) => `${key}=${String(raw)}`).join(",");
+}
+
+function providerEventTypeRows(provider: StoredTelemetryProviderRequest): Array<{ eventType: string; count: number }> {
+	return Object.entries(provider.eventTypeCounts)
+		.filter((entry): entry is [string, number] => typeof entry[1] === "number")
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([eventType, count]) => ({ eventType, count }));
+}
+
+function providerNextCommands(provider: StoredTelemetryProviderRequest, nextAfterSequence?: number): string[] {
+	return [
+		`pibo debug telemetry turn ${provider.turnId}`,
+		`pibo debug telemetry provider ${provider.providerRequestId} events --limit 20`,
+		typeof nextAfterSequence === "number" ? `pibo debug telemetry provider ${provider.providerRequestId} events --after ${nextAfterSequence} --limit 20` : undefined,
+		`pibo debug telemetry session ${provider.piboSessionId}`,
+	].filter((command): command is string => typeof command === "string");
 }

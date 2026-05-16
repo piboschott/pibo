@@ -87,8 +87,9 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in PRD 04 provider diagnostics batch on 2026-05-16: implemented pibo debug telemetry provider <provider-request-id> with session/turn links, provider/API/model/transport/status, HTTP/timing/upstream ids, capture mode, raw/normalized/parse/unknown counters, event-type count rows, text/JSON output, and next-command hints. Validated with fixture-backed debug CLI tests and full Docker npm run typecheck && npm test (431 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-006",
@@ -105,8 +106,9 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in PRD 04 provider diagnostics batch on 2026-05-16: implemented pibo debug telemetry provider <provider-request-id> events with --after cursor paging, bounded --limit, safe --fields selection, metadata-only rows, cursor/truncation metadata, text/JSON output, and no raw provider payload dumps. Validated with fixture-backed debug CLI tests and full Docker npm run typecheck && npm test (431 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-007",
@@ -122,8 +124,9 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": "Depends on PRD 02 preview contract. Optional; do not run unless preview command remains in V1 scope."
+      "passes": true,
+      "notes": "Completed in PRD 04 provider diagnostics batch on 2026-05-16: kept the V1 preview command as an explicit provider payload diagnostic and wired it to the PRD 02 preview-disabled contract. It requires a preview/event-summary id, reports preview_capture_disabled/captureMode=disabled by default, supports JSON output, and never reads arbitrary raw provider payloads. Validated with fixture-backed debug CLI tests and full Docker npm run typecheck && npm test (431 passing tests).",
+      "status": "complete"
     },
     {
       "id": "US-008",

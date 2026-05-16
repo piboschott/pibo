@@ -103,6 +103,55 @@ test("pibo debug telemetry lists sessions and drills into session and turn summa
 	}
 });
 
+test("pibo debug telemetry inspects provider summaries, event pages, and disabled previews", async () => {
+	const cwd = await makeDebugFixture();
+	try {
+		const provider = await execFileAsync("node", [cliPath, "debug", "telemetry", "provider", "pr_debug_stuck"], { cwd });
+		assert.match(provider.stdout, /pibo debug telemetry provider pr_debug_stuck/);
+		assert.match(provider.stdout, /status\tstreaming/);
+		assert.match(provider.stdout, /provider\topenai/);
+		assert.match(provider.stdout, /upstreamResponseId\tresp_debug_stuck/);
+		assert.match(provider.stdout, /rawEventCount\t2/);
+		assert.match(provider.stdout, /unknownEventCount\t1/);
+		assert.match(provider.stdout, /response\.output_item\.added\t1/);
+		assert.match(provider.stdout, /pibo debug telemetry provider pr_debug_stuck events --limit 20/);
+		assert.doesNotMatch(provider.stdout, /large provider body/);
+
+		const providerJson = await execFileAsync("node", [cliPath, "debug", "telemetry", "provider", "pr_debug_stuck", "--json"], { cwd });
+		const providerParsed = JSON.parse(providerJson.stdout);
+		assert.equal(providerParsed.available, true);
+		assert.equal(providerParsed.request.providerRequestId, "pr_debug_stuck");
+		assert.equal(providerParsed.request.rawEventCount, 2);
+		assert.equal(providerParsed.eventTypeRows.some((row) => row.eventType === "provider.experimental.unknown" && row.count === 1), true);
+
+		const events = await execFileAsync("node", [cliPath, "debug", "telemetry", "provider", "pr_debug_stuck", "events", "--limit", "1", "--fields", "toolName,itemId,status"], { cwd });
+		assert.match(events.stdout, /sequence\trawEventId\treceivedAt\teventType/);
+		assert.match(events.stdout, /raw_debug_stuck_1/);
+		assert.match(events.stdout, /safeFields/);
+		assert.match(events.stdout, /toolName=bash/);
+		assert.match(events.stdout, /nextAfterSequence\t1/);
+		assert.match(events.stdout, /pibo debug telemetry provider pr_debug_stuck events --after 1 --limit 20/);
+		assert.doesNotMatch(events.stdout, /large provider body/);
+
+		const eventsJson = await execFileAsync("node", [cliPath, "debug", "telemetry", "provider", "pr_debug_stuck", "events", "--after", "1", "--json"], { cwd });
+		const eventsParsed = JSON.parse(eventsJson.stdout);
+		assert.equal(eventsParsed.available, true);
+		assert.equal(eventsParsed.page.afterSequence, 1);
+		assert.equal(eventsParsed.rows.length, 1);
+		assert.equal(eventsParsed.rows[0].eventType, "provider.experimental.unknown");
+		assert.equal(eventsParsed.rows[0].selectedSafeFields.status, "ignored");
+		assert.equal(eventsParsed.rows[0].safeFields.status, "ignored");
+
+		const payload = await execFileAsync("node", [cliPath, "debug", "telemetry", "provider", "pr_debug_stuck", "payload", "raw_debug_stuck_1"], { cwd });
+		assert.match(payload.stdout, /status\tdisabled/);
+		assert.match(payload.stdout, /preview_capture_disabled/);
+		assert.match(payload.stdout, /metadata and links only/);
+		assert.doesNotMatch(payload.stdout, /large provider body/);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
 test("pibo debug db discovers schema and runs limited read-only SQL", async () => {
 	const cwd = await makeDebugFixture();
 	try {
@@ -658,6 +707,24 @@ async function makeDebugFixture() {
 			retentionClass: "provider_event",
 			createdAt: "2026-05-01T10:04:03.000Z",
 			updatedAt: "2026-05-01T10:04:03.000Z",
+		});
+		data.telemetry.appendProviderEventSummary({
+			rawEventId: "raw_debug_stuck_2",
+			providerRequestId: "pr_debug_stuck",
+			piboSessionId: "ps_running",
+			turnId: "turn_debug_stuck",
+			phaseId: "turn_debug_stuck:provider_stream:pr_debug_stuck",
+			sequence: 2,
+			receivedAt: "2026-05-01T10:04:05.000Z",
+			eventType: "provider.experimental.unknown",
+			byteSize: 72,
+			parseStatus: "unknown_type",
+			eventId: "evt_running",
+			eventStreamId: 4,
+			safeFields: { eventType: "provider.experimental.unknown", sequence: 2, status: "ignored" },
+			retentionClass: "provider_event",
+			createdAt: "2026-05-01T10:04:05.000Z",
+			updatedAt: "2026-05-01T10:04:05.000Z",
 		});
 		data.telemetry.upsertPhase({
 			phaseId: "turn_debug_stuck:tool_args:tool_debug_stuck",

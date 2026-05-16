@@ -39,7 +39,7 @@
 
 - [x] 5.1 Add `pibo debug telemetry --help` with compact progressive discovery.
 - [x] 5.2 Add `sessions`, `session`, and `turn` commands with bounded text and JSON output.
-- [ ] 5.3 Add `provider`, `provider events`, and optional `provider payload` unavailable/preview command with cursors/aggregation, limits, allowlisted fields, and truncation indicators.
+- [x] 5.3 Add `provider`, `provider events`, and optional `provider payload` unavailable/preview command with cursors/aggregation, limits, allowlisted fields, and truncation indicators.
 - [ ] 5.4 Add `tool` command for tool-call argument and execution telemetry.
 - [ ] 5.5 Add `stale` command with threshold option.
 - [ ] 5.6 Add `stats` and `prune` commands with dry-run default.
@@ -49,7 +49,7 @@
 ## 6. Validation
 
 - [x] 6.1 Run `npm run typecheck`.
-- [ ] 6.2 Run debug CLI tests.
+- [x] 6.2 Run debug CLI tests.
 - [ ] 6.3 Reproduce a synthetic partial-tool-call telemetry fixture and verify drill-down path:
   - [ ] `pibo debug telemetry session ps_...`
   - [ ] `pibo debug telemetry turn <turn-id>`
