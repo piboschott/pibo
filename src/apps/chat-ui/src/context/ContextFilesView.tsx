@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ChevronDown, FilePlus2, Files, RefreshCw, Save, Trash2 } from "lucide-react";
 import {
 	adoptContextFileSource,
@@ -438,48 +438,6 @@ export function ContextFilesView({ agentProfiles, selectedFileKey }: { agentProf
 							{document ? "The selected file is missing on disk." : "Select or create a context file."}
 						</div>
 					)}
-					{document?.managed && revisions.length > 0 ? (
-						<div className="border border-slate-800 bg-[#151f24] p-3">
-							<div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Revisions</div>
-							<div className="space-y-2">
-								{revisions.map((revision) => (
-									<div key={revision.id} className="flex flex-wrap items-center justify-between gap-2 border border-slate-800 bg-[#101d22] px-3 py-2 text-xs text-slate-400">
-										<div>
-											<div className="text-slate-100">{revision.kind} {revision.active ? "(active)" : ""}</div>
-											<div>{revision.note ?? revision.id}</div>
-											<div className="font-mono text-[11px] text-slate-500">{revision.createdAt}</div>
-										</div>
-										{revision.active ? null : (
-											<button
-												className="inline-flex h-8 items-center justify-center border border-slate-700 px-3 uppercase tracking-wider text-slate-300 hover:border-[#11a4d4] hover:text-[#7dd3fc] disabled:opacity-45"
-												type="button"
-												disabled={actionBusy}
-												onClick={() => void handleRestoreRevision(revision.id)}
-											>
-												Restore
-											</button>
-										)}
-									</div>
-								))}
-							</div>
-						</div>
-					) : null}
-					{document?.managed && diff ? (
-						<div className="border border-slate-800 bg-[#151f24] p-3">
-							<div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Diff</div>
-							<div className="space-y-1 overflow-auto">
-								{diff.chunks.map((chunk, index) => (
-									<pre key={`${chunk.type}-${index}`} className={`overflow-auto border px-3 py-2 text-xs ${
-										chunk.type === "add"
-											? "border-emerald-500/60 bg-emerald-500/10 text-emerald-100"
-											: chunk.type === "remove"
-												? "border-red-500/60 bg-red-500/10 text-red-100"
-												: "border-slate-800 bg-[#101d22] text-slate-300"
-									}`}>{chunk.lines.map((line) => `${chunk.type === "add" ? "+" : chunk.type === "remove" ? "-" : " "} ${line}`).join("\n")}</pre>
-								))}
-							</div>
-						</div>
-					) : null}
 				</div>
 			</main>
 
@@ -581,6 +539,20 @@ export function ContextFilesView({ agentProfiles, selectedFileKey }: { agentProf
 							<div className="border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-500">No context files registered</div>
 						) : null}
 					</section>
+
+					{document?.managed ? (
+						<section className="space-y-2" aria-label="Selected context file history">
+							<div className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">File Details</div>
+							<DetailDisclosure title="Revision History" meta={`${revisions.length} revisions`}>
+								<ContextFileRevisionsPanel revisions={revisions} actionBusy={actionBusy} onRestore={handleRestoreRevision} />
+							</DetailDisclosure>
+							{diff ? (
+								<DetailDisclosure title="Source Diff" meta={`${diff.chunks.length} chunks`}>
+									<ContextFileDiffPanel diff={diff} />
+								</DetailDisclosure>
+							) : null}
+						</section>
+					) : null}
 				</div>
 			</aside>
 		</div>
@@ -593,6 +565,77 @@ function StatusBanner({ tone, text }: { tone: "error" | "warning"; text: string 
 			? "border-red-500/80 bg-red-500/10 text-red-200"
 			: "border-amber-400/80 bg-amber-400/10 text-amber-100";
 	return <div className={`border px-3 py-2 text-sm ${toneClass}`}>{text}</div>;
+}
+
+function DetailDisclosure({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) {
+	return (
+		<details className="group border border-slate-800 bg-[#151f24]">
+			<summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs text-slate-400 hover:text-slate-200">
+				<span className="font-bold uppercase tracking-wider text-slate-300">{title}</span>
+				<span className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500">
+					{meta ? <span>{meta}</span> : null}
+					<span aria-hidden="true">▾</span>
+				</span>
+			</summary>
+			<div className="max-h-[34vh] overflow-auto border-t border-slate-800 p-2">
+				{children}
+			</div>
+		</details>
+	);
+}
+
+function ContextFileRevisionsPanel({
+	revisions,
+	actionBusy,
+	onRestore,
+}: {
+	revisions: ContextFileRevision[];
+	actionBusy: boolean;
+	onRestore: (revisionId: string) => void;
+}) {
+	if (revisions.length === 0) {
+		return <div className="border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-500">No revisions recorded yet.</div>;
+	}
+
+	return (
+		<div className="space-y-2">
+			{revisions.map((revision) => (
+				<div key={revision.id} className="space-y-2 border border-slate-800 bg-[#101d22] px-3 py-2 text-xs text-slate-400">
+					<div>
+						<div className="font-medium text-slate-100">{revision.kind} {revision.active ? "(active)" : ""}</div>
+						<div className="break-words">{revision.note ?? revision.id}</div>
+						<div className="break-all font-mono text-[11px] text-slate-500">{revision.createdAt}</div>
+					</div>
+					{revision.active ? null : (
+						<button
+							className="inline-flex h-8 items-center justify-center border border-slate-700 px-3 text-[11px] uppercase tracking-wider text-slate-300 hover:border-[#11a4d4] hover:text-[#7dd3fc] disabled:opacity-45"
+							type="button"
+							disabled={actionBusy}
+							onClick={() => onRestore(revision.id)}
+						>
+							Restore
+						</button>
+					)}
+				</div>
+			))}
+		</div>
+	);
+}
+
+function ContextFileDiffPanel({ diff }: { diff: ContextFileDiff }) {
+	return (
+		<div className="space-y-1">
+			{diff.chunks.map((chunk, index) => (
+				<pre key={`${chunk.type}-${index}`} className={`overflow-auto border px-3 py-2 text-xs ${
+					chunk.type === "add"
+						? "border-emerald-500/60 bg-emerald-500/10 text-emerald-100"
+						: chunk.type === "remove"
+							? "border-red-500/60 bg-red-500/10 text-red-100"
+							: "border-slate-800 bg-[#101d22] text-slate-300"
+				}`}>{chunk.lines.map((line) => `${chunk.type === "add" ? "+" : chunk.type === "remove" ? "-" : " "} ${line}`).join("\n")}</pre>
+			))}
+		</div>
+	);
 }
 
 function saveStateLabel(state: SaveState): string {
