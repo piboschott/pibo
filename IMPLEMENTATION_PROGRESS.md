@@ -58,3 +58,7 @@ Implement:
 
 - 2026-05-16: Updated Ralph target to dedicated room `room_0a5d20f1-f368-4020-984f-aa9ce3a603be`; room CWD is the dedicated worktree.
 - 2026-05-16: Cleared stale Ralph stop/cancel request flags after retargeting so a future manual start can run normally; job remains stopped.
+- 2026-05-16: Started PRD 01 documentation/scope batch (US-001..US-003). Decision inputs: final V1 command `pibo tui:sessions`; Web Chat remains full control center; CLI V1 excludes Projects, Workflows, Cron, Ralph, Agent Designer, full Settings, full context management; `/model`, `/thinking`, `/fork`, and `/details` are later-scope unless separately approved.
+- 2026-05-16: Implemented PRD 01 docs batch across capability/change/PRD docs: recorded V1 command/scope decisions, local/direct-first source decision, later-scope slash commands, and Web/CLI boundary checklist including existing `pibo tui`/`pibo tui:routed`, renderer dependency hygiene, bounded output, and validation expectations.
+- 2026-05-16: Validation for PRD 01: `docker exec pibo-dev-ralph-ink-cli-session-ui bash -lc 'cd /workspace && npm run typecheck'` passed (root, Chat UI, Context Files UI typechecks). Marked `prd_01_product_overview.json` US-001..US-003 `passes: true`.
+- 2026-05-16: Created commit `docs: complete ink cli prd 01 scope guardrails` for PRD 01. Next dependency-order target is `prd_02_shared_terminal_view_model.json` US-001 (shared renderer-neutral terminal view-model boundary), then Web migration/tests.

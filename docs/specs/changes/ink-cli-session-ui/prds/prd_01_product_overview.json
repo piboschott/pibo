@@ -15,8 +15,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Documentation/contract story; run before code implementation."
+      "passes": true,
+      "notes": "Validated 2026-05-16: V1 command and scope decisions documented; npm run typecheck passed in Docker worker."
     },
     {
       "id": "US-002",
@@ -30,8 +30,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Validated 2026-05-16: capability documentation documents CLI purpose, shared view-model reuse, V1 commands, and non-goals; npm run typecheck passed in Docker worker."
     },
     {
       "id": "US-003",
@@ -44,8 +44,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Validated 2026-05-16: PRD README includes Web/CLI boundary checklist and validation expectations; npm run typecheck passed in Docker worker."
     }
   ]
 }

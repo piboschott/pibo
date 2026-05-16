@@ -62,7 +62,7 @@ The system MUST provide a discoverable CLI command that starts the Ink CLI Sessi
 
 #### Target
 
-A command such as `pibo tui:sessions` or `pibo chat` starts the new CLI. The final name must be documented in root CLI discovery text.
+The `pibo tui:sessions` command starts the new CLI. The command must be documented in root CLI discovery text.
 
 #### Acceptance
 
@@ -191,16 +191,17 @@ The CLI MUST clean up terminal state and subscriptions on exit or failure.
 
 ## Assumptions and Open Questions
 
-### Assumptions
+### V1 Scope Decisions
 
+- Final V1 command name: `pibo tui:sessions`.
 - V1 starts with local/direct session source integration and keeps a `SessionSource` interface for later Gateway mode.
-- The first implementation may choose a temporary command name if the final product name is unresolved, but docs must mark it clearly.
+- V1 Slash Commands are `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`.
+- `/model`, `/thinking`, `/fork`, and `/details` are later-scope commands unless separately approved.
 
 ### Open Questions
 
-- Final command name.
-- Whether `/model` and `/thinking` are V1 or v1.1.
 - Exact room source and local owner-scope semantics.
+- Exact default transcript row window for the first renderer.
 
 ## Traceability
 

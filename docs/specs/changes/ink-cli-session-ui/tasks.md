@@ -6,10 +6,10 @@
 
 ## Phase 0: Finalize scope and command naming
 
-- [ ] T0.1 Decide final command name, for example `pibo tui:sessions` or `pibo chat`.
-- [ ] T0.2 Decide whether V1 session source is local/direct only or hybrid-ready with Gateway later.
-- [ ] T0.3 Decide whether `/model`, `/thinking`, `/fork`, and `/details` are V1 or later.
-- [ ] T0.4 Update proposal/spec/design if decisions change.
+- [x] T0.1 Decide final command name: `pibo tui:sessions`.
+- [x] T0.2 Decide V1 session source: local/direct first, with `SessionSource` kept Gateway-/hybrid-ready for later work.
+- [x] T0.3 Decide `/model`, `/thinking`, `/fork`, and `/details`: later-scope unless separately approved.
+- [x] T0.4 Update proposal/spec/design with V1 decisions.
 
 ## Phase 1: Shared terminal view model
 

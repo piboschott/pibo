@@ -172,17 +172,16 @@ If no session source is available, the CLI displays an actionable message. If st
 
 ## Assumptions and Open Questions
 
-### Assumptions
+### V1 Scope Decisions
 
+- V1 command name is `pibo tui:sessions`.
 - V1 uses a local/direct session source first and keeps an interface open for later Gateway-backed operation.
-- Final command naming may be decided during implementation; specs use “CLI Session UI” and examples such as `pibo tui:sessions` or `pibo chat`.
-- Room support in V1 depends on what the chosen session source can list without Web UI.
+- V1 Slash Commands are `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`.
+- `/model`, `/thinking`, `/fork`, and `/details` are later-scope commands unless a separate spec approves them.
+- Room support in V1 depends on what the chosen local/direct session source can list without Web UI.
 
 ### Open Questions
 
-- What is the final command name?
-- Should `/model` ship in V1 or v1.1?
-- Should `/fork` ship in V1 or remain later?
 - What exact maximum row window should the first renderer use?
 - Which profile list is canonical for local/direct mode?
 
