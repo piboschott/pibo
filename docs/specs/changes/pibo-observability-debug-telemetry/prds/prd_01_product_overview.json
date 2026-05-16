@@ -1,0 +1,63 @@
+{
+  "project": "Pibo Observability and Debug Telemetry",
+  "branchName": "ralph/pibo-observability-telemetry-overview",
+  "description": "Product overview, implementation decisions, capability documentation, and rollout framing for progressive Pibo debug telemetry.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record V1 implementation decisions for telemetry",
+      "description": "As an engineering lead, I want the open telemetry design decisions resolved in documentation so that Ralph iterations can implement a consistent V1 scope.",
+      "acceptanceCriteria": [
+        "Update the observability telemetry PRD README or change docs with V1 decisions for storage location, payload preview default, stale threshold default, Chat Web V1 scope, and incident pinning scope",
+        "Mark unresolved items as TBD only where implementation truly cannot proceed without user input",
+        "Do not change runtime behavior in this story",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add observability telemetry capability documentation",
+      "description": "As a maintainer, I want a capability spec for runtime observability telemetry so that the data model and CLI contract are discoverable outside the change folder.",
+      "acceptanceCriteria": [
+        "Add or update a capability document under docs/specs/capabilities for runtime observability telemetry",
+        "Document summary-first telemetry, correlation ids, runtime phases, provider diagnostics, tool-call progress, redaction, retention, stale detection, and non-goals",
+        "Link the capability document from the change PRD README or related docs",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Update Debug CLI capability docs for telemetry branch",
+      "description": "As a debug CLI user, I want the existing debug CLI docs to mention the telemetry branch so that I can discover the new workflow from the normal debug docs.",
+      "acceptanceCriteria": [
+        "Update docs/specs/capabilities/debug-cli.md with the pibo debug telemetry branch and summary-first behavior",
+        "Document the intended command discovery flow from session to turn to provider/tool",
+        "State that telemetry commands are read-oriented except explicit prune apply",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add observability rollout checklist",
+      "description": "As an operator, I want a rollout checklist so that telemetry can be enabled safely without leaking secrets or flooding context.",
+      "acceptanceCriteria": [
+        "Add a rollout checklist to the PRD docs or a dedicated telemetry rollout doc",
+        "Checklist covers typecheck, debug CLI tests, redaction tests, synthetic partial-tool-call fixture, bounded output verification, and prune dry-run verification",
+        "Checklist explicitly states that automatic provider timeout recovery is out of scope for this feature",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

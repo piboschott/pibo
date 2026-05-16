@@ -1,0 +1,175 @@
+{
+  "project": "Pibo Observability and Debug Telemetry",
+  "branchName": "ralph/pibo-debug-telemetry-cli",
+  "description": "Progressive pibo debug telemetry CLI with bounded summaries, drill-down commands, cursor-based provider events, explicit payload previews, stale work, stats, prune, and JSON output.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Register telemetry debug command root and help",
+      "description": "As an agent, I want pibo debug telemetry help to show the available drill-down workflow without dumping data.",
+      "acceptanceCriteria": [
+        "Register a pibo debug telemetry command branch or style-equivalent branch under the existing debug CLI",
+        "Root help lists sessions, session, turn, provider, tool, stale, stats, and prune subcommands with one-line descriptions",
+        "Root help includes compact next examples and does not query or print telemetry rows",
+        "Existing debug CLI commands keep their current behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement telemetry sessions list command",
+      "description": "As an operator, I want to list recent, active, or stale telemetry sessions so that I can find work to inspect.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry sessions with bounded default row limit and hard maximum limit",
+        "Support active and stale filters or style-equivalent options",
+        "Rows include piboSessionId, status, active turn when known, active phase when known, queue depth when known, last progress age, stale indicator, and next command",
+        "Support --json with equivalent bounded data and truncation metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement telemetry session detail command",
+      "description": "As an agent with a session id, I want a compact session detail view so that I know which turn to inspect next.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry session <pibo-session-id>",
+        "Output includes status, queue depth, active turn, active phase, stale age, last progress time, provider request id when known, and bounded recent turns",
+        "Output includes next command suggestions for the active turn and related provider/tool ids when known",
+        "Default output omits raw provider payloads, headers, transcripts, and full tool args",
+        "Support --json with ids and next suggestions for agent drill-down",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement telemetry turn timeline command",
+      "description": "As a runtime engineer, I want a turn timeline so that open or stale phases are visible without inferring them from raw events.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry turn <turn-id-or-event-id>",
+        "Output lists ordered phases with name, status, start, end or open marker, duration, last progress, stale age when applicable, providerRequestId, and toolCallId when known",
+        "Output highlights open phases and missing terminal events",
+        "Support --events or style-equivalent flag only for bounded linked event references, not raw payload dumps",
+        "Support --json with phase rows and next suggestions",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement provider request summary command",
+      "description": "As a provider engineer, I want a provider request summary so that I can see request lifecycle and stream counters at a glance.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry provider <provider-request-id>",
+        "Output includes session id, turn id, provider, API, model, transport, status, HTTP status when known, first byte time, last raw event time, last normalized event time, upstream response id when known, and terminal error category when safe",
+        "Output includes raw event counts grouped by type plus parse error and unknown event counts",
+        "Output includes next command for provider events listing",
+        "Support --json with equivalent fields",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement provider event summary listing command",
+      "description": "As a parser engineer, I want a paged raw event summary list so that I can inspect stream shape without raw payload dumps.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry provider <provider-request-id> events",
+        "Support --after or style-equivalent cursor/sequence paging and --limit with hard maximum",
+        "Rows include sequence, timestamp, event type, byte size, parse status, normalized type when known, item id when known, and toolCallId when known",
+        "Support --fields for allowlisted safe fields only",
+        "Default output omits raw JSON payload bodies",
+        "Support --json with cursor and truncation metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement explicit provider payload preview command",
+      "description": "As an operator, I want to fetch one redacted payload preview by id only when summaries are insufficient.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry provider <provider-request-id> payload <raw-event-id>",
+        "Command requires explicit raw event id and uses a small default max-bytes limit with a hard maximum",
+        "Output displays redacted preview text only, plus redacted, truncated, byteSize, contentType, and capture-mode metadata",
+        "If preview capture is disabled or unavailable, output a clear safe message instead of failing with an internal error",
+        "Support --json with equivalent metadata",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement telemetry tool-call detail command",
+      "description": "As a tool engineer, I want a tool-call detail view so that I can distinguish partial args from execution failures.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry tool <tool-call-id>",
+        "Output includes toolCallId, tool name, session id, turn id, providerRequestId when known, status, argsBytes, firstDeltaAt, lastDeltaAt, argsCompletedAt, parseStatus, safeArgKeys, execution start/end, and safe error message/category when available",
+        "Output explicitly shows no execution start when args never completed",
+        "Default output omits full argument bodies, stdout, stderr, and raw payloads",
+        "Support --json with equivalent fields and next suggestions",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Implement stale telemetry command",
+      "description": "As an operator, I want to list stale active work so that I can inspect likely stuck sessions without mutating them.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry stale with configurable threshold option and safe default threshold",
+        "Rows include piboSessionId, turnId, active phase, stale duration, queue depth when known, last progress time, and next command",
+        "Command is read-only and does not abort, clear, or modify sessions",
+        "Support --json with equivalent fields",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Implement telemetry stats and prune commands",
+      "description": "As a maintainer, I want stats and dry-run pruning so that telemetry disk usage can be managed safely.",
+      "acceptanceCriteria": [
+        "Implement pibo debug telemetry stats with counts and byte sizes grouped by retention class where available",
+        "Implement pibo debug telemetry prune requiring retention class and cutoff date",
+        "Prune defaults to dry-run and requires an explicit apply/destructive flag to delete rows",
+        "Prune output reports rows and bytes affected and does not touch non-telemetry stores",
+        "Support --json for stats and prune outputs",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
