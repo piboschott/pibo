@@ -1,6 +1,6 @@
 import { JsonRenderer } from "../../tracing/JsonRenderer";
-import type { CompactTerminalRow } from "./terminalRows";
-import { renderableTerminalValue } from "./terminalValue";
+import type { CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
+import { renderableTerminalValue } from "../../../../../session-ui/terminalValue.js";
 
 type TerminalDetailsProps = {
 	row: CompactTerminalRow;

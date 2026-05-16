@@ -129,9 +129,16 @@ No new persistent data model is required for the first renderer phase. Runtime/s
 5. Session source/live runtime integration.
 6. SSH/recovery hardening and final docs.
 
-## Open Questions
+## V1 Decisions and Remaining Questions
 
-- Final command name: `pibo tui:sessions`, `pibo chat`, or another name.
-- V1 source mode: direct local, Gateway-backed, or hybrid.
+### Decisions
+
+- Final V1 command name: `pibo tui:sessions`.
+- V1 source mode: local/direct first, with the `SessionSource` seam kept Gateway-/hybrid-ready for later work.
+- V1 Slash Commands: `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`.
+- `/model`, `/thinking`, `/fork`, and `/details` are later-scope commands unless a separate spec approves them.
+
+### Remaining Questions
+
 - Exact room semantics in CLI local mode.
-- Whether `/model`, `/thinking`, and `/fork` are V1 or v1.1.
+- Exact default transcript row window for the first renderer.

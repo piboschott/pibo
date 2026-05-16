@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, ArrowLeft, CheckCircle, Copy, ExternalLink, Key, Loader2, Lock } from "lucide-react";
 import { postAction } from "../../api";
-import type { CompactTerminalRow } from "./terminalRows";
+import type { CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 import { isLoginMenuResult, unwrapActionResult, type LoginAuthMethod, type LoginProvider } from "./loginMenu";
 
 type LoginStep =

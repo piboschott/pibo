@@ -244,10 +244,16 @@ The Web UI must not import Ink modules.
 - New command discovery should explain the difference between direct Pi TUI, local routed TUI, and new CLI Session UI.
 - If a command name later replaces an old one, add alias/deprecation docs in a separate migration task.
 
-## Open Design Questions
+## V1 Design Decisions and Open Questions
 
-- Final command name.
+### Decisions
+
+- Final V1 command name: `pibo tui:sessions`.
+- V1 source mode is local/direct first; the `CliSessionSource` boundary remains Gateway-/hybrid-ready for later work.
+- V1 Slash Commands are `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`.
+- `/model`, `/thinking`, `/fork`, and `/details` are later-scope commands unless separately approved.
+
+### Open Questions
+
 - Exact local room semantics.
-- Whether Gateway-backed mode is V1 or v1.1.
-- Whether `/model`, `/thinking`, `/fork`, and `/details` enter V1.
 - Default transcript row limit and scroll behavior.

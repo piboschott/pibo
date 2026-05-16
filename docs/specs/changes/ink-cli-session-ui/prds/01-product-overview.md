@@ -30,6 +30,7 @@
   - As a product maintainer, I want Web-only capabilities to stay out of CLI V1 so that CLI scope remains small and robust.
 
 - **Acceptance Criteria**:
+  - The V1 CLI command is documented as `pibo tui:sessions`.
   - The new CLI Session UI is documented as a reduced Web Chat subset.
   - Specs state that Web Chat remains the main interface.
   - Specs state that Ink is the terminal rendering approach.
@@ -82,11 +83,10 @@
 
 - **Phased Rollout**:
   - MVP: docs, shared model extraction, static renderer.
-  - V1: interactive session selection, agent selection, message sending, live transcript.
-  - v1.1: optional `/model`, `/thinking`, `/fork`, details panel, Gateway-backed source.
+  - V1: `pibo tui:sessions`, interactive session selection, agent selection, message sending, live transcript.
+  - v1.1/later: optional `/model`, `/thinking`, `/fork`, `/details`, Gateway-backed source.
 
 - **Technical Risks**:
   - Scope creep into Web-only features.
   - Breaking Web Chat while extracting shared model.
   - Terminal performance on large sessions.
-  - Ambiguous command naming.

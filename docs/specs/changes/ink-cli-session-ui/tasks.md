@@ -6,10 +6,10 @@
 
 ## Phase 0: Finalize scope and command naming
 
-- [ ] T0.1 Decide final command name, for example `pibo tui:sessions` or `pibo chat`.
-- [ ] T0.2 Decide whether V1 session source is local/direct only or hybrid-ready with Gateway later.
-- [ ] T0.3 Decide whether `/model`, `/thinking`, `/fork`, and `/details` are V1 or later.
-- [ ] T0.4 Update proposal/spec/design if decisions change.
+- [x] T0.1 Decide final command name: `pibo tui:sessions`.
+- [x] T0.2 Decide V1 session source: local/direct first, with `SessionSource` kept Gateway-/hybrid-ready for later work.
+- [x] T0.3 Decide `/model`, `/thinking`, `/fork`, and `/details`: later-scope unless separately approved.
+- [x] T0.4 Update proposal/spec/design with V1 decisions.
 
 ## Phase 1: Shared terminal view model
 
@@ -32,51 +32,51 @@
 
 ## Phase 3: Session controller and interactive app
 
-- [ ] T3.1 Define `CliSessionSource` and fake test source.
-- [ ] T3.2 Implement controller state for current room, session, agent, status, rows, input, picker mode, and errors.
-- [ ] T3.3 Implement Slash Command parser and command results.
-- [ ] T3.4 Implement `/help`, `/status`, `/clear`, `/exit`, `/quit`.
-- [ ] T3.5 Implement `/session` picker with cancellation.
-- [ ] T3.6 Implement `/new` session flow.
-- [ ] T3.7 Implement `/agent` picker for existing profiles.
-- [ ] T3.8 Implement message sending for normal non-command input.
-- [ ] T3.9 Implement update subscription and row refresh for live session changes.
+- [x] T3.1 Define `CliSessionSource` and fake test source.
+- [x] T3.2 Implement controller state for current room, session, agent, status, rows, input, picker mode, and errors.
+- [x] T3.3 Implement Slash Command parser and command results.
+- [x] T3.4 Implement `/help`, `/status`, `/clear`, `/exit`, `/quit`.
+- [x] T3.5 Implement `/session` picker with cancellation.
+- [x] T3.6 Implement `/new` session flow.
+- [x] T3.7 Implement `/agent` picker for existing profiles.
+- [x] T3.8 Implement message sending for normal non-command input.
+- [x] T3.9 Implement update subscription and row refresh for live session changes.
 
 ## Phase 4: CLI command integration
 
-- [ ] T4.1 Register the new command in `src/cli.ts`.
-- [ ] T4.2 Update root CLI discovery text.
-- [ ] T4.3 Add `--help` output for the command.
-- [ ] T4.4 Ensure existing `pibo tui` and `pibo tui:routed` continue to work.
-- [ ] T4.5 Add command-level tests where current CLI test infrastructure allows.
+- [x] T4.1 Register the new command in `src/cli.ts`.
+- [x] T4.2 Update root CLI discovery text.
+- [x] T4.3 Add `--help` output for the command.
+- [x] T4.4 Ensure existing `pibo tui` and `pibo tui:routed` continue to work.
+- [x] T4.5 Add command-level tests where current CLI test infrastructure allows.
 
 ## Phase 5: SSH/recovery hardening
 
-- [ ] T5.1 Add TTY detection and non-TTY fallback/error behavior.
-- [ ] T5.2 Handle no sessions, no rooms, no profiles, and source unavailable states.
-- [ ] T5.3 Ensure `Ctrl+C`, `/exit`, and `/quit` close subscriptions and restore terminal state.
-- [ ] T5.4 Add large-session row-window limits.
-- [ ] T5.5 Add narrow-terminal wrapping/truncation checks.
-- [ ] T5.6 Document recovery usage and Web-only feature boundaries.
+- [x] T5.1 Add TTY detection and non-TTY fallback/error behavior.
+- [x] T5.2 Handle no sessions, no rooms, no profiles, and source unavailable states.
+- [x] T5.3 Ensure `Ctrl+C`, `/exit`, and `/quit` close subscriptions and restore terminal state.
+- [x] T5.4 Add large-session row-window limits.
+- [x] T5.5 Add narrow-terminal wrapping/truncation checks.
+- [x] T5.6 Document recovery usage and Web-only feature boundaries.
 
 ## Phase 6: Validation
 
-- [ ] T6.1 Run `npm run typecheck`.
-- [ ] T6.2 Run relevant tests.
-- [ ] T6.3 Run manual TTY smoke test.
-- [ ] T6.4 Verify Web Chat UI build/typecheck still passes.
-- [ ] T6.5 Verify unsupported Web-only features are not exposed in CLI V1.
-- [ ] T6.6 Update PRD/task status after implementation.
+- [x] T6.1 Run `npm run typecheck`.
+- [x] T6.2 Run relevant tests.
+- [x] T6.3 Run manual TTY smoke test.
+- [x] T6.4 Verify Web Chat UI build/typecheck still passes.
+- [x] T6.5 Verify unsupported Web-only features are not exposed in CLI V1.
+- [x] T6.6 Update PRD/task status after implementation.
 
 ## Acceptance Checklist
 
-- [ ] New CLI command starts an Ink app in a TTY.
-- [ ] CLI can create/select sessions.
-- [ ] CLI can send a normal message.
-- [ ] CLI shows live compact transcript output.
-- [ ] CLI can choose existing agent/profile.
-- [ ] `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit` work.
-- [ ] Projects, Workflows, Cron, Ralph, Agent Designer, and full Settings are absent from V1 CLI.
-- [ ] Shared row model is reused by Web and CLI.
-- [ ] Web Chat UI remains unchanged.
-- [ ] Typecheck passes.
+- [x] New CLI command starts an Ink app in a TTY.
+- [x] CLI can create/select sessions.
+- [x] CLI can send a normal message.
+- [x] CLI shows live compact transcript output.
+- [x] CLI can choose existing agent/profile.
+- [x] `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit` work.
+- [x] Projects, Workflows, Cron, Ralph, Agent Designer, and full Settings are absent from V1 CLI.
+- [x] Shared row model is reused by Web and CLI.
+- [x] Web Chat UI remains unchanged.
+- [x] Typecheck passes.

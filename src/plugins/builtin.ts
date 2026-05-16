@@ -150,6 +150,11 @@ export const piboCorePlugin = definePiboPlugin({
 			kind: "builtin",
 		});
 		api.registerSkill({
+			name: "pibo-docker-system",
+			path: builtinSkillPath("pibo-docker-system"),
+			kind: "builtin",
+		});
+		api.registerSkill({
 			name: "prd",
 			path: builtinSkillPath("prd"),
 			kind: "builtin",

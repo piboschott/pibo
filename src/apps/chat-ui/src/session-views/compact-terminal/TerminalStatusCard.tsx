@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Activity, Cpu, Folder, Gauge, Hash, Layers } from "lucide-react";
-import type { CompactTerminalRow } from "./terminalRows";
+import type { CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 
 type StatusData = {
 	piboSessionId?: string;

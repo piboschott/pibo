@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, Search } from "lucide-react";
 import { patchSession } from "../../api";
-import type { CompactTerminalRow } from "./terminalRows";
+import type { CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 import { isModelMenuResult, unwrapActionResult, type ModelMenuModel } from "./loginMenu";
 
 export function TerminalModelCard({

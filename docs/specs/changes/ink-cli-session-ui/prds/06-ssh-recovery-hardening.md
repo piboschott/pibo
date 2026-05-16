@@ -80,7 +80,48 @@
   - Error/status messages redact config and auth secrets.
   - Recovery docs must not instruct users to expose secrets.
 
-## 5. Risks & Roadmap
+## 5. SSH Recovery Usage
+
+Start the V1 terminal UI from an interactive shell or SSH session:
+
+```bash
+pibo tui:sessions
+```
+
+Useful recovery options:
+
+```bash
+pibo tui:sessions --session <pibo-session-id>
+pibo tui:sessions --owner-scope <owner-scope>
+pibo tui:sessions --max-rows 20
+pibo tui:sessions --demo
+```
+
+The command requires interactive stdin and stdout TTYs. Piped execution exits with a concise error instead of starting a broken Ink UI. The transcript uses a bounded default tail window of 20 rows and truncates long lines for narrow SSH terminals.
+
+Inside the app:
+
+- `/help` lists supported commands and Web-only V1 exclusions.
+- `/new` creates a local CLI session.
+- `/session` opens the existing-session picker, or explains how to create one when none exist.
+- `/agent` lists existing agents/profiles only; it does not edit profiles.
+- `/status` prints redacted source/session/agent/model state.
+- `/clear` clears only the local rendered transcript window.
+- `/exit` and `/quit` leave the app cleanly. `Ctrl+C` uses the same cleanup path.
+
+Web Chat remains the full control center. CLI V1 does not expose Projects, Workflows, Cron, Ralph, Agent Designer, full Settings, or full context-management surfaces. Later-scope Slash Commands remain `/model`, `/thinking`, `/fork`, and `/details` unless a separate spec approves them.
+
+## 6. Validation Checklist
+
+- Run `npm run typecheck` in the Docker worker.
+- Run focused CLI UI tests after `npm run build`.
+- Run the full test suite.
+- Check non-TTY behavior with `node dist/bin/pibo.js tui:sessions --demo` from a non-interactive process and verify it exits with a clear TTY error.
+- Run an interactive or pseudo-TTY smoke check for `pibo tui:sessions --demo --max-rows 5`: confirm the status bar, transcript, input prompt, `/help`, `/status`, `/session`, `/agent`, `/new`, `/clear`, `/quit`, and `Ctrl+C` recovery paths.
+- For Web-impacting changes, run Chat Web typecheck/build and confirm compact terminal behavior was not intentionally changed.
+- Confirm unsupported Web-only areas are not exposed through CLI V1 help or commands.
+
+## 7. Risks & Roadmap
 
 - **Phased Rollout**:
   - MVP: non-TTY guard and cleanup.

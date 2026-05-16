@@ -21,7 +21,7 @@ This directory translates the Ink CLI Session UI report, capability specs, chang
 
 The Ink CLI Session UI is a reduced, native terminal subset of Pibo Web Chat. It is not a replacement for Web Chat. Web Chat remains the primary control center for Projects, Workflows, Cron, Ralph, Agent Designer, complete Settings, and full context-management surfaces.
 
-The CLI exists for SSH, bootstrap, recovery, and fast local session work. It should share trace/session view-model logic with Web Chat while using a separate Ink renderer.
+The V1 command is `pibo tui:sessions`. The CLI exists for SSH, bootstrap, recovery, and fast local session work. It should share trace/session view-model logic with Web Chat while using a separate Ink renderer.
 
 ## PRDs
 
@@ -68,3 +68,17 @@ Each story is intended to fit into one Ralph iteration and includes `Typecheck p
 - Keep CLI output bounded for large sessions.
 - Add tests before relying on behavior: row model, command parser, fake session source, Ink render snapshots.
 - Validate with `npm run typecheck` before considering a story complete.
+
+## Web / CLI Boundary Checklist
+
+Review each implementation batch against this checklist:
+
+- Web Chat remains behaviorally unchanged; existing session view registry and compact terminal behavior are preserved unless a story explicitly approves a Web change.
+- Existing `pibo tui` and `pibo tui:routed` keep working unless a separate migration is approved.
+- Shared terminal view-model modules stay renderer-neutral and avoid React DOM, browser APIs, Tailwind/CSS, Virtuoso, lucide-react, and Ink imports.
+- Ink renderer modules use Ink-native presentation only and do not import Web DOM presentation dependencies.
+- CLI rendering consumes shared compact terminal rows instead of adding a CLI-only trace mapper.
+- CLI output is bounded for large sessions and handles narrow terminals without unbounded expansion.
+- CLI V1 does not expose Projects, Workflows, Cron, Ralph, Agent Designer, full Settings, or full context-management surfaces.
+- CLI V1 Slash Commands are limited to `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`; `/model`, `/thinking`, `/fork`, and `/details` remain later-scope unless separately approved.
+- Validate root typecheck with `npm run typecheck`; for Web-impacting changes also run Chat Web typecheck/build (`npm run chat-ui:typecheck` and `npm run chat-ui:build`).
