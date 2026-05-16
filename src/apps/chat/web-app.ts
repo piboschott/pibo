@@ -3529,20 +3529,27 @@ function syncUserSkills(state: ChatWebAppState, context: PiboWebAppContext): voi
 	if (!registerSkill || !unregisterSkill) return;
 
 	const userSkills = state.userSkillManager.list();
-	const enabledNames = new Set(userSkills.filter((s) => s.enabled).map((s) => s.name));
+	const catalogSkills = context.channelContext.getCapabilityCatalog?.().skills ?? [];
+	const catalogSkillByName = new Map(catalogSkills.map((skill) => [skill.name, skill]));
+	const reservedSkillNames = new Set(catalogSkills.filter((skill) => skill.kind !== "user").map((skill) => skill.name));
+	const enabledNames = new Set(userSkills
+		.filter((skill) => skill.enabled && !reservedSkillNames.has(skill.name))
+		.map((skill) => skill.name));
 	const previouslySyncedNames = state.syncedUserSkillNames ?? new Set<string>();
 
-	// Unregister disabled or removed user skills
+	// Unregister disabled, removed, or now built-in user skills. Avoid removing a
+	// built-in/plugin skill if a promoted user skill has the same name.
 	for (const name of previouslySyncedNames) {
 		if (!enabledNames.has(name)) {
-			unregisterSkill(name);
+			const catalogSkill = catalogSkillByName.get(name);
+			if (!catalogSkill || catalogSkill.kind === "user") unregisterSkill(name);
 		}
 	}
 
 	// Register only newly enabled user skills. Re-registering an already synced
 	// skill would trip the registry duplicate-skill guard and break the web UI.
 	for (const skill of userSkills) {
-		if (skill.enabled && !previouslySyncedNames.has(skill.name)) {
+		if (skill.enabled && !reservedSkillNames.has(skill.name) && !previouslySyncedNames.has(skill.name)) {
 			registerSkill({ name: skill.name, path: skill.path, enabled: true, kind: "user" });
 		}
 	}

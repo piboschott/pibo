@@ -49,6 +49,12 @@ test("default plugin registry builds profiles from registered resources", () => 
 		tool.name === "web_search" && tool.pluginId === "pibo.core" && tool.hasDefinition === false
 	)));
 	assert.deepEqual(registry.getChannels().map((channel) => channel.name), []);
+	assert.deepEqual(
+		registry.getCapabilityCatalog().skills
+			.filter((skill) => skill.kind === "builtin")
+			.map((skill) => skill.name),
+		["pi-agent-harness", "pibo-spec-writing", "prd", "ralph-loop", "ralph-prd-json"],
+	);
 	assert.deepEqual(registry.getGatewayActionInfos(), [
 		{
 			name: "status",

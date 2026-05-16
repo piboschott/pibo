@@ -6,8 +6,7 @@
   "files": [
     "dist",
     "context",
-    "skills/builtin/pi-agent-harness/SKILL.md",
-    "skills/builtin/pi-agent-harness/agents/openai.yaml",
+    "skills/builtin/**",
     "README.md",
     "src/mcp/LICENSE.mcp-cli"
   ],
