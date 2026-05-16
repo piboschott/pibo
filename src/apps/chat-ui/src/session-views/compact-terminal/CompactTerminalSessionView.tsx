@@ -11,7 +11,7 @@ import { TerminalLoginCard } from "./TerminalLoginCard";
 import { TerminalModelCard } from "./TerminalModelCard";
 import { TerminalStatusCard } from "./TerminalStatusCard";
 import { TerminalThinkingCard } from "./TerminalThinkingCard";
-import { buildCompactTerminalRows, type CompactTerminalLine, type CompactTerminalRow } from "./terminalRows";
+import { buildCompactTerminalRows, type CompactTerminalLine, type CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 
 const SHOW_LATEST_THRESHOLD_PX = 180;
 const INITIAL_BOTTOM_ITEM = { index: "LAST", align: "end" } as const;

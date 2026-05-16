@@ -1,4 +1,4 @@
-import type { CompactTerminalLine, CompactTerminalRowStatus, TerminalInlineToken } from "./terminalRows";
+import type { CompactTerminalLine, CompactTerminalRowStatus, TerminalInlineToken } from "../../../../../session-ui/terminalRows.js";
 import { TerminalFunctionCall } from "./TerminalInlineJson";
 
 type TerminalLineProps = {

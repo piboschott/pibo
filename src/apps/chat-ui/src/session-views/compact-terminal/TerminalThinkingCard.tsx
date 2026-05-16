@@ -1,6 +1,6 @@
 import { Brain, Check, X } from "lucide-react";
 import { THINKING_LEVELS, type ThinkingLevel } from "../../types";
-import type { CompactTerminalRow } from "./terminalRows";
+import type { CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 
 type ThinkingData = {
 	level?: string;

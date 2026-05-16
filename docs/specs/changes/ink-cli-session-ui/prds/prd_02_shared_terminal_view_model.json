@@ -15,8 +15,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented and validated in PRD 02 shared terminal view-model batch."
     },
     {
       "id": "US-002",
@@ -30,8 +30,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "Depends on US-001."
+      "passes": true,
+      "notes": "Implemented and validated in PRD 02 shared terminal view-model batch."
     },
     {
       "id": "US-003",
@@ -45,8 +45,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Depends on US-001."
+      "passes": true,
+      "notes": "Implemented and validated in PRD 02 shared terminal view-model batch."
     }
   ]
 }
