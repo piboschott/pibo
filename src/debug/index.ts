@@ -57,6 +57,11 @@ export async function runDebugCli(argv = process.argv): Promise<void> {
 			await runDebugSignals(args.slice(1));
 			return;
 		}
+		if (args[0] === "web") {
+			const { runDebugWeb } = await import("./web.js");
+			await runDebugWeb(args.slice(1));
+			return;
+		}
 		throw new Error(`Unknown pibo debug command "${args[0]}". Run pibo debug --help.`);
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));
@@ -565,6 +570,7 @@ Commands:
   jobs     Inspect durable Pibo jobs and DLQ
   runs     Inspect durable yielded runs
   signals  Inspect live session signal snapshots through Chat Web APIs
+  web      Inspect browser render state via CDP
 
 Next:
   pibo debug db
@@ -572,6 +578,7 @@ Next:
   pibo debug trace <pibo-session-id> --running-only
   pibo debug events stream --topic pibo.output
   pibo debug signals tree ps_...
+  pibo debug web targets
 `);
 }
 
