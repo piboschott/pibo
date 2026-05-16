@@ -1,30 +1,33 @@
 {
   "project": "Pibo Observability and Debug Telemetry",
   "branchName": "ralph/pibo-observability-telemetry-store",
-  "description": "Telemetry schema, typed store/service APIs, redaction helpers, payload previews, retention stats, and pruning for Pibo debug telemetry.",
+  "description": "Telemetry schema in pibo.sqlite, typed store/service APIs, session/event correlation links, provider event volume controls, preview-disabled contract, retention stats, and pruning for Pibo debug telemetry.",
   "userStories": [
     {
       "id": "US-001",
       "title": "Add telemetry record types and correlation model",
       "description": "As a runtime engineer, I want shared telemetry TypeScript types so that capture, store, and CLI code use the same correlated record shapes.",
       "acceptanceCriteria": [
-        "Add TypeScript types for telemetry turns, phases, provider requests, provider events, tool calls, payload previews, retention classes, and query results",
-        "Types include applicable correlation fields for piboSessionId, rootSessionId, roomId, turnId, phaseId, providerRequestId, upstreamResponseId, toolCallId, toolName, runId, eventStreamId, createdAt, and updatedAt",
+        "Add TypeScript types for telemetry turns, phases, provider requests, provider event metadata/aggregates, tool calls, retention classes including incident, preview-unavailable results, and query results",
+        "Types include applicable correlation fields for piboSessionId, rootSessionId, roomId, turnId, phaseId, normalized event id/row id, payload metadata id, providerRequestId, upstreamResponseId, toolCallId, toolName, runId, eventStreamId, createdAt, and updatedAt",
         "Types model status values for running, ok, error, aborted, timeout, open, and stale-equivalent query states where applicable",
+        "Types model telemetry default-on/best-effort service behavior without requiring callers to persist content bodies",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "Depends on PRD 01 decision matrix."
     },
     {
       "id": "US-002",
       "title": "Add idempotent telemetry schema migration",
       "description": "As a storage maintainer, I want telemetry tables created additively so that existing Pibo stores keep working.",
       "acceptanceCriteria": [
-        "Add idempotent migrations for telemetry turns, phases, provider requests, provider event summaries, tool calls, and payload previews or an equivalent normalized schema",
-        "Add indexes for lookup by piboSessionId, turnId, providerRequestId, toolCallId, createdAt, updatedAt, and retention class where applicable",
+        "Add idempotent pibo.sqlite migrations for telemetry turns, phases, provider requests, provider event summaries/aggregates, tool calls, retention classes, and optional preview metadata only if explicitly enabled",
+        "Add indexes for lookup by piboSessionId, roomId, event id/row id, payload metadata id, turnId, providerRequestId, toolCallId, createdAt, updatedAt, and retention class where applicable",
+        "Schema supports bidirectional lookup from sessions/events/payload metadata to telemetry and from telemetry back to session/event evidence",
+        "Schema includes retention classes for live, diagnostic, incident, and payload_preview where applicable",
         "Running migrations twice succeeds without duplicate-column or duplicate-table failures",
         "Existing debug/session/event store tests continue to pass",
         "Tests pass",
@@ -32,30 +35,30 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "Must not create pibo-telemetry.sqlite."
     },
     {
       "id": "US-003",
       "title": "Implement telemetry store write APIs",
       "description": "As runtime capture code, I want small store methods so that telemetry writes do not require raw SQL at capture sites.",
       "acceptanceCriteria": [
-        "Implement typed write/update APIs for starting/updating turns, phases, provider requests, provider event summaries, tool calls, and payload previews",
+        "Implement typed write/update APIs for starting/updating turns, phases, provider requests, provider event summaries/aggregates, tool calls, and optional bounded previews",
         "Write APIs are safe to call repeatedly for the same logical id where upsert semantics are expected",
-        "Telemetry can be disabled or unavailable without crashing callers that use the service wrapper",
+        "Telemetry is enabled by default through the service wrapper, but unavailable store or write failures do not crash callers",
         "Store contract tests cover insert, update, terminal status, and missing optional correlation ids",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "Runtime capture in PRD 03 consumes these write APIs."
     },
     {
       "id": "US-004",
       "title": "Implement telemetry store read APIs for debug commands",
       "description": "As a CLI engineer, I want bounded telemetry queries so that debug commands can render summaries without scanning or dumping entire stores.",
       "acceptanceCriteria": [
-        "Implement read APIs for listing telemetry sessions, inspecting one session, reading a turn timeline, reading a provider request, listing provider events with cursor/limit, reading a tool call, listing stale work, and reading payload previews",
+        "Implement read APIs for listing telemetry sessions, inspecting one session, reading a turn timeline, reading a provider request, listing provider event metadata/aggregates with cursor/limit, reading a tool call, listing stale work, reading stats, and returning preview-unavailable results by default",
         "List APIs enforce default limits and hard maximum limits",
         "Provider event listing supports sequence or cursor-based paging",
         "Read API tests cover unknown ids, empty stores, limits, cursors, and correlation lookup",
@@ -64,17 +67,16 @@
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "CLI in PRD 04 consumes these read APIs."
     },
     {
       "id": "US-005",
-      "title": "Add centralized redaction helper for telemetry",
-      "description": "As a security reviewer, I want one redaction helper so that headers, JSON, and text previews are scrubbed consistently.",
+      "title": "Add centralized payload volume-control helper for telemetry",
+      "description": "As a maintainer, I want one bounded preview/truncation helper so telemetry does not duplicate large payloads or full tool/session content.",
       "acceptanceCriteria": [
-        "Redact sensitive keys case-insensitively including authorization, cookie, set-cookie, api_key, apiKey, token, access_token, refresh_token, client_secret, clientSecret, googleClientSecret, password, and secret",
-        "Redact common bearer token and API-key-like string patterns in text values",
-        "Redaction returns metadata indicating whether data was redacted and truncated",
-        "Unit tests cover nested JSON objects, arrays, headers, text payloads, and conservative false-positive redaction",
+        "Helper enforces byte limits and reports truncation metadata for any optional preview path",
+        "Default telemetry persistence stores metadata, counters, ids, timestamps, statuses, and links rather than full content bodies",
+        "Tests cover large JSON objects, arrays, headers, text payloads, and tool arguments to prove default storage remains bounded",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -84,26 +86,27 @@
     },
     {
       "id": "US-006",
-      "title": "Implement bounded payload preview persistence",
-      "description": "As an operator, I want optional payload previews to be redacted and size-limited so that rare parser issues can be inspected safely.",
+      "title": "Implement preview-disabled and optional bounded preview contract",
+      "description": "As an operator, I want preview paths to be explicitly disabled/unavailable by default so telemetry cannot accidentally become a raw payload store.",
       "acceptanceCriteria": [
-        "Payload preview persistence requires an explicit capture mode or service option and defaults to summary-only behavior",
-        "Saved previews include owner kind, owner id, byte size, truncation flag, redaction flag, content type, preview text, createdAt, and payload_preview retention class",
-        "Preview text is capped by a default byte limit and a hard maximum limit",
-        "Tests prove disabled preview capture returns a clear unavailable result",
+        "Default preview capture and preview persistence are disabled/unavailable unless an explicit service option enables bounded previews",
+        "Preview read APIs return a typed unavailable/disabled result by default and never fall back to arbitrary raw provider payload reads",
+        "If a later explicit preview mode is enabled, saved previews include owner kind, owner id, byte size, truncation flag, volume-control flag, content type, preview text, createdAt, and payload_preview retention class",
+        "Preview text, when enabled, is capped by a default byte limit and a hard maximum limit",
+        "Tests prove disabled preview capture and reads return clear unavailable results",
         "Tests pass",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": false,
-      "notes": ""
+      "notes": "Do not implement automatic raw preview capture unless explicitly approved before execution."
     },
     {
       "id": "US-007",
       "title": "Add telemetry retention stats and prune service",
       "description": "As a maintainer, I want stats and dry-run pruning so that telemetry storage can be managed safely.",
       "acceptanceCriteria": [
-        "Implement telemetry stats grouped by retention class with row counts and byte counts where available",
+        "Implement telemetry stats grouped by retention class, including live, diagnostic, incident, and payload_preview where present, with row counts and byte counts where available",
         "Implement prune dry-run that reports rows and bytes that would be deleted for a retention class and cutoff",
         "Implement explicit prune apply that deletes only matching telemetry rows and does not affect sessions, transcripts, or normalized event logs",
         "Tests cover dry-run, apply, cutoff filtering, retention class filtering, and unrelated data preservation",
@@ -112,7 +115,7 @@
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
+      "notes": "CLI stats/prune story in PRD 04 depends on this service."
     }
   ]
 }

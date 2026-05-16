@@ -1,0 +1,80 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-session-source-runtime",
+  "description": "Introduce a CLI session-source boundary and local/direct runtime integration for session listing, creation, messaging, agents, and live updates.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define CliSessionSource interface and fake source",
+      "description": "As a CLI controller implementer, I need a session-source interface so UI code is decoupled from local or Gateway-backed data sources.",
+      "acceptanceCriteria": [
+        "Define CliSessionSource types for rooms, sessions, create/open session, send message, list agents, set session agent where supported, status, subscribe/update, and close",
+        "Implement a fake source for controller and UI tests",
+        "Fake source supports deterministic session, agent, status, and trace update fixtures",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement local session source status and discovery",
+      "description": "As a CLI user, I want the local source to report available sessions and status so I can choose what to open.",
+      "acceptanceCriteria": [
+        "Implement local/direct source skeleton using existing Pibo runtime/session abstractions where possible",
+        "Source can return runtime status with redacted secrets",
+        "Source can list sessions and rooms when available, or return clear unsupported/empty states",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-001."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement local session create/open/send flow",
+      "description": "As a CLI user, I want to create or open a session and send messages from the terminal.",
+      "acceptanceCriteria": [
+        "Local source can create a new session and return a selected session summary",
+        "Local source can open a session and expose current trace view or empty state",
+        "Local source can send a normal text message to the selected session",
+        "Errors are returned as clear source errors instead of uncaught exceptions",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-002."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement live trace updates and source cleanup",
+      "description": "As a CLI user, I want the transcript to update while a session is running and clean up when I exit.",
+      "acceptanceCriteria": [
+        "Open session exposes subscription or callback behavior for trace/session updates",
+        "Updates provide data compatible with shared compact row generation",
+        "Closing the source unsubscribes listeners and releases runtime resources",
+        "Tests cover cleanup with fake source",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-003."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement existing agent/profile listing and selection",
+      "description": "As a CLI user, I want to select an existing Pibo agent/profile without using the Web Agent Designer.",
+      "acceptanceCriteria": [
+        "Source lists available existing profiles/agents from the canonical local profile mechanism",
+        "Source applies selected profile to new session flow or current session when supported",
+        "Unsupported current-session profile changes return a clear message",
+        "No profile create/edit/delete behavior is added",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Depends on US-001 and may depend on US-003 for current session behavior."
+    }
+  ]
+}

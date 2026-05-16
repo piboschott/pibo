@@ -1,0 +1,66 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-static-renderer",
+  "description": "Build a static Ink renderer for shared compact terminal rows with terminal-safe output and tests.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Ink renderer module skeleton and dependency decision",
+      "description": "As a CLI implementer, I want an Ink renderer module skeleton so terminal presentation can be developed separately from Web UI and session runtime.",
+      "acceptanceCriteria": [
+        "Document the selected Ink package/version or add an implementation note if dependency addition is deferred",
+        "Create CLI renderer module paths for Ink terminal view, row, line, colors, markdown, and JSON helpers",
+        "Renderer modules do not import Web DOM components or Web-only libraries",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Depends on shared terminal view-model boundary."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement Ink row and line rendering",
+      "description": "As an SSH operator, I want compact terminal rows to render in my shell with readable symbols and colors.",
+      "acceptanceCriteria": [
+        "Implement InkTerminalView over shared compact rows with a bounded row window option",
+        "Implement InkTerminalRow and InkTerminalLine using Ink Box/Text primitives",
+        "Map user, assistant, tool, yielded run, and error rows to terminal-safe markers and colors",
+        "Renderer handles unknown or missing row fields without crashing",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-001."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement terminal-safe markdown and JSON helpers",
+      "description": "As a terminal user, I want rich content to display as bounded readable terminal text instead of browser HTML widgets.",
+      "acceptanceCriteria": [
+        "Markdown helper renders paragraphs, lists, code fences, and links as terminal text",
+        "JSON helper pretty-prints bounded values and marks truncation",
+        "Helpers avoid browser markdown, Prism, and interactive JSON tree dependencies",
+        "Tests cover markdown links/code blocks and large JSON truncation",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-001."
+    },
+    {
+      "id": "US-004",
+      "title": "Add Ink render-to-string tests",
+      "description": "As a QA engineer, I want deterministic renderer tests so terminal row output regressions are caught early.",
+      "acceptanceCriteria": [
+        "Add renderToString or equivalent tests for representative compact row fixtures",
+        "Tests verify output contains expected markers for user, assistant, tool, yielded run, and error rows",
+        "Tests verify large row lists use the bounded window behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-002 and US-003."
+    }
+  ]
+}

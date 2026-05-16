@@ -6462,18 +6462,19 @@ function buildContextFileGroups(files: ContextFileCatalogItem[], selectedKeys: s
 	const selected = new Set(selectedKeys);
 	const groups = new Map<string, CatalogGroup<ContextFileCatalogItem>>();
 	for (const file of files) {
+		const isBuiltIn = file.pluginId === "pibo.core";
 		const isCustom = !file.pluginId;
-		const key = isCustom ? "custom" : `plugin:${file.pluginId}`;
+		const key = isBuiltIn ? "builtin" : isCustom ? "custom" : `plugin:${file.pluginId}`;
 		const group = getOrCreateCatalogGroup(groups, key, {
-			title: isCustom ? "Custom" : pluginDisplayName(file.pluginId, file.pluginName),
-			description: isCustom ? "Loose context files without a plugin owner" : file.pluginId ?? "plugin",
-			kind: isCustom ? "custom" : "plugin",
+			title: isBuiltIn ? "Built-in Context Files" : isCustom ? "Custom" : pluginDisplayName(file.pluginId, file.pluginName),
+			description: isBuiltIn ? "Pibo-owned built-in context file catalog" : isCustom ? "Loose context files without a plugin owner" : file.pluginId ?? "plugin",
+			kind: isBuiltIn ? "builtin" : isCustom ? "custom" : "plugin",
 		});
 		group.items.push(file);
 		if (selected.has(file.key)) group.selectedCount += 1;
 		group.totalCount += 1;
 	}
-	return finalizeCatalogGroups(groups, ["custom", "plugin"]);
+	return finalizeCatalogGroups(groups, ["builtin", "custom", "plugin"]);
 }
 
 function getOrCreateCatalogGroup<T>(
@@ -7226,6 +7227,7 @@ function SelectionCheckbox({
 function contextFileMeta(contextFile: AgentCatalog["contextFiles"][number]): string {
 	const source = contextFile.source ?? "plugin";
 	const scope = contextFile.scope ?? "global";
+	if (contextFile.pluginId === "pibo.core") return "built-in global";
 	if (source === "plugin") return "plugin global";
 	if (scope === "agent") return contextFile.agentProfileName ? `agent ${contextFile.agentProfileName}` : "agent local";
 	return "managed global";

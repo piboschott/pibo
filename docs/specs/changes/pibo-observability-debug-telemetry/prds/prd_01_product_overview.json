@@ -1,21 +1,22 @@
 {
   "project": "Pibo Observability and Debug Telemetry",
   "branchName": "ralph/pibo-observability-telemetry-overview",
-  "description": "Product overview, implementation decisions, capability documentation, and rollout framing for progressive Pibo debug telemetry.",
+  "description": "Cross-cutting V1 contract, documentation guardrails, and rollout framing for progressive Pibo debug telemetry.",
   "userStories": [
     {
       "id": "US-001",
       "title": "Record V1 implementation decisions for telemetry",
       "description": "As an engineering lead, I want the open telemetry design decisions resolved in documentation so that Ralph iterations can implement a consistent V1 scope.",
       "acceptanceCriteria": [
-        "Update the observability telemetry PRD README or change docs with V1 decisions for storage location, payload preview default, stale threshold default, Chat Web V1 scope, and incident pinning scope",
+        "Update the observability telemetry PRD README or change docs with the authoritative V1 scope matrix: pibo.sqlite storage, session/event bidirectional links, summary-only preview default, provider/profile-aware stale thresholds, CLI-only V1 scope, incident retention class, default-on telemetry, and best-effort writes",
         "Mark unresolved items as TBD only where implementation truly cannot proceed without user input",
+        "Document the recommended Ralph execution order and cross-PRD dependencies",
         "Do not change runtime behavior in this story",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "Run before implementation PRDs; documentation/contract only."
     },
     {
       "id": "US-002",
@@ -23,7 +24,7 @@
       "description": "As a maintainer, I want a capability spec for runtime observability telemetry so that the data model and CLI contract are discoverable outside the change folder.",
       "acceptanceCriteria": [
         "Add or update a capability document under docs/specs/capabilities for runtime observability telemetry",
-        "Document summary-first telemetry, correlation ids, runtime phases, provider diagnostics, tool-call progress, redaction, retention, stale detection, and non-goals",
+        "Document summary-first telemetry, correlation ids, runtime phases, provider diagnostics, tool-call progress, storage-volume control, retention classes, stale detection threshold sources, preview-disabled behavior, and non-goals",
         "Link the capability document from the change PRD README or related docs",
         "Typecheck passes"
       ],
@@ -48,10 +49,10 @@
     {
       "id": "US-004",
       "title": "Add observability rollout checklist",
-      "description": "As an operator, I want a rollout checklist so that telemetry can be enabled safely without leaking secrets or flooding context.",
+      "description": "As an operator, I want a rollout checklist so that telemetry can be enabled without flooding context or duplicating large stored content.",
       "acceptanceCriteria": [
         "Add a rollout checklist to the PRD docs or a dedicated telemetry rollout doc",
-        "Checklist covers typecheck, debug CLI tests, redaction tests, synthetic partial-tool-call fixture, bounded output verification, and prune dry-run verification",
+        "Checklist covers typecheck, debug CLI tests, bounded-output/storage tests, synthetic partial-tool-call fixture, stats/prune dry-run verification, stale threshold-source verification, and preview-unavailable behavior",
         "Checklist explicitly states that automatic provider timeout recovery is out of scope for this feature",
         "Typecheck passes"
       ],

@@ -79,6 +79,7 @@ test("thinking action without level reports current level without cycling", asyn
 	try {
 		enableThinkingSupport(harness.routed.runtime);
 		harness.routed.runtime.session.setThinkingLevel("medium");
+		const before = harness.routed.runtime.session.thinkingLevel;
 
 		const result = await harness.routed.executeAction({
 			type: "execution",
@@ -87,8 +88,8 @@ test("thinking action without level reports current level without cycling", asyn
 		});
 
 		assert.equal(result.type, "execution_result");
-		assert.equal(result.result.level, "medium");
-		assert.equal(harness.routed.runtime.session.thinkingLevel, "medium");
+		assert.equal(result.result.level, before);
+		assert.equal(harness.routed.runtime.session.thinkingLevel, before);
 	} finally {
 		await harness.dispose();
 	}

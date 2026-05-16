@@ -1,0 +1,51 @@
+{
+  "project": "Ink CLI Session UI",
+  "branchName": "ralph/ink-cli-session-ui-overview",
+  "description": "Product scope, Web/CLI boundary, and rollout guardrails for the Ink-based Pibo CLI Session UI.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Finalize CLI Session UI V1 scope decisions",
+      "description": "As an engineering lead, I want V1 scope decisions captured in docs so that implementation stories do not expand into Web-only product areas.",
+      "acceptanceCriteria": [
+        "Update the Ink CLI Session UI change docs or PRD README with final command-name decision or an explicit TBD marker",
+        "Document that Web Chat remains the primary full-featured control center",
+        "Document that CLI V1 excludes Projects, Workflows, Cron, Ralph, Agent Designer, full Settings, and full context management",
+        "Document whether /model, /thinking, /fork, and /details are V1 or later",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Documentation/contract story; run before code implementation."
+    },
+    {
+      "id": "US-002",
+      "title": "Add CLI Session UI capability documentation",
+      "description": "As a maintainer, I want a durable capability spec for the CLI Session UI so that the product contract is discoverable outside the change folder.",
+      "acceptanceCriteria": [
+        "Add or update docs/specs/capabilities/cli-session-ui.md",
+        "Document CLI purpose: SSH, bootstrap, recovery, and fast local session work",
+        "Document required reuse of shared trace/session view models and Ink-native rendering",
+        "Document Web-only non-goals and the V1 Slash Command list",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add Web and CLI boundary checklist",
+      "description": "As a reviewer, I want a checklist that prevents accidental Web feature porting or Web UI regressions while implementing the CLI.",
+      "acceptanceCriteria": [
+        "Add a checklist to the PRD README, tasks, or design docs covering Web UI unchanged, no DOM imports in Ink renderer, no CLI-only trace mapper, bounded output, and Web-only feature exclusions",
+        "Checklist mentions that existing pibo tui and pibo tui:routed must keep working unless a separate migration is approved",
+        "Checklist includes root and Chat Web typecheck/build validation expectations",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

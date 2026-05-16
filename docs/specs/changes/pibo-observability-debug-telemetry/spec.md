@@ -13,7 +13,7 @@ The 2026-05-16 stuck-session incident showed the gap. Pibo could show `processin
 
 ## Goal
 
-Pibo MUST provide bounded, redacted, progressively discoverable telemetry that lets an agent locate the active or failed phase of runtime work and drill into related provider, tool, queue, and stream facts without large payload dumps.
+Pibo MUST provide bounded, progressively discoverable telemetry that lets an agent locate the active or failed phase of runtime work and drill into related provider, tool, queue, stream, session, and event facts without duplicating large payloads.
 
 ## Background / Current State
 
@@ -27,7 +27,7 @@ Missing today:
 - tool-call argument progress metadata,
 - phase-level active-turn state,
 - timeout/staleness diagnostics,
-- bounded redacted payload previews by selector,
+- optional bounded payload previews by selector, if previews are approved for V1,
 - debug commands that connect session status to provider/tool/span evidence.
 
 ## Scope
@@ -36,9 +36,9 @@ Missing today:
 
 - Telemetry for Pibo Session turns, queue state, routed-session phases, provider requests, provider streams, normalized events, tool-call construction, tool execution, aborts, timeouts, and runtime/gateway status snapshots.
 - Progressive `pibo debug telemetry` command surface with compact summaries, selectors, cursors, limits, and JSON output.
-- Storage contracts for bounded telemetry rows and optional redacted payload references.
-- Correlation identifiers across session id, turn/event id, provider request id, upstream response id, tool call id, run id, and stream id.
-- Redaction and payload-size controls.
+- Storage contracts for bounded telemetry rows in the unified `pibo.sqlite` data store.
+- Correlation identifiers across session id, room id, turn/event id, normalized event row, provider request id, upstream response id, tool call id, run id, payload metadata, and stream id.
+- Payload-size controls and optional preview/redaction controls where previews are implemented.
 - Retention policy and pruning behavior.
 - Staleness detection signals that point to the next debug command.
 
@@ -46,7 +46,7 @@ Missing today:
 
 - Fixing provider hangs or adding automatic timeout behavior — covered by separate runtime hardening work.
 - Full distributed tracing with external SaaS dependencies.
-- Exporting secrets, raw auth tokens, OAuth payloads, API keys, or full provider request bodies by default.
+- Exporting raw auth tokens, OAuth payloads, API keys, full provider request bodies, full transcripts, normalized event payloads, or full tool arguments by default.
 - Replacing Chat Web trace rendering.
 - Long-term analytics dashboards.
 - High-cardinality per-token storage.
@@ -71,7 +71,7 @@ An agent starts with `pibo debug telemetry --help` or `pibo debug telemetry sess
 - Summary commands show counts, ids, timestamps, phase labels, stale ages, and next commands.
 - Default output is bounded to a small row limit.
 - `--json` returns structured data with the same bounded defaults.
-- Raw payloads require an explicit payload command or selector.
+- Raw or preview payload access, if V1 supports it at all, requires an explicit payload command or selector.
 
 #### Scenario: Agent starts broad
 
@@ -90,7 +90,7 @@ Normalized Pibo events carry `piboSessionId`, optional `eventId`, `runId`, and `
 
 #### Target
 
-Telemetry rows can be joined by explicit ids instead of inferred from timestamps.
+Telemetry rows can be joined by explicit ids instead of inferred from timestamps. Because telemetry lives in `pibo.sqlite`, debug commands can query session, room, event-log, payload, and telemetry evidence together.
 
 #### Acceptance
 
@@ -107,6 +107,8 @@ Telemetry records include applicable fields:
 - `toolName`
 - `runId`
 - `eventStreamId`
+- normalized event row id or event id when available
+- payload metadata id when available
 - `createdAt`
 - `updatedAt`
 
@@ -145,7 +147,7 @@ Each turn has a compact phase timeline that identifies queueing, prompt build, p
 
 ### Requirement: Provider request lifecycle is visible
 
-The system MUST record provider request lifecycle facts without exposing secrets or full payloads by default.
+The system MUST record provider request lifecycle facts without storing full headers or full payload bodies by default.
 
 #### Current
 
@@ -161,7 +163,7 @@ Provider request records include:
 
 - provider, api, model id, transport, service tier when known,
 - request start time,
-- response status and redacted header summary,
+- response status and compact header/status summary,
 - first byte time,
 - last raw event time,
 - last normalized event time,
@@ -179,7 +181,7 @@ Provider request records include:
 
 ### Requirement: Raw provider events are summarized, not dumped
 
-The system MUST store and display provider-stream summaries by default and MUST make raw event payload access explicit, bounded, and redacted.
+The system MUST store and display provider-stream metadata, counters, safe structural fields, and links by default. It MUST NOT store or display full raw provider event bodies by default.
 
 #### Current
 
@@ -187,22 +189,22 @@ Pibo does not persist raw provider stream events. Normalized output events are c
 
 #### Target
 
-Agents can see raw event type timelines and selected safe fields, then explicitly fetch redacted snippets if needed.
+Agents can see raw provider event type timelines, counters, timings, and selected safe structural fields. V1 should not require storing full raw provider event bodies.
 
 #### Acceptance
 
-- `pibo debug telemetry provider <provider-request-id> events` lists raw event type, sequence, timestamps, byte sizes, parse status, and normalized event links.
+- `pibo debug telemetry provider <provider-request-id> events` lists raw provider event type, sequence or aggregate window, timestamps, byte sizes, parse status, counters, safe structural fields, and normalized event links where available.
 - The default command omits raw JSON payloads.
-- `--fields` selects safe dot-path fields where available.
-- `payload <raw-event-id>` prints a redacted, byte-limited payload preview.
-- Payload commands show truncation and redaction metadata.
+- `--fields` selects allowlisted safe structural fields where available.
+- Payload preview commands are optional for V1 and must be explicit, bounded, and clearly marked if implemented.
+- Output reports whether event rows are per-event, aggregated, sampled, or truncated.
 
 #### Scenario: Unknown event type appears
 
 - GIVEN a provider emits an unknown SSE event type
 - WHEN an agent lists provider events
 - THEN the unknown type appears with count and sequence ids
-- AND the agent can fetch one redacted sample payload by id.
+- AND, if bounded samples are enabled, the agent can fetch one bounded sample payload by id.
 
 ### Requirement: Tool-call argument progress is visible
 
@@ -285,31 +287,31 @@ Telemetry commands maintain the same discipline even when provider streams are n
 - THEN it prints only the first or latest bounded page with cursor information
 - AND does not include raw payload bodies.
 
-### Requirement: Telemetry is safe by default
+### Requirement: Telemetry is bounded and content-safe by default
 
-Telemetry MUST redact secrets and sensitive content before persistence or before display, according to the configured capture mode.
+Telemetry MUST avoid duplicating full content bodies by default and MUST bound any optional preview before persistence or display.
 
 #### Current
 
-Some debug outputs rely on compact payloads and ad hoc redaction. Raw provider capture does not exist.
+Some debug outputs rely on compact payloads. Raw provider capture does not exist.
 
 #### Target
 
-The telemetry layer has a consistent privacy model.
+The telemetry layer has a consistent storage-volume and preview model.
 
 #### Acceptance
 
-- API keys, OAuth tokens, cookies, authorization headers, client secrets, and known secret key names are redacted.
-- Raw provider payload capture is disabled by default or stores only redacted bounded previews.
-- Commands display redaction status and capture mode.
+- Full provider payloads, full transcripts, normalized event payloads, and full tool arguments are not stored in telemetry by default.
+- Raw provider payload capture is omitted or disabled by default; if enabled later, it stores only bounded previews.
+- Commands display capture/preview mode and truncation status where applicable.
 - Operators cannot accidentally dump full raw payloads through a summary command.
 
-#### Scenario: Authorization header exists
+#### Scenario: Large provider payload exists
 
-- GIVEN a provider request includes an Authorization header
-- WHEN telemetry stores or displays request metadata
-- THEN the header value is redacted
-- AND no command prints the raw value.
+- GIVEN a provider event contains a large JSON payload or tool argument fragment
+- WHEN telemetry stores or displays request/event metadata
+- THEN telemetry stores only metadata, counters, safe structural fields, and links by default
+- AND no summary command prints the full payload or full tool arguments.
 
 ### Requirement: Telemetry retention is explicit
 
@@ -398,7 +400,7 @@ pibo debug telemetry session <pibo-session-id> [--limit n] [--json]
 pibo debug telemetry turn <turn-id-or-event-id> [--events] [--depth n] [--json]
 pibo debug telemetry provider <provider-request-id> [--json]
 pibo debug telemetry provider <provider-request-id> events [--after seq] [--limit n] [--fields a,b.c] [--json]
-pibo debug telemetry provider <provider-request-id> payload <raw-event-id> [--max-bytes n] [--json]
+pibo debug telemetry provider <provider-request-id> payload <preview-or-event-summary-id> [--max-bytes n] [--json]
 pibo debug telemetry tool <tool-call-id> [--json]
 pibo debug telemetry stale [--threshold-ms n] [--json]
 pibo debug telemetry stats [--retention class] [--json]
@@ -413,19 +415,20 @@ pibo debug telemetry prune --retention class --before iso-date [--dry-run|--appl
 - Provider emits unknown event types.
 - Provider stream sends bytes but no meaningful normalized events.
 - Tool-call deltas interleave across multiple function calls.
+- Provider event volume is high enough that per-event storage would grow too quickly.
 - A turn is aborted while a provider request is active.
 - A tool execution starts but the process exits before finish event.
 - Telemetry store is missing, corrupt, or still migrating.
 - Payload preview is unavailable because capture was disabled.
-- Redaction removes all useful payload fields.
+- Preview/truncation policy removes too much detail to diagnose a parser issue.
 - Multiple cloned sessions share similar Pi session ancestry but different Pibo Session ids.
 
 ## Constraints
 
 - **Compatibility:** Existing `pibo debug` commands must keep their current output contracts unless explicitly versioned.
-- **Security / Privacy:** Raw payloads, headers, cookies, tokens, OAuth fields, API keys, and secrets must not appear in default output.
+- **Security / Privacy:** Raw payloads, full headers, cookies, tokens, OAuth fields, API keys, full transcripts, normalized event payloads, and full tool arguments must not appear in default output.
 - **Performance:** Telemetry writes must not block token streaming or tool output paths beyond small bounded work.
-- **Storage:** Raw or preview payload retention must be shorter than summary retention.
+- **Storage:** Telemetry must not duplicate full sessions, transcripts, normalized event payloads, provider payloads, or tool arguments. Provider event storage must be bounded or aggregated when needed.
 - **Context Budget:** Debug output must remain compact by default and report truncation.
 - **Local First:** Telemetry must work without external observability services.
 
@@ -433,7 +436,7 @@ pibo debug telemetry prune --retention class --before iso-date [--dry-run|--appl
 
 - [ ] SC-001: An agent can diagnose a stuck session by running at most four bounded telemetry commands from session id to likely stalled phase.
 - [ ] SC-002: A partial tool-call stream shows provider request id, raw event counts, last progress time, argument progress state, and missing completion.
-- [ ] SC-003: No default telemetry command prints full provider payloads, headers, transcripts, or secrets.
+- [ ] SC-003: No default telemetry command prints or duplicates full provider payloads, full headers, transcripts, normalized event payloads, or full tool arguments.
 - [ ] SC-004: All telemetry list commands support bounded text and `--json` output.
 - [ ] SC-005: Telemetry stats and prune commands expose retention and disk usage.
 - [ ] SC-006: Existing debug CLI tests continue to pass after adding telemetry commands.
@@ -442,17 +445,17 @@ pibo debug telemetry prune --retention class --before iso-date [--dry-run|--appl
 
 ### Assumptions
 
-- Telemetry can be stored in `pibo.sqlite` or `pibo-events.sqlite`; final placement is a design decision.
-- Provider raw payload previews can be disabled or redacted without preventing useful diagnosis.
-- Existing event-log payload storage/redaction helpers can be reused where possible.
+- Telemetry will be stored in the unified `pibo.sqlite` data store with dedicated telemetry tables.
+- Provider raw payload previews are disabled/unavailable by default in V1 and are not required for useful diagnosis.
+- Existing event-log payload metadata and storage helpers can be linked/reused where appropriate instead of duplicating payload content.
+- Metadata telemetry capture is independent of raw Pi event forwarding settings unless telemetry itself is explicitly disabled.
 
 ### Open Questions
 
-- Should telemetry be stored in the unified `pibo.sqlite` store or the reliability/event store?
-- What default stale threshold should production use: 2 minutes, 5 minutes, or model-specific?
-- Should raw provider event previews be disabled by default or stored as redacted previews by default?
-- Should Chat Web expose a telemetry drill-down panel in V1, or only link to CLI commands?
-- Should provider telemetry capture live events even when the session profile disables raw Pi event forwarding?
+- What provider- and phase-aware stale thresholds should production use?
+- What exact Provider Settings config shape should expose stale thresholds?
+- Should bounded provider event previews be enabled later for unusual/error events?
+- How much provider event detail should be stored before aggregation, sampling, or pruning to avoid redundant/high-volume storage?
 
 ## Traceability
 
@@ -466,7 +469,7 @@ pibo debug telemetry prune --retention class --before iso-date [--dry-run|--appl
 | Tool-call progress | Args never complete | tasks.md 3 | Pending |
 | Stale active work | Session remains streaming | tasks.md 4, 5 | Pending |
 | Context budget | Noisy provider stream | tasks.md 5 | Pending |
-| Safety | Authorization header exists | tasks.md 2, 3, 5 | Pending |
-| Retention | Prune payload previews | tasks.md 2, 5 | Pending |
+| Bounded/content-safe storage | Large provider payload exists | tasks.md 2, 3, 5 | Pending |
+| Retention | Stats/prune retention classes and preview-unavailable behavior | tasks.md 2, 5 | Pending |
 | Signal hints | UI shows stale hint | tasks.md 4 | Pending |
 | JSON output | Agent drill-down loop | tasks.md 5 | Pending |
