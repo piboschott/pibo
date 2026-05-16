@@ -557,6 +557,7 @@ async function executePtyScenario(input: PtyScenario, options: PtyOptions): Prom
 		if (scenario.writeArtifactsOnSuccess) result.artifactDir = await writeArtifacts(scenario, result);
 		return result;
 	} catch (error) {
+		if (stopReason === "completed") stopReason = runner ? "error" : "preflight_error";
 		if (runner) await runner.terminate(stopReason);
 		const result = buildResult(scenario, runner, false, assertions, iterations, started, startedAt, stopReason, null, null);
 		result.artifactDir = await writeArtifacts(scenario, result, error instanceof Error ? error.message : String(error));
