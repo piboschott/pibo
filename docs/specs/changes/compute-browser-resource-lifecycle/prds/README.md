@@ -12,10 +12,19 @@ This directory translates the compute/browser resource lifecycle specs into impl
 - `../spec.md`
 - `../design.md`
 - `../tasks.md`
+- `../../../../reports/compute-browser-resource-lifecycle-incident-baseline-2026-05-17.md`
+- `../../../../project/compute-browser-resource-operating-model.md`
+- `../../../../project/compute-browser-resource-rollout-checklist.md`
 - `../../../capabilities/docker-compute-workers.md`
 - `../../../capabilities/browser-automation-desktop-environment.md`
 - `../../../capabilities/browser-use-authenticated-leases.md`
 - `../../../capabilities/continuous-ralph-jobs.md`
+
+## Baseline and Operating Model
+
+- Incident baseline: `docs/reports/compute-browser-resource-lifecycle-incident-baseline-2026-05-17.md`
+- Canonical resource model: `docs/project/compute-browser-resource-operating-model.md`
+- Rollout checklist: `docs/project/compute-browser-resource-rollout-checklist.md`
 
 ## PRDs
 

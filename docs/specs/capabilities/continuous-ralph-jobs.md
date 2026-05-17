@@ -360,6 +360,16 @@ Ralph resource ownership is explicit. Pibo labels or records assigned workers, b
 - THEN Ralph releases or reaps the worker browser pool
 - AND records whether the worker was released, idle-retained, or marked dirty.
 
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Ralph jobs and runs that use compute/browser resources must record assigned worker ids, browser lease ids when known, owner scope, cleanup status, and retained/dirty reasons.
+- Ralph-owned compute containers must carry `pibo.ralph.jobId`, `pibo.ralph.runId`, and `pibo.compute.ownerScope` labels when Ralph owns or directly assigns the worker.
+- Run completion, promise-complete, max-iteration, stop, cancel, and interrupted-run paths must release browser leases and mark workers released, idle-retained, or dirty according to policy.
+- CLI/API status must show disabled jobs with retained resources or cleanup failures.
+- Prompt text cannot override Docker resource budgets, hard TTLs, browser-pool reaping, or dirty-worker recycling.
+
 ## Edge Cases
 
 - A run can have no Pibo Session id if target resolution or session creation fails before attachment.

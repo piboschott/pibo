@@ -3,13 +3,13 @@
 **Status:** Draft  
 **Created:** 2026-05-17  
 **Owner / Source:** User request in Pibo session `ps_22a69e7e-a2a2-4450-be8e-17ce8056d3d8`; 2026-05-17 server overload analysis  
-**Related docs:** `docs/specs/capabilities/docker-compute-workers.md`, `docs/specs/capabilities/browser-automation-desktop-environment.md`, `docs/specs/capabilities/browser-use-authenticated-leases.md`, `docs/specs/capabilities/continuous-ralph-jobs.md`, `docs/specs/changes/compute-browser-resource-lifecycle/design.md`, `docs/specs/changes/compute-browser-resource-lifecycle/tasks.md`
+**Related docs:** `docs/reports/compute-browser-resource-lifecycle-incident-baseline-2026-05-17.md`, `docs/project/compute-browser-resource-operating-model.md`, `docs/project/compute-browser-resource-rollout-checklist.md`, `docs/specs/capabilities/docker-compute-workers.md`, `docs/specs/capabilities/browser-automation-desktop-environment.md`, `docs/specs/capabilities/browser-use-authenticated-leases.md`, `docs/specs/capabilities/continuous-ralph-jobs.md`, `docs/specs/changes/compute-browser-resource-lifecycle/design.md`, `docs/specs/changes/compute-browser-resource-lifecycle/tasks.md`
 
 ## Why
 
 Pibo compute workers let agents run browser checks and development gateways without touching the host gateway. Ralph loops rely on that isolation for long-running autonomous work. The 2026-05-17 overload incident showed that isolation without lifecycle control is unsafe on small hosts: persistent dev containers accumulated many Chromium processes, swap was exhausted, and Docker retained old containers, layers, and build cache.
 
-The system needs a clear resource contract. Agents may request browser verification, but Pibo must decide whether to reuse, recycle, or reject browser and worker resources. Prompt instructions are not a cleanup mechanism.
+The system needs a clear resource contract. Agents may request browser verification, but Pibo must decide whether to reuse, recycle, or reject browser and worker resources. Prompt instructions are not a cleanup mechanism. The durable terms and ownership rules are captured in `docs/project/compute-browser-resource-operating-model.md`; rollout validation is tracked in `docs/project/compute-browser-resource-rollout-checklist.md`.
 
 ## Goal
 

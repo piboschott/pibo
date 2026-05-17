@@ -169,6 +169,33 @@ An agent-facing tool for managing yielded runs, such as `pibo_run_start`, `pibo_
 **Yieldable Tool**:
 A normal synchronous tool that can also be wrapped by `pibo_run_start`.
 
+**Docker Image**:
+A built container filesystem template, such as `pibo:latest`, reused by compute containers. Image reuse does not bound runtime state inside containers.
+
+**Compute Container**:
+A Docker container started by Pibo compute commands. It owns runtime processes, writable-layer state, exposed ports, and resource limits for a worker.
+
+**Dev Worker**:
+A long-lived compute container tied to a Git worktree and deterministic port block for isolated development and browser validation.
+
+**Worktree**:
+A Git checkout used by a dev worker. Worktree deletion is explicit and separate from browser or container cleanup.
+
+**Browser Pool**:
+A worker-scoped Pibo authority that starts, reuses, leases, health-checks, and reaps managed Chromium CDP browser processes.
+
+**Browser Lease**:
+A time-bounded claim on a browser pool's CDP browser for one automation task, Pibo Session, or Ralph run.
+
+**Auth Profile Lease**:
+An isolated browser-use profile slot cloned from a closed authenticated template profile. It is distinct from a browser process lease.
+
+**Ralph Job**:
+A durable continuous-work definition owned by Ralph, with a target, profile, prompt, stop policy, and run state.
+
+**Ralph Run**:
+One execution attempt for a Ralph Job, usually backed by a routed Pibo Session and resource cleanup state.
+
 **MCP CLI**:
 The `pibo mcp` operator CLI for configuring, discovering, and calling external MCP servers from the shell.
 
@@ -305,6 +332,10 @@ A Pibo-owned wrapper-level process that summarizes tool usage in a Pibo Session 
 - A **Subagent** call creates or reuses a routed child **Pibo Session** with `parentId`.
 - A **Yielded Run** is tracked in the **Run Registry** and identified by a **runId**.
 - A **Run-Control Tool** manages a **Yielded Run**; a **Yieldable Tool** is the wrapped work.
+- A **Docker Image** may be reused by many **Compute Containers**, but each container owns separate runtime state.
+- A **Dev Worker** is a long-lived **Compute Container** tied to a **Worktree**; releasing the container does not delete the worktree.
+- A **Browser Pool** grants **Browser Leases** for managed Chromium CDP use, while an **Auth Profile Lease** grants isolated authenticated profile state.
+- A **Ralph Job** creates **Ralph Runs**; when runs use compute/browser resources, Ralph policy records ownership and cleanup state.
 - The **Reliable Event Core** uses the **Pibo Reliability Store** and mirrors normalized output events into the **pibo.output Topic**.
 - The **MCP CLI** manages **MCP Servers** outside the Pibo plugin runtime.
 - `pibo tools` manages **Curated CLI Tools** outside profiles and MCP.

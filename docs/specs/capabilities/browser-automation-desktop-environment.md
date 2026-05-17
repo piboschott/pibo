@@ -182,6 +182,15 @@ Pibo owns the browser process lifecycle, exposes a managed CDP URL to browser-us
 - THEN Pibo reuses the managed CDP browser when it is healthy
 - AND the worker does not accumulate additional Chromium main process trees.
 
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Browser automation inside compute workers must acquire a managed browser-pool lease and attach to the managed CDP URL instead of starting unlimited unmanaged Chromium processes.
+- Pool status and health output must expose pid, port, profile path, active lease, last-used time, stale state, and cleanup suggestions in text and JSON forms.
+- Stale cleanup must match both `chrome` and `chromium`, scoped to Pibo-managed pid/process-group metadata or Pibo-managed user-data directories.
+- Repeated browser-use validation must prove the worker's Chromium main-process count remains bounded.
+
 ## Edge Cases
 
 - A runtime directory may not exist; detection MUST continue without X authority, Wayland, or DBus values.

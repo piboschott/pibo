@@ -239,6 +239,15 @@ An acquired auth slot can be bound to a browser-pool lease. Release closes or re
 - THEN Pibo releases the matching browser-pool lease
 - AND the auth template profile remains untouched.
 
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Auth profile leases are separate from browser-pool leases; automation in compute workers must coordinate both when managed pool mode is active.
+- Lease acquire should expose enough state for agents to distinguish auth slot identity, browser-pool lease identity, CDP URL, owner, expiry, and cleanup status.
+- Lease release and stale reap must release matching managed browser leases when safe, while preserving the authenticated template profile unless the user explicitly targets template cleanup.
+- Cleanup must match stale `chrome|chromium` processes only when tied to Pibo-managed lease or profile metadata.
+
 ## Edge Cases
 
 - The lease registry file may be missing; Pibo MUST treat that as an empty versioned registry.

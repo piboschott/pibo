@@ -38,4 +38,4 @@ Add a resource lifecycle contract for Pibo compute workers, browser-use automati
 - **CLI:** add or extend `pibo tools browser-use health/reap`, `pibo compute list --all`, `pibo compute reap --include-dev --stopped`, and a resource-focused doctor/status surface.
 - **Data:** add local state files or records for worker browser pool leases, pid/process-group metadata, idle timestamps, and cleanup decisions.
 - **Auth / Security:** preserve authenticated browser profile isolation. Cleanup must not delete active auth template profiles or unrelated host browser profiles.
-- **Docs:** update capability specs and create PRDs for browser pooling, cleanup, Docker resource limits, Ralph integration, and rollout validation.
+- **Docs:** update capability specs and create PRDs for browser pooling, cleanup, Docker resource limits, Ralph integration, and rollout validation. Baseline and rollout docs live at `docs/reports/compute-browser-resource-lifecycle-incident-baseline-2026-05-17.md`, `docs/project/compute-browser-resource-operating-model.md`, and `docs/project/compute-browser-resource-rollout-checklist.md`.

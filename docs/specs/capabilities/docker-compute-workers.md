@@ -285,6 +285,16 @@ Build context excludes local state, and Pibo exposes image/container/cache usage
 - WHEN an operator runs compute resource diagnostics
 - THEN Pibo reports the cache size and a safe prune command.
 
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Compute workers must enforce memory, memory-swap, PID, shm, init, restart, and log budgets by default.
+- Worker labels/status must expose resource policy, owner scope, worktree, Ralph job/run ids when present, last-used time, dirty state, and cleanup eligibility.
+- `pibo compute list --all` and reap dry-run behavior must include running, stopped, OOM-killed, dirty, one-time, and dev workers.
+- Docker hygiene diagnostics must distinguish image reuse from container writable state, BuildKit cache, volumes, logs, browser state, screenshots, and worktrees.
+- Container/browser cleanup must not delete Git worktrees unless a separate explicit worktree cleanup command or flag is selected.
+
 ## Edge Cases
 
 - Existing Git branches or worktrees can make `git worktree add -b <name>` fail; the current code retries by adding the existing branch name.
