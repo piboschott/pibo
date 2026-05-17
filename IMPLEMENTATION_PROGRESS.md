@@ -324,3 +324,57 @@ Remaining limitations / next stories:
 
 - PRD 06 remains incomplete for polished picker/overlay semantics and PTY keyboard-flow evidence.
 - PRD 07 remains incomplete for standardized visual artifacts, installed/global CLI smoke, final Web checks, and final evidence report.
+
+## 2026-05-17 Ralph run: PRD 06 picker overlays and keyboard flows
+
+### Selected coherent story group
+
+- PRD 06 `US-001` Implement shared compact overlay style.
+- PRD 06 `US-002` Redesign owner, room, and session navigation pickers.
+- PRD 06 `US-003` Implement thinking, model, and login keyboard overlays.
+- PRD 06 `US-004` Handle fork, clone, browser-only, and unsupported actions compactly.
+- PRD 06 `US-005` Validate overlay keyboard flows through PTY, if focused tests and full `npm test` complete in this run.
+
+### Plan and validation approach
+
+1. Refine CLI-only picker/suggestion rendering into one compact terminal overlay grammar: terse lower-case title, `❯` selected marker, primary label first, dim secondary metadata, disabled markers/reasons, and compact `↑↓ enter esc ctrl-c` hint.
+2. Improve picker item shaping for owners, rooms, sessions, agents, thinking/model/login/fork command menus so human-readable labels dominate and long ids move to abbreviated secondary metadata/details.
+3. Keep picker UI ephemeral by not appending overlays to transcript rows; keep command-producing outcomes in existing command-result rows, including disabled/unavailable feedback and clone/fork/session-link flow.
+4. Extend focused Ink render/controller tests for owner/room/session overlays, nested model/login/thinking menus, disabled/unavailable rows, Escape back, direct command semantics, and redaction/no secret echo.
+5. Add or reuse PTY scenarios under `.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17` for startup owner/room/session flow, slash/status while picker open, thinking, nested model/login deterministic flows, disabled/unavailable rows, Escape/back, Enter, and Ctrl+C; then run `npm run typecheck` and `npm test`.
+6. Mark PRD 06 stories true only with evidence notes, update tasks/progress, run browser cleanup, and commit from the host worktree.
+
+### Result
+
+Completed PRD 06 `US-001` through `US-005`.
+
+Changes:
+
+- Reworked `InkSessionPickerView` and `InkSlashSuggestionsView` into a shared compact overlay grammar: terse lowercase titles, `❯` selected marker, `×` disabled marker, primary label first, dim/secondary metadata after `·`, and a consistent `↑↓ select · enter ... · esc ... · ctrl-c exit` hint.
+- Updated owner, room, session, create-session, agent, thinking, model, login, and fork picker item shaping so long owner scopes/session ids/room ids are abbreviated secondary metadata instead of dominant primary text.
+- Added room selection semantics for `/room` and parent room-picker state for room→session flows so Escape can back out of the session picker without corrupting selection/input.
+- Extended reusable PTY smoke coverage with `overlay-keyboard-model-login` for nested model/login overlays, Escape/back behavior, disabled provider feedback, API-key safe instructions, and `/status` while a picker is open.
+- Updated PTY smoke docs/tests for the compact overlay copy and marked PRD 06 stories `passes: true` with evidence notes.
+
+Validation run in Docker worker:
+
+- `npm run build` — passed; includes `chat-ui:build` and `context-files-ui:build`.
+- `node --test test/ink-cli-v2-pty-smoke.test.mjs test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs` — passed, 52 tests.
+- `node scripts/ink-cli-v2-pty-smoke.mjs --scenario owner-room-session-message --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17` — passed.
+- `node scripts/ink-cli-v2-pty-smoke.mjs --scenario slash-suggestions-status-thinking --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17` — passed.
+- `node scripts/ink-cli-v2-pty-smoke.mjs --scenario overlay-keyboard-model-login --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17` — passed.
+- Redaction grep over PRD06 PTY `clean.txt`/`screen.txt` for unredacted secret-shaped values — passed.
+- `npm run typecheck` — passed.
+- `npm test` — passed, 675 tests.
+
+Evidence/artifacts:
+
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/owner-room-session-message`
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/slash-suggestions-status-thinking`
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/overlay-keyboard-model-login`
+
+Each artifact directory contains `raw.ansi.log`, `clean.txt`, `screen.txt`, `metadata.json`, `input.json`, `assertions.json`, and `events.jsonl`. Evidence classification is deterministic debug/local PTY with mocked/debug provider data where needed, plus focused unit/controller/source tests. Visual HTML/SVG/PNG conversion remains the documented fallback and PRD 07 owns final standardization.
+
+Remaining limitations / next stories:
+
+- PRD 07 remains incomplete for standardized visual artifacts/goldens, installed/global `pibo tui:sessions` PTY smoke, final Web checks, and the final parity evidence report.

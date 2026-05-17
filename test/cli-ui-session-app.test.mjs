@@ -165,12 +165,13 @@ test("InkSessionAppView renders slash suggestions", () => {
 			},
 		},
 	}));
-	assert.match(output, /Slash commands/);
-	assert.match(output, /\/thinking — Show or set model thinking level/);
-	assert.match(output, /❯ \/thinking-show/);
-	assert.match(output, /Use \/thinking in terminal/);
-	assert.ok(output.indexOf("Status looks healthy.") < output.indexOf("Slash commands"));
-	assert.ok(output.indexOf("Slash commands") < output.indexOf("› /th"));
+	assert.match(output, /slash commands/);
+	assert.match(output, /\/thinking · Show or set model thinking level/);
+	assert.match(output, /❯ × \/thinking-show/);
+	assert.match(output, /unavailable: Use \/thinking/);
+	assert.match(output, /↑↓ select · enter accept\/run · esc close · ctrl-c exit/);
+	assert.ok(output.indexOf("Status looks healthy.") < output.indexOf("slash commands"));
+	assert.ok(output.indexOf("slash commands") < output.indexOf("› /th"));
 });
 
 test("InkSessionAppView renders owner room and create-session pickers", () => {
@@ -191,9 +192,10 @@ test("InkSessionAppView renders owner room and create-session pickers", () => {
 			message: "Select the Web user or Root recovery owner to use in this CLI session.",
 		},
 	}));
-	assert.match(ownerOutput, /Select effective owner/);
-	assert.match(ownerOutput, /Web user alpha/);
-	assert.match(ownerOutput, /❯ Web user beta/);
+	assert.match(ownerOutput, /select owner/);
+	assert.match(ownerOutput, /Web user alpha · user:alpha/);
+	assert.match(ownerOutput, /❯ Web user beta · user:beta/);
+	assert.match(ownerOutput, /↑↓ select · enter confirm · esc back\/cancel · ctrl-c exit/);
 
 	const sessionOutput = renderToString(React.createElement(InkSessionAppView, {
 		state: {
@@ -210,8 +212,35 @@ test("InkSessionAppView renders owner room and create-session pickers", () => {
 			},
 		},
 	}));
-	assert.match(sessionOutput, /Select session in Personal Chat/);
-	assert.match(sessionOutput, /New session in Personal Chat/);
+	assert.match(sessionOutput, /select session — Personal Chat/);
+	assert.match(sessionOutput, /❯ \+ New session in Personal Chat · Create and open/);
+});
+
+test("Ink compact overlay style prioritizes labels, dims metadata, and marks disabled items", () => {
+	const output = renderToString(React.createElement(InkSessionAppView, {
+		state: {
+			...baseState(),
+			mode: "picker",
+			picker: {
+				kind: "command-menu",
+				action: "model-provider",
+				title: "Select model provider",
+				items: [
+					{ id: "openai", kind: "command-option", label: "OpenAI", description: "2 models · available" },
+					{ id: "anthropic", kind: "command-option", label: "Anthropic", description: "unavailable: missing API key", disabled: true },
+				],
+				selectedIndex: 1,
+				emptyMessage: "No providers",
+			},
+		},
+		maxLineChars: 100,
+	}));
+
+	assert.match(output, /select model provider/);
+	assert.match(output, /  OpenAI · 2 models · available/);
+	assert.match(output, /❯ × Anthropic · unavailable: missing API key/);
+	assert.match(output, /↑↓ select · enter confirm · esc back\/cancel · ctrl-c exit/);
+	assert.doesNotMatch(output, /card|dashboard/i);
 });
 
 test("Ink session input reducer captures text, enter, navigation, escape, and slash suggestions", () => {

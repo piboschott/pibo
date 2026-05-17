@@ -16,6 +16,7 @@ Run `npm run build` first. The script invokes `pibo debug pty run` through `node
 | --- | --- | --- |
 | `owner-room-session-message` | owner picker, room picker, session creation, message send, mocked assistant reply | `.tmp/ink-cli-v2-pty-smoke/owner-room-session-message/{raw.ansi.log,clean.txt,...}` |
 | `slash-suggestions-status-thinking` | slash suggestions, `/status` rich card, `/thinking` keyboard picker | `.tmp/ink-cli-v2-pty-smoke/slash-suggestions-status-thinking/{raw.ansi.log,clean.txt,...}` |
+| `overlay-keyboard-model-login` | compact picker overlays, nested `/model` and `/login` keyboard flows, disabled rows, Escape/back, API-key safe instructions, and `/status` while a picker is open | `.tmp/ink-cli-v2-pty-smoke/overlay-keyboard-model-login/{raw.ansi.log,clean.txt,...}` |
 | `existing-session-hydration` | prepared persisted session opened through `--session <id>` with transcript hydration | `.tmp/ink-cli-v2-pty-smoke/existing-session-hydration/{raw.ansi.log,clean.txt,...}` |
 
 ## Evidence rules for Ralph agents

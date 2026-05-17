@@ -39,13 +39,15 @@ export type InkSessionPickerItem = {
 	disabled?: boolean;
 };
 
+const IDENTIFIER_PATTERN = /^(?:user|room|ps|pi|entry|evt|run|create|provider|model|agent)[_:]/i;
+
 export type InkSessionPickerState = {
 	kind: "owner" | "room" | "session" | "agent" | "command-menu";
 	title: string;
 	items: readonly InkSessionPickerItem[];
 	selectedIndex: number;
 	emptyMessage: string;
-	action?: "select-session" | "create-session" | "thinking-level" | "model-provider" | "model-choice" | "login-provider" | "login-method" | "fork-candidate";
+	action?: "select-session" | "select-room" | "create-session" | "thinking-level" | "model-provider" | "model-choice" | "login-provider" | "login-method" | "fork-candidate";
 	ownerScope?: string;
 	roomId?: string;
 	commandName?: string;
@@ -157,13 +159,13 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		await handleCliSessionSubmittedInput(rawInput, source, stateRef.current, setState, openSession, requestExit);
 	}, [openSession, requestExit, source]);
 
-	const openSessionPickerForRoom = useCallback(async (room: CliRoomSummary, ownerScope: string) => {
+	const openSessionPickerForRoom = useCallback(async (room: CliRoomSummary, ownerScope: string, parent?: InkSessionPickerState) => {
 		const sessions = await source.listSessions({ roomId: room.id, ownerScope });
 		const createItem: InkSessionPickerItem = {
 			id: `create:${room.id}`,
 			kind: "create-session",
-			label: `+ New session in ${room.title}`,
-			description: "Create and open a new CLI session in this room",
+			label: "+ New session",
+			description: ["create and open", `room ${abbreviateIdentifier(room.id)}`].join(" · "),
 			roomId: room.id,
 			ownerScope,
 		};
@@ -182,6 +184,7 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 				emptyMessage: `No sessions in ${room.title}. Create a new session to start chatting.`,
 				ownerScope,
 				roomId: room.id,
+				parent,
 			},
 			message: sessions.length === 0 ? `No sessions in ${room.title}. Press Enter to create one.` : "Select a session with arrow keys, or create a new one.",
 			error: undefined,
@@ -236,7 +239,12 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 					await openSession(created.id, `Created session ${created.title}.`);
 					return;
 				}
-				await openSessionPickerForRoom(room, ownerScope);
+				if (picker.action === "select-room") {
+					const status = await source.getStatus({ sessionId: stateRef.current.session?.id });
+					setState((current) => ({ ...current, status, activeRoom: room, mode: "transcript", picker: undefined, overlayStack: undefined, message: `Selected room ${room.title}.`, error: undefined }));
+					return;
+				}
+				await openSessionPickerForRoom(room, ownerScope, picker);
 				return;
 			}
 			if (picker.kind === "session") {
@@ -406,24 +414,37 @@ export function InkSlashSuggestionsView({ suggestions, maxLineChars }: { suggest
 	return React.createElement(
 		Box,
 		{ flexDirection: "column" },
-		React.createElement(Text, { color: "yellow" }, boundedLine("Slash commands (↑/↓ select, Enter accept/run, Esc close)", lineLimit)),
-		...suggestions.items.slice(0, 8).map((command, index) => React.createElement(Text, { key: command.id, color: index === suggestions.selectedIndex ? "green" : "white" }, boundedLine(`${index === suggestions.selectedIndex ? "❯" : " "} ${formatSlashCommand(command)} — ${command.description}${command.unsupportedReason ? ` (${command.unsupportedReason})` : ""}`, lineLimit))),
+		React.createElement(Text, { color: "yellow" }, boundedLine("slash commands", lineLimit)),
+		...suggestions.items.slice(0, 8).map((command, index) => {
+			const disabled = command.support === "deferred" || command.support === "browser-only" || Boolean(command.unsupportedReason);
+			const item: InkSessionPickerItem = {
+				id: command.id,
+				label: formatSlashCommand(command),
+				description: [command.description, command.unsupportedReason ? `unavailable: ${command.unsupportedReason}` : undefined].filter(Boolean).join(" · "),
+				disabled,
+			};
+			return React.createElement(Text, { key: command.id, color: overlayItemColor(index === suggestions.selectedIndex, disabled) }, formatOverlayItemLine(item, index === suggestions.selectedIndex, lineLimit));
+		}),
+		React.createElement(Text, { color: "gray" }, boundedLine("↑↓ select · enter accept/run · esc close · ctrl-c exit", lineLimit)),
 	);
 }
 
 export function InkSessionPickerView({ picker, maxLineChars }: { picker: InkSessionPickerState; maxLineChars?: number }): React.ReactElement {
 	const lineLimit = normalizeTerminalLineLimit(maxLineChars);
+	const title = compactOverlayTitle(picker.title);
 	if (picker.items.length === 0) {
 		return React.createElement(Box, { flexDirection: "column" },
-			React.createElement(Text, { color: "yellow" }, boundedLine(picker.title, lineLimit)),
+			React.createElement(Text, { color: "yellow" }, boundedLine(title, lineLimit)),
 			React.createElement(Text, { color: "gray" }, boundedLine(picker.emptyMessage, lineLimit)),
+			React.createElement(Text, { color: "gray" }, boundedLine("esc back/cancel · ctrl-c exit", lineLimit)),
 		);
 	}
 	return React.createElement(
 		Box,
 		{ flexDirection: "column" },
-		React.createElement(Text, { color: "yellow" }, boundedLine(`${picker.title} (↑/↓ select, Enter open, Esc cancel)`, lineLimit)),
-		...picker.items.map((item, index) => React.createElement(Text, { key: item.id, color: index === picker.selectedIndex ? "green" : "white" }, boundedLine(`${index === picker.selectedIndex ? "❯" : " "} ${item.label}${item.description ? ` — ${item.description}` : ""}`, lineLimit))),
+		React.createElement(Text, { color: "yellow" }, boundedLine(title, lineLimit)),
+		...picker.items.map((item, index) => React.createElement(Text, { key: item.id, color: overlayItemColor(index === picker.selectedIndex, item.disabled === true) }, formatOverlayItemLine(item, index === picker.selectedIndex, lineLimit))),
+		React.createElement(Text, { color: "gray" }, boundedLine("↑↓ select · enter confirm · esc back/cancel · ctrl-c exit", lineLimit)),
 	);
 }
 
@@ -699,6 +720,7 @@ async function handleSlashCommand(
 			mode: "picker",
 			picker: {
 				kind: "room",
+				action: command.name === "room" ? "select-room" : undefined,
 				title: command.name === "room" ? `Select active room for ${owner.label}` : `Select room for sessions for ${owner.label}`,
 				items: rooms.map(roomPickerItem),
 				selectedIndex,
@@ -1240,24 +1262,80 @@ function statusViewModelInput(status: CliRuntimeStatus | undefined, session?: Cl
 	};
 }
 
+function compactOverlayTitle(title: string): string {
+	return title
+		.replace(/^Select effective owner$/i, "select owner")
+		.replace(/^Select existing agent\/profile$/i, "select agent")
+		.replace(/^Select thinking level$/i, "select thinking level")
+		.replace(/^Select model provider$/i, "select model provider")
+		.replace(/^Select login provider$/i, "select login provider")
+		.replace(/^Select fork candidate$/i, "select fork candidate")
+		.replace(/^Select auth method for /i, "select login method — ")
+		.replace(/^Select model for /i, "select model — ")
+		.replace(/^Select session in /i, "select session — ")
+		.replace(/^Select room for new session for /i, "select room — new session for ")
+		.replace(/^Select active room for /i, "select room — ")
+		.replace(/^Select room for sessions for /i, "select room — sessions for ")
+		.replace(/^Select room for /i, "select room — ")
+		.replace(/^Select /i, "select ");
+}
+
+function formatOverlayItemLine(item: InkSessionPickerItem, selected: boolean, max: number): string {
+	const marker = selected ? "❯" : " ";
+	const disabled = item.disabled === true;
+	const availability = disabled ? "× " : "";
+	const secondary = item.description ? ` · ${redactCliSessionStatusText(item.description)}` : "";
+	return boundedLine(`${marker} ${availability}${redactCliSessionStatusText(item.label)}${secondary}`, max);
+}
+
+function overlayItemColor(selected: boolean, disabled: boolean): string {
+	if (disabled) return "gray";
+	return selected ? "green" : "white";
+}
+
+function abbreviateIdentifier(value: string | undefined, max = 24): string | undefined {
+	if (!value) return undefined;
+	if (value.length <= max) return value;
+	const head = Math.max(6, Math.floor((max - 1) / 2));
+	const tail = Math.max(4, max - head - 1);
+	return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+function itemMetadata(...parts: Array<string | undefined | false>): string | undefined {
+	return parts.filter(Boolean).join(" · ") || undefined;
+}
+
+function ownerKindLabel(owner: CliOwnerSummary): string {
+	if (owner.kind === "web-user") return "Web user";
+	if (owner.kind === "root-recovery") return "Root recovery";
+	if (owner.kind === "legacy") return "Legacy owner";
+	return "Local owner";
+}
+
+function modelLabel(model: CliSessionSummary["model"]): string | undefined {
+	if (!model) return undefined;
+	return `${model.provider}/${model.id}`;
+}
+
 function ownerPickerItem(owner: CliOwnerSummary): InkSessionPickerItem {
 	return {
 		id: owner.ownerScope,
 		kind: "owner",
 		ownerScope: owner.ownerScope,
 		label: owner.label,
-		description: [owner.ownerScope, owner.description].filter(Boolean).join(" | "),
+		description: itemMetadata(ownerKindLabel(owner), abbreviateIdentifier(owner.ownerScope), owner.description),
 	};
 }
 
 function roomPickerItem(room: CliRoomSummary): InkSessionPickerItem {
+	const label = room.title || abbreviateIdentifier(room.id) || room.id;
 	return {
 		id: room.id,
 		kind: "room",
 		roomId: room.id,
 		ownerScope: room.ownerScope,
-		label: room.title || room.id,
-		description: [room.isDefault ? "default" : undefined, room.description].filter(Boolean).join(" | "),
+		label,
+		description: itemMetadata(room.isDefault ? "default" : undefined, room.description, `room ${abbreviateIdentifier(room.id)}`),
 	};
 }
 
@@ -1267,8 +1345,8 @@ function sessionPickerItem(session: CliSessionSummary): InkSessionPickerItem {
 		kind: "session",
 		roomId: session.roomId,
 		ownerScope: session.ownerScope,
-		label: session.title || session.id,
-		description: [session.profile, session.status, session.updatedAt].filter(Boolean).join(" | "),
+		label: session.title || abbreviateIdentifier(session.id) || session.id,
+		description: itemMetadata(session.status, session.profile || session.agentId, modelLabel(session.model), session.updatedAt ? `updated ${session.updatedAt}` : undefined, abbreviateIdentifier(session.id)),
 	};
 }
 
@@ -1276,7 +1354,7 @@ function agentPickerItem(agent: CliAgentSummary): InkSessionPickerItem {
 	return {
 		id: agent.id,
 		label: agent.name || agent.id,
-		description: agent.description ?? agent.profileName,
+		description: itemMetadata(agent.profileName, agent.description, IDENTIFIER_PATTERN.test(agent.id) ? abbreviateIdentifier(agent.id) : undefined),
 	};
 }
 

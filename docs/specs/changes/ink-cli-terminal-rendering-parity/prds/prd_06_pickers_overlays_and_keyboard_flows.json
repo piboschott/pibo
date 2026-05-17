@@ -9,7 +9,7 @@
       "description": "As a TUI user, I want all pickers to feel like one terminal command surface.",
       "acceptanceCriteria": [
         "Owner, room, session, slash, thinking, model, login, fork/clone, and confirmation/unavailable overlays share a compact terminal style",
-        "Overlay rows use short title, selected marker such as ❯, primary label first, dim secondary metadata, disabled/unavailable marker, and compact control hint",
+        "Overlay rows use short title, selected marker such as \u276f, primary label first, dim secondary metadata, disabled/unavailable marker, and compact control hint",
         "Long owner/room/session IDs are secondary, dimmed, abbreviated, or moved to details; they are not dominant primary text",
         "Startup overlays may appear before transcript rows but still use the same terminal overlay grammar",
         "Overlay rendering does not permanently append picker UI to transcript history unless an action/result is produced",
@@ -18,8 +18,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Implemented one compact Ink overlay grammar for slash suggestions and picker states: lowercase terse title, \u276f selected marker, primary label first, dim/secondary metadata via \u00b7 separators, \u00d7 disabled marker, and compact \u2191\u2193/enter/esc/ctrl-c hints. Verified with npm run build; focused node --test test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/terminal-parity-fixtures.test.mjs; npm run typecheck; npm test. PTY evidence: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/owner-room-session-message, slash-suggestions-status-thinking, overlay-keyboard-model-login. Evidence tier: deterministic debug/local PTY plus unit/source tests; each PTY dir has raw.ansi.log, clean.txt, screen.txt, metadata.json, input.json, assertions.json, events.jsonl. Visual conversion remains the documented fallback from the existing audit/PRD07 work."
     },
     {
       "id": "US-002",
@@ -36,8 +36,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Owner/room/session picker rows now keep display names/titles primary and move owner scopes, room ids, session ids, status/profile/model/updated metadata to abbreviated secondary text; + New session is compact; /room uses select-room behavior; room-to-session navigation stores the room picker as parent so Escape backs from session picker to room picker. Controller/render coverage in test/cli-ui-session-app.test.mjs covers owner switching guardrails, room-first /session and /room pickers, Escape parent behavior, create-session flows, and compact render output. PTY evidence: owner-room-session-message and overlay-keyboard-model-login under /workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17. Evidence tier: deterministic debug/local PTY plus focused unit/render tests."
     },
     {
       "id": "US-003",
@@ -54,8 +54,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Thinking, model, and login overlays use the same compact command-menu renderer; direct /thinking high and direct /model or /login arguments still append command-result rows; nested provider-to-model and provider-to-auth-method menus support Enter and Escape/back; API-key output stays terminal-safe and does not echo secrets. Verified by Slash /thinking, /model, and /login controller tests plus overlay-keyboard-model-login PTY. Redaction grep over PRD06 clean/screen artifacts found no unredacted secret-shaped values. Evidence tier: deterministic debug/local PTY plus unit/controller tests."
     },
     {
       "id": "US-004",
@@ -72,8 +72,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Fork candidates, clone/session-link outcomes, browser-only/download unavailable results, unsupported slash suggestions, and disabled model provider items render with compact command rows or overlay rows rather than silent/no-feedback states. Existing command-result transcript flow is preserved for /clone and unsupported actions. Verified by Slash /fork-candidates and Slash Web action commands tests, compact overlay disabled-row render test, slash-suggestions-status-thinking PTY for /download unavailable result, and overlay-keyboard-model-login PTY for disabled provider feedback. Evidence tier: deterministic debug/local PTY plus focused controller/render tests."
     },
     {
       "id": "US-005",
@@ -91,8 +91,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. PTY scenarios captured startup owner/room/session picker flow, slash palette, /thinking, nested /model and /login flows, Escape/back, Enter confirmation, disabled/unavailable row rendering, Ctrl+C clean exit, and /status while a picker is open. Artifact dirs: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/owner-room-session-message; /workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/slash-suggestions-status-thinking; /workspace/.tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17/overlay-keyboard-model-login. Each has raw ANSI, clean text, final screen, events, metadata, input, and assertions. Commands: npm run build; focused node --test test/ink-cli-v2-pty-smoke.test.mjs test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs; node scripts/ink-cli-v2-pty-smoke.mjs --scenario owner-room-session-message --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd06-2026-05-17; same for slash-suggestions-status-thinking and overlay-keyboard-model-login; npm run typecheck; npm test (675 tests). Classification: deterministic debug/local PTY, not live-provider; final installed/global smoke remains PRD07."
     }
   ]
 }
