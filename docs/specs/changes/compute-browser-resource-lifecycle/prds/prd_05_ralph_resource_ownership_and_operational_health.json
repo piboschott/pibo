@@ -98,8 +98,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented read-only `pibo compute health` / `pibo compute doctor` with text and stable JSON fields for severity, checks, browser process counts, active browser leases, stale CDP files, dirty/OOM/cleanup-eligible workers, Docker disk pressure, reaper/timer status, and safe next commands. Added focused health tests for healthy state, browser leak warning, stale CDP/active lease, dirty worker, OOM container, Docker disk pressure, and missing reaper/timer state. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused tests, real read-only Docker-worker/host command validation, and full npm run typecheck passed."
     },
     {
       "id": "US-007",
@@ -113,8 +113,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Documented the automatic reaper rollout sequence in the rollout checklist and compute capability spec: resource health read-only first, browser-pool reap validation, compute reap dry-run, manual apply, then optional timers. Added recommended browser/compute/disk cadence, selectors, rollback steps that keep manual commands available, and validation entries for repeated browser checks, stopped/OOM visibility, and Ralph terminal cleanup. Evidence recorded in IMPLEMENTATION_PROGRESS.md; documentation was validated with focused tests and full npm run typecheck."
     }
   ]
 }

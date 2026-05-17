@@ -35,7 +35,8 @@ import {
 	parseDockerWorkerListLine,
 	resolveComputeWorkerLifecycle,
 } from '../dist/compute/docker.js';
-import { renderComputeDiskDiagnosticsText, renderComputeReapPlanText, renderComputeWorkerListText } from '../dist/compute/cli.js';
+import { renderComputeDiskDiagnosticsText, renderComputeReapPlanText, renderComputeResourceHealthText, renderComputeWorkerListText } from '../dist/compute/cli.js';
+import { buildComputeResourceHealth, parseProcessList } from '../dist/compute/resource-health.js';
 
 const customPolicy = Object.freeze({
 	memory: '3g',
@@ -454,4 +455,119 @@ test('dev worker docker run args include resource policy labels worktree metadat
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.pidsLimit}=321`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.shmSize}=768m`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.logMaxSize}=12m`));
+});
+
+function browserPoolState(overrides = {}) {
+	return {
+		workerId: overrides.workerId ?? 'worker-a',
+		poolId: overrides.poolId ?? 'default',
+		maxBrowserProcesses: overrides.maxBrowserProcesses ?? 1,
+		pid: overrides.pid,
+		processGroupId: overrides.processGroupId,
+		cdpUrl: overrides.cdpUrl,
+		userDataDir: overrides.userDataDir,
+		activeLeaseId: overrides.activeLeaseId,
+		activeLeaseCount: overrides.activeLeaseCount,
+		owner: overrides.owner,
+		lastUsedAt: overrides.lastUsedAt,
+		idleExpiresAt: overrides.idleExpiresAt,
+		state: overrides.state ?? 'ready',
+		cleanupStatus: overrides.cleanupStatus ?? 'success',
+		lastError: overrides.lastError,
+	};
+}
+
+function configuredTimer() {
+	return { status: 'configured', details: 'test timer configured', nextCommands: ['pibo compute health --json'] };
+}
+
+test('compute resource health reports healthy read-only state with stable JSON fields', () => {
+	const health = buildComputeResourceHealth({
+		now: new Date('2026-05-17T00:00:00.000Z'),
+		workers: [],
+		disk: buildComputeDiskDiagnostics([], { now: new Date('2026-05-17T00:00:00.000Z') }),
+		processes: [],
+		browserPools: [],
+		staleCdpFiles: { pidFiles: 0, portFiles: 0, details: [] },
+		reaperTimers: configuredTimer(),
+	});
+
+	assert.equal(health.readOnly, true);
+	assert.equal(health.severity, 'ok');
+	assert.equal(health.browserProcesses.totalChromiumProcesses, 0);
+	assert.equal(health.browserLeases.active, 0);
+	assert.equal(health.computeWorkers.dirty, 0);
+	assert.equal(health.computeWorkers.oomKilled, 0);
+	assert.equal(health.reaperTimers.status, 'configured');
+	assert.ok(health.nextCommands.includes('pibo compute health --json'));
+
+	const text = renderComputeResourceHealthText(health);
+	assert.match(text, /Compute resource health: ok \(read-only\)/);
+	assert.match(text, /Browser processes: 0 main \/ 0 total/);
+});
+
+test('compute resource health warns on browser main-process leaks and active leases', () => {
+	const processes = parseProcessList([
+		'101 1 101 chromium /usr/bin/chromium --user-data-dir=/tmp/pibo-profile-a --remote-debugging-port=9222',
+		'102 1 102 google-chrome /usr/bin/google-chrome --user-data-dir=/tmp/pibo-profile-a --remote-debugging-port=9223',
+		'103 101 101 chromium /usr/bin/chromium --type=renderer --user-data-dir=/tmp/pibo-profile-a',
+	].join('\n'));
+	const health = buildComputeResourceHealth({
+		workers: [],
+		disk: buildComputeDiskDiagnostics([], {}),
+		processes,
+		browserPools: [{ state: browserPoolState({ workerId: 'worker-a', pid: 101, processGroupId: 101, userDataDir: '/tmp/pibo-profile-a', activeLeaseId: 'lease-a', activeLeaseCount: 1, state: 'leased' }), statePath: '/pool/state.json' }],
+		staleCdpFiles: { pidFiles: 1, portFiles: 1, details: ['stale pid file: a.pid', 'orphan port file: a.port'] },
+		reaperTimers: configuredTimer(),
+	});
+
+	assert.equal(health.severity, 'warning');
+	assert.equal(health.browserProcesses.totalChromiumProcesses, 3);
+	assert.equal(health.browserProcesses.totalChromiumMainProcesses, 2);
+	assert.equal(health.browserProcesses.perWorker[0].browserMainProcessCount, 2);
+	assert.equal(health.browserLeases.active, 1);
+	assert.ok(health.checks.some((check) => check.id === 'browser-leak'));
+	assert.ok(health.checks.some((check) => check.id === 'stale-cdp-files'));
+});
+
+test('compute resource health reports dirty workers and OOM containers with cleanup commands', () => {
+	const dirty = workerFixture('pibo-worker-dirty-health', { Labels: { [LABEL_CLEANUP_STATE]: 'dirty', [LABEL_DIRTY_REASON]: 'browser cleanup failed' } });
+	const oom = workerFixture('pibo-worker-oom-health', { State: { Status: 'exited', Running: false, OOMKilled: true, Dead: false, ExitCode: 137 } });
+	const health = buildComputeResourceHealth({
+		workers: [dirty, oom],
+		disk: buildComputeDiskDiagnostics([], {}),
+		processes: [],
+		browserPools: [],
+		staleCdpFiles: { pidFiles: 0, portFiles: 0, details: [] },
+		reaperTimers: configuredTimer(),
+	});
+
+	assert.equal(health.severity, 'critical');
+	assert.deepEqual(health.computeWorkers.dirtyWorkers, ['pibo-worker-dirty-health']);
+	assert.deepEqual(health.computeWorkers.oomKilledWorkers, ['pibo-worker-oom-health']);
+	assert.ok(health.checks.some((check) => check.id === 'dirty-workers' && check.nextCommands.includes('pibo compute reap --dry-run --include-dev')));
+	assert.ok(health.checks.some((check) => check.id === 'oom-containers' && check.severity === 'critical'));
+});
+
+test('compute resource health warns on Docker disk pressure and missing reaper timer state', () => {
+	const diskRows = parseDockerSystemDfLines([
+		JSON.stringify({ Type: 'Images', TotalCount: '1', Active: '1', Size: '1GB', Reclaimable: '0B' }),
+		JSON.stringify({ Type: 'Build Cache', TotalCount: '20', Active: '0', Size: '6GB', Reclaimable: '6GB' }),
+	].join('\n'));
+	const health = buildComputeResourceHealth({
+		workers: [],
+		disk: buildComputeDiskDiagnostics(diskRows, {}),
+		processes: [],
+		browserPools: [],
+		staleCdpFiles: { pidFiles: 0, portFiles: 0, details: [] },
+	});
+
+	assert.equal(health.severity, 'warning');
+	assert.equal(health.dockerDisk.pressure, true);
+	assert.equal(health.reaperTimers.status, 'missing');
+	assert.ok(health.checks.some((check) => check.id === 'docker-disk-pressure'));
+	assert.ok(health.checks.some((check) => check.id === 'reaper-timer'));
+	const text = renderComputeResourceHealthText(health);
+	assert.match(text, /docker-disk-pressure/);
+	assert.match(text, /Reaper\/timer: missing/);
 });

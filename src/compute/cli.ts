@@ -19,6 +19,7 @@ import {
 	type ComputeWorkerReapPlan,
 	type WorkerInfo,
 } from "./docker.js";
+import { getComputeResourceHealth, type ComputeResourceHealth, type ResourceHealthSeverity } from "./resource-health.js";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -89,6 +90,38 @@ export function renderComputeReapPlanText(plan: ComputeWorkerReapPlan, options: 
 
 function formatMaybeBytes(bytes: number | undefined): string {
 	return bytes === undefined ? "-" : String(bytes);
+}
+
+function severityRank(severity: ResourceHealthSeverity): number {
+	if (severity === "critical") return 2;
+	if (severity === "warning") return 1;
+	return 0;
+}
+
+export function renderComputeResourceHealthText(health: ComputeResourceHealth): string {
+	const lines = [`Compute resource health: ${health.severity} (read-only)`];
+	lines.push(`Generated at: ${health.generatedAt}`);
+	lines.push(`Browser processes: ${health.browserProcesses.totalChromiumMainProcesses} main / ${health.browserProcesses.totalChromiumProcesses} total Chromium processes`);
+	lines.push(`Active browser leases: ${health.browserLeases.active}`);
+	lines.push(`Stale CDP files: ${health.browserLeases.staleCdpFiles.pidFiles} pid, ${health.browserLeases.staleCdpFiles.portFiles} port`);
+	lines.push(`Compute workers: ${health.computeWorkers.total} total, ${health.computeWorkers.dirty} dirty, ${health.computeWorkers.oomKilled} OOM-killed, ${health.computeWorkers.cleanupEligible} cleanup-eligible`);
+	lines.push(`Docker disk: reclaimable=${formatMaybeBytes(health.dockerDisk.reclaimableBytes)} buildCache=${formatMaybeBytes(health.dockerDisk.buildCacheBytes)} pressure=${health.dockerDisk.pressure ? "yes" : "no"}`);
+	lines.push(`Reaper/timer: ${health.reaperTimers.status}${health.reaperTimers.details ? ` - ${health.reaperTimers.details}` : ""}`);
+	if (health.browserProcesses.perWorker.length > 0) {
+		lines.push("Browser pools:");
+		lines.push("WORKER	POOL	STATE	PID	ACTIVE_LEASES	MAIN_PROCESSES	SEVERITY");
+		for (const pool of health.browserProcesses.perWorker) {
+			lines.push(`${pool.workerId}\t${pool.poolId}\t${pool.state}\t${pool.pid ?? "-"}\t${pool.activeLeaseCount}\t${pool.browserMainProcessCount}\t${pool.severity}`);
+		}
+	}
+	lines.push("Checks:");
+	for (const check of [...health.checks].sort((a, b) => severityRank(b.severity) - severityRank(a.severity))) {
+		lines.push(`- [${check.severity}] ${check.id}: ${check.message}`);
+		for (const command of check.nextCommands) lines.push(`  Next: ${command}`);
+	}
+	lines.push("Next commands:");
+	for (const command of health.nextCommands.slice(0, 8)) lines.push(`- ${command}`);
+	return lines.join("\n");
 }
 
 export function renderComputeDiskDiagnosticsText(diagnostics: ComputeDiskDiagnostics): string {
@@ -285,6 +318,34 @@ Next:
 				return;
 			}
 			console.log(renderComputeWorkerListText(workers, { all: options.all === true }));
+		});
+
+	program
+		.command("health")
+		.alias("doctor")
+		.description("Show read-only compute, browser, Docker, and reaper resource health")
+		.option("--json", "Print machine-readable resource health")
+		.option("--browser-pool-root <path>", "Browser pool root directory to scan")
+		.option("--browser-use-home <path>", "Browser-use home directory to scan for stale CDP files")
+		.addHelpText(
+			"after",
+			`
+Reports browser main-process counts, active browser-pool leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status.
+The command is read-only and never reaps, prunes, stops, or removes resources.
+
+Next:
+  $ pibo compute health --json
+  $ pibo tools browser-use pool reap --json
+  $ pibo compute reap --dry-run --json
+`,
+		)
+		.action(async (options: { json?: boolean; browserPoolRoot?: string; browserUseHome?: string }) => {
+			const health = await getComputeResourceHealth({ browserPoolRoot: options.browserPoolRoot, browserUseHome: options.browserUseHome });
+			if (options.json) {
+				printJson(health);
+				return;
+			}
+			console.log(renderComputeResourceHealthText(health));
 		});
 
 	program

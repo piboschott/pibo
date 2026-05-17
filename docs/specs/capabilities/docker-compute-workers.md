@@ -294,6 +294,30 @@ Build context excludes local state, and Pibo exposes image/container/cache usage
 - WHEN an operator runs compute resource diagnostics
 - THEN Pibo reports the cache size and a safe prune command.
 
+### Requirement: Aggregate resource health is read-only and actionable
+
+Operators and agents MUST have one Pibo-native health command that summarizes browser, worker, Docker disk, and reaper/timer risk without cleaning anything.
+
+#### Current
+
+`pibo compute health` (alias `pibo compute doctor`) is read-only. Text output summarizes severity, browser process counts, active browser leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status. `--json` exposes stable fields for agents and monitoring.
+
+#### Acceptance
+
+- `pibo compute health` performs no browser reap, Docker removal, image prune, build-cache prune, gateway restart, or worktree deletion.
+- JSON output includes `readOnly`, `severity`, `checks`, `browserProcesses`, `browserLeases`, `computeWorkers`, `dockerDisk`, `reaperTimers`, and `nextCommands`.
+- Browser health includes total Chromium process count, total Chromium main-process count, per-pool/worker managed counts, active browser-pool leases, and stale CDP pid/port files.
+- Worker health includes dirty workers, OOM-killed containers, cleanup-eligible workers, and Docker availability.
+- Docker health includes disk totals, reclaimable bytes, BuildKit cache bytes, and disk-pressure warnings.
+- Text output gives concrete next commands such as `pibo tools browser-use pool reap --json`, `pibo compute reap --dry-run --json`, and `pibo compute diagnostics --json`.
+
+#### Scenario: Browser leak warning
+
+- GIVEN a worker has more Chromium main processes than its managed browser-pool limit
+- WHEN an operator runs `pibo compute health --json`
+- THEN health severity is at least `warning`
+- AND the `browser-leak` check points to browser-pool status/reap and compute reap dry-run commands.
+
 ## Resource lifecycle obligations
 
 This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
@@ -302,6 +326,7 @@ This capability participates in the compute/browser resource lifecycle change. I
 - Worker labels/status must expose resource policy, owner scope, worktree, Ralph job/run ids when present, last-used time, dirty state, and cleanup eligibility.
 - `pibo compute list --all` and reap dry-run behavior must include running, stopped, OOM-killed, dirty, one-time, and dev workers.
 - Docker hygiene diagnostics must distinguish image reuse from container writable state, BuildKit cache, volumes, logs, browser state, screenshots, and worktrees.
+- `pibo compute health` must stay read-only and report browser leaks, active leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status with safe next commands.
 - Container/browser cleanup must not delete Git worktrees unless a separate explicit worktree cleanup command or flag is selected.
 
 ## Edge Cases
@@ -331,6 +356,7 @@ This capability participates in the compute/browser resource lifecycle change. I
 - [ ] SC-007: Worker Docker run command tests verify resource limits and labels for one-time and dev workers.
 - [ ] SC-008: `pibo compute list --all` and reap dry-run tests cover stopped/OOM containers, dirty workers, and worktree-preserving cleanup.
 - [x] SC-009: Docker hygiene diagnostics report image, container, build-cache, volume, and reclaimable byte counts.
+- [x] SC-010: Resource health tests cover healthy state, browser leak warning, dirty worker, OOM container, Docker disk pressure, and missing reaper/timer state.
 
 ## Verification Coverage
 

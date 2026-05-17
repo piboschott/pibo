@@ -4,7 +4,7 @@
 
 - [x] 1.1 Record the 2026-05-17 incident baseline in `docs/reports/` with counts for containers, images, BuildKit cache, and Chromium processes.
 - [x] 1.2 Update capability specs for Docker compute workers, browser automation, browser-use leases, and Ralph jobs with the resource lifecycle contract.
-- [ ] 1.3 Add CLI help snapshots or command-stub tests for planned `compute list --all`, `compute reap`, and browser-use health/pool commands.
+- [x] 1.3 Add CLI help snapshots or command-stub tests for planned `compute list --all`, `compute reap`, and browser-use health/pool commands.
 
 ## 2. Requirement: Browser automation uses a managed browser pool
 
@@ -44,8 +44,8 @@
 
 ## 7. Operational Health and Validation
 
-- [ ] 7.1 Add resource health output for browser process counts, dirty workers, stale CDP files, OOM containers, Docker disk usage, and reaper/timer status.
-- [ ] 7.2 Add JSON output suitable for agents and monitoring.
+- [x] 7.1 Add resource health output for browser process counts, dirty workers, stale CDP files, OOM containers, Docker disk usage, and reaper/timer status.
+- [x] 7.2 Add JSON output suitable for agents and monitoring.
 - [x] 7.3 Add an explicit Docker integration smoke path for bounded worker/browser validation; repeated stress execution remains operator-run through the same safe script rather than normal unit tests.
 - [x] 7.4 Add rollout playbook for enabling automatic reap timers after manual dry-run validation.
 
@@ -54,4 +54,4 @@
 - [x] 8.1 Document default resource limits, override knobs, and the limited-worker validation command.
 - [x] 8.2 Document safe cleanup flow: inspect, browser-pool reap, compute reap dry-run, compute reap apply, optional worktree cleanup.
 - [x] 8.3 Document Ralph prompt guidance: agents should use assigned workers, but lifecycle is enforced by Pibo policy.
-- [ ] 8.4 Update PRD traceability after implementation decisions settle.
+- [x] 8.4 Update PRD traceability after implementation decisions settle.
