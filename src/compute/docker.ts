@@ -16,6 +16,14 @@ export const IMAGE_NAME = "pibo:latest";
 export const LABEL_ROLE = "pibo.compute.role";
 export const LABEL_CREATED_AT = "pibo.compute.createdAt";
 export const LABEL_OWNER = "pibo.compute.owner";
+export const LABEL_OWNER_SCOPE = "pibo.compute.ownerScope";
+export const LABEL_WORKTREE = "pibo.compute.worktree";
+export const LABEL_WORKTREE_PATH = "pibo.compute.worktreePath";
+export const LABEL_PORT_BLOCK = "pibo.compute.portBlock";
+export const LABEL_TTL_SECONDS = "pibo.compute.ttlSeconds";
+export const LABEL_IDLE_SECONDS = "pibo.compute.idleSeconds";
+export const LABEL_RALPH_JOB_ID = "pibo.ralph.jobId";
+export const LABEL_RALPH_RUN_ID = "pibo.ralph.runId";
 
 export interface SpawnedWorker {
 	id: string;
@@ -169,6 +177,58 @@ async function findNextPortBlock(): Promise<number> {
 	return block;
 }
 
+export const DEFAULT_COMPUTE_WORKER_TTL_SECONDS = 60 * 60;
+export const DEFAULT_COMPUTE_WORKER_IDLE_SECONDS = 30 * 60;
+
+export interface ComputeWorkerLifecycleLabels {
+	ttlSeconds: number;
+	idleSeconds: number;
+}
+
+export function resolveComputeWorkerLifecycle(options: { ttlSeconds?: number; idleSeconds?: number } = {}, env: NodeJS.ProcessEnv = process.env): ComputeWorkerLifecycleLabels {
+	return {
+		ttlSeconds: positiveIntegerOption(options.ttlSeconds, env.PIBO_COMPUTE_TTL_SECONDS, DEFAULT_COMPUTE_WORKER_TTL_SECONDS),
+		idleSeconds: positiveIntegerOption(options.idleSeconds, env.PIBO_COMPUTE_IDLE_SECONDS, DEFAULT_COMPUTE_WORKER_IDLE_SECONDS),
+	};
+}
+
+interface ComputeWorkerMetadataLabelOptions {
+	role: "worker" | "dev" | string;
+	createdAt: string;
+	owner?: string;
+	worktree?: string;
+	worktreePath?: string;
+	portBlock: string;
+	ports: Record<string, string>;
+	ttlSeconds: number;
+	idleSeconds: number;
+	ralphJobId?: string;
+	ralphRunId?: string;
+}
+
+function buildComputeWorkerMetadataLabels(options: ComputeWorkerMetadataLabelOptions): string[] {
+	return [
+		`${LABEL_ROLE}=${options.role}`,
+		`${LABEL_CREATED_AT}=${options.createdAt}`,
+		`${LABEL_PORT_BLOCK}=${options.portBlock}`,
+		`${LABEL_TTL_SECONDS}=${options.ttlSeconds}`,
+		`${LABEL_IDLE_SECONDS}=${options.idleSeconds}`,
+		...(options.owner ? [`${LABEL_OWNER}=${options.owner}`, `${LABEL_OWNER_SCOPE}=${options.owner}`] : []),
+		...(options.worktree ? [`${LABEL_WORKTREE}=${options.worktree}`] : []),
+		...(options.worktreePath ? [`${LABEL_WORKTREE_PATH}=${options.worktreePath}`] : []),
+		...Object.entries(options.ports).map(([name, value]) => `pibo.compute.port.${name}=${value}`),
+		...(options.ralphJobId ? [`${LABEL_RALPH_JOB_ID}=${options.ralphJobId}`] : []),
+		...(options.ralphRunId ? [`${LABEL_RALPH_RUN_ID}=${options.ralphRunId}`] : []),
+	];
+}
+
+function positiveIntegerOption(optionValue: number | undefined, envValue: string | undefined, fallback: number): number {
+	if (typeof optionValue === "number" && Number.isInteger(optionValue) && optionValue > 0) return optionValue;
+	if (envValue === undefined || envValue.trim() === "") return fallback;
+	const parsed = Number(envValue);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export async function createWorktree(repoDir: string, name: string): Promise<string> {
 	const worktreePath = path.join(repoDir, ".worktrees", name);
 	try {
@@ -196,12 +256,17 @@ export interface BuildDevWorkerDockerRunArgsOptions {
 	webUIPortContext: number;
 	createdAt: string;
 	owner?: string;
+	ttlSeconds?: number;
+	idleSeconds?: number;
+	ralphJobId?: string;
+	ralphRunId?: string;
 	hostNodeModules?: string;
 	policy?: ComputeResourcePolicy;
 }
 
 export function buildDevWorkerDockerRunArgs(options: BuildDevWorkerDockerRunArgsOptions): string[] {
 	const policy = options.policy ?? resolveComputeResourcePolicy();
+	const lifecycle = resolveComputeWorkerLifecycle(options);
 	return [
 		"run",
 		"-d",
@@ -223,16 +288,26 @@ export function buildDevWorkerDockerRunArgs(options: BuildDevWorkerDockerRunArgs
 		...(options.hostNodeModules ? ["-v", `${options.hostNodeModules}:/workspace/node_modules`] : []),
 		"-w",
 		"/workspace",
-		"--label",
-		`${LABEL_ROLE}=dev`,
-		"--label",
-		`${LABEL_CREATED_AT}=${options.createdAt}`,
-		"--label",
-		`pibo.compute.portBlock=${options.block}`,
-		"--label",
-		`pibo.compute.worktree=${options.worktreeName}`,
+		...buildComputeWorkerMetadataLabels({
+			role: "dev",
+			createdAt: options.createdAt,
+			owner: options.owner,
+			worktree: options.worktreeName,
+			worktreePath: options.worktreePath,
+			portBlock: String(options.block),
+			ports: {
+				gateway: String(options.gatewayPort),
+				cdp: String(options.cdpPort),
+				web: String(options.webPort),
+				chatUi: String(options.webUIPortChat),
+				contextUi: String(options.webUIPortContext),
+			},
+			ttlSeconds: lifecycle.ttlSeconds,
+			idleSeconds: lifecycle.idleSeconds,
+			ralphJobId: options.ralphJobId,
+			ralphRunId: options.ralphRunId,
+		}).flatMap((label) => ["--label", label]),
 		...buildComputeResourcePolicyLabels(policy).flatMap((label) => ["--label", label]),
-		...(options.owner ? ["--label", `${LABEL_OWNER}=${options.owner}`] : []),
 		"--entrypoint",
 		"/bin/sh",
 		IMAGE_NAME,
@@ -245,6 +320,10 @@ export async function spawnDevWorker(options: {
 	repoDir: string;
 	worktreeName: string;
 	owner?: string;
+	ttlSeconds?: number;
+	idleSeconds?: number;
+	ralphJobId?: string;
+	ralphRunId?: string;
 }): Promise<SpawnedDevWorker> {
 	const worktreePath = path.join(options.repoDir, ".worktrees", options.worktreeName);
 	await createWorktree(options.repoDir, options.worktreeName);
@@ -282,6 +361,10 @@ export async function spawnDevWorker(options: {
 		webUIPortContext,
 		createdAt,
 		owner: options.owner,
+		ttlSeconds: options.ttlSeconds,
+		idleSeconds: options.idleSeconds,
+		ralphJobId: options.ralphJobId,
+		ralphRunId: options.ralphRunId,
 		hostNodeModules: nodeModulesMount,
 	});
 
@@ -307,11 +390,17 @@ export interface BuildWorkerDockerRunArgsOptions {
 	id: string;
 	createdAt: string;
 	owner?: string;
+	worktreePath?: string;
+	ttlSeconds?: number;
+	idleSeconds?: number;
+	ralphJobId?: string;
+	ralphRunId?: string;
 	policy?: ComputeResourcePolicy;
 }
 
 export function buildWorkerDockerRunArgs(options: BuildWorkerDockerRunArgsOptions): string[] {
 	const policy = options.policy ?? resolveComputeResourcePolicy();
+	const lifecycle = resolveComputeWorkerLifecycle(options);
 	return [
 		"run",
 		"-d",
@@ -324,12 +413,20 @@ export function buildWorkerDockerRunArgs(options: BuildWorkerDockerRunArgsOption
 		"56663",
 		"-p",
 		"4788",
-		"--label",
-		`${LABEL_ROLE}=worker`,
-		"--label",
-		`${LABEL_CREATED_AT}=${options.createdAt}`,
+		...buildComputeWorkerMetadataLabels({
+			role: "worker",
+			createdAt: options.createdAt,
+			owner: options.owner,
+			worktree: options.worktreePath ? path.basename(options.worktreePath) : undefined,
+			worktreePath: options.worktreePath,
+			portBlock: "dynamic",
+			ports: { gateway: "4789", cdp: "56663", web: "4788" },
+			ttlSeconds: lifecycle.ttlSeconds,
+			idleSeconds: lifecycle.idleSeconds,
+			ralphJobId: options.ralphJobId,
+			ralphRunId: options.ralphRunId,
+		}).flatMap((label) => ["--label", label]),
 		...buildComputeResourcePolicyLabels(policy).flatMap((label) => ["--label", label]),
-		...(options.owner ? ["--label", `${LABEL_OWNER}=${options.owner}`] : []),
 		IMAGE_NAME,
 		"gateway:web",
 	];
@@ -339,6 +436,10 @@ export async function spawnWorker(options: {
 	workspaceDir: string;
 	name?: string;
 	owner?: string;
+	ttlSeconds?: number;
+	idleSeconds?: number;
+	ralphJobId?: string;
+	ralphRunId?: string;
 }): Promise<SpawnedWorker> {
 	const id = options.name || `pibo-worker-${Math.random().toString(36).slice(2, 10)}`;
 	const createdAt = new Date().toISOString();
@@ -347,6 +448,11 @@ export async function spawnWorker(options: {
 		id,
 		createdAt,
 		owner: options.owner,
+		worktreePath: options.workspaceDir,
+		ttlSeconds: options.ttlSeconds,
+		idleSeconds: options.idleSeconds,
+		ralphJobId: options.ralphJobId,
+		ralphRunId: options.ralphRunId,
 	});
 
 	await execFileAsync("docker", args, { cwd: options.workspaceDir });

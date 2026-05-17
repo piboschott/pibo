@@ -26,6 +26,12 @@ function printJson(value: unknown): void {
 	console.log(JSON.stringify(value, null, 2));
 }
 
+function parsePositiveIntegerOption(value: string | undefined): number | undefined {
+	if (value === undefined || value.trim() === "") return undefined;
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export async function runComputeCli(argv: string[]): Promise<void> {
 	const program = new Command();
 	program
@@ -53,7 +59,11 @@ Next:
 		.command("spawn")
 		.description("Create a one-time worker from the current Docker image")
 		.option("--name <name>", "Set the container name")
-		.option("--owner <owner>", "Tag the container owner")
+		.option("--owner <owner>", "Tag the container owner scope")
+		.option("--ttl-seconds <n>", "Tag the worker TTL in seconds")
+		.option("--idle-seconds <n>", "Tag the worker idle retention in seconds")
+		.option("--ralph-job-id <id>", "Tag the Ralph job id when this worker is Ralph-owned")
+		.option("--ralph-run-id <id>", "Tag the Ralph run id when this worker is Ralph-owned")
 		.addHelpText(
 			"after",
 			`
@@ -63,7 +73,7 @@ Use this for quick isolated checks. For code changes, prefer:
   $ pibo compute dev spawn --worktree my-fix
 `,
 		)
-		.action(async (options: { name?: string; owner?: string }) => {
+		.action(async (options: { name?: string; owner?: string; ttlSeconds?: string; idleSeconds?: string; ralphJobId?: string; ralphRunId?: string }) => {
 			await mkdir(path.dirname(HASH_FILE), { recursive: true });
 
 			const needsBuild = !(await imageExists(IMAGE_NAME)) || (await shouldRebuild(WORKSPACE_DIR, HASH_FILE));
@@ -78,6 +88,10 @@ Use this for quick isolated checks. For code changes, prefer:
 				workspaceDir: WORKSPACE_DIR,
 				name: options.name,
 				owner: options.owner,
+				ttlSeconds: parsePositiveIntegerOption(options.ttlSeconds),
+				idleSeconds: parsePositiveIntegerOption(options.idleSeconds),
+				ralphJobId: options.ralphJobId,
+				ralphRunId: options.ralphRunId,
 			});
 
 			printJson(worker);
@@ -102,7 +116,11 @@ Next:
 		.description("Create a development worker with a Git worktree")
 		.requiredOption("--worktree <name>", "Name the Git worktree and branch")
 		.option("--repo <path>", "Use this repository", WORKSPACE_DIR)
-		.option("--owner <owner>", "Tag the container owner")
+		.option("--owner <owner>", "Tag the container owner scope")
+		.option("--ttl-seconds <n>", "Tag the worker TTL in seconds")
+		.option("--idle-seconds <n>", "Tag the worker idle retention in seconds")
+		.option("--ralph-job-id <id>", "Tag the Ralph job id when this worker is Ralph-owned")
+		.option("--ralph-run-id <id>", "Tag the Ralph run id when this worker is Ralph-owned")
 		.addHelpText(
 			"after",
 			`
@@ -112,7 +130,7 @@ Example:
   $ pibo compute dev spawn --worktree my-fix
 `,
 		)
-		.action(async (options: { worktree: string; repo: string; owner?: string }) => {
+		.action(async (options: { worktree: string; repo: string; owner?: string; ttlSeconds?: string; idleSeconds?: string; ralphJobId?: string; ralphRunId?: string }) => {
 			await mkdir(path.dirname(DEP_HASH_FILE), { recursive: true });
 
 			console.error("[pibo compute] Checking Docker image status...");
@@ -132,6 +150,10 @@ Example:
 				repoDir: options.repo,
 				worktreeName: options.worktree,
 				owner: options.owner,
+				ttlSeconds: parsePositiveIntegerOption(options.ttlSeconds),
+				idleSeconds: parsePositiveIntegerOption(options.idleSeconds),
+				ralphJobId: options.ralphJobId,
+				ralphRunId: options.ralphRunId,
 			});
 			console.error(`[pibo compute] Dev container '${worker.id}' started.`);
 			console.error(`[pibo compute] Ports: gateway=${worker.gatewayPort}, cdp=${worker.cdpPort}, web=${worker.webPort}, chat-ui=${worker.webUIPortChat}, context-files=${worker.webUIPortContext}`);

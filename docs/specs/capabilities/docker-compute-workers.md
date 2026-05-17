@@ -215,13 +215,13 @@ Compute workers MUST start with host-safe resource limits and MUST expose those 
 
 #### Current
 
-Docker run commands start one-time and dev workers without explicit memory, swap, PID, init, shm, restart, or log policies.
+Docker run commands apply the default compute resource policy to one-time and dev workers: `memory=2g`, `memory-swap=2g`, `pids-limit=512`, `shm-size=512m`, `--init`, `restart=no`, and bounded Docker JSON logs. The same policy is written to inspectable labels. Worker metadata labels include role, created time, owner scope, worktree/path when known, port block or dynamic ports, TTL/idle seconds, and Ralph job/run ids when supplied by the spawn caller.
 
 #### Target
 
 Every compute worker has a resource policy. Defaults protect small hosts, and operators can override limits for larger hosts through documented settings.
 
-Default policy values are intentionally conservative for small hosts: `memory=2g`, `memory-swap=2g`, `pids-limit=512`, `shm-size=512m`, `--init`, `restart=no`, Docker JSON logs with `max-size=10m`, and `max-file=3`. Larger hosts may override only the sizing fields through environment variables read at spawn time: `PIBO_COMPUTE_MEMORY`, `PIBO_COMPUTE_MEMORY_SWAP`, `PIBO_COMPUTE_PIDS_LIMIT`, `PIBO_COMPUTE_SHM_SIZE`, `PIBO_COMPUTE_INIT`, `PIBO_COMPUTE_LOG_MAX_SIZE`, and `PIBO_COMPUTE_LOG_MAX_FILE`. The restart policy remains `no` so OOM or PID-limit failures do not create restart loops.
+Default policy values are intentionally conservative for small hosts: `memory=2g`, `memory-swap=2g`, `pids-limit=512`, `shm-size=512m`, `--init`, `restart=no`, Docker JSON logs with `max-size=10m`, and `max-file=3`. Larger hosts may override only the sizing fields through environment variables read at spawn time: `PIBO_COMPUTE_MEMORY`, `PIBO_COMPUTE_MEMORY_SWAP`, `PIBO_COMPUTE_PIDS_LIMIT`, `PIBO_COMPUTE_SHM_SIZE`, `PIBO_COMPUTE_INIT`, `PIBO_COMPUTE_LOG_MAX_SIZE`, and `PIBO_COMPUTE_LOG_MAX_FILE`. TTL and idle labels default to 3600 and 1800 seconds and can be overridden with `PIBO_COMPUTE_TTL_SECONDS`, `PIBO_COMPUTE_IDLE_SECONDS`, or the `pibo compute spawn` / `pibo compute dev spawn` options `--ttl-seconds` and `--idle-seconds`. Ralph-owned callers can pass `--ralph-job-id` and `--ralph-run-id` so the worker is traceable. The restart policy remains `no` so OOM or PID-limit failures do not create restart loops.
 
 #### Acceptance
 
@@ -351,7 +351,15 @@ This capability participates in the compute/browser resource lifecycle change. I
 
 - Add built-CLI discovery tests before changing compute help text so the progressive discovery rule remains enforced.
 - Add Docker-command stub tests before changing worker labels, port mappings, or cleanup defaults; these tests should not require a real Docker daemon.
-- Keep real Docker spawn validation as an explicit integration check outside normal unit tests because it requires host Docker privileges and can create containers.
+- Keep real Docker spawn validation as an explicit integration check outside normal unit tests because it requires host Docker privileges and can create containers. Manual smoke command for operators who can create a temporary worker:
+
+  ```bash
+  worker="pibo-worker-policy-smoke-$(date +%s)"
+  npm run dev -- compute spawn --name "$worker" --owner user:smoke --ttl-seconds 600 --idle-seconds 300
+  docker inspect "$worker" --format '{{json .HostConfig.Memory}} {{json .HostConfig.PidsLimit}} {{json .HostConfig.RestartPolicy}} {{json .Config.Labels}}'
+  docker exec "$worker" bash -lc 'node --version && test -x /usr/bin/chromium'
+  npm run dev -- compute release "$worker"
+  ```
 
 ## Assumptions and Open Questions
 

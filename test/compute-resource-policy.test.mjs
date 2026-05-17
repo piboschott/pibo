@@ -9,8 +9,17 @@ import {
 	resolveComputeResourcePolicy,
 } from '../dist/compute/resource-policy.js';
 import {
+	LABEL_IDLE_SECONDS,
+	LABEL_OWNER_SCOPE,
+	LABEL_PORT_BLOCK,
+	LABEL_RALPH_JOB_ID,
+	LABEL_RALPH_RUN_ID,
+	LABEL_TTL_SECONDS,
+	LABEL_WORKTREE,
+	LABEL_WORKTREE_PATH,
 	buildDevWorkerDockerRunArgs,
 	buildWorkerDockerRunArgs,
+	resolveComputeWorkerLifecycle,
 } from '../dist/compute/docker.js';
 
 const customPolicy = Object.freeze({
@@ -65,6 +74,12 @@ test('compute resource policy resolves safe defaults and documented env override
 	});
 });
 
+test('compute worker lifecycle labels resolve safe defaults and env overrides', () => {
+	assert.deepEqual(resolveComputeWorkerLifecycle({}, {}), { ttlSeconds: 3600, idleSeconds: 1800 });
+	assert.deepEqual(resolveComputeWorkerLifecycle({ ttlSeconds: 10 }, { PIBO_COMPUTE_TTL_SECONDS: '20', PIBO_COMPUTE_IDLE_SECONDS: '30' }), { ttlSeconds: 10, idleSeconds: 30 });
+	assert.deepEqual(resolveComputeWorkerLifecycle({}, { PIBO_COMPUTE_TTL_SECONDS: '90', PIBO_COMPUTE_IDLE_SECONDS: '45' }), { ttlSeconds: 90, idleSeconds: 45 });
+});
+
 test('docker resource policy args include memory pids shm init restart and log bounds', () => {
 	const args = buildDockerResourcePolicyArgs(customPolicy);
 	assert.equal(valueAfter(args, '--memory'), '3g');
@@ -83,6 +98,11 @@ test('one-time worker docker run args include resource policy and inspectable la
 		id: 'pibo-worker-test',
 		createdAt: '2026-05-17T00:00:00.000Z',
 		owner: 'user:test',
+		worktreePath: '/repo/worktree',
+		ttlSeconds: 7200,
+		idleSeconds: 1800,
+		ralphJobId: 'ralph-job-1',
+		ralphRunId: 'rrun-1',
 		policy: customPolicy,
 	});
 
@@ -101,6 +121,16 @@ test('one-time worker docker run args include resource policy and inspectable la
 	const runLabels = labels(args);
 	assert.ok(runLabels.includes('pibo.compute.role=worker'));
 	assert.ok(runLabels.includes('pibo.compute.owner=user:test'));
+	assert.ok(runLabels.includes(`${LABEL_OWNER_SCOPE}=user:test`));
+	assert.ok(runLabels.includes(`${LABEL_WORKTREE}=worktree`));
+	assert.ok(runLabels.includes(`${LABEL_WORKTREE_PATH}=/repo/worktree`));
+	assert.ok(runLabels.includes(`${LABEL_PORT_BLOCK}=dynamic`));
+	assert.ok(runLabels.includes('pibo.compute.port.gateway=4789'));
+	assert.ok(runLabels.includes('pibo.compute.port.cdp=56663'));
+	assert.ok(runLabels.includes(`${LABEL_TTL_SECONDS}=7200`));
+	assert.ok(runLabels.includes(`${LABEL_IDLE_SECONDS}=1800`));
+	assert.ok(runLabels.includes(`${LABEL_RALPH_JOB_ID}=ralph-job-1`));
+	assert.ok(runLabels.includes(`${LABEL_RALPH_RUN_ID}=rrun-1`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.memory}=3g`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.memorySwap}=3g`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.pidsLimit}=321`));
@@ -122,6 +152,10 @@ test('dev worker docker run args include resource policy labels worktree metadat
 		webUIPortContext: 4874,
 		createdAt: '2026-05-17T00:00:00.000Z',
 		owner: 'user:test',
+		ttlSeconds: 5400,
+		idleSeconds: 2700,
+		ralphJobId: 'ralph-job-2',
+		ralphRunId: 'rrun-2',
 		hostNodeModules: '/repo/node_modules',
 		policy: customPolicy,
 	});
@@ -143,9 +177,18 @@ test('dev worker docker run args include resource policy labels worktree metadat
 
 	const runLabels = labels(args);
 	assert.ok(runLabels.includes('pibo.compute.role=dev'));
-	assert.ok(runLabels.includes('pibo.compute.portBlock=7'));
-	assert.ok(runLabels.includes('pibo.compute.worktree=policy'));
+	assert.ok(runLabels.includes(`${LABEL_PORT_BLOCK}=7`));
+	assert.ok(runLabels.includes(`${LABEL_WORKTREE}=policy`));
+	assert.ok(runLabels.includes(`${LABEL_WORKTREE_PATH}=/repo/.worktrees/policy`));
 	assert.ok(runLabels.includes('pibo.compute.owner=user:test'));
+	assert.ok(runLabels.includes(`${LABEL_OWNER_SCOPE}=user:test`));
+	assert.ok(runLabels.includes('pibo.compute.port.gateway=4870'));
+	assert.ok(runLabels.includes('pibo.compute.port.cdp=4871'));
+	assert.ok(runLabels.includes('pibo.compute.port.chatUi=4873'));
+	assert.ok(runLabels.includes(`${LABEL_TTL_SECONDS}=5400`));
+	assert.ok(runLabels.includes(`${LABEL_IDLE_SECONDS}=2700`));
+	assert.ok(runLabels.includes(`${LABEL_RALPH_JOB_ID}=ralph-job-2`));
+	assert.ok(runLabels.includes(`${LABEL_RALPH_RUN_ID}=rrun-2`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.memory}=3g`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.memorySwap}=3g`));
 	assert.ok(runLabels.includes(`${COMPUTE_RESOURCE_POLICY_LABELS.pidsLimit}=321`));

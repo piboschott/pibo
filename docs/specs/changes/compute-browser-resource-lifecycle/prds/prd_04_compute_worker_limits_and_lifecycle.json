@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented worker lifecycle metadata labels and CLI/plumbing for TTL, idle, owner-scope, worktree/path, port block/ports, and optional Ralph job/run ids on both one-time and dev worker Docker run paths while preserving enforced resource limits, restart=no, --init, shm, PID, memory/swap, and bounded log options. Added focused tests for one-time and dev worker Docker args plus lifecycle label defaults/overrides. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, compute spawn/dev spawn help showed new options, current Docker dev worker read-only inspect confirmed limited HostConfig with restart=no and bounded logs, full npm run typecheck passed. Real new-worker smoke creation was not run because this Ralph task forbids creating/releasing Docker workers; documented the manual integration command in docker-compute-workers.md."
     },
     {
       "id": "US-003",
