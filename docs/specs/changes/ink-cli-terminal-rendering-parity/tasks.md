@@ -11,11 +11,11 @@
 
 ## 2. Command Result Flow
 
-- [ ] 2.1 Add a shared or CLI-local normalizer from `CommandResultDescriptor` to `CompactTerminalRow[]`.
-- [ ] 2.2 Change `/status` to append command/status rows instead of setting `state.message` with the status payload.
-- [ ] 2.3 Apply the same row flow to `/thinking <level>`, `/model <provider/model>`, `/login <provider/method>`, `/fast`, `/compact`, `/clone`, `/abort`, `/kill`, `/kill-all`, unsupported commands, and errors where they represent command output.
-- [ ] 2.4 Keep `state.message` only for picker instructions, suggestion hints, cancellations, and non-history guidance.
-- [ ] 2.5 Add controller tests for command-result ordering, picker closure, row append behavior, and no status payload in header message.
+- [x] 2.1 Add a shared or CLI-local normalizer from `CommandResultDescriptor` to `CompactTerminalRow[]`.
+- [x] 2.2 Change `/status` to append command/status rows instead of setting `state.message` with the status payload.
+- [x] 2.3 Apply the same row flow to `/thinking <level>`, `/model <provider/model>`, `/login <provider/method>`, `/fast`, `/compact`, `/clone`, `/abort`, `/kill`, `/kill-all`, unsupported commands, and errors where they represent command output.
+- [x] 2.4 Keep `state.message` only for picker instructions, suggestion hints, cancellations, and non-history guidance.
+- [x] 2.5 Add controller tests for command-result ordering, picker closure, row append behavior, and no status payload in header message.
 
 ## 3. Ink Renderer Quality
 
@@ -34,7 +34,7 @@
 
 ## 5. Visual Debugging
 
-- [ ] 5.1 Extend the PTY smoke script or add a new script for rendering-parity flows.
+- [x] 5.1 Extend the PTY smoke script or add a new script for rendering-parity flows.
 - [x] 5.2 Ensure PTY artifacts include raw ANSI, clean text, final screen text, event stream, metadata, and assertions.
 - [ ] 5.3 Investigate ANSI-to-HTML/SVG/PNG generation for artifact review.
 - [x] 5.4 If visual conversion is unavailable, document the fallback and keep screen/ANSI artifacts in a report.

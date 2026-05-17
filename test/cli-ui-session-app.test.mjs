@@ -110,13 +110,17 @@ function streamWithTty(isTTY, columns = 80) {
 	return stream;
 }
 
-async function openFakeSessionInto(source, harness, sessionId, message) {
+function rowsText(rows) {
+	return rows.map((row) => [row.kind, row.status, row.output, row.error, ...(row.lines ?? []).map((line) => (line.tokens ?? []).map((token) => token.text).join(""))].filter(Boolean).join(" ")).join("\n");
+}
+
+async function openFakeSessionInto(source, harness, sessionId, message, localRows) {
 	const opened = await source.openSession(sessionId);
 	harness.setState((current) => ({
 		...current,
 		session: opened.session,
 		status: opened.status,
-		rows: buildCompactTerminalRows(opened.traceView, { showThinking: false }),
+		rows: [...(localRows ?? []), ...buildCompactTerminalRows(opened.traceView, { showThinking: false })],
 		mode: "transcript",
 		picker: undefined,
 		message,
@@ -165,6 +169,8 @@ test("InkSessionAppView renders slash suggestions", () => {
 	assert.match(output, /\/thinking — Show or set model thinking level/);
 	assert.match(output, /❯ \/thinking-show/);
 	assert.match(output, /Use \/thinking in terminal/);
+	assert.ok(output.indexOf("Status looks healthy.") < output.indexOf("Slash commands"));
+	assert.ok(output.indexOf("Slash commands") < output.indexOf("› /th"));
 });
 
 test("InkSessionAppView renders owner room and create-session pickers", () => {
@@ -319,7 +325,7 @@ test("Slash /new uses selected owner and room from Ink state", async () => {
 		sessions: [],
 	});
 	const harness = stateHarness({ ...baseState(), session: undefined, activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: { id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" }, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/new", source, harness.state, harness.setState, openSession, () => {});
 
@@ -340,7 +346,7 @@ test("Slash /new without an active room opens default-first room picker", async 
 		sessions: [],
 	});
 	const harness = stateHarness({ ...baseState(), session: undefined, activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/new", source, harness.state, harness.setState, openSession, () => {});
 
@@ -369,7 +375,7 @@ test("Slash /owner opens owner picker and cross-owner sends are rejected", async
 		],
 	});
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, session: { id: "ps_alpha", title: "Alpha Session", profile: "pibo-agent", ownerScope: "user:alpha", status: "idle" }, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/owner");
@@ -398,7 +404,7 @@ test("Slash /session and /room open owner-scoped room-first pickers", async () =
 		],
 	});
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: { id: "room_project", title: "Project Room", ownerScope: "user:alpha" }, session: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/session");
@@ -426,7 +432,7 @@ test("Slash /repair-user-unknown runs source repair for the active owner and roo
 		activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" },
 		activeRoom: { id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" },
 	});
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/repair-user-unknown", source, harness.state, harness.setState, openSession, () => {});
 
@@ -515,7 +521,7 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 	});
 	const harness = stateHarness({ ...baseState(), session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", status: "idle" } });
 	let exited = false;
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => { exited = true; });
 
 	await submit("/help");
@@ -582,7 +588,9 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 	assert.ok(harness.state.rows.some((row) => String(row.output ?? "").includes("hello from test")));
 
 	await submit("/unknown");
-	assert.match(harness.state.error, /Unknown command \/unknown/);
+	assert.equal(harness.state.error, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Ran \/unknown/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Use \/help for supported CLI commands/);
 
 	await submit("/quit");
 	assert.equal(exited, true);
@@ -591,11 +599,14 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 test("Slash /thinking supports direct levels and picker flow", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/thinking high");
-	assert.match(harness.state.message, /Thinking level set to high/);
+	assert.equal(harness.state.message, undefined);
+	assert.deepEqual(harness.state.rows.slice(-2).map((row) => row.kind), ["execution.command", "execution.command"]);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Ran \/thinking high/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Thinking level set to high/);
 	assert.match(harness.state.status.message, /Thinking level high/);
 
 	await submit("/thinking");
@@ -612,7 +623,7 @@ test("Slash /thinking supports direct levels and picker flow", async () => {
 test("Slash /model opens provider and model command menus", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/model");
@@ -627,14 +638,15 @@ test("Slash /model opens provider and model command menus", async () => {
 	const modelPickerState = { ...harness.state, picker: providerPicker, overlayStack: pushInkSessionOverlay(undefined, { kind: "picker", picker: providerPicker }) };
 	const providerItem = providerPicker.items[0];
 	await handleCliSessionSubmittedInput("/model openai/gpt-fake-mini", source, modelPickerState, harness.setState, openSession, () => {});
-	assert.match(harness.state.message, /Model set to openai\/gpt-fake-mini/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Model set to openai\/gpt-fake-mini/);
 	assert.deepEqual(harness.state.status.activeModel, { provider: "openai", id: "gpt-fake-mini" });
 });
 
 test("Slash /login opens provider auth-method menus and safe API-key instructions", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/login");
@@ -645,14 +657,15 @@ test("Slash /login opens provider auth-method menus and safe API-key instruction
 	assert.ok(harness.state.picker.items.some((item) => item.label === "OpenAI API"));
 
 	await submit("/login openai/api_key");
-	assert.match(harness.state.message, /API-key login requires hidden secret input/);
-	assert.doesNotMatch(harness.state.message, /sk-/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /API-key login requires hidden secret input/);
+	assert.doesNotMatch(rowsText(harness.state.rows.slice(-2)), /sk-/);
 });
 
 test("Slash /fork-candidates opens a candidate picker and can fork by entry id", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/fork-candidates");
@@ -663,45 +676,73 @@ test("Slash /fork-candidates opens a candidate picker and can fork by entry id",
 
 	await submit("/fork-candidates entry_fake_1");
 	assert.match(harness.state.session.id, /^ps_fake_fork_/);
-	assert.match(harness.state.message, /fork-candidates: Existing fake session Fork/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows), /fork-candidates: Existing fake session Fork/);
+});
+
+test("Slash command errors append redacted transcript rows instead of header errors", async () => {
+	const source = new FakeCliSessionSource({
+		actionHandler(input) {
+			if (input.command === "fast") throw new Error("failed TOKEN=secret-value");
+			return undefined;
+		},
+	});
+	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
+
+	await handleCliSessionSubmittedInput("/fast", source, harness.state, harness.setState, openSession, () => {});
+
+	assert.equal(harness.state.error, undefined);
+	assert.equal(harness.state.message, undefined);
+	assert.deepEqual(harness.state.rows.slice(-2).map((row) => [row.kind, row.status]), [["execution.command", "error"], ["error", "error"]]);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(rowsText(harness.state.rows.slice(-2)), /secret-value/);
 });
 
 test("Slash Web action commands render shared results and open clone sessions", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/fast");
-	assert.match(harness.state.message, /mode/);
-	assert.match(harness.state.message, /fast/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /mode/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /fast/);
+
+	for (const command of ["/compact summarize", "/abort", "/kill", "/kill-all"]) {
+		await submit(command);
+		assert.equal(harness.state.message, undefined);
+		assert.match(rowsText(harness.state.rows.slice(-2)), new RegExp(`Ran ${command.split(" ")[0]}`));
+	}
 
 	await submit("/session-current");
-	assert.match(harness.state.message, /session-current: Existing fake session ps_fake_existing/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /session-current: Existing fake session ps_fake_existing/);
 
 	await submit("/sessions");
-	assert.match(harness.state.message, /Existing fake session/);
-	assert.match(harness.state.message, /ps_fake_existing/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Existing fake session/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /ps_fake_existing/);
 
 	await submit("/download");
-	assert.match(harness.state.message, /browser download APIs/i);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /browser download APIs/i);
 	assert.equal(harness.state.error, undefined);
 
 	await submit("/download /tmp/report.txt");
-	assert.match(harness.state.message, /Terminal download for \/tmp\/report\.txt/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Terminal download for \/tmp\/report\.txt/);
 
 	await submit("/upload /tmp/input.txt");
-	assert.match(harness.state.message, /Terminal upload for \/tmp\/input\.txt/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Terminal upload for \/tmp\/input\.txt/);
 
 	await submit("/clone");
 	assert.match(harness.state.session.id, /^ps_fake_clone_/);
-	assert.match(harness.state.message, /clone: Existing fake session Clone/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows), /clone: Existing fake session Clone/);
 });
 
 test("empty picker states and recovery errors are actionable and redacted", async () => {
 	const source = new FakeCliSessionSource({ rooms: [], sessions: [], agents: [], status: { rooms: "unsupported", message: "TOKEN=secret-value" } });
 	const harness = stateHarness({ ...baseState(), session: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/session");

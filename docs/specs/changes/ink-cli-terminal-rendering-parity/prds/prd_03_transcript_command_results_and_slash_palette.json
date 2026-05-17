@@ -20,8 +20,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Implemented input-anchored slash palette by rendering suggestions after the transcript and immediately before the prompt. Verified shared catalog/filtering (/status, /session, /thinking, /model, /login, aliases and unavailable items), selection marker, Escape preservation, Enter prefix acceptance, and Up/Down reducer behavior with focused tests. PTY artifact (mocked default TUI path): /workspace/.tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17/slash-suggestions-status-thinking with raw.ansi.log, clean.txt, screen.txt, metadata.json, input.json, assertions.json, events.jsonl. Commands: npm run build; node --test test/ink-cli-v2-pty-smoke.test.mjs test/cli-ui-session-app.test.mjs; npm run typecheck; npm test; node scripts/ink-cli-v2-pty-smoke.mjs --scenario slash-suggestions-status-thinking --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17."
     },
     {
       "id": "US-002",
@@ -38,8 +38,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added/used CLI-local CommandResultDescriptor -> CompactTerminalRow[] normalization with stable local ids and redacted descriptor text. /status now appends execution.command plus tool.status rows and clears picker/suggestions without placing status payload in state.message. Unsupported commands and errors append terminal rows. Focused tests: status command result rows preserve transcript flow; /status closes an open picker; /status preserves streaming rows; command errors append redacted transcript rows. Commands: npm run build; node --test test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/session-ui-view-models.test.mjs; npm run typecheck; npm test. Evidence tier: source/unit plus mocked PTY artifacts listed in US-001/US-004."
     },
     {
       "id": "US-003",
@@ -55,8 +55,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Applied transcript-row flow to direct /thinking, /model, /login, /fast, /compact, /clone, /abort, /kill, /kill-all, /fork-candidates, /session-current, /sessions, terminal download/upload, unsupported, session-link, and error descriptors. Menu-opening commands still use keyboard overlays; completed menu selections append command/result rows. Clone/fork session-opening results carry local command rows into the opened session transcript. Focused tests cover success, unsupported, picker, session-link/open-session, and redacted error descriptors. PTY slash scenario covers /download unsupported row and /thinking menu selection. Evidence tier: source/unit plus mocked PTY."
     },
     {
       "id": "US-004",
@@ -73,8 +73,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Command execution over an open picker closes/suspends picker state and appends rows after existing transcript rows. Running assistant/tool rows remain unchanged and /status appends after the visible transcript tail. state.message remains guidance-only for picker instructions, slash acceptance, cancellation, and empty states. PTY artifact for /status while room picker is open: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17/status-while-picker. Focused tests cover picker-open, streaming, and existing-transcript ordering. Evidence tier: source/unit plus mocked default TUI PTY."
     },
     {
       "id": "US-005",
@@ -91,8 +91,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. PTY scenarios cover typing /, filtering /st, accepting/running /status, unsupported /download handling, and /thinking menu flow. Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, and events; visual conversion fallback remains documented in the existing audit report. Clean/screen output shows command/result rows above the prompt. Evidence classification: mocked default TUI path, no live provider. Commands: node scripts/ink-cli-v2-pty-smoke.mjs --scenario slash-suggestions-status-thinking --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17; node dist/bin/pibo.js debug pty run ... status-while-picker; npm run typecheck; npm test (669 tests)."
     }
   ]
 }

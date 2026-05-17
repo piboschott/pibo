@@ -157,3 +157,61 @@ Remaining limitations / next stories:
 Commit:
 
 - `e38d4cb` test: add terminal parity shared fixtures
+
+## 2026-05-17 Ralph run: PRD 03 command-result transcript flow and slash anchoring
+
+### Selected coherent story group
+
+- PRD 03 `US-001` Render compact slash palette anchored to input.
+- PRD 03 `US-002` Normalize command results into transcript rows.
+- PRD 03 `US-003` Apply transcript flow to all command result families.
+- PRD 03 `US-004` Preserve ordering across pickers and streaming state.
+- PRD 03 `US-005` only if focused tests plus PTY slash/status artifacts can be captured in this run; otherwise leave false and record remaining evidence.
+
+### Plan and validation approach
+
+1. Move slash suggestions in `InkSessionAppView` to render next to the prompt after the transcript, keeping shared catalog/filtering and keyboard behavior intact.
+2. Add a small CLI-local command-result application helper so `/status`, direct `/thinking`, `/model`, `/login`, shared Web actions, unsupported commands, command errors, and menu selections append stable `execution.command` plus result rows instead of status payloads in `state.message`; keep `state.message` only for guidance/picker/cancellation cases.
+3. Preserve command-result rows during session-opening results by letting the open-session path carry local command rows into the newly opened transcript.
+4. Extend focused controller/render tests for command families, unsupported/error redaction, picker-open and streaming ordering, and slash palette order near the input.
+5. Run focused tests in the Docker worker after build, then `npm run typecheck`; run PTY slash/status scenario if feasible and save artifacts under `.tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17`.
+6. Mark only fully verified PRD stories true, update notes/progress with commands, evidence tier, artifacts, limitations, run browser cleanup, and commit from the host worktree.
+
+### Result
+
+Completed PRD 03 `US-001` through `US-005`.
+
+Changes:
+
+- Moved slash suggestions in `InkSessionAppView` below the transcript and immediately above the prompt so the palette is visually anchored to typed input instead of floating above the transcript.
+- Centralized CLI-local command result application through `CommandResultDescriptor` to `CompactTerminalRow[]` conversion and `applyCommandResultToState`.
+- Changed `/status`, direct `/thinking`, `/model`, `/login`, shared Web action commands, unsupported commands, and command errors to append transcript rows and clear picker/suggestion state instead of rendering command payloads only in `state.message`.
+- Preserved clone/fork/session-opening command result rows by carrying local command rows into the newly opened session transcript.
+- Extended PTY slash smoke coverage for `/`, `/st`, `/status`, unsupported `/download`, and `/thinking`; captured an additional `/status`-while-room-picker PTY artifact.
+- Marked PRD 03 stories `passes: true` with evidence notes and updated completed task checkboxes.
+
+Validation run in Docker worker:
+
+- `npm run build` — passed; includes `chat-ui:build` and `context-files-ui:build`.
+- `node --test test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/session-ui-view-models.test.mjs` — passed, 52 tests.
+- `node --test test/ink-cli-v2-pty-smoke.test.mjs test/cli-ui-session-app.test.mjs` — passed, 31 tests.
+- `node scripts/ink-cli-v2-pty-smoke.mjs --scenario slash-suggestions-status-thinking --artifact-root .tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17` — passed.
+- `node dist/bin/pibo.js debug pty run --artifact --artifact-dir .tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17/status-while-picker ... -- node dist/bin/pibo.js tui:sessions --owner-scope user:picker` — passed.
+- `npm run typecheck` — passed.
+- `npm test` — passed, 669 tests.
+
+Evidence/artifacts:
+
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17/slash-suggestions-status-thinking`
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd03-2026-05-17/status-while-picker`
+
+Each artifact directory contains `raw.ansi.log`, `clean.txt`, `screen.txt`, `metadata.json`, `input.json`, `assertions.json`, and `events.jsonl`. Evidence classification is mocked default TUI path; no live-provider behavior was required for this PRD. Visual HTML/SVG/PNG conversion fallback remains documented in the existing audit report.
+
+Remaining limitations / next stories:
+
+- PRD 04 remains incomplete for higher-quality Ink row/card primitives, all row kind semantic coverage, details/long-output safety, narrow/no-color coverage, and mixed-transcript PTY evidence.
+- PRDs 05-07 remain incomplete for status card parity, picker overlay polish, visual artifact standardization, installed CLI smoke, and final evidence.
+
+Commit:
+
+- `2ce1525` feat: route CLI command results into transcript

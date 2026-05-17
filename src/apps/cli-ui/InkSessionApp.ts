@@ -9,6 +9,7 @@ import {
 	filterSlashCommands,
 	formatSlashCommand,
 	groupSlashCommandsForHelp,
+	normalizeCommandErrorDescriptor,
 	progressBarText,
 	type BuildTerminalStatusInput,
 	type CommandResultDescriptor,
@@ -119,11 +120,11 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		void source.close();
 	}), [closeOpenSession, source]);
 
-	const openSession = useCallback(async (sessionId: string, message?: string) => {
+	const openSession = useCallback(async (sessionId: string, message?: string, localRows?: readonly CompactTerminalRow[]) => {
 		closeOpenSession();
 		const opened = await source.openSession(sessionId);
 		openedRef.current = opened;
-		const rows = buildCompactTerminalRows(opened.traceView, { showThinking: false });
+		const rows = [...(localRows ?? []), ...buildCompactTerminalRows(opened.traceView, { showThinking: false })];
 		setState((current) => ({
 			...current,
 			loading: false,
@@ -388,9 +389,9 @@ export function InkSessionAppView({ state, maxRows = 20, maxLineChars }: InkSess
 		state.loading ? React.createElement(Text, { color: "yellow" }, "Loading CLI session…") : null,
 		state.error ? React.createElement(Text, { color: "red" }, boundedLine(`Error: ${state.error}`, lineLimit)) : null,
 		...(state.message ? renderBoundedTextLines(state.message, "gray", lineLimit, "message") : []),
-		state.slashSuggestions ? React.createElement(InkSlashSuggestionsView, { suggestions: state.slashSuggestions, maxLineChars: lineLimit }) : null,
 		state.picker ? React.createElement(InkSessionPickerView, { picker: state.picker, maxLineChars: lineLimit }) : null,
 		React.createElement(InkTerminalView, { rows: state.rows, maxRows, maxLineChars: lineLimit }),
+		state.slashSuggestions ? React.createElement(InkSlashSuggestionsView, { suggestions: state.slashSuggestions, maxLineChars: lineLimit }) : null,
 		React.createElement(Text, { color: state.mode === "transcript" ? "green" : "yellow" }, boundedLine(`› ${state.input}`, lineLimit)),
 	);
 }
@@ -580,7 +581,7 @@ export async function handleCliSessionSubmittedInput(
 	source: CliSessionSource,
 	state: InkSessionAppState,
 	setState: React.Dispatch<React.SetStateAction<InkSessionAppState>>,
-	openSession: (sessionId: string, message?: string) => Promise<void>,
+	openSession: (sessionId: string, message?: string, localRows?: readonly CompactTerminalRow[]) => Promise<void>,
 	requestExit: () => void,
 ): Promise<void> {
 	const parsed = parseCliSessionInput(rawInput);
@@ -602,7 +603,7 @@ export async function handleCliSessionSubmittedInput(
 	try {
 		await handleSlashCommand(parsed.command, source, state, setState, openSession, requestExit);
 	} catch (error) {
-		setState((current) => ({ ...current, error: boundedLine(formatCliSessionError(error)), message: undefined, mode: "transcript", picker: undefined }));
+		setState((current) => applyCommandResultToState(current, parsed.command, normalizeCommandErrorDescriptor(parsed.command.name, error), current.status));
 	}
 }
 
@@ -611,7 +612,7 @@ async function handleSlashCommand(
 	source: CliSessionSource,
 	state: InkSessionAppState,
 	setState: React.Dispatch<React.SetStateAction<InkSessionAppState>>,
-	openSession: (sessionId: string, message?: string) => Promise<void>,
+	openSession: (sessionId: string, message?: string, localRows?: readonly CompactTerminalRow[]) => Promise<void>,
 	requestExit: () => void,
 ): Promise<void> {
 	if (command.name === "help") {
@@ -621,16 +622,7 @@ async function handleSlashCommand(
 	if (command.name === "status") {
 		const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		const status = await source.getStatus({ sessionId: state.session?.id });
-		setState((current) => ({
-			...current,
-			status,
-			mode: "transcript",
-			picker: undefined,
-			slashSuggestions: undefined,
-			rows: appendCommandResultRows(current.rows, command, result.descriptor, status, current.session),
-			message: undefined,
-			error: undefined,
-		}));
+		setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 		return;
 	}
 	if (command.name === "clear") {
@@ -753,7 +745,7 @@ async function handleSlashCommand(
 			validateThinkingLevel(command.args);
 			const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 			const status = await source.getStatus({ sessionId: state.session?.id });
-			setState((current) => ({ ...current, status, message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+			setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 			return;
 		}
 		setState((current) => withPickerOverlay({
@@ -768,12 +760,12 @@ async function handleSlashCommand(
 		const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		if (command.args.trim()) {
 			const status = await source.getStatus({ sessionId: state.session?.id });
-			setState((current) => ({ ...current, status, message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+			setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 			return;
 		}
 		const providers = modelProviderItemsFromActionResult(result.rawResult, result.descriptor);
 		if (providers.length === 0) {
-			setState((current) => ({ ...current, message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+			setState((current) => applyCommandResultToState(current, command, result.descriptor, current.status));
 			return;
 		}
 		setState((current) => withPickerOverlay({
@@ -788,12 +780,12 @@ async function handleSlashCommand(
 		const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		if (command.args.trim()) {
 			const status = await source.getStatus({ sessionId: state.session?.id });
-			setState((current) => ({ ...current, status, message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+			setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 			return;
 		}
 		const providers = loginProviderItemsFromActionResult(result.rawResult, result.descriptor);
 		if (providers.length === 0) {
-			setState((current) => ({ ...current, message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+			setState((current) => applyCommandResultToState(current, command, result.descriptor, current.status));
 			return;
 		}
 		setState((current) => withPickerOverlay({
@@ -809,8 +801,11 @@ async function handleSlashCommand(
 		const descriptor = result.descriptor;
 		if (command.args.trim() || descriptor.kind !== "menu" || descriptor.items.length === 0) {
 			const status = await source.getStatus({ sessionId: state.session?.id });
-			if (result.openSessionId && result.openSessionId !== state.session?.id) await openSession(result.openSessionId, renderCommandResultDescriptorText(descriptor, state.session));
-			else setState((current) => ({ ...current, status, message: renderCommandResultDescriptorText(descriptor, current.session), error: undefined }));
+			if (result.openSessionId && result.openSessionId !== state.session?.id) {
+				const localRows = commandResultDescriptorRows(command, descriptor, status, state.session, 0);
+				await openSession(result.openSessionId, undefined, localRows);
+			}
+			else setState((current) => applyCommandResultToState(current, command, descriptor, status));
 			return;
 		}
 		setState((current) => withPickerOverlay({
@@ -823,7 +818,7 @@ async function handleSlashCommand(
 	}
 	const handled = await executeSharedSlashCommand(command, source, state, setState, openSession);
 	if (handled) return;
-	setState((current) => ({ ...current, error: `Unknown command ${command.raw}. Use /help for supported CLI commands.`, message: undefined }));
+	setState((current) => applyCommandResultToState(current, command, { kind: "unsupported", command: command.raw, reason: "Use /help for supported CLI commands." }, current.status));
 }
 
 async function executeSharedSlashCommand(
@@ -831,19 +826,19 @@ async function executeSharedSlashCommand(
 	source: CliSessionSource,
 	state: InkSessionAppState,
 	setState: React.Dispatch<React.SetStateAction<InkSessionAppState>>,
-	openSession: (sessionId: string, message?: string) => Promise<void>,
+	openSession: (sessionId: string, message?: string, localRows?: readonly CompactTerminalRow[]) => Promise<void>,
 ): Promise<boolean> {
 	const catalog = state.slashCommands ?? buildSlashCommandCatalog();
 	const descriptor = catalog.find((candidate) => candidate.slash === `/${command.name}` || candidate.aliases?.includes(`/${command.name}` as `/${string}`));
 	if (!descriptor || descriptor.group === "cli" || descriptor.group === "navigation") return false;
 	const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
-	const message = renderCommandResultDescriptorText(result.descriptor, state.session);
+	const status = await source.getStatus({ sessionId: state.session?.id });
 	if (result.openSessionId && result.openSessionId !== state.session?.id) {
-		await openSession(result.openSessionId, message);
+		const localRows = commandResultDescriptorRows(command, result.descriptor, status, state.session, 0);
+		await openSession(result.openSessionId, undefined, localRows);
 		return true;
 	}
-	const status = await source.getStatus({ sessionId: state.session?.id });
-	setState((current) => ({ ...current, status, message, error: undefined }));
+	setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 	return true;
 }
 
@@ -859,7 +854,7 @@ async function selectCommandMenuItem(
 	source: CliSessionSource,
 	state: InkSessionAppState,
 	setState: React.Dispatch<React.SetStateAction<InkSessionAppState>>,
-	openSession: (sessionId: string, message?: string) => Promise<void>,
+	openSession: (sessionId: string, message?: string, localRows?: readonly CompactTerminalRow[]) => Promise<void>,
 ): Promise<void> {
 	if (item.disabled) {
 		setState((current) => ({ ...current, message: item.description ? `${item.label}: ${item.description}` : `${item.label} is unavailable.`, error: undefined }));
@@ -874,7 +869,7 @@ async function selectCommandMenuItem(
 		validateThinkingLevel(level);
 		const result = await source.executeSlashCommand({ command: "thinking", args: level, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		const status = await source.getStatus({ sessionId: state.session?.id });
-		setState((current) => ({ ...current, status, mode: "transcript", picker: undefined, overlayStack: popInkSessionOverlay(current.overlayStack), message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+		setState((current) => applyCommandResultToState(current, { name: "thinking", args: level, raw: `/thinking ${level}` }, result.descriptor, status));
 		return;
 	}
 	if (picker.action === "model-provider") {
@@ -892,11 +887,13 @@ async function selectCommandMenuItem(
 		const args = providerId ? `${providerId}/${modelId}` : modelId;
 		const result = await source.executeSlashCommand({ command: "model", args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		const status = await source.getStatus({ sessionId: state.session?.id });
+		const command = { name: "model", args, raw: `/model ${args}` };
 		if (result.openSessionId && result.openSessionId !== state.session?.id) {
-			await openSession(result.openSessionId, renderCommandResultDescriptorText(result.descriptor, state.session));
+			const localRows = commandResultDescriptorRows(command, result.descriptor, status, state.session, 0);
+			await openSession(result.openSessionId, undefined, localRows);
 			return;
 		}
-		setState((current) => ({ ...current, status, mode: "transcript", picker: undefined, overlayStack: popInkSessionOverlay(popInkSessionOverlay(current.overlayStack)), message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+		setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 		return;
 	}
 	if (picker.action === "login-provider") {
@@ -913,17 +910,19 @@ async function selectCommandMenuItem(
 		const args = providerId ? `${providerId}/${methodId}` : methodId;
 		const result = await source.executeSlashCommand({ command: "login", args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
 		const status = await source.getStatus({ sessionId: state.session?.id });
-		setState((current) => ({ ...current, status, mode: "transcript", picker: undefined, overlayStack: popInkSessionOverlay(popInkSessionOverlay(current.overlayStack)), message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+		setState((current) => applyCommandResultToState(current, { name: "login", args, raw: `/login ${args}` }, result.descriptor, status));
 		return;
 	}
 	if (picker.action === "fork-candidate") {
 		const result = await source.executeSlashCommand({ command: "fork-candidates", args: item.id, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
+		const status = await source.getStatus({ sessionId: state.session?.id });
+		const command = { name: "fork-candidates", args: item.id, raw: `/fork-candidates ${item.id}` };
 		if (result.openSessionId && result.openSessionId !== state.session?.id) {
-			await openSession(result.openSessionId, renderCommandResultDescriptorText(result.descriptor, state.session));
+			const localRows = commandResultDescriptorRows(command, result.descriptor, status, state.session, 0);
+			await openSession(result.openSessionId, undefined, localRows);
 			return;
 		}
-		const status = await source.getStatus({ sessionId: state.session?.id });
-		setState((current) => ({ ...current, status, mode: "transcript", picker: undefined, overlayStack: popInkSessionOverlay(current.overlayStack), message: renderCommandResultDescriptorText(result.descriptor, current.session), error: undefined }));
+		setState((current) => applyCommandResultToState(current, command, result.descriptor, status));
 		return;
 	}
 	setState((current) => ({ ...current, mode: "transcript", picker: undefined, message: `${item.label} selected.`, error: undefined }));
@@ -1091,6 +1090,25 @@ function arrayStringField(value: unknown, key: string): string[] {
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
 	const value = record[key];
 	return typeof value === "string" ? value : undefined;
+}
+
+function applyCommandResultToState(
+	current: InkSessionAppState,
+	command: CliSessionSlashCommand,
+	descriptor: CommandResultDescriptor,
+	status?: CliRuntimeStatus,
+): InkSessionAppState {
+	return {
+		...current,
+		...(status ? { status } : {}),
+		mode: "transcript",
+		picker: undefined,
+		slashSuggestions: undefined,
+		overlayStack: undefined,
+		rows: appendCommandResultRows(current.rows, command, descriptor, status, current.session),
+		message: undefined,
+		error: undefined,
+	};
 }
 
 export function appendCommandResultRows(
