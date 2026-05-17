@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T01:19:27Z",
+    "lastUpdatedAt": "2026-05-17T01:20:50Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -1000,6 +1000,15 @@
         "q-store-data-boundaries"
       ],
       "message": "docs: refresh store data boundary specs"
+    },
+    {
+      "hash": "efd3e7effee4aede53e9003a438f15fdcccde6e6",
+      "shortHash": "efd3e7e",
+      "committedAt": "2026-05-17T01:20:50Z",
+      "queueIds": [
+        "q-web-annotations-uncommitted"
+      ],
+      "message": "docs: triage web annotations branch specs"
     }
   ],
   "runNotes": [
@@ -1050,6 +1059,10 @@
     {
       "at": "2026-05-17T01:19:27Z",
       "note": "Audited q-web-annotations-uncommitted. Classified Web Annotations change docs as intentional target/future specs for behavior absent from this worktree; read-only triaged the separate web-annotations-plugin branch and uncommitted changes; added a coverage note saying this loop should not merge or wait on that branch."
+    },
+    {
+      "at": "2026-05-17T01:20:50Z",
+      "note": "Recorded commit efd3e7e for q-web-annotations-uncommitted Web Annotations branch/spec triage; next queue item is q-global-source-marked-inventory."
     }
   ]
 }
