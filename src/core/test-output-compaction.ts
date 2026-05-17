@@ -35,7 +35,6 @@ export type PiboBashOutputCompactionDetails = {
 
 export const PIBO_BASH_OUTPUT_COMPACTION_DETAILS_KEY = "piboBashOutputCompaction";
 
-const MAX_INLINE_FULL_OUTPUT_CHARS = 120_000;
 const MAX_ERROR_CONTEXT_LINES = 120;
 const ERROR_CONTEXT_RADIUS = 2;
 const MIN_SUCCESS_LINES_TO_COMPACT = 12;
@@ -43,7 +42,7 @@ const COMPACTED_MARKER = "[Pibo compacted validation output]";
 
 const VALIDATION_COMMAND_PATTERN = /(?:^|[\s;&|()])(?:(?:npm|pnpm|yarn|bun)\s+run\s+[^\s;&|()]*?(?:test|typecheck|check|lint|build)[^\s;&|()]*|(?:npm|pnpm|yarn|bun)\s+(?:test|t)\b|(?:npx\s+)?(?:vitest|jest|mocha|ava|playwright|cypress|pytest|ruff|eslint|tsc|tsc\s+--noEmit|node\s+--test|go\s+test|cargo\s+test|dotnet\s+test)\b)/i;
 const ERROR_LINE_PATTERN = /(?:\b(?:FAIL|FAILED|Failing|failure|failed|ERROR|Error|error|ERR!|Exception|Traceback|AssertionError|assert|expected|received|not ok|timed out|Command exited with code)\b|[✕×✖])/;
-const BENIGN_SUCCESS_LINE_PATTERN = /(?:\b(?:PASS|passed|success|successful|ok|done|completed|✓)\b)/i;
+const BENIGN_SUCCESS_LINE_PATTERN = /(?:^\s*(?:✔|✓|PASS\b)|\b(?:PASS|passed|success|successful|ok|done|completed)\b)/i;
 
 export function compactValidationToolResultForContext(
 	context: AfterToolCallContextLike,
@@ -81,19 +80,17 @@ export function compactValidationOutput(input: {
 	const interestingLines = rangesToLines(lines, interestingRanges, MAX_ERROR_CONTEXT_LINES);
 	const displayedBody = input.isError
 		? (interestingLines.length ? interestingLines : tailLines(lines, MAX_ERROR_CONTEXT_LINES))
-		: interestingLines.filter((line) => !BENIGN_SUCCESS_LINE_PATTERN.test(line)).slice(0, MAX_ERROR_CONTEXT_LINES);
+		: [];
 
 	const statusLine = input.isError
 		? "Command failed. Showing error-looking lines only."
-		: displayedBody.length
-			? "Command succeeded. Successful test output hidden; showing notable lines only."
-			: "Command succeeded. Successful test output hidden by default.";
+		: "Command succeeded. Test output hidden by default.";
 	const omittedLines = Math.max(0, lines.length - displayedBody.length);
 	const header = [
 		COMPACTED_MARKER,
 		statusLine,
 		`Original output: ${lines.length} line${lines.length === 1 ? "" : "s"}, ${normalizedOutput.length} chars.`,
-		omittedLines > 0 ? `Hidden: ${omittedLines} line${omittedLines === 1 ? "" : "s"}. Expand details to show full output.` : undefined,
+		omittedLines > 0 ? `Hidden: ${omittedLines} line${omittedLines === 1 ? "" : "s"}. Full output omitted from model context.` : undefined,
 	].filter((line): line is string => Boolean(line));
 
 	const text = displayedBody.length
@@ -108,7 +105,6 @@ export function compactValidationOutput(input: {
 		originalChars: normalizedOutput.length,
 		displayedLines: displayedBody.length,
 		omittedLines,
-		fullOutput: normalizedOutput.length <= MAX_INLINE_FULL_OUTPUT_CHARS ? normalizedOutput : undefined,
 		fullOutputPath,
 	};
 	return { text, details };
@@ -137,6 +133,7 @@ function textFromContent(content: AgentToolResultLike["content"]): string | unde
 function collectInterestingRanges(lines: string[]): Array<[number, number]> {
 	const ranges: Array<[number, number]> = [];
 	for (let index = 0; index < lines.length; index += 1) {
+		if (BENIGN_SUCCESS_LINE_PATTERN.test(lines[index])) continue;
 		if (!ERROR_LINE_PATTERN.test(lines[index])) continue;
 		ranges.push([
 			Math.max(0, index - ERROR_CONTEXT_RADIUS),

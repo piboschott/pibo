@@ -8,10 +8,10 @@ test("successful validation output is hidden by default", () => {
 
 	assert.ok(result);
 	assert.match(result.text, /Command succeeded/);
-	assert.match(result.text, /Successful test output hidden/);
+	assert.match(result.text, /Test output hidden by default/);
 	assert.doesNotMatch(result.text, /PASS test-29/);
 	assert.equal(result.details.originalLines, 30);
-	assert.equal(result.details.fullOutput, output);
+	assert.equal(result.details.fullOutput, undefined);
 });
 
 test("failed validation output keeps error context and omits passing spam", () => {
@@ -31,6 +31,19 @@ test("failed validation output keeps error context and omits passing spam", () =
 	assert.doesNotMatch(result.text, /PASS passing-0/);
 	assert.equal(result.details.isError, true);
 	assert.equal(result.details.omittedLines > 0, true);
+});
+
+test("successful validation output with error-like passing test names is still hidden", () => {
+	const output = Array.from(
+		{ length: 30 },
+		(_, index) => `✔ failed yielded run fixture still passes ${index}`,
+	).join("\n");
+	const result = compactValidationOutput({ command: "npm run test", output, isError: false });
+
+	assert.ok(result);
+	assert.match(result.text, /Test output hidden by default/);
+	assert.doesNotMatch(result.text, /failed yielded run fixture/);
+	assert.equal(result.details.displayedLines, 0);
 });
 
 test("short successful validation output remains unchanged", () => {
