@@ -415,5 +415,5 @@ Validation and results for interactive overlay thinking and model batch:
 - Path classification: shared/source/unit tests plus real PTY-backed CLI/TUI checks with deterministic mocked local router/source. No Web DOM behavior changed, so browser checks were not required for this batch.
 - Completed stories marked `passes: true`: PRD 06 `US-001`, `US-002`, `US-003`.
 - Implementation commit: `f98054b` (`Add Ink thinking and model command pickers`).
-- Evidence/PRD update commit: pending.
+- Evidence/PRD update commit: `c2a853b` (`Record interactive command picker PRD evidence`).
 - Next recommended group: PRD 06 `US-004` and `US-005` for `/login`, `/fork-candidates`, `/download`, and `/upload` terminal equivalents, then PRD 07 rendering/PTY validation stories.
