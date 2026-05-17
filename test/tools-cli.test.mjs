@@ -176,7 +176,8 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 		});
 		assert.match(defaultProfile.stderr, /started Chrome profile "PIBo"/);
 		assert.match(defaultProfile.stdout, /--cdp-url\nhttp:\/\/127\.0\.0\.1:\d+\nopen\nhttps:\/\/example\.test/);
-		const poolState = JSON.parse(await readFile(join(browserUseHome, "pibo-browser-pool", "browser-pools", "test-worker", "default", "state.json"), "utf8"));
+		const poolStatePath = join(browserUseHome, "pibo-browser-pool", "browser-pools", "test-worker", "default", "state.json");
+		const poolState = JSON.parse(await readFile(poolStatePath, "utf8"));
 		assert.equal(poolState.state, "leased");
 		assert.equal(poolState.workerId, "test-worker");
 		assert.equal(poolState.poolId, "default");
@@ -185,6 +186,51 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 		assert.equal(poolState.owner, "test-owner");
 		assert.match(poolState.cdpUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
 		assert.equal(poolState.userDataDir, chromeUserDataDir);
+
+		const busyServer = createServer((request, response) => {
+			if (request.url === "/json/version") {
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(JSON.stringify({ Browser: "FakeChrome/1.0" }));
+				return;
+			}
+			response.writeHead(404);
+			response.end("not found");
+		});
+		await new Promise((resolveListen) => busyServer.listen(0, "127.0.0.1", resolveListen));
+		try {
+			const busyAddress = busyServer.address();
+			assert.ok(busyAddress && typeof busyAddress === "object");
+			await writeFile(poolStatePath, `${JSON.stringify({
+				...poolState,
+				pid: process.pid,
+				cdpPort: busyAddress.port,
+				cdpUrl: `http://127.0.0.1:${busyAddress.port}`,
+				activeLeaseId: "other-lease",
+				owner: "other-owner",
+				idleExpiresAt: "2099-01-01T00:00:00.000Z",
+			}, null, 2)}\n`, "utf8");
+			await assert.rejects(
+				execFileAsync(wrapperPath, ["--pibo-ensure-chrome"], {
+					cwd,
+					env: {
+						...env,
+						BROWSER_USE_HOME: browserUseHome,
+						PIBO_BROWSER_POOL_WORKER_ID: "test-worker",
+						PIBO_BROWSER_POOL_LEASE_ID: "blocked-lease",
+						PIBO_BROWSER_USE_CHROME: fakeChromePath,
+						PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+						PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
+					},
+				}),
+				(error) => {
+					assert.match(error.stderr, /pool-exhausted/);
+					return true;
+				},
+			);
+		} finally {
+			await new Promise((resolveClose) => busyServer.close(resolveClose));
+		}
+		await writeFile(poolStatePath, `${JSON.stringify(poolState, null, 2)}\n`, "utf8");
 		for (let attempt = 0; attempt < 20; attempt += 1) {
 			try {
 				await stat(fakeChromeArgsPath);

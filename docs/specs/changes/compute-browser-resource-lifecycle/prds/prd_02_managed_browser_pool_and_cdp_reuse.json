@@ -65,8 +65,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented one-lane browser-pool concurrency enforcement in src/tools/browser-pool.ts and the browser-use wrapper: healthy active leases for a different lease id now fail explicitly with a pool-exhausted result instead of starting or replacing another browser, same-lease reuse remains allowed, expired leases can be taken over, and wrapper default lease ids are stable per browser-use session. Added focused concurrency/busy-pool tests in test/browser-pool-state.test.mjs and wrapper busy-path coverage in test/tools-cli.test.mjs. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused browser-pool/wrapper tests passed, real Docker worker wrapper validation with Chromium proved second lease fails pool-exhausted without unmanaged fallback, and npm run typecheck passed."
     },
     {
       "id": "US-005",

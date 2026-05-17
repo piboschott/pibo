@@ -252,6 +252,11 @@ export async function acquireBrowserPoolLease(
 
 		const reusable = await evaluateRecordedBrowser(current, isPidAlive, checkCdpHealth, cdpTimeoutMs);
 		if (reusable.ok) {
+			const busyReason = activeLeaseBusyReason(current, leaseId, checkedAt);
+			if (busyReason) {
+				const busyState = stripUndefined({ ...current, lastUsedAt, lastError: busyReason });
+				return { state: busyState, result: { acquired: false, state: busyState, staleReason: busyReason } };
+			}
 			const nextState = stripUndefined({
 				...current,
 				state: "leased" as const,
@@ -334,6 +339,21 @@ export function normalizeBrowserPoolState(value: unknown, identity: BrowserPoolI
 		state,
 		lastError: readOptionalString(record.lastError, "lastError"),
 	});
+}
+
+function activeLeaseBusyReason(state: BrowserPoolState, requestedLeaseId: string, now: Date): string | undefined {
+	if (state.state !== "leased" || !state.activeLeaseId || state.activeLeaseId === requestedLeaseId) return undefined;
+	if (leaseExpired(state.idleExpiresAt, now)) return undefined;
+	const owner = state.owner ? ` owned by ${state.owner}` : "";
+	const until = state.idleExpiresAt ? ` until ${state.idleExpiresAt}` : "";
+	return `pool-exhausted: browser pool ${state.poolId} is already leased by ${state.activeLeaseId}${owner}${until}`;
+}
+
+function leaseExpired(idleExpiresAt: string | undefined, now: Date): boolean {
+	if (!idleExpiresAt) return false;
+	const expiresAt = Date.parse(idleExpiresAt);
+	if (Number.isNaN(expiresAt)) return false;
+	return expiresAt <= now.getTime();
 }
 
 async function evaluateRecordedBrowser(

@@ -328,10 +328,33 @@ except Exception as exc:
     print("malformed")
     print(str(exc))
     raise SystemExit(0)
-for key in ("state", "pid", "cdpPort", "cdpUrl", "userDataDir"):
+for key in ("state", "pid", "cdpPort", "cdpUrl", "userDataDir", "activeLeaseId", "idleExpiresAt", "owner"):
     value = data.get(key, "")
     print(value if value is not None else "")
 PYSUMMARY
+}
+
+browser_pool_lease_is_busy() {
+  active_lease=$1
+  requested_lease=$2
+  idle_expires_at=$3
+  if [ -z "$active_lease" ] || [ "$active_lease" = "$requested_lease" ]; then
+    return 1
+  fi
+  "$python_cmd" - "$idle_expires_at" <<'PYBUSY'
+import sys
+from datetime import datetime, timezone
+value = sys.argv[1]
+if not value:
+    raise SystemExit(0)
+try:
+    expires_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+except Exception:
+    raise SystemExit(0)
+if expires_at.tzinfo is None:
+    expires_at = expires_at.replace(tzinfo=timezone.utc)
+raise SystemExit(1 if expires_at <= datetime.now(timezone.utc) else 0)
+PYBUSY
 }
 
 browser_pool_write_state() {
@@ -389,7 +412,8 @@ browser_pool_acquire() {
   state_file=$(printf '%s\n' "$paths" | sed -n '1p')
   lock_dir=$(printf '%s\n' "$paths" | sed -n '2p')
   mkdir -p "$(dirname "$state_file")"
-  lease_id=\${PIBO_BROWSER_POOL_LEASE_ID:-pibo-browser-use-$$-$(date +%s)}
+  safe_session=$(browser_pool_safe_segment "$session")
+  lease_id=\${PIBO_BROWSER_POOL_LEASE_ID:-browser-use:$safe_session}
   owner=\${PIBO_BROWSER_POOL_OWNER:-browser-use:$session}
   attempts=0
   while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -413,6 +437,16 @@ browser_pool_acquire() {
     recorded_port=$(printf '%s\n' "$summary" | sed -n '3p')
     recorded_cdp_url=$(printf '%s\n' "$summary" | sed -n '4p')
     recorded_user_data_dir=$(printf '%s\n' "$summary" | sed -n '5p')
+    recorded_active_lease_id=$(printf '%s\n' "$summary" | sed -n '6p')
+    recorded_idle_expires_at=$(printf '%s\n' "$summary" | sed -n '7p')
+    recorded_owner=$(printf '%s\n' "$summary" | sed -n '8p')
+    if [ "$recorded_state" = "leased" ] && browser_pool_lease_is_busy "$recorded_active_lease_id" "$lease_id" "$recorded_idle_expires_at" && [ -n "$recorded_pid" ] && [ -n "$recorded_port" ] && [ -n "$recorded_cdp_url" ] && kill -0 "$recorded_pid" 2>/dev/null && pibo_cdp_is_ready "$recorded_port"; then
+      busy_reason="pool-exhausted: browser pool $(browser_pool_id) is already leased by $recorded_active_lease_id until \${recorded_idle_expires_at:-unknown}"
+      echo "pibo browser-use: $busy_reason" >&2
+      rm -rf "$lock_dir"
+      trap - EXIT INT TERM
+      return 1
+    fi
     if [ "$recorded_state" != "dirty" ] && [ -n "$recorded_pid" ] && [ -n "$recorded_port" ] && [ -n "$recorded_cdp_url" ] && kill -0 "$recorded_pid" 2>/dev/null && pibo_cdp_is_ready "$recorded_port"; then
       browser_pool_write_state "$state_file" leased "$recorded_pid" "$recorded_port" "$recorded_cdp_url" "$recorded_user_data_dir" "$lease_id" "$owner" ""
       rm -rf "$lock_dir"

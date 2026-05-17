@@ -226,7 +226,7 @@ test("browser pool acquire marks unreachable CDP stale when replacement is unava
 	});
 });
 
-test("browser pool acquire starts one replacement under lock and later callers reuse it", async () => {
+test("browser pool acquire starts at most one replacement under lock for one-lane pools", async () => {
 	await withTempDir(async (dir) => {
 		const paths = browserPoolPaths(dir, identity);
 		await saveBrowserPoolState(paths.statePath, {
@@ -254,11 +254,91 @@ test("browser pool acquire starts one replacement under lock and later callers r
 		const results = await Promise.all([makeAcquire("lease-a"), makeAcquire("lease-b")]);
 		assert.equal(startCount, 1);
 		assert.equal(results.filter((result) => result.acquired && result.replaced).length, 1);
-		assert.equal(results.filter((result) => result.acquired && result.reused).length, 1);
+		const exhausted = results.find((result) => !result.acquired);
+		assert.ok(exhausted);
+		assert.match(exhausted.staleReason, /pool-exhausted/);
 		const saved = await loadBrowserPoolState(paths.statePath, identity);
 		assert.equal(saved.pid, 2222);
 		assert.equal(saved.cdpUrl, "http://127.0.0.1:4832");
 		assert.equal(saved.state, "leased");
+	});
+});
+
+
+test("browser pool acquire fails clearly when a one-lane pool is busy", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			activeLeaseId: "lease-a",
+			owner: "owner-a",
+			idleExpiresAt: "2026-05-17T00:10:00.000Z",
+			state: "leased",
+		});
+		let startCount = 0;
+
+		const result = await acquireBrowserPoolLease(paths, identity, {
+			leaseId: "lease-b",
+			now: () => new Date("2026-05-17T00:00:00.000Z"),
+			isPidAlive: () => true,
+			checkCdpHealth: async () => ({ ok: true, browser: "Chrome/124.0.0.0" }),
+			startBrowser: async () => {
+				startCount += 1;
+				throw new Error("must not start while busy");
+			},
+		});
+
+		assert.equal(result.acquired, false);
+		assert.match(result.staleReason, /pool-exhausted/);
+		assert.match(result.staleReason, /lease-a/);
+		assert.equal(startCount, 0);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.state, "leased");
+		assert.equal(saved.activeLeaseId, "lease-a");
+		assert.match(saved.lastError, /pool-exhausted/);
+	});
+});
+
+
+test("browser pool acquire permits same-lease reuse and expired lease takeover", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			activeLeaseId: "lease-a",
+			idleExpiresAt: "2026-05-17T00:01:00.000Z",
+			state: "leased",
+		});
+
+		const sameLease = await acquireBrowserPoolLease(paths, identity, {
+			leaseId: "lease-a",
+			now: () => new Date("2026-05-17T00:00:00.000Z"),
+			isPidAlive: () => true,
+			checkCdpHealth: async () => ({ ok: true, browser: "Chrome/124.0.0.0" }),
+			startBrowser: async () => { throw new Error("must not start same lease"); },
+		});
+		assert.equal(sameLease.acquired, true);
+		assert.equal(sameLease.reused, true);
+
+		const takeover = await acquireBrowserPoolLease(paths, identity, {
+			leaseId: "lease-b",
+			now: () => new Date("2026-05-17T00:20:00.000Z"),
+			isPidAlive: () => true,
+			checkCdpHealth: async () => ({ ok: true, browser: "Chrome/124.0.0.0" }),
+			startBrowser: async () => { throw new Error("must not start expired healthy lease takeover"); },
+		});
+		assert.equal(takeover.acquired, true);
+		assert.equal(takeover.reused, true);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.activeLeaseId, "lease-b");
 	});
 });
 
