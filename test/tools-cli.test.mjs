@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { test } from "node:test";
@@ -11,6 +11,37 @@ import { createPiboXvfbServiceUnit, PIBO_XVFB_SERVICE_PATH, PIBO_XVFB_SERVICE_NA
 
 const execFileAsync = promisify(execFile);
 const cliPath = resolve("dist/bin/pibo.js");
+
+function shellQuote(value) {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function processIsAlive(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function waitForProcess(pid, alive) {
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		if (processIsAlive(pid) === alive) return;
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	assert.equal(processIsAlive(pid), alive);
+}
+
+function spawnBrowserLikeProcess(commandName, userDataDir) {
+	const script = "setInterval(() => {}, 1000)";
+	const command = `exec -a ${shellQuote(commandName)} ${shellQuote(process.execPath)} -e ${shellQuote(script)} -- --user-data-dir=${shellQuote(userDataDir)}`;
+	return spawn("bash", ["-lc", command], { stdio: "ignore" });
+}
+
+function terminateProcess(child) {
+	if (!child.killed && processIsAlive(child.pid)) child.kill("SIGKILL");
+}
 
 async function withTargetListServer(targets, run) {
 	const server = createServer((request, response) => {
@@ -161,6 +192,46 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 
 		const browserUseHome = join(cwd, "browser-use-home");
 		const chromeUserDataDir = join(cwd, "chrome-user-data");
+		const unrelatedChromeUserDataDir = join(cwd, "unrelated-chrome-user-data");
+		const authTemplateUserDataDir = join(cwd, "auth-template-user-data");
+		await mkdir(chromeUserDataDir, { recursive: true });
+		await mkdir(unrelatedChromeUserDataDir, { recursive: true });
+		await mkdir(authTemplateUserDataDir, { recursive: true });
+
+		const managedChromium = spawnBrowserLikeProcess("/usr/bin/chromium", chromeUserDataDir);
+		const managedGoogleChrome = spawnBrowserLikeProcess("google-chrome", chromeUserDataDir);
+		const unrelatedChromium = spawnBrowserLikeProcess("/usr/bin/chromium", unrelatedChromeUserDataDir);
+		const authTemplateChromium = spawnBrowserLikeProcess("/usr/bin/chromium", authTemplateUserDataDir);
+		try {
+			await Promise.all([
+				waitForProcess(managedChromium.pid, true),
+				waitForProcess(managedGoogleChrome.pid, true),
+				waitForProcess(unrelatedChromium.pid, true),
+				waitForProcess(authTemplateChromium.pid, true),
+			]);
+			const staleCleanup = await execFileAsync(wrapperPath, ["--pibo-ensure-chrome"], {
+				cwd,
+				env: {
+					...env,
+					BROWSER_USE_HOME: join(cwd, "browser-use-home-stale-cleanup"),
+					PIBO_BROWSER_POOL_WORKER_ID: "test-worker-stale-cleanup",
+					PIBO_BROWSER_USE_CHROME: fakeChromePath,
+					PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+					PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
+				},
+			});
+			assert.match(staleCleanup.stderr, /terminating stale Chrome process/);
+			assert.match(staleCleanup.stdout, /^http:\/\/127\.0\.0\.1:\d+/);
+			await Promise.all([
+				waitForProcess(managedChromium.pid, false),
+				waitForProcess(managedGoogleChrome.pid, false),
+			]);
+			assert.equal(processIsAlive(unrelatedChromium.pid), true);
+			assert.equal(processIsAlive(authTemplateChromium.pid), true);
+		} finally {
+			for (const child of [managedChromium, managedGoogleChrome, unrelatedChromium, authTemplateChromium]) terminateProcess(child);
+		}
+
 		const defaultProfile = await execFileAsync(wrapperPath, ["open", "https://example.test"], {
 			cwd,
 			env: {

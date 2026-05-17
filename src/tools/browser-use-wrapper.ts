@@ -129,12 +129,50 @@ PY
 
 find_chrome_pids_for_profile() {
   user_data_dir=$1
-  # Try pgrep first, fallback to ps+grep
-  if command -v pgrep >/dev/null 2>&1; then
-    pgrep -f "chrome.*--user-data-dir=.*$user_data_dir" 2>/dev/null || true
-  else
-    ps aux 2>/dev/null | grep -F "$user_data_dir" | grep -E 'chrome|chromium' | grep -v grep | awk '{print $2}' || true
-  fi
+  "$python_cmd" - "$user_data_dir" <<'PYFINDCHROME'
+import os
+import shlex
+import subprocess
+import sys
+
+managed_dir = os.path.normpath(os.path.abspath(sys.argv[1]))
+browser_names = {"chrome", "google-chrome", "chromium", "chromium-browser"}
+
+def normalize_path(value):
+    return os.path.normpath(os.path.abspath(value))
+
+def has_managed_user_data_dir(args):
+    for index, arg in enumerate(args):
+        if arg.startswith("--user-data-dir="):
+            return normalize_path(arg.split("=", 1)[1]) == managed_dir
+        if arg == "--user-data-dir" and index + 1 < len(args):
+            return normalize_path(args[index + 1]) == managed_dir
+    return False
+
+try:
+    output = subprocess.check_output(["ps", "-eo", "pid=,args="], text=True, stderr=subprocess.DEVNULL)
+except Exception:
+    raise SystemExit(0)
+
+for line in output.splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    pid_text, _, command = line.partition(" ")
+    if not pid_text.isdigit() or not command:
+        continue
+    try:
+        args = shlex.split(command)
+    except ValueError:
+        continue
+    if not args:
+        continue
+    command_name = os.path.basename(args[0]).lower()
+    if command_name not in browser_names:
+        continue
+    if has_managed_user_data_dir(args):
+        print(pid_text)
+PYFINDCHROME
 }
 
 kill_stale_chrome_for_profile() {

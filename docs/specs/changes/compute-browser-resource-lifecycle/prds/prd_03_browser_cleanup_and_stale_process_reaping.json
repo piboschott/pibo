@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented process-table based stale browser matching in the browser-use wrapper. Cleanup now recognizes chrome, google-chrome, chromium, and chromium-browser command names only when the command line includes the exact managed --user-data-dir path. Added focused wrapper tests covering /usr/bin/chromium, google-chrome, an unrelated chromium profile, and auth-template profile preservation. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, real wrapper/process-table validation with actual Chromium passed, and npm run typecheck passed."
     },
     {
       "id": "US-002",
