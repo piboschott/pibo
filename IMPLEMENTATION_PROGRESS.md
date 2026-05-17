@@ -47,3 +47,4 @@ Implement:
 ## Progress log
 
 - 2026-05-17: Created worktree, committed PRD Markdown/JSON batch, started Docker dev worker, prepared Ralph job prompt, and created stopped Ralph job `ralph_2573cc4a-d1d4-4a0e-88e9-c6224222c2d4`.
+- 2026-05-17: Validated Docker worker access and replaced the Ralph prompt Chrome cleanup command with exact-name `pkill -x` cleanup so the cleanup command does not match and terminate its own shell.
