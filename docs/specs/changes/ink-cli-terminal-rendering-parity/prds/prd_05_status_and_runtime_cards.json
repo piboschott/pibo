@@ -1,0 +1,100 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-status-runtime-cards",
+  "description": "Make /status render as a compact transcript card with Web-aligned runtime, session, context, provider quota, warning/error, tool, unavailable, and redaction semantics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create shared status fixtures and view-model assertions",
+      "description": "As a developer, I want deterministic status states so Web and Ink render the same runtime concepts.",
+      "acceptanceCriteria": [
+        "Shared status fixtures cover full, partial, unavailable, zero usage, high usage, warning, error, secret-bearing, non-OpenAI provider, queued, processing, streaming, and disposed states",
+        "View-model tests assert title, owner, session, profile, model, runtime, cwd, queue/processing/streaming, context, provider quota, credits, tools, warnings, and errors when present",
+        "Tests distinguish missing usage as unavailable and zero usage as 0.0%",
+        "Tests assert provider labels and plan/reset/remaining details come from descriptor data and are not OpenAI-hardcoded",
+        "Tests assert secrets are redacted before Web or Ink rendering",
+        "Focused shared status tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Render compact Ink status card with bars and unavailable states",
+      "description": "As an SSH operator, I want /status to show runtime health without a verbose debug dump.",
+      "acceptanceCriteria": [
+        "Ink status card primary line summarizes runtime state, session/model, and abbreviated owner without long owner scope dominating the screen",
+        "Status card supports session id/title, cwd/workspace, processing, streaming, queued count, disposed/error state, context usage, provider quota, plan, credits, tools, owner/profile/model/runtime, warnings, and errors",
+        "Context and provider quota render text bars such as ███░░░ 25.0% when available and meaningful ASCII/text fallback under NO_COLOR or limited glyph conditions",
+        "Unavailable context/provider data renders compactly as unavailable, not blank, zero, or multiple verbose debug lines",
+        "Warnings/errors use high-signal markers and redact secrets",
+        "Narrow-width output keeps session/status/error/quota meaning visible",
+        "Focused Ink status render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Place /status in transcript flow for live controller path",
+      "description": "As a TUI user, I want /status output to appear chronologically in the transcript.",
+      "acceptanceCriteria": [
+        "/status appends an execution.command row followed by a tool.status row/card immediately above the prompt/input",
+        "/status does not set state.message with the status payload or render a detached header status panel",
+        "Running/streaming rows visible before /status remain before the command/status rows",
+        "/status with no active session, partial runtime state, or source errors renders a bounded status/error row instead of crashing",
+        "Controller tests cover normal, picker-open, no-session, partial-data, source-error, and streaming-tail cases",
+        "Focused controller tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Keep Web TerminalStatusCard parity hooks and shared descriptor use",
+      "description": "As a Web Compact Terminal user, I want the Web status card to remain the reference for status semantics.",
+      "acceptanceCriteria": [
+        "Web TerminalStatusCard or equivalent Web Compact Terminal path consumes the shared status descriptor/view model for supported fields",
+        "Web output/source exposes stable hooks or test ids for shared card kind, status fields, context usage, provider quota, warnings, errors, and unavailable states where feasible",
+        "Web regression tests use the same status fixtures as Ink status tests or derive from the same fixture source",
+        "Web visuals are not redesigned except for semantic hooks needed for tests",
+        "npm run chat-ui:typecheck passes",
+        "npm run chat-ui:build passes",
+        "Focused Web status tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Validate status cards through PTY artifacts",
+      "description": "As a reviewer, I want terminal evidence that /status looks compact and appears in the right place.",
+      "acceptanceCriteria": [
+        "PTY live/default or closest practical local path runs pibo tui:sessions, executes /status, and asserts command row plus status card appear in transcript flow",
+        "PTY deterministic fixture path covers provider quota/context bars when live provider quota is unavailable",
+        "PTY artifacts include full or partial status, unavailable status, narrow width, and NO_COLOR=1 where feasible",
+        "Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, exact commands, and visual artifact path or fallback reason",
+        "Observed screen does not contain a verbose status dump, dominant long owner id, or header-only status payload",
+        "Focused PTY status tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

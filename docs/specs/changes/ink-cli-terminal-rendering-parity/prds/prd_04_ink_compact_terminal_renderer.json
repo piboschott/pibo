@@ -1,0 +1,96 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-compact-terminal-renderer",
+  "description": "Implement a high-quality terminal-native Ink renderer that follows TERMINAL_DESIGN.md: transcript-first, ultra-dense, semantic markers, user/assistant distinction, inline details, narrow/no-color support, and bounded output.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Build compact Ink terminal row primitives",
+      "description": "As an SSH operator, I want the transcript to be the dominant surface rather than a dashboard.",
+      "acceptanceCriteria": [
+        "Ink terminal shell keeps header/chrome compact and secondary; transcript rows dominate the screen",
+        "Rows render in chronological order with minimal blank lines and no large card containers or decorative chrome inside the transcript",
+        "Row layout uses a stable prefix column and compact content column analogous to TERMINAL_DESIGN.md within terminal constraints",
+        "Primitives support semantic markers, dim metadata, action/success/error/reasoning tones, and no-color text markers",
+        "Implementation does not import Web DOM/Tailwind/lucide components into CLI modules",
+        "Focused renderer primitive tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Render every required row kind with distinct semantics",
+      "description": "As a user, I want user, assistant, tools, commands, status, and errors to be distinguishable at a glance.",
+      "acceptanceCriteria": [
+        "Ink render tests cover message.user, message.assistant, reasoning, tool.call, tool.status, tool.thinking, tool.model, tool.login, yielded.run, execution.command, execution.compaction, and error rows",
+        "User rows use a distinct prompt glyph/tone/prefix treatment from assistant rows; tests assert the markers or style tokens differ",
+        "Running, done, and error states use distinct markers/words and do not rely on color alone",
+        "Tool/function rows show action verb, function name, argument preview, status, and detail availability without unbounded dumps",
+        "Command and compaction rows match shared descriptor labels and statuses from PRDs 02-03",
+        "Focused semantic render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Render inline details, JSON, markdown, and long output safely",
+      "description": "As a power user, I want details to be available inline without turning the transcript into a dump.",
+      "acceptanceCriteria": [
+        "Expandable details render inline below the parent row with equivalent labels: Input, Output, Error, Linked session, and command/tool-specific details",
+        "Large JSON, markdown, tool output, and command output are bounded/truncated with clear continuation/detail markers",
+        "Secrets are redacted in collapsed previews and expanded details",
+        "Long unbroken tokens wrap or truncate without expanding layout horizontally",
+        "Reasoning/markdown output remains dense and monospaced with compact spacing",
+        "Focused detail/long-output tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Support narrow terminals and NO_COLOR readability",
+      "description": "As an SSH user, I want the TUI to stay useful in small or limited terminals.",
+      "acceptanceCriteria": [
+        "Narrow-width render tests preserve owner/session/status/error/action meaning rather than hiding it behind truncation",
+        "NO_COLOR=1 render tests prove status, success, error, reasoning, command, selection, and unavailable states remain readable through markers and labels",
+        "Progress bars and badges have ASCII/text fallbacks when Unicode/color support is limited",
+        "Large transcripts remain bounded by existing tail-window/output limits and do not hang renderToString tests",
+        "Focused narrow/no-color/performance tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Capture mixed-transcript PTY visual evidence",
+      "description": "As a reviewer, I want actual terminal artifacts showing the renderer feels like Compact Terminal.",
+      "acceptanceCriteria": [
+        "PTY scenario captures a mixed transcript containing user, assistant, reasoning, tool, status, command, and error rows where feasible",
+        "Artifact screen proves transcript-first layout, compact rows, clear user/assistant distinction, semantic markers, and no dashboard-style status dump",
+        "Separate PTY or render evidence covers narrow width and NO_COLOR=1",
+        "Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, and exact command invocations",
+        "Focused PTY/render tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

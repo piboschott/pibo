@@ -1,0 +1,98 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-pickers-overlays-keyboard-flows",
+  "description": "Redesign owner, room, session, slash, thinking, model, login, fork/clone, and unsupported-action pickers as compact terminal overlays with Web-aligned action semantics and robust keyboard behavior.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement shared compact overlay style",
+      "description": "As a TUI user, I want all pickers to feel like one terminal command surface.",
+      "acceptanceCriteria": [
+        "Owner, room, session, slash, thinking, model, login, fork/clone, and confirmation/unavailable overlays share a compact terminal style",
+        "Overlay rows use short title, selected marker such as ❯, primary label first, dim secondary metadata, disabled/unavailable marker, and compact control hint",
+        "Long owner/room/session IDs are secondary, dimmed, abbreviated, or moved to details; they are not dominant primary text",
+        "Startup overlays may appear before transcript rows but still use the same terminal overlay grammar",
+        "Overlay rendering does not permanently append picker UI to transcript history unless an action/result is produced",
+        "Focused overlay renderer tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Redesign owner, room, and session navigation pickers",
+      "description": "As an SSH operator, I want to navigate users, rooms, and sessions by names and state instead of scanning UUIDs.",
+      "acceptanceCriteria": [
+        "Owner picker shows Web users and Root recovery with display name primary and owner scope secondary/dim/abbreviated",
+        "Switching owner clears invalid active room/session and this behavior is covered by controller tests",
+        "Room picker shows title primary, default-room marker, session count or empty state, and non-dominant room id metadata",
+        "Session picker shows title primary plus compact status/profile/model/updated metadata where available and includes + New session for empty rooms",
+        "Back/Escape from session picker returns to room picker without corrupting selected indices or input",
+        "Focused descriptor/controller/render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement thinking, model, and login keyboard overlays",
+      "description": "As a Web user moving to SSH, I want model, thinking, and login actions to preserve familiar command semantics.",
+      "acceptanceCriteria": [
+        "Thinking picker uses shared thinking levels, shows current/default state, and direct /thinking high still works",
+        "Model picker preserves provider-to-model flow, shows provider/model availability, disabled reasons, and executes the same action semantics as Web descriptors",
+        "Login picker preserves provider-to-auth-method flow and renders device/browser URL or API-key instructions as terminal-safe rows/instructions",
+        "API-key or secret input paths never echo secrets into transcript, artifacts, logs, or state.message",
+        "Nested overlays support Up/Down, Enter, Escape/back one level, and Ctrl+C clean exit",
+        "Focused descriptor/controller/render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Handle fork, clone, browser-only, and unsupported actions compactly",
+      "description": "As a user, I want unavailable and adapted Web actions to have clear terminal-native outcomes.",
+      "acceptanceCriteria": [
+        "Fork/clone candidates use keyboard selection with title/session metadata primary and ids secondary",
+        "/clone opens the derived session when available while preserving a visible command/result row in the originating flow",
+        "Browser-only upload/download or unsupported actions show concise unavailable reasons in the same overlay/row style",
+        "Disabled/unavailable items are visible and cannot be executed silently without feedback",
+        "Unsupported action output is not mistaken for transcript history unless it is an explicit command result row",
+        "Focused unsupported/fork/clone tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Validate overlay keyboard flows through PTY",
+      "description": "As a reviewer, I want terminal artifacts proving nested navigation and command execution work visually and behaviorally.",
+      "acceptanceCriteria": [
+        "PTY startup flow captures owner/room/session picker screens that are compact and human-readable",
+        "PTY scenarios cover slash palette, /owner or owner switch where feasible, /room, /session, /thinking, and at least one /model or /login nested flow with deterministic provider data where live data is unavailable",
+        "PTY scenarios test Escape/back behavior, Enter confirmation, disabled/unavailable item rendering, and Ctrl+C clean exit",
+        "PTY scenario runs /status while a picker is open and proves the picker closes/suspends and transcript command/status rows append correctly",
+        "Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, exact commands, and fake/demo/mocked/real classification",
+        "Focused PTY overlay tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
