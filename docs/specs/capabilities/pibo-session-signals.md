@@ -23,6 +23,8 @@ Chat Web serves signal snapshots at `/api/chat/signals/session/:piboSessionId` a
 
 Signals are currently live and in-memory. `src/signals/store.ts` is a placeholder for future durable signal persistence.
 
+Current snapshots can also include a compact `activeTelemetry` hint derived from active signal nodes and queue depth. The hint uses the default telemetry stale threshold and exposes phase, turn, last-progress, stale-age, and queue-depth metadata without reading or exposing durable telemetry payloads.
+
 ## Scope
 
 ### In Scope
@@ -33,6 +35,7 @@ Signals are currently live and in-memory. `src/signals/store.ts` is a placeholde
 - Chat Web signal HTTP and SSE APIs.
 - Ownership checks for signal access.
 - UI-facing status overlays derived from signal snapshots.
+- Compact active-telemetry hints derived from signal state.
 - Registry diagnostics and terminal node pruning.
 
 ### Out of Scope
@@ -244,6 +247,26 @@ A stale stored `running` status is cleared when the live signal snapshot is sett
 - WHEN Chat Web returns bootstrap or navigation data
 - THEN the session status is `idle`.
 
+### Requirement: Active telemetry hints stay compact and payload-free
+
+The system SHOULD expose enough active telemetry hint data for status surfaces to show stale or active work without duplicating runtime observability evidence.
+
+#### Current
+
+`PiboSessionSignalSnapshot.activeTelemetry` is populated when a session has active local signal nodes or queued messages. It includes `source: "signals"`, active turn id when inferable from the signal node id, active phase, `lastProgressAt`, `staleForMs`, `isStale`, queue depth, and the default stale threshold. Idle snapshots omit the hint.
+
+#### Acceptance
+
+Signals can show whether a session appears stale from live activity, but the hint does not include raw provider events, payload previews, headers, transcripts, normalized event payloads, tool arguments, or tool output.
+
+#### Scenario: Active tool exposes a compact hint
+
+- GIVEN a session has an active tool-call signal node
+- WHEN a caller reads the session signal snapshot
+- THEN `activeTelemetry.activePhase` is `tool_args` or `tool_execution`
+- AND the hint includes stale age and threshold metadata
+- AND no provider payload or tool argument content is present.
+
 ### Requirement: Terminal signal nodes are pruned without deleting sessions
 
 The system SHOULD prune old terminal non-session nodes while preserving session nodes and active nodes.
@@ -310,6 +333,7 @@ The project SHOULD provide an operator-run benchmark that measures signal regist
 - [ ] SC-003: Chat Web can show running, idle, and error state for a selected session tree without reading the full trace.
 - [ ] SC-004: A failed tool call or yielded run remains visible as a node error without incorrectly marking the whole session failed.
 - [ ] SC-005: `scripts/bench-signal-registry.mjs` runs after build and prints timing for deep-tree propagation, no-op queue updates, and metadata-changing tool updates.
+- [ ] SC-006: Active snapshots expose compact `activeTelemetry` hints for active or queued sessions and omit the hint for idle sessions.
 
 ## Assumptions and Open Questions
 
@@ -339,9 +363,10 @@ The project SHOULD provide an operator-run benchmark that measures signal regist
 | REQ-008 Owner-scoped APIs | Cross-owner signal request | `src/apps/chat/web-app.ts`, `test/chat-signals-api.test.mjs` | Draft |
 | REQ-009 SSE snapshot before patches | Subscribe to root tree | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts`, `test/chat-signals-api.test.mjs` | Draft |
 | REQ-010 Navigation overlays | Settled signal clears stale navigation | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/App.tsx`, `test/chat-signals-api.test.mjs` | Draft |
-| REQ-011 Terminal pruning | Prune finished turn | `src/signals/registry.ts`, `test/signal-registry.test.mjs` | Draft |
-| REQ-012 Signal performance benchmark | Benchmark a deeper tree | `scripts/bench-signal-registry.mjs`, `src/signals/registry.ts` | Draft |
+| REQ-011 Active telemetry hints stay compact | Active tool exposes a compact hint | `src/signals/types.ts`, `src/signals/registry.ts`, `test/signal-registry.test.mjs` | Draft |
+| REQ-012 Terminal pruning | Prune finished turn | `src/signals/registry.ts`, `test/signal-registry.test.mjs` | Draft |
+| REQ-013 Signal performance benchmark | Benchmark a deeper tree | `scripts/bench-signal-registry.mjs`, `src/signals/registry.ts` | Draft |
 
 ## Verification Basis
 
-This spec was derived from the current workspace code in `src/signals/`, `src/core/session-router.ts`, `src/channels/types.ts`, `src/web/channel.ts`, `src/gateway/server.ts`, `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts`, `src/apps/chat-ui/src/App.tsx`, `scripts/bench-signal-registry.mjs`, `test/signal-registry.test.mjs`, and `test/chat-signals-api.test.mjs`.
+This spec was derived from the current workspace code in `src/signals/`, `src/core/session-router.ts`, `src/channels/types.ts`, `src/web/channel.ts`, `src/gateway/server.ts`, `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts`, `src/apps/chat-ui/src/App.tsx`, `scripts/bench-signal-registry.mjs`, `test/signal-registry.test.mjs`, `test/chat-signals-api.test.mjs`, and `test/telemetry-staleness.test.mjs`.

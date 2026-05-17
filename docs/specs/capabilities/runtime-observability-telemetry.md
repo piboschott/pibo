@@ -17,9 +17,9 @@ Pibo MUST record local-first runtime telemetry that is correlated, bounded, cont
 
 ## Background / Current State
 
-The existing debug surface can inspect sessions, traces, events, yielded runs, jobs, reliability streams, and live signals. It cannot answer provider- and phase-level questions such as whether a provider request received bytes, which raw event types appeared, whether tool arguments were still growing, or when the last normalized event was emitted.
+The existing non-telemetry debug surface can inspect sessions, traces, events, yielded runs, jobs, reliability streams, and live signals. Runtime telemetry fills the provider- and phase-level gap without becoming a second transcript store.
 
-Telemetry fills that gap without becoming a second transcript store.
+Current code stores telemetry in the unified `pibo.sqlite` data store through `src/data/telemetry.ts`. `PiboSessionRouter` wires `PiboRuntimeTelemetryRecorder` and the provider telemetry extension into routed runtime work when a telemetry store is available. The debug CLI reads the store through `src/debug/telemetry.ts`, stale detection uses `TelemetryStaleDetector`, and signal snapshots expose only compact active-telemetry hints.
 
 ## Scope
 
@@ -140,6 +140,7 @@ pibo debug telemetry session <pibo-session-id>
 pibo debug telemetry turn <turn-id-or-event-id>
 pibo debug telemetry provider <provider-request-id>
 pibo debug telemetry provider <provider-request-id> events --limit 20
+pibo debug telemetry provider <provider-request-id> payload <preview-or-event-summary-id>
 pibo debug telemetry tool <tool-call-id>
 pibo debug telemetry stale
 pibo debug telemetry stats
@@ -171,20 +172,21 @@ Use `pibo debug telemetry stats` to inspect counts and byte estimates. Use `pibo
 
 | Requirement | Source change coverage | Status |
 |---|---|---|
-| Correlated telemetry records | PRD 02, PRD 03, PRD 04 | Draft |
-| Runtime phase timelines | PRD 02, PRD 03, PRD 04 | Draft |
-| Provider diagnostics without payload dumps | PRD 02, PRD 03, PRD 04 | Draft |
-| Tool-call progress | PRD 02, PRD 03, PRD 04 | Draft |
-| Bounded storage and output | PRD 01, PRD 02, PRD 04, PRD 05 | Draft |
-| Retention and pruning | PRD 02, PRD 04, PRD 05 | Draft |
-| Read-only stale detection | PRD 04, PRD 05 | Draft |
-| Signal/status hints | PRD 05 | Draft |
+| Correlated telemetry records | PRD 02, PRD 03, PRD 04; `src/data/telemetry.ts`; `test/telemetry-store.test.mjs` | Source-backed current behavior |
+| Runtime phase timelines | PRD 02, PRD 03, PRD 04; `src/core/runtime-telemetry.ts`; `test/runtime-telemetry.test.mjs` | Source-backed current behavior |
+| Provider diagnostics without payload dumps | PRD 02, PRD 03, PRD 04; `src/core/provider-telemetry.ts`; `src/core/runtime-telemetry.ts`; `test/runtime-telemetry.test.mjs` | Source-backed current behavior |
+| Tool-call progress | PRD 02, PRD 03, PRD 04; `src/core/runtime-telemetry.ts`; `test/runtime-telemetry.test.mjs` | Source-backed current behavior |
+| Bounded storage and output | PRD 01, PRD 02, PRD 04, PRD 05; `src/debug/telemetry.ts`; `test/debug-cli.test.mjs` | Source-backed current behavior |
+| Retention and pruning | PRD 02, PRD 04, PRD 05; `src/data/telemetry.ts`; `test/telemetry-store.test.mjs` | Source-backed current behavior |
+| Read-only stale detection | PRD 04, PRD 05; `src/core/telemetry-staleness.ts`; `test/telemetry-staleness.test.mjs` | Source-backed current behavior |
+| Signal/status hints | PRD 05; `src/signals/registry.ts`; `test/signal-registry.test.mjs` | Source-backed current behavior |
 
 ## Verification Basis
 
 - `npm run typecheck`.
-- Telemetry store and migration tests.
-- Debug telemetry CLI tests for text and JSON output.
-- Synthetic partial-tool-call drill-down fixture.
-- Bounded-output and no-raw-content tests.
-- Retention stats and prune dry-run tests.
+- `test/telemetry-store.test.mjs` for schema migration, correlated rows, bounded read APIs, preview-unavailable behavior, stats, and pruning.
+- `test/runtime-telemetry.test.mjs` for turn lifecycle, provider metadata, partial tool calls, malformed/unknown provider events, abort/error handling, and no raw payload capture.
+- `test/telemetry-staleness.test.mjs` for provider/profile-aware stale thresholds and non-mutating stale detection.
+- `test/debug-cli.test.mjs` for text and JSON telemetry commands, provider event pages, payload-unavailable output, stale override output, stats, and dry-run-first prune.
+- `test/telemetry-stuck-tool-call-fixture.test.mjs` for a synthetic partial-tool-call drill-down fixture and metadata-only guarantees.
+- `test/signal-registry.test.mjs` for compact signal `activeTelemetry` hints.

@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:37:55Z",
+    "lastUpdatedAt": "2026-05-17T00:42:36Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -14,8 +14,8 @@
     ]
   },
   "cursor": {
-    "nextQueueId": "q-signals-telemetry",
-    "lastIteration": 1
+    "nextQueueId": "q-skills-context-runtime",
+    "lastIteration": 2
   },
   "decisionRequests": [],
   "queue": [
@@ -50,7 +50,7 @@
     },
     {
       "id": "q-signals-telemetry",
-      "status": "pending",
+      "status": "completed",
       "priority": 9,
       "title": "Signals, debug, and runtime observability telemetry specs",
       "paths": [
@@ -61,8 +61,17 @@
       ],
       "reason": "Telemetry and staleness-signal implementation landed after many source-backed specs were generated.",
       "cursor": {
-        "next": true
-      }
+        "auditedPaths": [
+          "docs/specs/capabilities/pibo-session-signals.md",
+          "docs/specs/capabilities/debug-cli.md",
+          "docs/specs/capabilities/runtime-observability-telemetry.md",
+          "docs/specs/changes/pibo-observability-debug-telemetry/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-skills-context-runtime"
+      },
+      "startedAt": "2026-05-17T00:42:36Z",
+      "completedAt": "2026-05-17T00:42:36Z"
     },
     {
       "id": "q-skills-context-runtime",
@@ -76,7 +85,10 @@
         "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
         "docs/specs/changes/context-build-inspector/"
       ],
-      "reason": "Built-in skill creator, context inspector, native debug tooling, and plugin/profile changes may have moved source behavior."
+      "reason": "Built-in skill creator, context inspector, native debug tooling, and plugin/profile changes may have moved source behavior.",
+      "cursor": {
+        "next": true
+      }
     },
     {
       "id": "q-gateway-channel-cli",
@@ -157,6 +169,42 @@
         "Source-backed capability specs were refreshed for configured workflow Project Sessions, explicit workflow start, workflow snapshots/runs/waits/human actions, richer Workflow/XState session view panels, workflow package definition-hash export, schema version 3, and catalog/editor store entities.",
         "Workflow System V1 and Workflow UI Authoring V2 change specs were classified as mixed current/future and preserved as target/change specs rather than rewritten to current implementation."
       ]
+    },
+    {
+      "id": "q-signals-telemetry",
+      "completedAt": "2026-05-17T00:42:36Z",
+      "title": "Signals, debug, and runtime observability telemetry specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/pibo-session-signals.md",
+        "docs/specs/capabilities/debug-cli.md",
+        "docs/specs/capabilities/runtime-observability-telemetry.md",
+        "docs/specs/changes/pibo-observability-debug-telemetry/"
+      ],
+      "evidence": [
+        "src/signals/types.ts",
+        "src/signals/registry.ts",
+        "src/signals/projector.ts",
+        "src/debug/index.ts",
+        "src/debug/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts",
+        "src/core/telemetry-staleness.ts",
+        "src/data/telemetry.ts",
+        "test/signal-registry.test.mjs",
+        "test/chat-signals-api.test.mjs",
+        "test/debug-cli.test.mjs",
+        "test/runtime-telemetry.test.mjs",
+        "test/telemetry-store.test.mjs",
+        "test/telemetry-staleness.test.mjs",
+        "test/telemetry-stuck-tool-call-fixture.test.mjs"
+      ],
+      "notes": [
+        "Session Signals spec refreshed for source-backed activeTelemetry hints that are derived from signal nodes and queue depth while omitting payload content.",
+        "Debug CLI spec refreshed from planned telemetry language to current telemetry, web, and PTY debug surfaces, including provider payload-unavailable diagnostics.",
+        "Runtime Observability Telemetry spec refreshed with current implementation sources, CLI payload command, and source-backed traceability/verification basis.",
+        "Observability Debug Telemetry change spec classified as proposal-time baseline plus implemented V1; current-code behavior remains owned by capability specs."
+      ]
     }
   ],
   "staleFindings": [
@@ -230,6 +278,70 @@
         "src/apps/chat-ui/src/WorkflowsArea.tsx"
       ],
       "resolution": "preserved_future_target_specs"
+    },
+    {
+      "id": "sf-signals-active-telemetry-hints",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/pibo-session-signals.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Session Signals spec omitted current activeTelemetry hints populated from active signal nodes and queue depth.",
+      "sourceEvidence": [
+        "src/signals/types.ts",
+        "src/signals/registry.ts",
+        "test/signal-registry.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-debug-cli-telemetry-current-surface",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/debug-cli.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Debug CLI spec still described telemetry as planned and omitted the current telemetry payload-unavailable command plus root web and PTY debug branches.",
+      "sourceEvidence": [
+        "src/debug/index.ts",
+        "src/debug/telemetry.ts",
+        "src/debug/web.ts",
+        "src/debug/pty.ts",
+        "test/debug-cli.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-runtime-telemetry-source-traceability",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/runtime-observability-telemetry.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Runtime Observability Telemetry spec lacked current implementation-source summary, provider payload command coverage, and source-backed traceability/verification rows after V1 landed.",
+      "sourceEvidence": [
+        "src/data/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts",
+        "src/core/telemetry-staleness.ts",
+        "src/debug/telemetry.ts",
+        "test/runtime-telemetry.test.mjs",
+        "test/telemetry-store.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-observability-change-spec-proposal-baseline",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/changes/pibo-observability-debug-telemetry/spec.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "classification_and_stale_traceability",
+      "summary": "Change spec Current sections described the proposal-time baseline, while its traceability table still marked implemented V1 telemetry work as pending.",
+      "sourceEvidence": [
+        "docs/specs/changes/pibo-observability-debug-telemetry/tasks.md",
+        "src/debug/telemetry.ts",
+        "src/data/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts"
+      ],
+      "resolution": "updated_spec_preserved_change_spec_baseline"
     }
   ],
   "updatedSpecs": [
@@ -256,6 +368,30 @@
       "queueId": "q-project-workflow",
       "updatedAt": "2026-05-17T00:35:50Z",
       "summary": "Refreshed XState view behavior for configured/run lifecycle detection, execution shell, run inspection, pending human actions, definition links, and Workflows-tab authoring boundary."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-session-signals.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Added source-backed activeTelemetry hint behavior, acceptance criteria, success criterion, traceability, and verification evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/debug-cli.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Refreshed current Debug CLI behavior for implemented telemetry drill-down, provider payload-unavailable diagnostics, root web/PTY branches, and telemetry source/test traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/runtime-observability-telemetry.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Refreshed current telemetry implementation sources, CLI payload command, source-backed traceability statuses, and verification basis."
+    },
+    {
+      "path": "docs/specs/changes/pibo-observability-debug-telemetry/spec.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Clarified proposal-time baseline versus current code and marked V1 telemetry traceability rows as implemented with source/test evidence."
     }
   ],
   "blockedItems": [],
@@ -282,6 +418,10 @@
     {
       "at": "2026-05-17T00:37:55Z",
       "note": "Recorded commit 9df6b85 for q-project-workflow source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T00:42:36Z",
+      "note": "Audited q-signals-telemetry. Updated session signals, debug CLI, runtime telemetry capability specs, and clarified the observability telemetry change spec as proposal-time baseline with implemented V1 traceability."
     }
   ]
 }
