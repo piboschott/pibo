@@ -240,3 +240,27 @@ Begründung: `npm test` baut alles inklusive Web-UIs und startet alle Tests. Das
 - `test/chat-signals-api.test.mjs`: mittlere Breite, aber noch entwicklungsfreundlich; guter API-Integrationscheck.
 - Fehlendes Frontend-Subset: pure Signal-State-Transformationen in `App.tsx` sind aktuell nur über breitere App-Pfade indirekt geschützt.
 - Browser-/Deployment-Checks sind für diesen Bereich erst nach UI-Änderungen nötig, nicht für Registry-/API-Kernarbeit.
+
+## Umgesetzt am 2026-05-11 14:03 Europe/Berlin
+
+- Bereich: Kleiner Registry-Unit-Subset für UI-relevante Signal-Phasen.
+- Geänderte Dateien: `test/signal-registry.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/signal-registry.test.mjs`.
+- Ergebnis: 21/21 Tests bestanden; abgedeckt sind Tool-, Subagent-, Yielded-Run-, Compaction- und Running-vs-Queued-Phasen.
+- Verbleibende offene Punkte: Pruning-Randfälle, Chat-Signal-SSE-Negativfälle, SSE-Cleanup und UI-Patch-Transformationslogik bleiben offen.
+
+## Umgesetzt am 2026-05-11 14:48 Europe/Berlin
+
+- Bereich: Kleine Chat-Signal-SSE-Negativtests für fehlende Root-Session und Owner-Scope-Enforcement.
+- Geänderte Dateien: `test/chat-signals-api.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/chat-signals-api.test.mjs`.
+- Ergebnis: 9/9 Tests bestanden; abgesichert ist, dass `/api/chat/signals/events` ohne `rootPiboSessionId` mit 400 antwortet und fremde Roots mit 404 ablehnt.
+- Verbleibende offene Punkte: Fehlende-Registry-503-Fälle, SSE-Cleanup/Unsubscribe, Pruning-Randfälle und UI-Patch-Transformationslogik bleiben offen.
+
+## Umgesetzt am 2026-05-11 15:23 Europe/Berlin
+
+- Bereich: Kleine Chat-Signal-API-Negativtests für fehlende Signal-Registry-Funktionen.
+- Geänderte Dateien: `test/chat-signals-api.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1519-signal-registry.md`.
+- Ausgeführte Kommandos: `node --test test/chat-signals-api.test.mjs`.
+- Ergebnis: 10/10 Tests bestanden; abgesichert ist, dass Tree-Snapshot- und SSE-Endpunkt bei fehlender Signal-Registry mit 503 antworten.
+- Verbleibende offene Punkte: SSE-Cleanup/Unsubscribe, Pruning-Randfälle und UI-Patch-Transformationslogik bleiben offen.

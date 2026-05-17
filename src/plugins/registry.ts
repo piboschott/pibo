@@ -20,6 +20,7 @@ import type {
 	PiboProductEventInput,
 	PiboProductEventListener,
 	PiboCapabilityCatalog,
+	PiboCapabilityPackageInfo,
 	PiboProfileInfo,
 	PiboProfileBuildContext,
 	PiboProfileDefinition,
@@ -69,6 +70,7 @@ export class PiboPluginRegistry {
 	private readonly channels = new Map<string, PiboChannel>();
 	private authService?: PiboAuthService;
 	private readonly webApps = new Map<string, PiboWebApp>();
+	private readonly capabilityPackages = new Map<string, PiboCapabilityPackageInfo>();
 	private readonly eventListeners = new Set<PiboPluginEventListener>();
 	private readonly productEventListeners = new Set<PiboProductEventListener>();
 	private readonly ralphStopConditions = new Map<string, { definition: PiboRalphStopConditionDefinition; pluginId?: string }>();
@@ -186,6 +188,10 @@ export class PiboPluginRegistry {
 		this.webApps.set(app.name, app);
 	}
 
+	registerCapabilityPackage(pkg: PiboCapabilityPackageInfo): void {
+		this.addUnique(this.capabilityPackages, pkg.name, { ...pkg, toolNames: [...pkg.toolNames] }, "capability package");
+	}
+
 	registerRalphStopCondition(condition: PiboRalphStopConditionDefinition, pluginId?: string): void {
 		if (!condition.type.trim()) throw new Error('Ralph stop condition type is required');
 		if (!condition.name.trim()) throw new Error(`Ralph stop condition "${condition.type}" name is required`);
@@ -270,7 +276,7 @@ export class PiboPluginRegistry {
 				name: tool.name,
 				description: tool.description,
 				yieldable: tool.yieldable !== false,
-				hasDefinition: tool.definition !== undefined,
+				hasDefinition: tool.definition !== undefined || tool.createDefinition !== undefined,
 				pluginId: tool.pluginId,
 				pluginName: tool.pluginId ? this.pluginNames.get(tool.pluginId) : undefined,
 				...(tool.providerTool ? { providerTool: tool.providerTool } : {}),
@@ -313,6 +319,11 @@ export class PiboPluginRegistry {
 						"pibo_run_ack",
 					],
 				},
+				...[...this.capabilityPackages.values()].map((pkg) => ({
+					...pkg,
+					toolNames: [...pkg.toolNames],
+					pluginName: pkg.pluginId ? this.pluginNames.get(pkg.pluginId) : pkg.pluginName,
+				})),
 			],
 			piboTools: listInstalledCliToolAgentContexts(),
 			mcpServers: [],
@@ -399,6 +410,11 @@ export class PiboPluginRegistry {
 		const withPluginContext = (contextFile: ContextFileProfile): ContextFileProfile => (
 			contextFile.source === "managed" ? contextFile : { ...contextFile, pluginId: contextFile.pluginId ?? pluginId }
 		);
+		const withPluginPackageContext = (pkg: PiboCapabilityPackageInfo): PiboCapabilityPackageInfo => ({
+			...pkg,
+			toolNames: [...pkg.toolNames],
+			pluginId: pkg.pluginId ?? pluginId,
+		});
 		return {
 			registerTool: (tool) => this.registerTool(withPluginToolContext(tool)),
 			registerTools: (tools) => this.registerTools(tools.map(withPluginToolContext)),
@@ -413,6 +429,7 @@ export class PiboPluginRegistry {
 			registerChannel: (channel) => this.registerChannel(channel),
 			registerAuthService: (service) => this.registerAuthService(service),
 			registerWebApp: (app) => this.registerWebApp(app),
+			registerCapabilityPackage: (pkg) => this.registerCapabilityPackage(withPluginPackageContext(pkg)),
 			registerRalphStopCondition: (condition) => this.registerRalphStopCondition(condition, pluginId),
 			onEvent: (listener) => this.onEvent(listener),
 			emitProductEvent: (event) => this.emitProductEvent(event),

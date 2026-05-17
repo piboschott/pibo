@@ -1,0 +1,64 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-product-overview",
+  "description": "Cross-cutting V1 product contract, scope matrix, capability documentation, and rollout framing for the Web Annotations plugin.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record Web Annotations V1 scope decisions",
+      "description": "As an engineering lead, I want the Web Annotations V1 scope matrix and execution order recorded so that Ralph iterations implement a consistent product boundary.",
+      "acceptanceCriteria": [
+        "Update the Web Annotations PRD README or change docs with the authoritative V1 scope matrix covering Chat Web entry, CDP-first injection, target kinds, source hints, store, tools, prompt context, privacy, and optional debug CLI scope",
+        "Document the recommended Ralph execution order and cross-PRD dependencies",
+        "Mark unresolved items as assumptions or TBD only where implementation truly cannot proceed without user input",
+        "Do not change runtime behavior in this story",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed by PRD README V1 scope matrix, execution order, assumptions/TBD, and debug CLI defer decision; docs-only runtime behavior unchanged."
+    },
+    {
+      "id": "US-002",
+      "title": "Add Web Annotations capability documentation",
+      "description": "As a maintainer, I want capability documentation for Web Annotations so that plugin responsibilities and selectable tools are discoverable outside the change folder.",
+      "acceptanceCriteria": [
+        "Add or update a capability document under docs/specs/capabilities for Web Annotations",
+        "Document session-scoped annotations, CDP injection, Chat Web attachments, native tools, source hints, security/privacy boundaries, and non-goals",
+        "Link the capability document from the Web Annotations PRD README or related change docs",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed by docs/specs/capabilities/web-annotations-plugin.md and README link."
+    },
+    {
+      "id": "US-003",
+      "title": "Document optional debug-web annotation discovery",
+      "description": "As a CLI user, I want any optional debug-web annotation commands to follow progressive discovery so that the CLI remains agent-friendly.",
+      "acceptanceCriteria": [
+        "If annotation CLI helpers are included, document the intended pibo debug web discovery flow without duplicating long implementation details at every help level",
+        "Document that CLI helpers reuse the Web Annotation store and do not form a separate tool silo",
+        "If CLI helpers are deferred, record that decision in the PRD README or change docs",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed by README Debug-Web CLI Decision and capability doc Debug CLI Boundary; helpers deferred for V1 and must reuse the shared store/API if added."
+    },
+    {
+      "id": "US-004",
+      "title": "Add Web Annotations rollout checklist",
+      "description": "As an operator, I want a rollout checklist so that Web Annotations is validated in Docker and dev before production deployment.",
+      "acceptanceCriteria": [
+        "Add a rollout checklist to the PRD docs or a dedicated project doc",
+        "Checklist covers typecheck, unit tests, Chat Web checks, browser/CDP validation, owner-scope isolation, payload bounds, redaction, dev deployment, and production approval",
+        "Checklist states that Chrome Extension support and automatic code edits are out of scope for V1",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed by README Rollout Checklist covering Docker worker validation, typecheck, focused tests, Chat Web checks, browser/CDP validation, isolation, bounds, redaction, dev deployment, production approval, and V1 non-goals."
+    }
+  ]
+}

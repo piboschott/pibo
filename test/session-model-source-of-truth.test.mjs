@@ -62,6 +62,60 @@ test("subagent sessions resolve subagent defaults when first frozen", () => {
 	);
 });
 
+test("profile model pins win over defaults when first frozen", () => {
+	const store = new InMemoryPiboSessionStore();
+	const profilePin = { provider: "openai", id: "profile-pin" };
+	const mainPin = { provider: "anthropic", id: "main-pin" };
+	const subagentPin = { provider: "moonshot", id: "subagent-pin" };
+
+	assert.deepEqual(
+		resolvePiboSessionActiveModel({
+			profile: new InitialSessionContext({ profileName: "pinned", model: profilePin, mainModel: mainPin }),
+			piboSession: store.create({ channel: "test", kind: "chat", profile: "pinned" }),
+			modelDefaults: { main: gpt },
+		}),
+		profilePin,
+	);
+
+	assert.deepEqual(
+		resolvePiboSessionActiveModel({
+			profile: new InitialSessionContext({ profileName: "main", mainModel: mainPin }),
+			piboSession: store.create({ channel: "test", kind: "chat", profile: "main" }),
+			modelDefaults: { main: gpt },
+		}),
+		mainPin,
+	);
+
+	assert.deepEqual(
+		resolvePiboSessionActiveModel({
+			profile: new InitialSessionContext({ profileName: "child", subagentModel: subagentPin }),
+			piboSession: store.create({ channel: "test", kind: "subagent", profile: "child" }),
+			parentPiSessionId: "parent-pi-session",
+			modelDefaults: { subagent },
+		}),
+		subagentPin,
+	);
+});
+
+test("resolved active models are cloned from session or default sources", () => {
+	const profile = new InitialSessionContext({ profileName: "default" });
+	const store = new InMemoryPiboSessionStore();
+	const existing = store.create({ channel: "test", kind: "chat", profile: "default", activeModel: gpt });
+	const fromSession = resolvePiboSessionActiveModel({ profile, piboSession: existing, modelDefaults: { main: kimi } });
+	assert.deepEqual(fromSession, gpt);
+	assert.notStrictEqual(fromSession, existing.activeModel);
+	fromSession.provider = "mutated";
+	assert.deepEqual(existing.activeModel, gpt);
+
+	const defaults = { main: kimi };
+	const fresh = store.create({ channel: "test", kind: "chat", profile: "default" });
+	const fromDefaults = resolvePiboSessionActiveModel({ profile, piboSession: fresh, modelDefaults: defaults });
+	assert.deepEqual(fromDefaults, kimi);
+	assert.notStrictEqual(fromDefaults, defaults.main);
+	fromDefaults.id = "mutated";
+	assert.deepEqual(defaults.main, kimi);
+});
+
 test("sqlite session store persists activeModel across reopen", () => {
 	const { dir, path } = tmpPath("sessions.sqlite");
 	try {

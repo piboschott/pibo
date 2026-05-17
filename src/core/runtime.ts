@@ -21,6 +21,7 @@ import {
 	type ContextFileProfile,
 	type InitialSessionContext,
 	type ModelProfile,
+	type ToolDefinitionContext,
 	type ToolProfile,
 } from "./profiles.js";
 import { loadPiboModelDefaults, selectRequestedModelProfile, selectRequestedThinkingLevel, type PiboModelDefaults } from "./model-defaults.js";
@@ -165,6 +166,7 @@ function getEnabledToolDefinitions(
 		runtimeCwd: string;
 		shellCommandPrefix?: string;
 		shellPath?: string;
+		toolContext?: ToolDefinitionContext;
 	},
 	subagentRunner?: PiboSubagentRunner,
 	runToolController?: PiboRunToolController,
@@ -175,6 +177,7 @@ function getEnabledToolDefinitions(
 		? createRuntimeToolDefinition(runtimeToolController)
 		: undefined;
 	const profileTools = profile.tools.filter((tool) => !isRuntimeTool(tool)).filter(hasEnabledToolDefinition);
+	const profileToolDefinitions = profileTools.map((tool) => getToolDefinition(tool, options.toolContext));
 	const codexCompatEnabled = profile.toolPackages.codexCompat === true;
 	const runControlEnabled = profile.toolPackages.runControl === true;
 	const runControlBashTool: ToolDefinition | undefined = runControlEnabled && runToolController
@@ -191,7 +194,7 @@ function getEnabledToolDefinitions(
 		: [];
 	const yieldableTools = [
 		...(runControlBashTool ? [runControlBashTool] : []),
-		...profileTools.filter((tool) => tool.yieldable !== false).map((tool) => tool.definition),
+		...profileTools.filter((tool) => tool.yieldable !== false).map((tool) => getToolDefinition(tool, options.toolContext)),
 		...(runtimeTool && runtimeProfileTool?.yieldable !== false ? [runtimeTool] : []),
 		...subagentTools,
 		...codexCompatTools,
@@ -202,7 +205,7 @@ function getEnabledToolDefinitions(
 
 	return [
 		...(runControlBashTool ? [runControlBashTool] : []),
-		...profileTools.map((tool) => tool.definition),
+		...profileToolDefinitions,
 		...(runtimeTool ? [runtimeTool] : []),
 		...subagentTools,
 		...codexCompatTools,
@@ -210,8 +213,16 @@ function getEnabledToolDefinitions(
 	];
 }
 
-function hasEnabledToolDefinition(tool: ToolProfile): tool is ToolProfile & { definition: ToolDefinition } {
-	return tool.enabled !== false && tool.definition !== undefined;
+function hasEnabledToolDefinition(tool: ToolProfile): tool is ToolProfile & ({ definition: ToolDefinition } | { createDefinition: (context: ToolDefinitionContext) => ToolDefinition }) {
+	return tool.enabled !== false && (tool.definition !== undefined || tool.createDefinition !== undefined);
+}
+
+function getToolDefinition(
+	tool: ToolProfile & ({ definition: ToolDefinition } | { createDefinition: (context: ToolDefinitionContext) => ToolDefinition }),
+	context: ToolDefinitionContext = {},
+): ToolDefinition {
+	if (tool.definition) return tool.definition;
+	return tool.createDefinition!(context);
 }
 
 function isRuntimeTool(tool: ToolProfile): boolean {
@@ -361,6 +372,11 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 				runtimeCwd,
 				shellCommandPrefix: services.settingsManager.getShellCommandPrefix(),
 				shellPath: services.settingsManager.getShellPath(),
+				toolContext: {
+					ownerScope: options.sessionContext?.ownerScope,
+					piboSessionId: options.sessionContext?.piboSessionId ?? profile.sessionId,
+					piboRoomId: options.sessionContext?.piboRoomId,
+				},
 			},
 			options.subagentRunner,
 			options.runToolController,
@@ -480,7 +496,7 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 	const hasYieldableTools =
 		profile.toolPackages.runControl === true ||
 		hasEnabledSubagents ||
-		profile.tools.some((tool) => tool.enabled !== false && tool.definition !== undefined && tool.yieldable !== false);
+		profile.tools.some((tool) => tool.enabled !== false && (tool.definition !== undefined || tool.createDefinition !== undefined) && tool.yieldable !== false);
 	const runtime = await createPiboRuntime({
 		cwd,
 		profile,
@@ -513,7 +529,7 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 			})),
 			tools: profile.tools.map((tool) => ({
 				name: tool.name,
-				hasDefinition: Boolean(tool.definition) || isRuntimeTool(tool),
+				hasDefinition: Boolean(tool.definition) || Boolean(tool.createDefinition) || isRuntimeTool(tool),
 				registered: registeredToolNames.has(tool.name) || tool.providerTool !== undefined || isRuntimeTool(tool),
 				active: activeToolNames.has(tool.name) || tool.providerTool !== undefined,
 			})).concat(generatedTools),

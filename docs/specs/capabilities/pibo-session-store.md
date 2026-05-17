@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Updated:** 2026-05-11  
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage; current workspace code  
 **Related docs:** [Pibo Session Routing](./pibo-session-routing.md), [Pibo Home and Workspace State Layout](./pibo-home-and-workspace-state.md), [Model Provider Auth and Session Model Selection](./model-provider-auth-and-session-selection.md)
 
@@ -20,7 +20,7 @@ Define the behavior of the in-memory, legacy SQLite, and v2 data-backed Pibo Ses
 
 `src/sessions/store.ts` defines the shared `PiboSessionStore` interface and the in-memory implementation. `src/sessions/sqlite-store.ts` implements the legacy durable store at `piboHomePath("pibo-sessions.sqlite")`. `src/sessions/pibo-data-store.ts` implements the v2 data-backed store on the shared `PiboDataStore` `sessions` table. All stores create opaque `ps_` Pibo Session IDs when no id is supplied and create UUID Pi Session IDs when no Pi session id is supplied.
 
-The legacy SQLite store creates the `pibo_sessions` table, enables a busy timeout, uses WAL mode for file-backed databases, creates indexes for common filters, and adds `active_model_json` when opening an older schema. The v2 data-backed store stores Pibo Session identity in `pibo.sqlite`, fills room/root/navigation-adjacent columns from session metadata, and supports migration from legacy `pibo-sessions.sqlite`. Query filtering first applies store-specific SQL predicates where possible, then reuses the shared semantic matcher where needed so JSON metadata and active-model equality stay aligned.
+The legacy SQLite store creates the `pibo_sessions` table, enables a busy timeout, uses WAL mode for file-backed databases, creates indexes for common filters, and adds `active_model_json` when opening an older schema. The v2 data-backed store stores Pibo Session identity in `pibo.sqlite`, fills room/root/navigation-adjacent columns from session metadata, exposes the shared telemetry store to routed runtime wiring, and supports migration from legacy `pibo-sessions.sqlite`. `PiboGatewayServer` uses `createDefaultPiboDataSessionStore()` for normal startup, so `pibo.sqlite.sessions` is the default routed-session store unless tests or callers inject another store. Query filtering first applies store-specific SQL predicates where possible, then reuses the shared semantic matcher where needed so JSON metadata and active-model equality stay aligned.
 
 ## Scope
 
@@ -30,7 +30,7 @@ The legacy SQLite store creates the `pibo_sessions` table, enables a busy timeou
 - One-to-one Pibo Session to Pi Session binding.
 - In-memory, legacy SQLite, and v2 data-backed create, read, update, delete, list, and find behavior.
 - Legacy SQLite persistence, schema initialization, index-backed filtering, and active-model compatibility migration.
-- V2 data-backed session persistence and legacy session migration into `pibo.sqlite`.
+- V2 data-backed session persistence, default gateway wiring, telemetry-store exposure, and legacy session migration into `pibo.sqlite`.
 - Metadata and active-model JSON parsing tolerance.
 
 ### Out of Scope
@@ -184,7 +184,7 @@ The v2 data-backed store MUST implement the shared `PiboSessionStore` contract w
 
 #### Current
 
-`PiboDataSessionStore` accepts either an existing `PiboDataStore` or a path to `pibo.sqlite`. It creates, reads, updates, deletes, lists, and finds sessions in the v2 `sessions` table. `pibo data migrate sessions-to-v2` copies legacy `pibo_sessions` rows into the v2 store idempotently.
+`PiboDataSessionStore` accepts either an existing `PiboDataStore` or a path to `pibo.sqlite`. It creates, reads, updates, deletes, lists, and finds sessions in the v2 `sessions` table, exposes `getTelemetryStore()` from the underlying data store, and is the normal default store created by `PiboGatewayServer`. `pibo data migrate sessions-to-v2` copies legacy `pibo_sessions` rows into the v2 store idempotently.
 
 #### Target
 
@@ -198,6 +198,15 @@ Callers can move from legacy `pibo-sessions.sqlite` to the v2 data store without
 - The v2 store rejects attaching a Pi Session ID already used by another non-deleted session.
 - Deleting a v2-backed session makes it unavailable through `get`, `list`, and `find`.
 - Migrating legacy sessions into v2 is idempotent and does not duplicate rows on repeated runs.
+- Normal gateway startup uses `PiboDataSessionStore` unless a caller supplies an explicit session-store override.
+- Runtime wiring can obtain the shared telemetry store from a v2-backed session store.
+
+#### Scenario: Gateway uses v2-backed sessions by default
+
+- GIVEN `PiboGatewayServer` starts without an explicit session-store override
+- WHEN it initializes its session store
+- THEN the store is created through `createDefaultPiboDataSessionStore()`
+- AND routed Pibo Session records are persisted in `pibo.sqlite.sessions`.
 
 #### Scenario: Legacy session migrates to v2 once
 
@@ -257,6 +266,7 @@ A corrupted metadata or active-model field does not prevent session listing, rou
 - [ ] SC-005: Query performance tests verify SQLite applies indexed filters before semantic metadata and active-model matching.
 - [ ] SC-006: Malformed JSON tests verify metadata and active-model parsing degrade safely.
 - [x] SC-007: V2 data-backed session-store tests verify persistence, update clearing, delete behavior, find behavior, and idempotent legacy migration.
+- [x] SC-008: Gateway guard coverage verifies default startup uses the v2 data-backed session store instead of the legacy SQLite store.
 
 ## Assumptions and Open Questions
 
@@ -283,7 +293,7 @@ This matrix records current protection separately from the behavior contract. `S
 | REQ-003 Updates preserve omitted fields and clear nullable fields explicitly | `test/session-store.test.mjs` (`in-memory pibo session store creates, updates, and finds sessions`) | Partial direct unit test | Add explicit null-clearing tests for parent, origin, workspace, title, and `activeModel`; add unknown-session update coverage. |
 | REQ-004 Find behavior is shared and semantically stable | `test/session-store.test.mjs` (`in-memory pibo session store creates, updates, and finds sessions`, `sqlite pibo session store persists structured session fields`); `test/performance-optimizations.test.mjs` (`sqlite session find applies indexed filters before semantic matching`) | Direct and partial performance regression tests | Add side-by-side memory/SQLite tests for empty `ids`, `activeModel: null`, and ordered results. |
 | REQ-005 SQLite store initializes and migrates safely | `test/session-store.test.mjs` (`default sqlite pibo session store uses PIBO_HOME, not cwd`, `sqlite pibo session store persists structured session fields`) | Partial direct integration test | Add an older-schema migration fixture without `active_model_json`. |
-| REQ-006 V2 data-backed store preserves session-store semantics | `test/pibo-data-session-store.test.mjs` (`pibo data session store persists structured session fields`, `pibo data migrate sessions-to-v2 is idempotent`) | Direct integration test | Add duplicate Pi Session ID coverage for the v2 data-backed update path if v2 becomes the default router store. |
+| REQ-006 V2 data-backed store preserves session-store semantics | `test/pibo-data-session-store.test.mjs` (`pibo data session store persists structured session fields`, `pibo data migrate sessions-to-v2 is idempotent`); `test/chat-data-v2-legacy-guard.test.mjs` (`gateway default session store uses pibo.sqlite, not pibo-sessions.sqlite`) | Direct integration and guard tests | Add duplicate Pi Session ID coverage for the v2 data-backed update path if v2 default-store uniqueness becomes risky. |
 | REQ-007 Malformed JSON fields degrade to empty or absent values | Source-inspected only: `parseMetadata` and `parseModelProfile` in `src/sessions/sqlite-store.ts` | Source inspection | Add malformed `metadata_json` and `active_model_json` row tests. |
 
 ## Traceability
@@ -295,7 +305,7 @@ This matrix records current protection separately from the behavior contract. `S
 | REQ-003 Updates preserve omitted fields and clear nullable fields explicitly | Active model is cleared | Add update-null behavior tests | Pending |
 | REQ-004 Find behavior is shared and semantically stable | Metadata and indexed filters compose | `test/session-store.test.mjs`; `test/performance-optimizations.test.mjs` | Partial |
 | REQ-005 SQLite store initializes and migrates safely | Older database opens after active-model migration | `test/session-store.test.mjs`; add migration compatibility test | Partial |
-| REQ-006 V2 data-backed store preserves session-store semantics | Legacy session migrates to v2 once | `test/pibo-data-session-store.test.mjs` | Covered |
+| REQ-006 V2 data-backed store preserves session-store semantics | Gateway uses v2-backed sessions by default; legacy session migrates to v2 once | `src/gateway/server.ts`; `src/sessions/pibo-data-store.ts`; `test/chat-data-v2-legacy-guard.test.mjs`; `test/pibo-data-session-store.test.mjs` | Covered |
 | REQ-007 Malformed JSON fields degrade to empty or absent values | Corrupt metadata does not crash list | Add malformed row test | Pending |
 
 ## Verification Basis
@@ -306,9 +316,11 @@ This spec is based on the current code in:
 - `src/sessions/sqlite-store.ts`
 - `src/sessions/pibo-data-store.ts`
 - `src/data/pibo-store.ts`
+- `src/gateway/server.ts`
 - `src/data/cli.ts`
 - `src/core/pibo-home.ts`
 - `test/session-store.test.mjs`
 - `test/pibo-data-session-store.test.mjs`
+- `test/chat-data-v2-legacy-guard.test.mjs`
 - `test/session-router-store.test.mjs`
 - `test/performance-optimizations.test.mjs`

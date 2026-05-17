@@ -2,6 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-11  
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code  
 **Related docs:** [Chat Web Projects Area](./chat-web-projects-area.md), [Chat Web Trace and Terminal View](./chat-web-trace-and-terminal-view.md), [Chat Web Browser Shell State](./chat-web-browser-shell-state.md), [Pibo Workflow System V1](../changes/pibo-workflow-system-v1/spec.md)
 
@@ -9,17 +10,17 @@
 
 Pibo now has a Projects area that can store workflow metadata on Project Sessions before the full workflow runtime is complete. Users still need a safe way to inspect workflow-linked sessions without implying that browser-side workflow creation or editing exists.
 
-The Workflow session view is that read-only inspection surface. It presents a small XState-style UI projection from Project Session metadata, trace data, and live session state while keeping the durable workflow kernel and normal Pibo Session records as the authoritative sources.
+The Workflow session view is that read-only inspection surface. It presents an XState-style UI projection and configured-session context from Project Session metadata, trace data, workflow lifecycle events, session signals, and live session state while keeping Workflow IR, Project Session records, workflow snapshots/runs, and normal Pibo Session records as the authoritative sources.
 
 ## Goal
 
-The Chat Web App SHALL expose a read-only Workflow session view that is selectable like other session views and renders workflow-backed Project Sessions as an inspectable, non-editable XState-style projection.
+The Chat Web App SHALL expose a read-only Workflow session view that is selectable like other session views and renders workflow-backed Project Sessions as an inspectable, non-mutating workflow/XState projection.
 
 ## Background / Current State
 
-The session-view registry currently exposes two active view ids: `terminal` and `workflow`. The default view is `terminal`. The older nested Trace view remains inactive. Chat and Projects routes can carry `?view=terminal` or `?view=workflow`, and the app stores the last selected session view in browser local storage.
+The session-view registry currently exposes two active view ids: `terminal` and `workflow`. The default view is `terminal`. The older nested Trace view remains inactive. Chat and Projects routes can carry `?view=terminal` or `?view=workflow`, and the app stores the last selected session view in browser local storage. The more specific [Chat Web Workflow XState Session View](./chat-web-workflow-xstate-session-view.md) spec owns the detailed source-backed component behavior; this spec keeps the higher-level session-view contract.
 
-`WorkflowXStateSessionView` only builds a model when the selected Project Session is workflow-backed. A Project Session is treated as workflow-backed when it has a `workflowRunId`, has state `workflow`, or has a workflow id other than `simple-chat`. The view renders a summary, read-only notice, visual state flow, snapshot JSON, node statuses, final output, validation diagnostics, and projection facts.
+`WorkflowXStateSessionView` only builds a model when the selected Project Session is workflow-backed. A Project Session is treated as workflow-backed when it has a `workflowRunId`, has state `workflow` or a configured/run lifecycle state, or has a workflow id other than `simple-chat`. The view renders a summary, read-only boundary notice, configured-session execution shell, run inspection, navigation links, visual state flow, snapshot JSON, node statuses, final output, validation diagnostics, and projection facts.
 
 ## Scope
 
@@ -28,14 +29,14 @@ The session-view registry currently exposes two active view ids: `terminal` and 
 - Active Chat Session View registration for the Workflow view.
 - Session-view selection and route/search persistence where it affects Workflow rendering.
 - Workflow-backed Project Session detection.
-- Read-only XState-style UI projection from Project Session, trace, and session status data.
+- Read-only XState-style UI projection from Project Session, trace, lifecycle, signal, and session status data.
 - Empty-state behavior for non-workflow sessions.
 - Final-output and validation-diagnostic extraction from the trace view.
-- Explicit communication that workflow creation and editing are deferred.
+- Explicit communication that Project session inspection is read-only and Workflow IR authoring belongs in the Workflows tab.
 
 ### Out of Scope
 
-- Workflow definition authoring, graph editing, and raw XState editing — explicitly deferred in the current UI.
+- Workflow definition authoring, graph editing, and raw XState editing inside the Project session view — authoring is owned by the Workflows tab.
 - Durable workflow kernel storage and execution — covered by the Workflow System V1 change specs.
 - The compact terminal transcript behavior — covered by Chat Web Trace and Terminal View.
 - Projects CRUD and Project Session linking APIs — covered by Chat Web Projects Area.
@@ -113,7 +114,7 @@ The Workflow view MUST derive a bounded projection from Project Session metadata
 
 #### Current
 
-The current model contains workflow id, optional workflow run id, Pibo Session id, state label, status, optional trace title/version/latest stream id, three visual nodes, two visual edges, optional final output, validation errors, and a JSON snapshot with `kind: "pibo.workflow.xstateUiModel"` and `schemaVersion: 1`.
+The current model contains workflow id/version, optional workflow run id, Pibo Session id, state label, status, optional trace title/version/latest stream id, configuration summary, definition link, nested-session links, pending human actions, lifecycle-derived run history, node/edge/runtime summaries, three visual nodes, two visual edges, optional final output, validation errors, and a JSON snapshot with `kind: "pibo.workflow.xstateUiModel"` and `schemaVersion: 1`.
 
 #### Acceptance
 
@@ -197,32 +198,32 @@ The view checks node errors, outputs, summaries, and raw event payload fields su
 - THEN that message appears in the validation panel
 - AND unrelated raw payload fields are not displayed.
 
-### Requirement: Workflow authoring controls remain deferred in V1
+### Requirement: Workflow authoring controls stay out of the Project session view
 
-The Workflow view MUST clearly communicate that workflow creation, visual graph editing, and raw XState JSON editing are not available in V1.
+The Workflow view MUST clearly communicate that Project session inspection is read-only and that Workflow IR authoring belongs in the Workflows tab.
 
 #### Current
 
-Every Workflow view state includes a read-only notice. The snapshot contains an `editing` object with creation, visual editing, and raw XState editing disabled/deferred.
+Every Workflow view state includes a read-only boundary notice. The snapshot contains an `editing` object with editing disabled, and the UI exposes inspection/start/human-action context without controls that mutate Workflow IR, raw XState, or inline executable code.
 
 #### Acceptance
 
-- The view shows a read-only V1 workflow surface notice for both unavailable and workflow-backed states.
-- The notice says creation and editing are deferred.
+- The view shows a read-only workflow boundary notice for both unavailable and workflow-backed states.
+- The notice identifies Pibo Workflow IR as source of truth and XState as projection-only.
 - No browser control in this view mutates workflow definitions, workflow graphs, or raw XState JSON.
 
 #### Scenario: User opens Workflow view
 
 - GIVEN any session is open
 - WHEN the user opens the Workflow view
-- THEN the UI states that creation and editing are deferred
+- THEN the UI states that Project workflow inspection is read-only
 - AND the view only inspects existing session and workflow linkage data.
 
 ## Edge Cases
 
 - Route search may contain unsupported view ids; these must be ignored.
 - Browser local storage may be unavailable; session view rendering must still work.
-- A Project Session can be workflow-backed without a `workflowRunId` when its state is `workflow` or its workflow id is not `simple-chat`.
+- A Project Session can be workflow-backed without a `workflowRunId` when its state is `workflow` or another configured/run lifecycle state, or when its workflow id is not `simple-chat`.
 - Trace data may be loading, missing, paginated, or partially live-patched.
 - Validation payloads may be nested; extraction is intentionally bounded by depth and result count.
 - The current browser storage reader only restores `terminal` explicitly and otherwise falls back to the default; route search remains the reliable deep-link mechanism for `workflow`.
@@ -239,8 +240,8 @@ Every Workflow view state includes a read-only notice. The snapshot contains an 
 - [ ] SC-001: The Chat Web header exposes `Terminal` and `Workflow` session-view buttons, with Terminal as the default.
 - [ ] SC-002: Deep links with `?view=workflow` select the Workflow view for both room sessions and project sessions.
 - [ ] SC-003: Non-workflow sessions show an unavailable Workflow/XState projection state without fabricated nodes.
-- [ ] SC-004: Workflow-backed Project Sessions render summary, graph, node statuses, snapshot, final-output, validation, and projection-facts panels.
-- [ ] SC-005: The Workflow view never offers workflow creation, visual editing, or raw XState editing controls in V1.
+- [ ] SC-004: Workflow-backed Project Sessions render summary, execution shell, run inspection, navigation links, graph, node statuses, snapshot, final-output, validation, and projection-facts panels.
+- [ ] SC-005: The Workflow view never offers Workflow IR mutation, inline executable-code editing, or raw XState editing controls inside Projects.
 
 ## Assumptions and Open Questions
 
@@ -267,7 +268,7 @@ Every Workflow view state includes a read-only notice. The snapshot contains an 
 | Status mapping is explicit and inspectable | Failed workflow state | `src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx` | Draft |
 | Final output is trace-derived | Completed assistant output | `src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx`, `src/shared/trace-types.ts` | Draft |
 | Validation diagnostics are extracted conservatively | Raw validation diagnostic | `src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx` | Draft |
-| Workflow authoring controls remain deferred | User opens Workflow view | `src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx`, `docs/specs/changes/pibo-workflow-system-v1/spec.md` | Draft |
+| Workflow authoring controls stay out of the Project session view | User opens Workflow view | `src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx`, `src/apps/chat-ui/src/WorkflowsArea.tsx`, `docs/specs/changes/pibo-workflow-ui-authoring-v2/spec.md` | Draft |
 
 ## Verification Basis
 

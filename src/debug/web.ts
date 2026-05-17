@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getPiboHome } from "../core/pibo-home.js";
 import { listBrowserUseCdpTargets, selectBestChatTarget, formatBrowserUseTargets, type BrowserUseCdpTarget } from "../tools/browser-use-cdp.js";
+import { CdpClient } from "../tools/cdp-client.js";
 
 const DEFAULT_WATCH_DURATION_MS = 5_000;
 const MAX_WATCH_DURATION_MS = 30_000;
@@ -81,115 +82,6 @@ type WebWatch = {
 	omitted: { events: number; nodes: number; depth: number; budget: boolean };
 	action?: { requested: string; performed: boolean; error?: string };
 };
-
-type CdpRuntimeResult = {
-	result?: {
-		type?: string;
-		value?: unknown;
-		description?: string;
-	};
-	exceptionDetails?: unknown;
-};
-
-type CdpResponse = {
-	id?: number;
-	result?: unknown;
-	error?: { message?: string; code?: number; data?: unknown };
-};
-
-class CdpClient {
-	private nextId = 0;
-	private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-	private socket?: WebSocket;
-
-	constructor(private readonly webSocketUrl: string) {}
-
-	connect(timeoutMs = 3_000): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const socket = new WebSocket(this.webSocketUrl);
-			this.socket = socket;
-			let settled = false;
-			const timer = setTimeout(() => fail(new Error("Timed out connecting to CDP target")), timeoutMs);
-
-			const settle = () => {
-				if (settled) return false;
-				settled = true;
-				clearTimeout(timer);
-				return true;
-			};
-			const succeed = () => {
-				if (settle()) resolve();
-			};
-			const fail = (error: Error) => {
-				if (settle()) reject(error);
-			};
-
-			socket.addEventListener("open", succeed);
-			socket.addEventListener("message", (event) => this.handleMessage(String(event.data)));
-			socket.addEventListener("error", () => fail(new Error("CDP WebSocket error")));
-			socket.addEventListener("close", () => {
-				for (const [id, pending] of this.pending) {
-					clearTimeout(pending.timer);
-					pending.reject(new Error("CDP target closed"));
-					this.pending.delete(id);
-				}
-			});
-		});
-	}
-
-	send(method: string, params?: Record<string, unknown>, timeoutMs = 10_000): Promise<unknown> {
-		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) throw new Error("CDP target is not connected");
-		const id = ++this.nextId;
-		const payload = params ? { id, method, params } : { id, method };
-		const promise = new Promise<unknown>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.pending.delete(id);
-				reject(new Error(`Timed out waiting for CDP method ${method}`));
-			}, timeoutMs);
-			this.pending.set(id, { resolve, reject, timer });
-		});
-		this.socket.send(JSON.stringify(payload));
-		return promise;
-	}
-
-	async evaluate<T>(expression: string, timeoutMs = 10_000): Promise<T> {
-		const response = await this.send("Runtime.evaluate", {
-			expression,
-			awaitPromise: true,
-			returnByValue: true,
-			userGesture: true,
-		}, timeoutMs) as CdpRuntimeResult;
-		if (response.exceptionDetails) throw new Error(`Browser evaluation failed: ${JSON.stringify(response.exceptionDetails)}`);
-		return response.result?.value as T;
-	}
-
-	close(): void {
-		try {
-			this.socket?.close();
-		} catch {
-			// ignore close races
-		}
-	}
-
-	private handleMessage(raw: string): void {
-		let message: CdpResponse;
-		try {
-			message = JSON.parse(raw) as CdpResponse;
-		} catch {
-			return;
-		}
-		if (typeof message.id !== "number") return;
-		const pending = this.pending.get(message.id);
-		if (!pending) return;
-		clearTimeout(pending.timer);
-		this.pending.delete(message.id);
-		if (message.error) {
-			pending.reject(new Error(message.error.message ?? JSON.stringify(message.error)));
-			return;
-		}
-		pending.resolve(message.result);
-	}
-}
 
 export async function runDebugWeb(args: string[]): Promise<void> {
 	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {

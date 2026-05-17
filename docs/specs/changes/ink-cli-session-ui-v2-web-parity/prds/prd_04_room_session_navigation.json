@@ -1,0 +1,92 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-room-session-navigation",
+  "description": "Implement owner-scoped room-first startup, /session, /room, and /new flows with Web-visible persistence.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Expand CLI source owner and room contracts",
+      "description": "As an Ink app implementer, I need source methods that expose selected-owner rooms and room-scoped sessions.",
+      "acceptanceCriteria": [
+        "CliSessionSource supports active owner, list owners where available, list rooms for owner, active room, list sessions by room, and create session in room",
+        "Local source maps Personal Chat/default room for selected owner",
+        "Existing --session direct-open behavior remains compatible with owner validation",
+        "Focused source tests cover owner/room/session filtering",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in 13c0b33. Expanded CliSessionSource with getActiveOwner(), listOwners(), owner-aware listRooms(), owner-aware listSessions(), active owner status fields, room owner/default metadata, and owner-scoped createSession default-room behavior. Local source maps selected owners to Personal Chat/default room via ChatRoomService when PiboDataStore is available and a deterministic virtual Personal Chat room otherwise; it merges persisted room rows with session-derived room metadata and preserves explicit --session compatibility through owner validation. Focused source tests cover active owner, Root recovery fallback, owner discovery, selected-owner room/session filtering, selected-owner default-room creation, and no implicit user:unknown writes. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs test/cli-ui-session-app.test.mjs' passed 25/25 focused tests (real source/unit path, no PTY required because no interactive picker flow was implemented in this story). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' was run and only the unrelated telemetry-store stale/prune test failed; standalone rerun of that telemetry test also failed."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement startup owner room session flow",
+      "description": "As a CLI user, I want startup to guide me through owner, room, and session selection before opening a transcript.",
+      "acceptanceCriteria": [
+        "Startup without --session resolves owner then shows room picker when appropriate",
+        "Selecting a room shows room-scoped sessions and a create-new-session option",
+        "Escape backs out one overlay level and Ctrl+C exits cleanly",
+        "pibo debug pty asserts owner/room/session picker sequence in a real TUI run",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in 19aea5d. Implemented no `--session` startup as owner -> room -> room-scoped session flow. After owner resolution, the app opens a room picker, then a session picker filtered by the selected room with a \"+ New session in this room\" item; selecting it creates and opens a session using the selected owner and room. Direct --session still opens the requested session, and explicit --owner-scope skips the startup owner picker. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 28/28 focused tests (real source/unit path plus Ink render/reducer tests for owner, room, create-session picker rendering and /new selected-room creation). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-owner-room && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-owner-room --timeout-ms 45000 --idle-timeout-ms 12000 --cols 100 --rows 28 --wait-for \"Select effective owner\" --expect \"Web user alpha\" --expect \"Web user beta\" --press Down --press Enter --wait-for \"Select room for Web user beta\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --press CtrlC -- env PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:alpha,user:beta node dist/bin/pibo.js tui:sessions' passed (real PTY path with deterministic mocked local router/source, not live provider); scripted input selected Web user beta, selected Personal Chat, selected \"+ New session in Personal Chat\", and asserted \"Created session\". Raw PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-room/raw.ansi.log. Clean PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-room/clean.txt. Observed clean output shows the owner picker, room picker, session picker, and created session. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' was run; 489/490 tests passed and the only failure remained the pre-existing unrelated telemetry-store.test.mjs stale/prune assertion."
+    },
+    {
+      "id": "US-003",
+      "title": "Make /session and /room room-first",
+      "description": "As a CLI user, I want /session to choose a room first and /room to change the active room.",
+      "acceptanceCriteria": [
+        "/session opens room picker, then session picker filtered to the selected room",
+        "/room changes active room and reloads room-scoped sessions",
+        "Empty rooms show clear empty state and create-new action",
+        "pibo debug pty covers /session room selection and /room switching",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed in 21dc2e6c35252141d37182d3aa59fa62678dfb7a. Implemented /session as a room-first flow: it opens an owner-scoped room picker, then the existing room selection path opens a session picker filtered to that room with a create-new action for empty rooms. Implemented /room as an active-room picker using the same owner-scoped room list and room-scoped session reload path. Updated command help/header text for /owner, /profile, and /room, and added a debug PTY room fixture environment seam for deterministic room-switch validation. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 30/30 focused tests (real build plus focused unit/source/Ink paths). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-room-session-commands && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-room-session-commands --timeout-ms 60000 --idle-timeout-ms 15000 --cols 110 --rows 30 --wait-for \"Select room for Web user alpha\" --expect \"Personal Chat\" --expect \"Project Room\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/session\" --press Enter --wait-for \"Select room for sessions for Web user alpha\" --expect \"Project Room\" --press Down --press Enter --wait-for \"New session in Project Room\" --press Escape --type \"/room\" --press Enter --wait-for \"Select active room for Web user alpha\" --expect \"Project Room\" --press Up --press Enter --wait-for \"Select session in Personal Chat\" --press CtrlC -- env PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:alpha PIBO_DEBUG_PTY_CLI_SESSIONS_ROOMS=\"user:alpha|room_personal|Personal Chat;user:alpha|room_project|Project Room\" node dist/bin/pibo.js tui:sessions --owner-scope user:alpha' passed (real PTY path with deterministic mocked local router/source, not live provider); scripted assertions created in Personal Chat, ran /session to reach Project Room and its create-new empty state, then ran /room to switch back to Personal Chat and list its session. Raw PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-room-session-commands/raw.ansi.log. Clean PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-room-session-commands/clean.txt. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Make /new owner-scoped room-scoped and Web-visible",
+      "description": "As a Web and CLI user, I want /new to create sessions in the active owner's selected room so organization matches Web.",
+      "acceptanceCriteria": [
+        "/new with active room creates the session in that room without another prompt",
+        "/new without active room opens room picker with Personal Chat selected by default",
+        "Created session writes sessions, session_navigation, event_log, and messages with selected owner and room metadata",
+        "pibo debug pty creates a session, sends a message, and asserts assistant output through real router/source path",
+        "Web/API/store check confirms created session appears in selected owner's room navigation",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed in f4c2aa6. Implemented /new so it creates immediately only when the Ink app has an explicit active room; without an active room it opens an owner-scoped room picker with Personal Chat/default preselected and then creates in the selected room. Local CLI session creation now upserts Web session_navigation immediately for the selected owner/room, and message/output ingestion preserves the assistant/user preview instead of replacing it with message_finished. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 32/32 focused tests. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-new-web .tmp/pty-new-web-home && mkdir -p .tmp/pty-new-web-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-new-web --timeout-ms 60000 --idle-timeout-ms 15000 --cols 120 --rows 32 --wait-for \"Select room for Web user pty\" --expect \"Personal Chat\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/new\" --press Enter --wait-for \"Created session\" --type \"Persist from PTY\" --press Enter --wait-for \"PTY assistant persisted\" --expect \"Message sent\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-new-web-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_ASSISTANT_REPLY=\"PTY assistant persisted\" node dist/bin/pibo.js tui:sessions --owner-scope user:pty' passed (real PTY path using LocalCliSessionSource, PiboDataStore, and deterministic mocked local router; not a fake source or demo path). Scripted assertions selected Personal Chat, created a session, ran /new, sent Persist from PTY, waited for PTY assistant persisted, and expected Message sent. PTY artifacts: raw /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-new-web/raw.ansi.log; clean /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-new-web/clean.txt. Store/API read-model check queried /workspace/.tmp/pty-new-web-home/pibo.sqlite after the PTY run and confirmed latest session ps_e55f4202-e8d9-4de4-9830-b17598c1d881 has sessions.owner_scope=user:pty, sessions.room_id=room_6b3d9f0e-5d58-4cc0-bfaa-ff3ee2665107, session_navigation owner/room/status idle with last_message_preview=PTY assistant persisted, chat_messages rows for user Persist from PTY and assistant PTY assistant persisted in the same room, and event_log rows for user.message.accepted and assistant_message in the same room. Web URL for manual verification: http://127.0.0.1:4822/apps/chat/rooms/room_6b3d9f0e-5d58-4cc0-bfaa-ff3ee2665107/sessions/ps_e55f4202-e8d9-4de4-9830-b17598c1d881. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 494 tests; 493 passed and only the pre-existing unrelated telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-005",
+      "title": "Hydrate existing room sessions and transcript by owner",
+      "description": "As a CLI user, I want existing Web sessions in a room to open with transcript history in the terminal.",
+      "acceptanceCriteria": [
+        "Room-scoped session picker lists existing sessions for the selected owner and room only",
+        "Opening an existing session hydrates persisted trace/history from event log",
+        "Sessions from other owners are not listed or opened unless owner is switched",
+        "pibo debug pty opens an existing session by picker and by --session <id> and asserts transcript content",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed in 1b442ef. Existing owner-scoped sessions now list under the selected room only; sessions missing room metadata are treated as the selected owner's Personal Chat/default room for CLI listings and open-session summaries. LocalCliSessionSource.openSession() hydrates persisted event-log history for existing sessions and normalizes user.message.accepted rows into CLI user-message trace nodes so existing transcripts show both user and assistant content. Sessions from other owners remain hidden/rejected by owner validation unless the owner is switched. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed after a test-only regex fix; rerun docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 36/36 focused tests. PTY picker scenario passed: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-existing-picker --timeout-ms 60000 --idle-timeout-ms 15000 --cols 120 --rows 32 --wait-for \"Select room for Web user history\" --expect \"Personal Chat\" --press Enter --wait-for \"Select session in Personal Chat\" --expect \"Existing PTY Session\" --press Enter --wait-for \"Opened session Existing PTY Session\" --expect \"Existing PTY user prompt\" --expect \"Existing PTY assistant reply\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-existing-home node dist/bin/pibo.js tui:sessions --owner-scope user:history' passed. PTY direct --session scenario passed: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-existing-direct --timeout-ms 60000 --idle-timeout-ms 15000 --cols 120 --rows 32 --wait-for \"Existing PTY user prompt\" --expect \"Existing PTY assistant reply\" --expect \"Pibo CLI Sessions | local/direct | Web user history (user:history) | Existing PTY Session\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-existing-home node dist/bin/pibo.js tui:sessions --owner-scope user:history --session ps_pty_history' passed. PTY classification: real PTY path using LocalCliSessionSource and real temp PiboDataStore fixture at /workspace/.tmp/pty-existing-home; no fake source/demo path and no live provider send. Raw/clean artifacts: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-existing-picker/raw.ansi.log, /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-existing-picker/clean.txt, /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-existing-direct/raw.ansi.log, /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-existing-direct/clean.txt. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 498 tests; 497 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    }
+  ]
+}

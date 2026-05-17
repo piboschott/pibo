@@ -1,0 +1,102 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-overlay-runtime-source-hints",
+  "description": "Injected overlay runtime for element/fallback annotation, bounded metadata capture, layered source hints, and safe payload submission.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Build overlay shell and annotation mode controls",
+      "description": "As a user, I want a small reversible overlay so that I can turn annotation mode on and off without breaking page interaction.",
+      "acceptanceCriteria": [
+        "Add injected overlay shell with active/inactive mode, visible control, stop control, and isolated/prefixed styling",
+        "Inactive mode does not block normal page clicks or typing",
+        "Stop control removes or disables overlay listeners where possible",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement element hover click and note submission",
+      "description": "As a user, I want hover outlines and click-to-annotate so that I can mark the exact element I mean.",
+      "acceptanceCriteria": [
+        "Active mode shows a hover outline for visible element targets",
+        "Clicking a target opens note entry with submit and cancel controls",
+        "Submitting posts a normalized annotation payload tied to the binding token/config",
+        "Cancel returns to annotation mode without creating a record",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    },
+    {
+      "id": "US-003",
+      "title": "Capture target metadata and selector fallbacks",
+      "description": "As an agent, I want multiple target identity signals so that I can find the affected UI even when one selector is brittle.",
+      "acceptanceCriteria": [
+        "Capture best selector, DOM path, full DOM path where useful, tag name, class summary, text snippet, selected text when applicable, HTML opening-tag hint, accessibility hints, bounding box, viewport, URL, and title",
+        "Selector generation prefers stable ids and attributes before nth-of-type fallback",
+        "Missing selector or source data does not prevent annotation creation",
+        "Payload fields are capped before submission",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    },
+    {
+      "id": "US-004",
+      "title": "Capture layered source hints",
+      "description": "As an agent, I want source hints when available so that I can locate the likely component or file quickly.",
+      "acceptanceCriteria": [
+        "Capture explicit pibo/test/locator attributes as high-confidence source or stable-id hints",
+        "Capture LocatorJS-compatible metadata when present after verifying the available metadata shape",
+        "Capture React/Fiber or JSX dev metadata best-effort as medium-confidence hints when available",
+        "Store DOM fallback source hints with low confidence when no richer hint exists",
+        "Missing source hints are represented as absent or low-confidence fallback, not as errors",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    },
+    {
+      "id": "US-005",
+      "title": "Implement pin or region fallback annotation",
+      "description": "As a user, I want a non-element fallback so that I can mark visual issues where no DOM element is enough.",
+      "acceptanceCriteria": [
+        "Implement at least one fallback target kind: pin coordinates, drag region, or visual region",
+        "Fallback annotations store target kind, note, URL, viewport, position or bounding box, and optional screenshot artifact reference if available",
+        "Fallback flow works when element selection is not appropriate",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    },
+    {
+      "id": "US-006",
+      "title": "Add overlay throttling bounds and sanitization checks",
+      "description": "As a maintainer, I want overlay capture to be bounded and safe so that annotation mode does not leak or slow the page.",
+      "acceptanceCriteria": [
+        "Throttle hover/target discovery and disable it when annotation mode is inactive",
+        "Apply client-side caps for note, text snippets, HTML hints, class summary, accessibility, and source raw metadata before submission",
+        "Escape overlay-rendered text and avoid executing page-derived strings",
+        "Add checks for oversized text, missing selector fallback, Shadow DOM best-effort where practical, and cross-origin iframe unavailable state",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Implemented in overlay runtime/source-hints batch; validated with typecheck, focused tests, and worker CDP browser verification."
+    }
+  ]
+}

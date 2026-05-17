@@ -17,7 +17,7 @@ Chat Web MUST expose runtime-context resources through one bounded Context area,
 
 ## Background / Current State
 
-`src/apps/chat-ui/src/App.tsx` defines a top-level `context` area and five context panels: `context-files`, `base-prompt`, `compaction-prompt`, `pibo-tools`, and `mcp-tools`. The sidebar labels the panels as Context Files, Base Prompt, Compaction Prompt, Pibo Tools, and MCP Tools. The current route model has one `/context` route; the selected panel is React state, not a URL path segment.
+`src/apps/chat-ui/src/App.tsx` defines a top-level `context` area and six context panels: `context-files`, `base-prompt`, `compaction-prompt`, `pibo-tools`, `mcp-tools`, and `build-context`. The sidebar labels the panels as Context Files, Base Prompt, Compaction Prompt, Pibo Tools, MCP Tools, and Build Context. The current route model has one `/context` route; the selected panel is React state, not a URL path segment, with an optional `piboSessionId` route value for Build Context inspection.
 
 The main pane renders the owning view for the selected panel:
 
@@ -26,6 +26,7 @@ The main pane renders the owning view for the selected panel:
 - `CompactionPromptView` for the workspace compaction prompt mode and custom content.
 - `PiboToolsView` for installed curated-tool context snippets from the agent catalog.
 - `McpToolsView` for configured MCP server metadata and Pibo-owned descriptions.
+- `ContextBuildView` for a read-only selected-session runtime context snapshot.
 
 The Chat Web bootstrap/catalog API builds context-facing catalog data from the channel capability catalog, `listMcpServerInfos()`, installed Pi packages, and user skills.
 
@@ -34,10 +35,11 @@ The Chat Web bootstrap/catalog API builds context-facing catalog data from the c
 ### In Scope
 
 - Top-level Chat Web Context area behavior.
-- Context sidebar panel list, counts, and panel selection.
+- Context sidebar panel list, counts, selected-session Build Context entry, and panel selection.
 - Routing behavior for `/context` and cross-area links that open a specific context editor.
 - Separation between editable resource panels and read-only catalog-derived context panels.
 - Bootstrap/catalog data required by Context panels.
+- Selected-session Build Context navigation and read-only rendering.
 
 ### Out of Scope
 
@@ -81,7 +83,7 @@ The Context sidebar MUST expose only the supported context panels and MUST rende
 
 #### Current
 
-`ContextPanel` is one of `context-files`, `base-prompt`, `compaction-prompt`, `pibo-tools`, or `mcp-tools`. `ContextSidebar` has one button for each value, and the main pane chooses one corresponding component.
+`ContextPanel` is one of `context-files`, `base-prompt`, `compaction-prompt`, `pibo-tools`, `mcp-tools`, or `build-context`. `ContextSidebar` has one button for each value, and the main pane chooses one corresponding component.
 
 #### Target
 
@@ -89,7 +91,7 @@ Users cannot enter an unsupported Context panel state through normal UI actions,
 
 #### Acceptance
 
-- The sidebar shows Context Files, Base Prompt, Compaction Prompt, Pibo Tools, and MCP Tools.
+- The sidebar shows Context Files, Base Prompt, Compaction Prompt, Pibo Tools, MCP Tools, and Build Context.
 - Selecting a sidebar item updates the selected panel without changing the top-level area.
 - The main pane renders only the component for the active panel.
 - Unsupported panels are not exposed in the sidebar.
@@ -101,13 +103,20 @@ Users cannot enter an unsupported Context panel state through normal UI actions,
 - THEN the active sidebar item changes to Pibo Tools
 - AND the main pane renders installed curated-tool context snippets.
 
-### Requirement: Cross-area edit links open the correct Context panel
+#### Scenario: Switch to Build Context
 
-Actions outside the Context area that edit context resources MUST navigate to Context and select the resource-owning panel.
+- GIVEN the Context area is open
+- WHEN the user selects Build Context
+- THEN the active sidebar item changes to Build Context
+- AND the main pane renders the read-only Build Context panel.
+
+### Requirement: Cross-area links open the correct Context panel
+
+Actions outside the Context area that edit or inspect context resources MUST navigate to Context and select the resource-owning panel.
 
 #### Current
 
-`openContextFileEditor(key)` stores the selected context-file key, selects `context-files`, and navigates to `/context`. `openMcpToolsEditor(name)` stores the selected MCP server name, selects `mcp-tools`, and navigates to `/context`.
+`openContextFileEditor(key)` stores the selected context-file key, selects `context-files`, and navigates to `/context`. `openMcpToolsEditor(name)` stores the selected MCP server name, selects `mcp-tools`, and navigates to `/context`. `viewSessionContext(piboSessionId)` selects `build-context` and navigates to `/context?piboSessionId=<id>` through the route helper.
 
 #### Target
 
@@ -117,7 +126,8 @@ Agent Designer and catalog links can send users to the correct editor without ad
 
 - A context-file edit action from another area opens `/context` with the Context Files panel selected and the requested file key available to `ContextFilesView`.
 - An MCP tools edit action from another area opens `/context` with the MCP Tools panel selected and the requested server name available to `McpToolsView`.
-- These links do not mutate the underlying context resource before the destination editor loads.
+- A View Context action opens `/context` with the Build Context panel selected and the requested Pibo Session ID available to `ContextBuildView`.
+- These links do not mutate the underlying context resource before the destination editor or inspector loads.
 
 #### Scenario: Edit agent context file
 
@@ -125,6 +135,13 @@ Agent Designer and catalog links can send users to the correct editor without ad
 - WHEN the user chooses to edit that file
 - THEN Chat Web opens `/context`
 - AND the Context Files panel receives the selected file key.
+
+#### Scenario: View session build context
+
+- GIVEN a session row or session action menu exposes View Context
+- WHEN the user chooses View Context
+- THEN Chat Web opens the Context area with Build Context selected
+- AND the selected Pibo Session ID is passed to the Build Context view.
 
 ### Requirement: Catalog-derived context views are read-only unless their owning capability supports editing
 
@@ -179,11 +196,11 @@ The Context sidebar summarizes context-resource availability without issuing sep
 
 ### Requirement: Context routing remains shallow unless panel URLs are implemented deliberately
 
-The app MUST treat `/context` as the current public Context route and MUST NOT imply that unsupported panel-specific URLs are stable.
+The app MUST treat `/context` plus optional selected-session query state as the current public Context route and MUST NOT imply that unsupported panel-specific URLs are stable.
 
 #### Current
 
-`ChatAppRoute` represents Context as `{ area: "context" }` without a panel field. Panel selection is held in `contextPanel` state. Unlike Settings, Context does not define `/context/<panel>` routes.
+`ChatAppRoute` represents Context as `{ area: "context", piboSessionId?: string }` without a panel field. Panel selection is held in `contextPanel` state. Unlike Settings, Context does not define `/context/<panel>` routes.
 
 #### Target
 
@@ -191,9 +208,10 @@ Deep links to the Context area stay stable while future panel-specific routing c
 
 #### Acceptance
 
-- Programmatic navigation to Context uses `/context`.
+- Programmatic navigation to general Context uses `/context`.
+- View Context navigation may include the selected Pibo Session ID in the Context route query state.
 - Panel changes do not update the browser path in the current implementation.
-- Tests or docs must not rely on `/context/pibo-tools`, `/context/mcp-tools`, or similar routes until the route model adds them.
+- Tests or docs must not rely on `/context/pibo-tools`, `/context/mcp-tools`, `/context/build-context`, or similar routes until the route model adds them.
 
 #### Scenario: Switch panel without route change
 
@@ -206,7 +224,7 @@ Deep links to the Context area stay stable while future panel-specific routing c
 
 - Bootstrap may load before `agentCatalog` is present; counts and panels must tolerate missing catalog data.
 - A selected context-file key or MCP server name may no longer exist by the time the editor loads; the owning view must show its existing missing-resource behavior.
-- The Context area must remain usable without a selected session because prompt, context-file, tool, and MCP metadata are not session-local views.
+- The Context area must remain usable without a selected session because prompt, context-file, tool, and MCP metadata are not session-local views; Build Context shows a no-session empty state until a session is selected.
 - Browser refresh on `/context` restores the default Context Files panel unless future code persists or routes panel selection.
 
 ## Constraints
@@ -219,8 +237,8 @@ Deep links to the Context area stay stable while future panel-specific routing c
 ## Success Criteria
 
 - [ ] SC-001: Chat Web navigation can open `/context` without a selected Pibo Session.
-- [ ] SC-002: The Context sidebar exposes exactly the five supported panels and renders one active panel at a time.
-- [ ] SC-003: Context-file and MCP edit actions from other areas select the correct Context panel and pass the selected key/name.
+- [ ] SC-002: The Context sidebar exposes exactly the six supported panels and renders one active panel at a time.
+- [ ] SC-003: Context-file, MCP, and View Context actions from other areas select the correct Context panel and pass the selected key/name/session id.
 - [ ] SC-004: Pibo Tools is read-only and handles the empty installed-tools state.
 - [ ] SC-005: Context sidebar counts match bootstrap catalog `piboTools` and `mcpServers` lengths.
 - [ ] SC-006: Panel switching does not create undocumented `/context/<panel>` routes.
@@ -243,12 +261,12 @@ Deep links to the Context area stay stable while future panel-specific routing c
 | Requirement | Scenario / Story | Source Basis | Status |
 |---|---|---|---|
 | REQ-001 Context is a distinct top-level Chat Web area | Open Context from navigation | `src/apps/chat-ui/src/App.tsx` | Draft |
-| REQ-002 Context panel selection is bounded | Switch from prompts to tools | `src/apps/chat-ui/src/App.tsx` | Draft |
-| REQ-003 Cross-area edit links open the correct Context panel | Edit agent context file | `src/apps/chat-ui/src/App.tsx` | Draft |
+| REQ-002 Context panel selection is bounded | Switch from prompts to tools; Switch to Build Context | `src/apps/chat-ui/src/App.tsx`, `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Source-backed |
+| REQ-003 Cross-area links open the correct Context panel | Edit agent context file; View session build context | `src/apps/chat-ui/src/App.tsx`, `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Source-backed |
 | REQ-004 Catalog-derived context views are read-only unless their owning capability supports editing | No curated tools installed | `src/apps/chat-ui/src/context/PiboToolsView.tsx`, `src/apps/chat-ui/src/context/McpToolsView.tsx`, prompt/context views | Draft |
 | REQ-005 Context counts come from bootstrap/catalog data | Catalog contains MCP servers | `src/apps/chat-ui/src/App.tsx`, `src/apps/chat/web-app.ts` | Draft |
 | REQ-006 Context routing remains shallow unless panel URLs are implemented deliberately | Switch panel without route change | `src/apps/chat-ui/src/App.tsx` | Draft |
 
 ## Verification Basis
 
-This spec is based on current workspace code in `src/apps/chat-ui/src/App.tsx`, `src/apps/chat-ui/src/context/PiboToolsView.tsx`, `src/apps/chat-ui/src/context/McpToolsView.tsx`, `src/apps/chat-ui/src/context/ContextFilesView.tsx`, `src/apps/chat-ui/src/context/BasePromptView.tsx`, `src/apps/chat-ui/src/context/CompactionPromptView.tsx`, `src/apps/chat/web-app.ts`, and the existing related specs named above.
+This spec is based on current workspace code in `src/apps/chat-ui/src/App.tsx`, `src/apps/chat-ui/src/context/ContextBuildView.tsx`, `src/apps/chat-ui/src/context/PiboToolsView.tsx`, `src/apps/chat-ui/src/context/McpToolsView.tsx`, `src/apps/chat-ui/src/context/ContextFilesView.tsx`, `src/apps/chat-ui/src/context/BasePromptView.tsx`, `src/apps/chat-ui/src/context/CompactionPromptView.tsx`, `src/apps/chat/web-app.ts`, and the existing related specs named above.

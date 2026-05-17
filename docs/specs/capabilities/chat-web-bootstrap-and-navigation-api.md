@@ -2,6 +2,7 @@
 
 **Status:** Draft
 **Created:** 2026-05-10
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code
 **Related docs:** [Chat Web Rooms and Event Streams](./chat-web-rooms-and-event-streams.md), [Chat Web Cache and Live State](./chat-web-cache-and-live-state.md), [Custom Agents and Agent Designer](./custom-agents.md), [Pibo Session Signals](./pibo-session-signals.md)
 
@@ -19,7 +20,7 @@ Define the authenticated server behavior for Chat Web bootstrap and navigation p
 
 `GET /api/chat/bootstrap` and `GET /api/chat/navigation` are implemented in `src/apps/chat/web-app.ts`. Both endpoints require a web session, resolve an owner-scoped selected Pibo Session, ensure room placement, build room and session trees, overlay runtime/signal state, and return selected room/session identifiers.
 
-Bootstrap additionally loads catalog data through `loadBootstrapCatalog()`, including registered profiles, custom agents, model defaults, model catalog, agent catalog, and gateway action metadata. Navigation intentionally omits catalog data and uses a lighter session-node build path. The React client treats bootstrap as the full app state and navigation as a cheap authoritative refresh.
+Bootstrap additionally loads catalog data through `loadBootstrapCatalog()`, including registered profiles, custom agents, model defaults, model catalog, agent catalog, and gateway action metadata. The same catalog payload is also available from `GET /api/chat/catalog`; `GET /api/chat/agent-catalog` remains a narrower Agent Designer catalog endpoint. Navigation intentionally omits catalog data, returns `defaultRoomId`, and uses a lighter session-node build path. The React client treats bootstrap as the full app state and navigation as a cheap authoritative refresh.
 
 ## Scope
 
@@ -27,10 +28,11 @@ Bootstrap additionally loads catalog data through `loadBootstrapCatalog()`, incl
 
 - `GET /api/chat/bootstrap` response behavior.
 - `GET /api/chat/navigation` response behavior.
+- `GET /api/chat/catalog` response behavior for bootstrap catalog refreshes.
 - Owner-scoped session and room selection from `piboSessionId` and `roomId` query parameters.
 - Default room and default session creation when no session is requested.
 - Room-scoped visible session tree construction, archived filtering, unread counts, and signal status overlays.
-- Bootstrap catalog loading, caching, invalidation boundaries, and response shape.
+- Bootstrap catalog loading, caching, invalidation boundaries, owner-scope caveats, and response shape.
 - Navigation endpoint omission of catalog data and heavy Pi metadata fallback.
 
 ### Out of Scope
@@ -192,8 +194,9 @@ The browser can use bootstrap for initial load and settings/agent surfaces, then
 #### Acceptance
 
 - Bootstrap includes `agents`, `customAgents`, `modelDefaults`, `modelCatalog`, `agentCatalog`, and `capabilities.actions`.
+- `GET /api/chat/catalog` returns the same catalog shape without navigation state.
 - Navigation omits `agents`, `customAgents`, `modelDefaults`, `modelCatalog`, `agentCatalog`, and `capabilities`.
-- Both responses include `identity`, `session`, `room`, `selectedRoomId`, `selectedPiboSessionId`, `latestRoomStreamId`, `rooms`, and `sessions`.
+- Both bootstrap and navigation responses include `identity`, `session`, `room`, `selectedRoomId`, `selectedPiboSessionId`, `latestRoomStreamId`, `rooms`, and `sessions`; navigation also includes `defaultRoomId`.
 - Navigation can be used to refresh unread counts and session tree state without reloading agent catalogs.
 
 #### Scenario: Cheap navigation refresh
@@ -209,18 +212,18 @@ The server MAY cache bootstrap catalog construction briefly, but MUST clear that
 
 #### Current
 
-`loadBootstrapCatalog()` caches a promise for 30 seconds. `invalidateBootstrapCatalogCache()` clears it after relevant mutations such as model defaults, custom-agent changes, MCP descriptions, Pi packages, and user skills.
+`loadBootstrapCatalog()` caches a promise for 30 seconds. Current source caches the full catalog promise, including owner-scoped `customAgents` serialized for the web session that populated the cache. `invalidateBootstrapCatalogCache()` clears it after relevant mutations such as model defaults, custom-agent changes, MCP descriptions, Pi packages, user skills, base prompt updates, and compaction prompt updates.
 
 #### Target
 
-Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agent Designer mutations become visible without waiting for the time-to-live.
+Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agent Designer mutations become visible without waiting for the time-to-live. Custom agents MUST remain owner-scoped: the bootstrap catalog cache MUST either key owner-scoped fragments by owner scope or cache only shared static catalog data and build `customAgents` per authenticated request.
 
 #### Acceptance
 
-- Repeated bootstrap calls within the cache window may reuse the same catalog promise.
+- Repeated bootstrap calls within the cache window may reuse shared static catalog data.
 - If the cached promise rejects, the cache entry is cleared.
-- Mutations that change model defaults, custom agents, MCP server descriptions, Pi packages, or user skills clear the cache before the next bootstrap response.
-- The cache must not authorize cross-owner private data; owner-scoped custom agents are serialized for the current web session.
+- Mutations that change model defaults, custom agents, MCP server descriptions, Pi packages, user skills, base prompts, or compaction prompts clear the cache before the next bootstrap response.
+- The cache must not authorize cross-owner private data; current source inspection found that owner-scoped custom agents are part of the cached promise, so the current implementation needs a code follow-up to split static catalog data from per-request `customAgents` or apply equivalent owner-keying.
 
 #### Scenario: User skill catalog changes
 
@@ -236,6 +239,7 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - A requested archived room can be read, but cannot create a new default session when no session exists.
 - Profile aliases in old session records are canonicalized to registered profile names when possible.
 - Catalog loading can fail independently of navigation; navigation remains available because it does not load catalogs.
+- `/api/chat/catalog` is authenticated and returns catalog state without changing selected room or session navigation.
 - Session node construction may skip Pi metadata fallback on navigation for performance, so durable Pibo Session fields and indexed state must be sufficient for navigation rows.
 
 ## Constraints
@@ -244,6 +248,7 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - **Compatibility:** Response field names used by `BootstrapData` and `NavigationData` remain stable for the current Chat Web client.
 - **Performance:** Navigation should avoid catalog loading and heavy Pi transcript fallback. Bootstrap catalog caching is bounded by a short TTL and explicit invalidation.
 - **Source of Truth:** Pibo Session Store and Chat Web data services remain authoritative for session identity, room placement, event positions, and unread state.
+- **Catalog cache:** Owner-scoped catalog fragments, especially custom agents, MUST NOT be cached in a cross-owner value unless the cache is keyed by owner scope. The preferred design is to cache shared static catalog data separately and build `customAgents` per authenticated request.
 
 ## Success Criteria
 
@@ -253,6 +258,7 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - [ ] SC-004: `markRead=true` on bootstrap clears unread counts for the selected session subtree.
 - [ ] SC-005: Signal and runtime overlays update node status without changing durable session identity.
 - [ ] SC-006: Catalog mutations invalidate the short-lived bootstrap catalog cache.
+- [ ] SC-007: Bootstrap catalog caching is owner-keyed or split so owner-scoped `customAgents` cannot be reused across owners.
 
 ## Assumptions and Open Questions
 
@@ -262,24 +268,27 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - Registered plugin capabilities are read-only product catalog entries and can be shared across owners.
 - Custom agents remain owner-scoped even when included in a cached bootstrap catalog path.
 
+### Decisions
+
+- Custom agents are owner-scoped. Bootstrap catalog caching must not reuse `customAgents` across owner scopes. Prefer caching shared static catalog data separately and building `customAgents` per authenticated request.
+
 ### Open Questions
 
 - Should `includeArchived` use stricter boolean validation instead of treating any non-`true` value as false?
-- Should the bootstrap catalog cache key include owner scope explicitly to make the owner boundary auditable even though custom agents are serialized per request?
 - Should navigation expose a compact catalog version so the browser knows when to reload full bootstrap after catalog mutations?
 
 ## Traceability
 
 | Requirement | Scenario / Story | Source Basis | Status |
 |---|---|---|---|
-| Bootstrap and navigation require authenticated owner context | Cross-owner session is requested | `src/apps/chat/web-app.ts`, `test/web-channel.test.mjs` | Implemented |
-| Selection resolves to a valid room-scoped Pibo Session | Session-room mismatch | `src/apps/chat/web-app.ts`, `test/web-channel.test.mjs` | Implemented |
+| Bootstrap and navigation require authenticated owner context | Cross-owner session is requested | `src/apps/chat/web-app.ts`; positive-path auth in `test/web-channel.test.mjs` | Partial; cross-owner bootstrap/navigation rejection is source-inspected but lacks a targeted test |
+| Selection resolves to a valid room-scoped Pibo Session | Session-room mismatch | `src/apps/chat/web-app.ts`; room-scoped positive paths in `test/web-channel.test.mjs` | Partial; mismatch rejection is source-inspected but lacks a targeted test |
 | Visible session trees are room-filtered and archive-aware | Archived child is hidden by default | `src/apps/chat/web-app.ts`, `test/web-channel.test.mjs` | Implemented |
 | Read markers and unread counts are computed for visible owner state | Bootstrap marks selected subtree read | `src/apps/chat/web-app.ts`, `src/apps/chat/data/read-state-service.ts`, `test/web-channel.test.mjs` | Implemented |
 | Runtime and signal state overlays do not replace durable session identity | Running signal overlays selected session | `src/apps/chat/web-app.ts`, `test/chat-signals-api.test.mjs` | Implemented |
-| Bootstrap returns full catalog state and navigation omits it | Cheap navigation refresh | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/types.ts`, `test/web-channel.test.mjs` | Implemented |
-| Bootstrap catalog cache is short-lived and invalidated by catalog mutations | User skill catalog changes | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/App.tsx` | Partial |
+| Bootstrap returns full catalog state and navigation omits it | Cheap navigation refresh | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/types.ts`, `test/web-channel.test.mjs` | Implemented; `/api/chat/catalog` source-inspected |
+| Bootstrap catalog cache is short-lived, invalidated by catalog mutations, and safe for owner-scoped custom agents | User skill catalog changes; owner-scoped custom agents are not reused across owners | `src/apps/chat/web-app.ts` | Partial; invalidation is source-inspected, the owner-scoped custom-agent requirement is decided, and code follow-up is needed for the current cache path |
 
 ## Verification Basis
 
-This spec is based on the current workspace code in `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/types.ts`, `src/apps/chat-ui/src/App.tsx`, `src/apps/chat/data/read-state-service.ts`, `src/apps/chat/data/session-query-service.ts`, `src/apps/chat/data/timeline-query-service.ts`, `src/core/session-router.ts`, and tests including `test/web-channel.test.mjs` and `test/chat-signals-api.test.mjs`.
+This spec is based on the current workspace code in `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts`, `src/apps/chat-ui/src/types.ts`, `src/apps/chat-ui/src/App.tsx`, `src/apps/chat/data/read-state-service.ts`, `src/apps/chat/data/session-query-service.ts`, `src/apps/chat/data/timeline-query-service.ts`, `src/core/session-router.ts`, and tests including `test/web-channel.test.mjs` and `test/chat-signals-api.test.mjs`.

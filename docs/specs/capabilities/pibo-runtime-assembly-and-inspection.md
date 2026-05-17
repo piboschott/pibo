@@ -21,6 +21,8 @@ The current implementation is centered on `src/core/runtime.ts`. `createPiboRunt
 
 `inspectPiboProfile()` creates a non-persistent runtime with inert inspection controllers where needed, then reports selected skills, tools, subagents, Pi packages, context files, and diagnostics. The root CLI exposes this through `pibo profile [profile]` in `src/cli.ts`.
 
+`inspectPiboContextBuild()` in `src/core/context-build.ts` creates a non-persistent inspection runtime and returns a redacted, ordered Build Context snapshot with prompt sections, tool prompt surfaces, runtime extensions, context files, skills, diagnostics, and approximate token counts. Chat Web exposes this for owned sessions through `GET /api/chat/context-build` and renders it in the Context area's Build Context panel.
+
 ## Scope
 
 ### In Scope
@@ -31,7 +33,7 @@ The current implementation is centered on `src/core/runtime.ts`. `createPiboRunt
 - Pibo runtime session context injection.
 - Model and thinking-level resolution from active session model, profile, and model defaults.
 - Generated Pibo tools for subagents, yielded runs, Codex compatibility, and persistent code runtime.
-- Runtime diagnostics and profile inspection output.
+- Runtime diagnostics, profile inspection output, and Build Context snapshot inspection.
 - Direct local TUI startup guardrails for profiles that require routed runtime services.
 
 ### Out of Scope
@@ -263,6 +265,30 @@ The system MUST inspect selected runtime resources without letting generated too
 - AND includes generated tool `pibo_subagent_explorer`
 - AND no child Pibo Session is created.
 
+### Requirement: Build Context snapshots are read-only, ordered, and redacted
+
+The system MUST expose an inspection snapshot that explains startup context assembly without mutating runtime, session, prompt, context-file, or transcript state.
+
+#### Current
+
+`inspectPiboContextBuild()` calls `createPiboRuntime()` with `persistSession: false`, uses inert subagent and run-control controllers when needed, omits requested model auth resolution for inspection, reads loaded runtime resources, redacts secret-like values in text, metadata, schema, payload, and diagnostics, estimates direct and subtree tokens, and disposes the runtime in a `finally` block. Chat Web requires an authenticated owned session for `GET /api/chat/context-build?piboSessionId=...` and passes the selected session's profile, active model, workspace, owner scope, room id, and timezone into the snapshot.
+
+#### Acceptance
+
+- Snapshot generation does not create a user-visible Pibo Session or append transcript entries.
+- Context-file nodes preserve runtime merge order after Pi auto context, runtime session context, profile context files, installed tool context, MCP context, and deduplication.
+- Tool nodes distinguish prompt snippets, prompt guidelines, callable schemas, generated-tool origin, and provider-backed payloads.
+- Provider-backed `web_search` appears as active without requiring a local function definition.
+- Secret-like values are redacted from node content, metadata, payloads, schemas, and diagnostics.
+- Snapshot generation disposes temporary runtime resources.
+
+#### Scenario: Inspect owned session startup context
+
+- GIVEN Chat Web has an authenticated user and an owned Pibo Session
+- WHEN the user requests that session's Build Context snapshot
+- THEN the response contains ordered prompt, tool, context-file, skill, extension, and diagnostic nodes
+- AND no new transcript or visible session is created.
+
 ### Requirement: Direct TUI refuses profiles that need routed services
 
 The system MUST prevent direct Pi TUI startup for profiles that require routed Pibo services not available in direct mode.
@@ -287,7 +313,7 @@ The system MUST prevent direct Pi TUI startup for profiles that require routed P
 ## Edge Cases
 
 - Context file reads can fail; runtime creation must fail instead of silently omitting an explicitly selected context file.
-- Profiles may select only provider-backed tools; inspection must not mark them missing merely because they lack local definitions.
+- Profiles may select only provider-backed tools; profile and context-build inspection must not mark them missing merely because they lack local definitions.
 - Runtime tool sessions created by a locally owned runtime registry must be closed when the Pi session is disposed.
 - Empty profile built-in tool selections must not accidentally re-enable all Pi built-ins.
 - Malformed or missing user settings must have been sanitized before runtime options provide timezone.
@@ -296,7 +322,7 @@ The system MUST prevent direct Pi TUI startup for profiles that require routed P
 
 - **Compatibility:** Pibo runtime assembly must remain compatible with Pi Coding Agent `createAgentSessionRuntime`, `createAgentSessionServices`, and `SessionManager` contracts.
 - **Security / Privacy:** Runtime context may expose product identifiers and owner scope to the agent, but it must not include provider secrets or web auth tokens.
-- **Performance:** Profile inspection may instantiate a runtime but must dispose it and must not perform long-running subagent or yielded work.
+- **Performance:** Profile and Build Context inspection may instantiate a runtime but must dispose it and must not perform long-running subagent or yielded work.
 - **Dependencies:** Model lookup, auth status, resource loading, and session persistence depend on Pi Coding Agent services.
 
 ## Success Criteria
@@ -306,7 +332,8 @@ The system MUST prevent direct Pi TUI startup for profiles that require routed P
 - [ ] SC-003: Every inspected or running profile includes `pibo://runtime/session-context.md` with sanitized product identifiers.
 - [ ] SC-004: Unknown or unauthenticated requested models fail runtime creation before the agent starts work.
 - [ ] SC-005: `pibo profile [profile]` emits JSON covering skills, tools, generated tools, subagents, packages, context files, and diagnostics without executing delegated work.
-- [ ] SC-006: Direct TUI startup rejects profiles that need subagent routing and points to `tui:routed`.
+- [ ] SC-006: Build Context inspection emits a redacted ordered snapshot for an owned session without mutating session or transcript state.
+- [ ] SC-007: Direct TUI startup rejects profiles that need subagent routing and points to `tui:routed`.
 
 ## Assumptions and Open Questions
 
@@ -335,8 +362,9 @@ The system MUST prevent direct Pi TUI startup for profiles that require routed P
 | REQ-008 Model and thinking selection are resolved | Session active model survives default change | `src/core/runtime.ts`, `test/session-model-source-of-truth.test.mjs` | Implemented |
 | REQ-009 Diagnostics are returned | Broken extension package | `src/core/runtime.ts` | Implemented |
 | REQ-010 Profile inspection is non-executing | Inspect profile with subagent | `src/core/runtime.ts`, `src/cli.ts`, `test/subagents.test.mjs` | Implemented |
-| REQ-011 Direct TUI refuses routed-only profiles | Subagent profile in direct TUI | `src/core/runtime.ts` | Implemented |
+| REQ-011 Build Context snapshots are read-only, ordered, and redacted | Inspect owned session startup context | `src/core/context-build.ts`, `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/context/ContextBuildView.tsx`, `test/context-build-inspector.test.mjs` | Implemented |
+| REQ-012 Direct TUI refuses routed-only profiles | Subagent profile in direct TUI | `src/core/runtime.ts` | Implemented |
 
 ## Verification Basis
 
-This spec is based on the current behavior in `src/core/runtime.ts`, `src/cli.ts`, `src/core/session-router.ts`, `src/tools/web-search.ts`, `src/tools/runtime/tool.ts`, `src/subagents/tool.ts`, `src/runs/tools.ts`, and related tests including `test/session-router-store.test.mjs`, `test/codex-compat.test.mjs`, `test/subagents.test.mjs`, `test/runtime-tool.test.mjs`, and `test/session-model-source-of-truth.test.mjs`.
+This spec is based on the current behavior in `src/core/runtime.ts`, `src/core/context-build.ts`, `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/context/ContextBuildView.tsx`, `src/cli.ts`, `src/core/session-router.ts`, `src/tools/web-search.ts`, `src/tools/runtime/tool.ts`, `src/subagents/tool.ts`, `src/runs/tools.ts`, and related tests including `test/context-build-inspector.test.mjs`, `test/session-router-store.test.mjs`, `test/codex-compat.test.mjs`, `test/subagents.test.mjs`, `test/runtime-tool.test.mjs`, and `test/session-model-source-of-truth.test.mjs`.

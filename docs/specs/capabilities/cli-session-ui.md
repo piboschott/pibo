@@ -2,6 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-16  
+**Updated:** 2026-05-17  
 **Owner / Source:** User request and `docs/reports/ink-cli-session-subset-report.md`  
 **Related docs:** `docs/specs/capabilities/chat-web-trace-and-terminal-view.md`, `docs/specs/capabilities/local-routed-tui.md`, `docs/specs/capabilities/shared-terminal-view-model.md`, `docs/specs/changes/ink-cli-session-ui/`
 
@@ -17,11 +18,13 @@ Provide an Ink-based native terminal UI for starting, selecting, and operating P
 
 ## Background / Current State
 
-Pibo already exposes terminal-related commands such as `pibo tui`, `pibo tui:routed`, and `pibo client`. The Web Chat UI provides the richer browser session interface, including the compact terminal view and trace-derived session rendering.
+Pibo exposes terminal-related commands such as `pibo tui`, `pibo tui:routed`, `pibo tui:sessions`, and `pibo client`. The Web Chat UI remains the richer browser session interface, including the compact terminal view and trace-derived session rendering.
+
+The implemented `pibo tui:sessions` command starts an Ink app for a reduced Web Chat-derived session workflow. It uses a `CliSessionSource` abstraction with fake and local/direct implementations, creates local `cli-session-ui` sessions, lists sessions/derived rooms and profiles, opens a bounded transcript viewport, sends messages through a local routed runtime when available, and supports `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`. The command rejects non-interactive stdin/stdout before rendering.
 
 The investigation in `docs/reports/ink-cli-session-subset-report.md` found that Ink can render a native terminal interface using React components, but it cannot directly reuse DOM-specific Web UI components such as `div`, `button`, Tailwind classes, `react-virtuoso`, `lucide-react`, `react-markdown`, or `@uiw/react-json-view`.
 
-The durable reuse point is the shared data and view-model layer: `PiboSessionTraceView`, trace events, and compact terminal rows.
+The durable reuse point is the shared data and view-model layer: `PiboSessionTraceView`, trace events, and compact terminal rows. Current tests cover reducer behavior, slash-command handling, redacted recovery messages, bounded terminal rendering, non-TTY rejection, command help, and fake-source smoke behavior.
 
 ## Scope
 
@@ -58,11 +61,11 @@ The CLI Session UI MUST present a reduced session/chat workflow derived from the
 
 #### Current
 
-The Web Chat UI contains session views, compact terminal rendering, workflow view registration, settings, context, projects, and other browser-first controls. Existing terminal commands do not provide the target session-selection and compact Ink view.
+The Web Chat UI contains session views, compact terminal rendering, workflow view registration, settings, context, projects, and other browser-first controls. `pibo tui:sessions` provides only the reduced session/chat subset and leaves Projects, Workflows, Cron, Ralph, Agent Designer, full Settings, context management, `/model`, `/thinking`, `/fork`, and `/details` outside V1.
 
 #### Target
 
-The CLI supports only the session/chat subset. Web-only capabilities remain discoverable and operable in the Web UI, not recreated in V1 CLI.
+The CLI continues to support only the session/chat subset. Web-only capabilities remain discoverable and operable in the Web UI, not recreated in V1 CLI.
 
 #### Acceptance
 
@@ -106,7 +109,7 @@ The CLI Session UI MUST let a user select or create a session with terminal cont
 
 #### Acceptance
 
-`/session` opens a terminal selection flow. `/new` creates a new session flow. Both flows return to the transcript after completion or cancellation.
+`/session` opens a terminal selection flow. `/new` creates a local CLI session through the selected source and opens it in the transcript. Both flows return to the transcript after completion or cancellation.
 
 ### Requirement: Agent selection is CLI-native and limited
 
@@ -114,7 +117,7 @@ The CLI Session UI MUST support selecting an existing agent/profile but MUST NOT
 
 #### Acceptance
 
-`/agent` lists available profiles from the canonical profile source for the session source. Selecting one applies it to new or current session behavior according to runtime capability. The CLI does not create, edit, or delete profiles.
+`/agent` lists available profiles from the session source. The local/direct source reads current plugin-registry profiles and custom agents converted to profile definitions. Selecting the current profile is a no-op; changing an existing local session profile is rejected with guidance to create a new session. The CLI does not create, edit, or delete profiles.
 
 ### Requirement: Transcript renders live compact session state
 
@@ -122,7 +125,7 @@ The CLI Session UI MUST show user messages, assistant output, tool calls, tool r
 
 #### Acceptance
 
-Given a trace view containing a user message, streaming/final assistant message, tool call, tool result, yielded run, and error, the Ink renderer produces bounded terminal output that includes each row with status markers and does not crash on missing optional fields.
+Given a trace view containing user and assistant output, and representative compact terminal rows, the Ink renderer produces bounded terminal output with status markers, truncation for narrow terminals, and an omitted-row notice for large sessions. It does not crash on missing optional fields.
 
 ### Requirement: Slash Commands are explicit and bounded
 
@@ -138,7 +141,7 @@ The CLI Session UI MUST fail clearly when required local state is unavailable an
 
 #### Acceptance
 
-If no session source is available, the CLI displays an actionable message. If stdout is not a TTY, the command does not start a broken interactive UI and either exits with a clear error or uses an explicitly documented non-interactive mode.
+If no sessions or rooms are available, the CLI displays an actionable message that points to `/new`. If stdin or stdout is not a TTY, the command exits before rendering with a clear error that instructs the operator to rerun from a terminal or SSH session.
 
 ## Edge Cases
 
@@ -163,19 +166,20 @@ If no session source is available, the CLI displays an actionable message. If st
 
 ## Success Criteria
 
-- [ ] SC-001: A user can run the CLI Session UI from a shell and create or select a Pibo session without opening Web Chat.
-- [ ] SC-002: The CLI renders compact transcript rows from shared `PiboSessionTraceView`/terminal row data.
-- [ ] SC-003: `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit` are implemented and documented.
-- [ ] SC-004: V1 CLI excludes Projects, Workflows, Cron, Ralph, Agent Designer, and full Settings surfaces.
+- [x] SC-001: A user can run the CLI Session UI from a shell and create or select a Pibo session without opening Web Chat, as source-inspected in `src/apps/cli-ui/cliSessionsCommand.ts` and covered by fake-source command tests.
+- [x] SC-002: The CLI renders compact transcript rows from shared `PiboSessionTraceView`/terminal row data, as covered by `test/cli-ui-session-app.test.mjs`.
+- [x] SC-003: `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit` are implemented and documented, as covered by `test/cli-ui-session-app.test.mjs`.
+- [x] SC-004: V1 CLI excludes Projects, Workflows, Cron, Ralph, Agent Designer, and full Settings surfaces, as documented in CLI help and slash help tests.
 - [ ] SC-005: Web Chat UI builds and behaves as before after shared view-model extraction.
-- [ ] SC-006: Ink rendering has snapshot/string tests for representative trace rows.
+- [x] SC-006: Ink rendering has snapshot/string tests for representative trace rows, as covered by `test/cli-ui-session-app.test.mjs`.
+- [x] SC-007: The command rejects non-interactive stdin/stdout before rendering, as covered by `test/cli-ui-session-app.test.mjs`.
 
 ## Assumptions and Open Questions
 
 ### V1 Scope Decisions
 
 - V1 command name is `pibo tui:sessions`.
-- V1 uses a local/direct session source first and keeps an interface open for later Gateway-backed operation.
+- V1 uses a local/direct session source first, with a fake/demo source and a debug PTY mocked-source seam, and keeps the `CliSessionSource` interface open for later Gateway-backed operation.
 - V1 Slash Commands are `/help`, `/new`, `/session`, `/agent`, `/status`, `/clear`, `/exit`, and `/quit`.
 - `/model`, `/thinking`, `/fork`, and `/details` are later-scope commands unless a separate spec approves them.
 - Room support in V1 depends on what the chosen local/direct session source can list without Web UI.
@@ -183,14 +187,20 @@ If no session source is available, the CLI displays an actionable message. If st
 ### Open Questions
 
 - What exact maximum row window should the first renderer use?
-- Which profile list is canonical for local/direct mode?
+- Should changing the profile of an existing local CLI session remain unsupported, or should the CLI add a separate current-session migration/action once runtime semantics are clear?
 
 ## Traceability
 
 | Requirement | Related change docs | Status |
 |---|---|---|
-| CLI subset of Web Chat | `docs/specs/changes/ink-cli-session-ui/spec.md` | Draft |
-| Shared terminal model | `docs/specs/capabilities/shared-terminal-view-model.md` | Draft |
-| Ink renderer | `docs/specs/changes/ink-cli-session-ui/design.md` | Draft |
-| Slash Commands | `docs/specs/changes/ink-cli-session-ui/spec.md` | Draft |
-| Web unchanged | `docs/specs/changes/ink-cli-session-ui/tasks.md` | Draft |
+| CLI subset of Web Chat | `src/apps/cli-ui/InkSessionApp.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `test/cli-ui-session-app.test.mjs` | Component-tested |
+| Shared terminal model | `src/session-ui/`, `src/shared/trace-types.ts`, `test/cli-ui-session-app.test.mjs` | Component-tested |
+| Ink renderer | `src/apps/cli-ui/InkSessionApp.ts`, `test/cli-ui-session-app.test.mjs` | Component-tested |
+| Slash Commands | `src/apps/cli-ui/InkSessionApp.ts`, `test/cli-ui-session-app.test.mjs` | Component-tested |
+| Local/direct session source | `src/cli-session/localSessionSource.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `test/cli-session-source.test.mjs` | Component-tested |
+| PTY validation seam | `src/debug/pty.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `test/debug-pty.test.mjs` | Source-inspected / partly component-tested |
+| Web unchanged | `docs/specs/changes/ink-cli-session-ui/tasks.md` | Source-inspected |
+
+## Verification Basis
+
+This spec was refreshed against current code in `src/cli.ts`, `src/apps/cli-ui/InkSessionApp.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `src/cli-session/sessionSource.ts`, `src/cli-session/localSessionSource.ts`, `src/cli-session/fakeSessionSource.ts`, `src/session-ui/`, `src/apps/chat/trace.ts`, `src/debug/pty.ts`, and tests including `test/cli-ui-session-app.test.mjs`, `test/cli-session-source.test.mjs`, and `test/debug-pty.test.mjs`.

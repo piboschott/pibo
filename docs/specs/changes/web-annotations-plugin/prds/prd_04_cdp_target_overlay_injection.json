@@ -1,0 +1,100 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-cdp-overlay-injection",
+  "description": "CDP target discovery/open/attach, session-bound overlay injection, stop/re-inject, recoverable target state, and optional debug CLI helpers.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract reusable CDP target helpers for annotations",
+      "description": "As a browser engineer, I want shared CDP helpers so that annotation flows reuse existing debug-web infrastructure instead of duplicating it.",
+      "acceptanceCriteria": [
+        "Review existing debug web and Browser Use CDP code before editing",
+        "Add or extract helpers for listing targets, opening a URL, attaching to a target, evaluating scripts, and detecting target close/reload state",
+        "Existing pibo debug web behavior remains unchanged",
+        "Focused tests or smoke checks pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented shared CDP client/target helpers in src/tools/cdp-client.ts and kept debug-web using the extracted client."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement URL annotation binding API",
+      "description": "As a Chat Web user, I want to enter a URL and create a session-bound browser target for annotation.",
+      "acceptanceCriteria": [
+        "Add authenticated API/service operation to create a binding for a URL from the active Pibo Session and Room",
+        "Open or attach a CDP target for the URL and persist binding metadata with owner scope, session id, room id, URL, target id when known, and created time",
+        "Return concise errors for invalid URL, CDP unavailable, or target creation failure",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented WebAnnotationCdpService URL binding and same-origin API POST /api/web-annotations/bindings with URL validation and concise errors."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement existing target attach binding API",
+      "description": "As a Chat Web user, I want to attach an already-open browser target so that I can annotate current page state.",
+      "acceptanceCriteria": [
+        "Add authenticated API/service operation to list reachable CDP targets with bounded title, URL, and target id fields",
+        "Add operation to bind one explicitly selected target to the active Pibo Session and Room",
+        "Do not inject into targets that were not selected",
+        "Failed injection or attach leaves no active binding or marks it recoverable according to store contract",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented bounded target listing and explicit existing-target binding through service/API."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement overlay inject stop and reinject",
+      "description": "As a user, I want annotation mode injected, stopped, and restored after reload without losing existing annotations.",
+      "acceptanceCriteria": [
+        "Inject the overlay script only into the target associated with the authorized binding",
+        "Pass scoped binding configuration/token to the overlay without exposing trusted owner/session fields as editable client data",
+        "Implement stop/remove overlay where possible and record injection state",
+        "Implement re-inject for an existing binding after reload or overlay disappearance",
+        "Focused tests or browser checks pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented authorized binding inject/reinject/stop operations with recoverable closed-target state and browser smoke coverage."
+    },
+    {
+      "id": "US-005",
+      "title": "Add optional progressive debug-web annotation helpers",
+      "description": "As an operator, I want optional CLI helpers only if they reuse the same store and preserve progressive discovery.",
+      "acceptanceCriteria": [
+        "If included, add pibo debug web annotation commands for start/list/show/resolve or equivalent using compact help and next-command guidance",
+        "If deferred, document the defer decision in the PRD README or change docs",
+        "CLI helpers reuse the Web Annotation binding/store service and do not create a separate persistence path",
+        "Focused tests pass if CLI is added",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Deferred dedicated debug-web annotation CLI; defer decision remains documented in PRD README/capability docs and no separate persistence path was added."
+    },
+    {
+      "id": "US-006",
+      "title": "Validate CDP binding lifecycle in browser fixtures",
+      "description": "As a QA engineer, I want browser checks for target binding and injection so that reloads and closed targets are recoverable.",
+      "acceptanceCriteria": [
+        "Validate URL annotation flow on a local static HTML page in a Docker compute worker",
+        "Validate existing-target attach flow on a local React dev page in a Docker compute worker",
+        "Verify stop and re-inject behavior after page reload",
+        "Verify target close reports a recoverable state and does not delete annotations",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Validated CDP binding lifecycle in the Docker worker on 2026-05-17: URL binding/inject/stop/reinject after reload on a local static HTML fixture, explicit existing-target attach/inject on a local Vite React fixture, and closed-target recoverable state with annotation persistence after target close. Docker worker typecheck, build, and focused tests passed."
+    }
+  ]
+}

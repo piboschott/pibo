@@ -15,11 +15,13 @@ The 2026-05-16 stuck-session incident showed the gap. Pibo could show `processin
 
 Pibo MUST provide bounded, progressively discoverable telemetry that lets an agent locate the active or failed phase of runtime work and drill into related provider, tool, queue, stream, session, and event facts without duplicating large payloads.
 
-## Background / Current State
+## Background / Proposal-Time Current State
 
-Today, `pibo debug` exposes stores, sessions, traces, events, jobs, runs, and signals. The event log stores normalized Pibo events and compact payload attributes. Signals expose current live status when a gateway URL is configured. The reliability stream can inspect output event topics.
+This change spec preserves the 2026-05-16 proposal baseline. Its `Current` sections describe the state before the observability telemetry implementation, not the current code after implementation. For source-backed current behavior, use the Runtime Observability Telemetry, Debug CLI, and Pibo Session Signals capability specs.
 
-Missing today:
+At proposal time, `pibo debug` exposed stores, sessions, traces, events, jobs, runs, and signals. The event log stored normalized Pibo events and compact payload attributes. Signals exposed current live status when a gateway URL was configured. The reliability stream could inspect output event topics.
+
+Missing at proposal time:
 
 - provider request lifecycle records,
 - raw provider event-type timelines,
@@ -29,6 +31,8 @@ Missing today:
 - timeout/staleness diagnostics,
 - optional bounded payload previews by selector, if previews are approved for V1,
 - debug commands that connect session status to provider/tool/span evidence.
+
+Implementation status as of the 2026-05-17 source audit: V1 telemetry is implemented in current code through `src/data/telemetry.ts`, `src/core/runtime-telemetry.ts`, `src/core/provider-telemetry.ts`, `src/core/telemetry-staleness.ts`, `src/debug/telemetry.ts`, and active signal hints in `src/signals/registry.ts`. `tasks.md` records the implementation tasks as complete; remaining product choices are tracked as open questions rather than current-code gaps.
 
 ## Scope
 
@@ -461,15 +465,15 @@ pibo debug telemetry prune --retention class --before iso-date [--dry-run|--appl
 
 | Requirement | Scenario / Story | Plan / Task | Status |
 |---|---|---|---|
-| Progressive discovery | Agent starts broad | tasks.md 1, 5 | Pending |
-| Correlation | Find provider request for stuck turn | tasks.md 2 | Pending |
-| Runtime phases | Partial tool-call phase | tasks.md 2, 3 | Pending |
-| Provider lifecycle | Provider stream stopped | tasks.md 3 | Pending |
-| Raw summaries | Unknown event type appears | tasks.md 3, 5 | Pending |
-| Tool-call progress | Args never complete | tasks.md 3 | Pending |
-| Stale active work | Session remains streaming | tasks.md 4, 5 | Pending |
-| Context budget | Noisy provider stream | tasks.md 5 | Pending |
-| Bounded/content-safe storage | Large provider payload exists | tasks.md 2, 3, 5 | Pending |
-| Retention | Stats/prune retention classes and preview-unavailable behavior | tasks.md 2, 5 | Pending |
-| Signal hints | UI shows stale hint | tasks.md 4 | Pending |
-| JSON output | Agent drill-down loop | tasks.md 5 | Pending |
+| Progressive discovery | Agent starts broad | tasks.md 1, 5; `src/debug/index.ts`; `test/debug-cli.test.mjs` | Implemented |
+| Correlation | Find provider request for stuck turn | tasks.md 2; `src/data/telemetry.ts`; `test/telemetry-store.test.mjs` | Implemented |
+| Runtime phases | Partial tool-call phase | tasks.md 2, 3; `src/core/runtime-telemetry.ts`; `test/runtime-telemetry.test.mjs` | Implemented |
+| Provider lifecycle | Provider stream stopped | tasks.md 3; `src/core/provider-telemetry.ts`; `test/runtime-telemetry.test.mjs` | Implemented |
+| Raw summaries | Unknown event type appears | tasks.md 3, 5; `src/core/runtime-telemetry.ts`; `src/debug/telemetry.ts` | Implemented |
+| Tool-call progress | Args never complete | tasks.md 3; `src/core/runtime-telemetry.ts`; `test/telemetry-stuck-tool-call-fixture.test.mjs` | Implemented |
+| Stale active work | Session remains streaming | tasks.md 4, 5; `src/core/telemetry-staleness.ts`; `test/telemetry-staleness.test.mjs` | Implemented |
+| Context budget | Noisy provider stream | tasks.md 5; `src/debug/telemetry.ts`; `test/debug-cli.test.mjs` | Implemented |
+| Bounded/content-safe storage | Large provider payload exists | tasks.md 2, 3, 5; `src/data/telemetry.ts`; `test/runtime-telemetry.test.mjs` | Implemented |
+| Retention | Stats/prune retention classes and preview-unavailable behavior | tasks.md 2, 5; `src/data/telemetry.ts`; `test/telemetry-store.test.mjs` | Implemented |
+| Signal hints | UI shows stale hint | tasks.md 4; `src/signals/registry.ts`; `test/signal-registry.test.mjs` | Implemented |
+| JSON output | Agent drill-down loop | tasks.md 5; `src/debug/telemetry.ts`; `test/debug-cli.test.mjs` | Implemented |

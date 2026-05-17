@@ -12,5 +12,7 @@ The current system baseline after the V2 data migration:
 Current canonical docs:
 
 - [Pibo Workflows](./workflows.md) — current Workflow System V1 capability contract, boundaries, persistence, inspection, and security rules.
+- [Web Annotations V1](./web-annotations.md) — Chat Web, CDP overlay, annotation attachment, lifecycle, privacy, and troubleshooting guide.
+- [Web Annotations Rollout Checklist](./web-annotations-rollout-checklist.md) — worker validation, browser checks, security gates, and deployment gates.
 
 Future canonical docs should be added here with clear ownership and current-state wording.

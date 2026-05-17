@@ -115,6 +115,8 @@ export type PiboCapabilityPackageInfo = {
 	name: string;
 	description: string;
 	toolNames: string[];
+	pluginId?: string;
+	pluginName?: string;
 };
 
 export type PiboCliToolContextInfo = {
@@ -219,6 +221,7 @@ export type PiboPluginApi = {
 	registerChannel(channel: PiboChannel): void;
 	registerAuthService(service: PiboAuthService): void;
 	registerWebApp(app: PiboWebApp): void;
+	registerCapabilityPackage(pkg: PiboCapabilityPackageInfo): void;
 	registerRalphStopCondition(condition: PiboRalphStopConditionDefinition): void;
 	onEvent(listener: PiboPluginEventListener): void;
 	emitProductEvent(event: PiboProductEventInput): PiboProductEvent;

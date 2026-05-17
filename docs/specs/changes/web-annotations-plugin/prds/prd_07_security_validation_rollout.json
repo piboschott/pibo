@@ -1,0 +1,83 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-security-validation-rollout",
+  "description": "Security boundaries, payload validation, redaction, tests, browser validation, documentation, and deployment rollout gates for Web Annotations.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add payload validation limits and redaction utilities",
+      "description": "As a security reviewer, I want bounded validated annotation payloads so that page-derived content cannot flood storage or prompts.",
+      "acceptanceCriteria": [
+        "Add shared validation schemas for binding creation, overlay submissions, status updates, thread messages, and message attachments",
+        "Enforce maximum lengths/counts for note, selector, DOM paths, text snippets, HTML hints, class summaries, accessibility hints, source raw metadata, thread messages, and attachment count",
+        "Add shared redaction/truncation utility for prompt rendering and UI/tool serializers where appropriate",
+        "Tests cover oversized fields, secret-like text, long HTML, and screenshot references",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in this run: added shared Web Annotation validation/redaction utilities and wired them into store/API/CDP/tool/attachment paths; added focused tests for oversized fields, secret-like redaction, long HTML/source raw metadata, thread limits, and screenshot reference omission from prompt context. Docker worker typecheck and focused build/tests passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Harden API and tool authorization tests",
+      "description": "As a maintainer, I want authorization tests across API and tool paths so that annotations cannot cross owner or session boundaries.",
+      "acceptanceCriteria": [
+        "Add tests for unauthorized owner/session access in annotation list/get/update APIs",
+        "Add tests for unauthorized owner/session access in native tools",
+        "Add tests for invalid or malformed binding tokens and overlay attempts to spoof owner/session/room fields",
+        "Add tests for stale composer attachment ids and invalid status transitions",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in this run: added focused API tests for cross-owner session rejection, cross-session get/patch isolation, malformed binding tokens, overlay spoofed owner/session/room fields, and invalid terminal status transitions; added native-tool tests for owner-scoped explicit session access and invalid applying->dismissed transition; extracted and tested shared composer attachment preparation for stale/terminal attachment ids. Docker worker typecheck and focused build/tests passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Add browser validation fixtures and checks",
+      "description": "As a QA engineer, I want deterministic browser fixtures so that overlay and Chat Web behavior can be validated before gateway deployment.",
+      "acceptanceCriteria": [
+        "Add or document a simple static HTML fixture for element, pin/region, large text, and missing source hints",
+        "Add or document a React dev fixture for stable attributes and source-hint capture where practical",
+        "Run browser checks for target open/attach, overlay inject, create annotation, reload/re-inject, attach to message, and resolve through tool/API path",
+        "Browser verification passes in a Docker compute worker",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed by adding deterministic browser fixtures under test/fixtures/web-annotations and scripts/validate-web-annotations-browser.mjs. Docker-worker validation covered URL target open, existing-target attach, overlay injection, element and pin annotation creation, reload/re-inject, bounded attachment context rendering, and API resolution. Docker typecheck and focused tests passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Update Web Annotations documentation and troubleshooting",
+      "description": "As an operator, I want docs for scope, privacy, and recovery so that I can use Web Annotations safely.",
+      "acceptanceCriteria": [
+        "Update docs with V1 user flow, tool list, status lifecycle, source-hint confidence, target close/reload recovery, and privacy behavior",
+        "Document that Chrome Extension support, public sharing, and automatic source edits are out of scope for V1",
+        "Document common errors: CDP unavailable, no targets, injection failed, cross-origin iframe unavailable, unauthorized annotation, and oversized payload",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed by docs/project/web-annotations.md plus capability/PRD README links. Docs cover V1 user flow, tool list, status lifecycle, source-hint confidence, target close/reload recovery, privacy behavior, V1 non-goals, and common troubleshooting errors. Docker typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Add rollout checklist and deployment gates",
+      "description": "As an operator, I want explicit validation gates so that production deployment only happens after worker and dev checks succeed.",
+      "acceptanceCriteria": [
+        "Add a rollout checklist under docs/project or the PRD README covering Docker worker validation, typecheck, unit tests, Chat Web build/typecheck, browser checks, dev deployment, and production approval",
+        "Checklist instructs using pibo compute worker workflow before code changes and ./scripts/deploy-web-dev.sh before production deployment",
+        "Checklist states production deploy requires explicit user approval",
+        "Do not deploy production in this story",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed by docs/project/web-annotations-rollout-checklist.md and PRD README link. Checklist covers Docker worker workflow, typecheck, focused tests, Chat Web validation, browser checks, security/privacy gates, dev deployment with ./scripts/deploy-web-dev.sh, explicit production approval, and no production deploy in this story. Docker typecheck passed."
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-chat-web-attachments",
+  "description": "Chat Web entry points, session annotation UI, composer attachment state, outgoing message metadata, and model-visible annotation context.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Chat Web annotation entry points",
+      "description": "As a Chat Web user, I want to start URL annotation or attach an existing browser target from the active session.",
+      "acceptanceCriteria": [
+        "Add UI action to annotate a URL from the current Pibo Session and Room",
+        "Add UI action to list and select an existing CDP target with bounded title and URL",
+        "Entry points are disabled or hidden when no active session context exists",
+        "Concise errors are shown for CDP unavailable, target not found, and injection failure",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed by Chat Web Web Annotations header entry point with URL annotation, optional CDP URL, target refresh/list, explicit attach actions, disabled active-session gating, concise error status, and DOM-ready injection guard for newly opened targets. Docker worker typecheck, build, focused web-annotation tests, and browser verification passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Add current-session annotation list or chips",
+      "description": "As a user, I want to see annotations for my active session so that I can choose what feedback to send.",
+      "acceptanceCriteria": [
+        "Add current-session annotations panel, drawer, or composer-adjacent chip strip",
+        "UI shows empty, loading, error, and populated states",
+        "Each annotation row/chip shows status, target kind/label, short note, URL host/path, and creation time",
+        "Resolved/dismissed visibility follows the PRD default or includes a clear filter if shown",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed by session-scoped Web Annotations panel with refresh, empty/loading/error/populated states, resolved/dismissed hidden by default, and bounded status/kind/label/note/URL/time chips. Docker typecheck/build/focused tests and browser UI verification passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement composer attach detach state",
+      "description": "As a user, I want to attach and detach one or more annotations before sending a message.",
+      "acceptanceCriteria": [
+        "Composer stores selected annotation ids separately from text input",
+        "Attach/detach controls update selection without mutating the annotation record until send",
+        "Selection clears after successful send or explicit composer clear",
+        "Stale or unauthorized selected ids are revalidated before send",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed by composer-selected annotation id state, attach/detach chip controls, clear action, send-time selected ids, post-send clearing, and stale selection pruning from refreshed session annotations. Docker typecheck/build/focused tests and browser attach/detach verification passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Persist outgoing annotation attachments",
+      "description": "As an agent, I want sent messages to carry annotation references so that structured feedback survives replay and inspection.",
+      "acceptanceCriteria": [
+        "Extend outgoing message payload or metadata to include annotation attachment references or normalized copies",
+        "Persist sent attachment data in the Chat Web event/log/read-model path used for replay",
+        "Update annotation status to attached or equivalent after successful send",
+        "Original annotation remains inspectable through store/tools after send",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed by outgoing Chat Web message support for webAnnotationIds, server-side owner/session revalidation, accepted event payload persistence with bounded webAnnotationAttachments and webAnnotationContext, model message text enrichment, and post-send annotation status update to attached. Docker typecheck/build/focused tests and browser send/status verification passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Render bounded model-visible annotation context",
+      "description": "As an agent, I want attached annotations rendered into a concise structured block so that I know exactly what the user means.",
+      "acceptanceCriteria": [
+        "Render a bounded <attached-web-annotations> block or equivalent into model-visible message content",
+        "Block includes annotation id, target kind, URL, label, selector or fallback, source hint summary, position, short text, and note when available",
+        "Block omits inline screenshot data and truncates/escapes HTML hints and long text",
+        "Prompt rendering tests cover multiple annotations, truncation, and missing source hints",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed by shared bounded attachment serializer and model-visible attached-web-annotations renderer covering id, kind, URL, label, selector/fallback, source hint, position, text, html hint, and note with truncation/escaping and no inline screenshot data. Focused rendering tests, Docker typecheck/build, and browser trace verification passed."
+    },
+    {
+      "id": "US-006",
+      "title": "Validate Chat Web annotation attachment flow",
+      "description": "As a QA engineer, I want browser checks for the full Chat Web flow so that users can create, attach, send, and review annotations.",
+      "acceptanceCriteria": [
+        "Browser check covers empty state and annotation list refresh",
+        "Browser check covers URL annotation action and existing-target attach action where CDP is available",
+        "Browser check covers attach/detach chip behavior and successful send",
+        "Browser check verifies model-visible trace or outgoing payload contains bounded annotation context",
+        "Browser verification passes",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Validated the full Chat Web annotation attachment flow in the Docker worker on 2026-05-17: empty state/list refresh, URL annotation UI action, existing-target attach UI action, overlay-created pin annotation, attach/detach/re-attach composer chip behavior, successful send, attached status update, and bounded trace context without inline image/base64 data. Docker worker typecheck, build, and focused web-annotation tests passed."
+    }
+  ]
+}

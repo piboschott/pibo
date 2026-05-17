@@ -1,0 +1,86 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-store-session-binding",
+  "description": "Typed Web Annotation records, durable binding and annotation storage, lifecycle operations, and owner/session isolation.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Web Annotation domain types",
+      "description": "As a backend engineer, I want shared Web Annotation types so that store, API, tools, and Chat Web use one contract.",
+      "acceptanceCriteria": [
+        "Add TypeScript types for annotation statuses, target kinds, bindings, targets, source hints, viewport, bounding box, screenshot references, and thread messages",
+        "Types include ownerScope, piboSessionId, optional piboRoomId, status, note, URL, target metadata, timestamps, and optional binding id",
+        "Export types from a location usable by store, API, tools, and Chat Web without creating circular dependencies",
+        "Focused type tests or compile checks cover the exported shapes",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed by shared exports in src/web-annotations/types.ts and src/web-annotations/index.ts. Types cover statuses, target kinds, bindings, targets, source hints, viewport, bounding boxes, screenshot references, thread messages, trusted owner/session fields, timestamps, and create/patch/list input shapes. Docker worker typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Add durable annotation binding storage",
+      "description": "As a user, I want browser target bindings tied to my current Pibo Session so that overlay submissions land in the right session.",
+      "acceptanceCriteria": [
+        "Add additive/idempotent storage for bindings keyed by owner scope, Pibo Session ID, optional Room ID, binding id, target id or URL, and created time",
+        "Store binding state fields for active/injected/error/closed or equivalent recoverable states",
+        "Add store operations to create, list by session, get, patch state, and remove bindings",
+        "Binding removal does not delete annotations",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed by WebAnnotationStore binding table and operations in src/web-annotations/store.ts. Bindings are keyed by owner scope, Pibo Session ID, optional Room ID, binding id, URL/target id, state, timestamps, metadata, and support create/list/get/patch/remove. Removal marks bindings removed and leaves annotations intact. Focused store tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Add durable annotation storage",
+      "description": "As an agent, I want annotation records to persist across gateway restarts so that feedback remains inspectable after target cleanup.",
+      "acceptanceCriteria": [
+        "Add additive/idempotent storage for annotations keyed by owner scope, Pibo Session ID, status, created time, and annotation id",
+        "Store target metadata, source hints, viewport, URL/title, note, screenshot artifact reference, and optional binding id within bounded fields",
+        "Add store operations to create, list by session/status/limit, and get one annotation",
+        "List returns newest-first by default and supports a bounded limit",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed by durable web_annotations table and create/list/get operations. Records persist owner scope, Pibo Session ID, optional Room ID, binding id, status, created time, URL/title, target metadata/source hints, viewport, screenshot references, and metadata JSON. Lists default newest-first with bounded limits and status filtering. Focused store tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Add annotation lifecycle and thread operations",
+      "description": "As an agent, I want to update annotation status and add summaries so that the user can track feedback progress.",
+      "acceptanceCriteria": [
+        "Add store operations to acknowledge, resolve, dismiss, and otherwise patch supported statuses with timestamps and optional summary/reason",
+        "Reject invalid status values and malformed update payloads",
+        "Add a bounded thread-message operation if thread messages are part of the V1 store contract",
+        "Persist updatedAt and resolvedAt/resolvedBy where applicable",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed by patchAnnotation plus acknowledge/resolve/dismiss helpers and bounded addThreadMessage. Runtime validation rejects invalid statuses, malformed resolvedBy/summary/metadata, empty thread content, and excessive thread messages; updates updatedAt and resolvedAt/resolvedBy where applicable. Focused store tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Test owner and session isolation",
+      "description": "As a security reviewer, I want store-level isolation tests so that unrelated sessions and owners cannot read or modify each other's annotations.",
+      "acceptanceCriteria": [
+        "Seed annotations for at least two owner scopes and two Pibo Sessions",
+        "Verify list/get/update paths require owner scope and return only authorized records",
+        "Verify listing annotations for one session does not return another session's annotations",
+        "Verify binding removal leaves historical annotations readable by authorized callers",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed by store tests seeding multiple owner scopes and sessions, verifying list/get/update isolation, and confirming binding removal leaves authorized historical annotations readable. Focused store tests and Docker worker typecheck passed."
+    }
+  ]
+}

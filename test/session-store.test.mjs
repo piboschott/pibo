@@ -114,6 +114,83 @@ test("default sqlite pibo session store uses PIBO_HOME, not cwd", async () => {
 	}
 });
 
+const contractStoreFactories = [
+	{
+		name: "in-memory",
+		async create() {
+			return { store: new InMemoryPiboSessionStore(), async cleanup() {} };
+		},
+	},
+	{
+		name: "sqlite",
+		async create() {
+			const dir = await mkdtemp(join(tmpdir(), "pibo-session-contract-"));
+			const store = new SqlitePiboSessionStore(join(dir, "sessions.sqlite"));
+			return {
+				store,
+				async cleanup() {
+					store.close();
+					await rm(dir, { recursive: true, force: true });
+				},
+			};
+		},
+	},
+];
+
+for (const factory of contractStoreFactories) {
+	test(`${factory.name} pibo session store supports unset updates and active model filters`, async () => {
+		const { store, cleanup } = await factory.create();
+		try {
+			const parent = store.create({
+				id: `ps_${factory.name}_parent`,
+				piSessionId: "11111111-1111-4111-8111-111111111111",
+				channel: "pibo.chat-web",
+				kind: "chat",
+				profile: "codex-compat-openai-web",
+				ownerScope: "user:user-1",
+				activeModel: { provider: "openai", id: "gpt-4.1" },
+			});
+			const child = store.create({
+				id: `ps_${factory.name}_child`,
+				piSessionId: "22222222-2222-4222-8222-222222222222",
+				channel: "pibo.subagents",
+				kind: "subagent",
+				profile: "researcher",
+				ownerScope: "user:user-1",
+				parentId: parent.id,
+				originId: parent.id,
+				workspace: "/workspace",
+				title: "Research",
+			});
+
+			assert.deepEqual(store.find({ activeModel: { provider: "openai", id: "gpt-4.1" } }).map((session) => session.id), [parent.id]);
+			assert.deepEqual(store.find({ activeModel: null }).map((session) => session.id), [child.id]);
+			assert.deepEqual(store.find({ parentId: null }).map((session) => session.id), [parent.id]);
+
+			const updated = store.update(child.id, {
+				parentId: null,
+				originId: null,
+				workspace: null,
+				title: null,
+				activeModel: { provider: "anthropic", id: "claude-3-7-sonnet" },
+			});
+
+			assert.equal(updated?.parentId, undefined);
+			assert.equal(updated?.originId, undefined);
+			assert.equal(updated?.workspace, undefined);
+			assert.equal(updated?.title, undefined);
+			assert.deepEqual(updated?.activeModel, { provider: "anthropic", id: "claude-3-7-sonnet" });
+			assert.deepEqual(store.find({ activeModel: { provider: "anthropic", id: "claude-3-7-sonnet" } }).map((session) => session.id), [child.id]);
+
+			const cleared = store.update(child.id, { activeModel: null });
+			assert.equal(cleared?.activeModel, undefined);
+			assert.deepEqual(store.find({ activeModel: null }).map((session) => session.id).sort(), [child.id]);
+		} finally {
+			await cleanup();
+		}
+	});
+}
+
 test("sqlite pibo session store persists structured session fields", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "pibo-sessions-"));
 	const dbPath = join(dir, "sessions.sqlite");

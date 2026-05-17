@@ -204,7 +204,7 @@ This spec was derived from current workspace code in:
 - `src/apps/chat/web-app.ts`
 - `src/apps/chat/output-compactor.ts`
 - `src/apps/chat/output-event-policy.ts`
-- `src/apps/chat/data/ingest-service.ts`
+- `src/data/ingest-service.ts`
 - `src/data/pibo-store.ts`
 - `src/reliability/store.ts`
 

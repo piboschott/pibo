@@ -7,7 +7,7 @@
 
 ## Why
 
-Pibo is built from plugins. Plugins register tools, profiles, skills, subagents, context files, gateway actions, channels, auth services, web apps, and event listeners. Runtime creation, Chat Web, context-file editing, gateway actions, and agent design all depend on one consistent product-facing registry.
+Pibo is built from plugins. Plugins register tools, profiles, skills, subagents, context files, gateway actions, channels, auth services, web apps, Ralph stop conditions, and event listeners. Runtime creation, Chat Web, context-file editing, gateway actions, Ralph job control, and agent design all depend on one consistent product-facing registry.
 
 The registry must reject ambiguous registrations early and expose a stable capability catalog so UIs and profiles can discover what an agent may select without activating everything in the catalog.
 
@@ -19,7 +19,7 @@ The plugin registry MUST provide a deterministic, collision-safe registration bo
 
 Current code defines `PiboPluginRegistry` as the central in-process registry. Built-in registries are assembled from `piboCorePlugin`, `piboCodexCompatPlugin`, and, for the gateway producer profile only, `piboGatewayProducerPlugin`. Profiles are created by resolving a profile name or alias and then calling the profile definition with a build context that can fetch registered tools, skills, context files, and subagents by name.
 
-The capability catalog includes registered native tools, skills, subagents, context files, the `pibo-run-control` capability package, installed curated Pibo CLI tool context hints, configured MCP server metadata placeholder data, and locally registered Pi packages. Catalog membership alone does not imply runtime activation.
+The capability catalog includes registered native tools, skills, subagents, context files, the `pibo-run-control` capability package, installed curated Pibo CLI tool context hints, configured MCP server metadata placeholder data, locally registered Pi packages, and registered Ralph stop-condition definitions. Catalog membership alone does not imply runtime activation.
 
 ## Scope
 
@@ -31,6 +31,7 @@ The capability catalog includes registered native tools, skills, subagents, cont
 - Gateway action and slash-command registration rules.
 - Auth service, channel, and web app registration boundaries.
 - Plugin event and product-event listener behavior.
+- Ralph stop-condition definition registration and catalog metadata.
 
 ### Out of Scope
 
@@ -71,7 +72,7 @@ The system MUST reject duplicate registrations for resource kinds that are addre
 
 #### Current
 
-The registry rejects duplicate tools, subagents, skills, profiles, gateway actions, channels, web app names, context-file keys, and plugin ids. Context files and profiles also have explicit upsert or removal paths for dynamic product state.
+The registry rejects duplicate tools, subagents, skills, profiles, gateway actions, channels, web app names, context-file keys, Ralph stop-condition types, and plugin ids. Context files and profiles also have explicit upsert or removal paths for dynamic product state.
 
 #### Target
 
@@ -81,6 +82,7 @@ Ambiguous product capabilities fail during registration, not when a runtime or U
 
 - Registering two native tools with the same name throws a duplicate-tool error.
 - Registering two gateway actions with the same action name throws a duplicate-action error.
+- Registering two Ralph stop conditions with the same type throws a duplicate stop-condition error.
 - `upsertProfile` replaces the named dynamic profile and refreshes only that profile's aliases.
 - `upsertContextFile` replaces the context file at its resolved key.
 
@@ -156,6 +158,7 @@ Agent Designer, settings UIs, and channel contexts can list available capabiliti
 - A catalog Pi package does not appear in a created profile unless the profile selected it.
 - Native tools report whether they are yieldable, whether they have a local function definition, and whether they are provider-backed.
 - The run-control package appears as one named package with all `pibo_run_*` tool names.
+- Registered Ralph stop conditions appear in `catalog.ralphStopConditions` with type, name, description, phases, option schema, defaults, and plugin attribution.
 
 #### Scenario: Catalog package does not activate runtime package
 
@@ -257,6 +260,31 @@ A web gateway or channel context cannot accidentally choose between competing au
 - WHEN registry creation runs
 - THEN creation fails and reports the already registered auth service
 
+### Requirement: Ralph stop conditions are registered through plugins
+
+The system MUST let plugins register discoverable Ralph stop-condition definitions and MUST reject ambiguous stop-condition types.
+
+#### Current
+
+`registerRalphStopCondition()` validates non-empty type and name, requires at least one supported phase, stores the condition with plugin attribution, rejects duplicate condition types, and exposes definitions through `getRalphStopConditionDefinitions()`, `getRalphStopConditionInfos()`, and `getCapabilityCatalog().ralphStopConditions`.
+
+#### Target
+
+Ralph can discover plugin-provided stop conditions without hard-coding every stop policy into the Ralph CLI or Chat Web code.
+
+#### Acceptance
+
+- A stop condition with a blank type, blank name, or no supported phase is rejected.
+- Two stop conditions with the same type cannot both register.
+- Catalog entries include plugin id and plugin name when registered through a plugin.
+- Returning catalog metadata does not start or evaluate a Ralph job.
+
+#### Scenario: Duplicate Ralph stop condition fails fast
+
+- GIVEN a plugin registers stop condition type `promise-complete`
+- WHEN another plugin registers the same type
+- THEN registry creation fails with a duplicate stop-condition error
+
 ### Requirement: Plugin listener failures are contained
 
 The system MUST call registered output-event and product-event listeners and MUST contain listener failures so one failing listener does not crash event dispatch.
@@ -287,6 +315,7 @@ Plugin event integrations remain observable while failures are reported through 
 - Context-file keys default to `key`, then `label`, then `path`; collisions at the resolved key are duplicate context files.
 - Managed context files are not re-attributed to the registering plugin when they are upserted.
 - Provider-backed native tools may have no local function definition but still appear as available native tools.
+- Ralph stop-condition catalog entries describe policy metadata only; evaluation remains owned by Ralph.
 - Hidden gateway actions can still be fetched by name, but they do not appear in discovery output and do not claim slash commands.
 - A registry composition can intentionally differ by environment, such as the gateway producer registry exposing `pibo-gateway-producer` while the default registry does not.
 
@@ -301,7 +330,7 @@ Plugin event integrations remain observable while failures are reported through 
 
 - [ ] SC-001: Default registry creation succeeds and exposes the expected built-in profiles, core native tools, gateway actions, and Codex-compatible profile aliases.
 - [ ] SC-002: Duplicate plugin ids, duplicate resource keys, duplicate slash commands, duplicate auth services, and overlapping web routes fail during registration.
-- [ ] SC-003: `getCapabilityCatalog()` returns descriptive capability metadata without changing any created profile's selected capabilities.
+- [ ] SC-003: `getCapabilityCatalog()` returns descriptive capability metadata, including Ralph stop-condition metadata, without changing any created profile's selected capabilities.
 - [ ] SC-004: Profile creation fails when a profile definition references an unregistered capability.
 - [ ] SC-005: Plugin and product event listener errors are captured in registry diagnostics instead of escaping event dispatch.
 
@@ -330,4 +359,5 @@ Plugin event integrations remain observable while failures are reported through 
 | REQ-007 Gateway action slash commands are explicit and collision-free | Duplicate slash command fails fast | `src/plugins/registry.ts`, `test/plugin-registry.test.mjs` | Specified |
 | REQ-008 Web app routes do not overlap | Nested web app mount is rejected | `src/plugins/registry.ts`, `test/plugin-registry.test.mjs` | Specified |
 | REQ-009 Only one auth service may own the registry | Duplicate auth service is rejected | `src/plugins/registry.ts`, `test/plugin-registry.test.mjs` | Specified |
-| REQ-010 Plugin listener failures are contained | Product event is normalized | `src/plugins/registry.ts`, `src/plugins/types.ts` | Specified |
+| REQ-010 Ralph stop conditions are registered through plugins | Duplicate Ralph stop condition fails fast | `src/plugins/registry.ts`, `src/plugins/types.ts`, `src/ralph/types.ts` | Source-backed |
+| REQ-011 Plugin listener failures are contained | Product event is normalized | `src/plugins/registry.ts`, `src/plugins/types.ts` | Specified |

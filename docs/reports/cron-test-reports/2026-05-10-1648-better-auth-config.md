@@ -105,3 +105,19 @@ npm run build && node --test test/better-auth-config.test.mjs test/config.test.m
 3. `test/config.test.mjs` um `auth.databasePath` und JSON-Array-Parsing ergänzen.
 4. `test/web-gateway.test.mjs` um invalides `baseURL`-Fallback und nicht-lokale DNS-Base-URL ergänzen.
 5. Falls Dev-Auth-Runtime-Erkennung weiter wachsen soll: `isDockerRuntime()` testbarer machen, statt Docker/Host-Zustand direkt in Unit-Tests zu erzwingen.
+
+## Umgesetzt am 2026-05-11 11:54 Europe/Berlin
+
+- Bereich: Granulare Better-Auth-Konfigurationstests für leere Pflichtoptionen sowie `createTrustedOrigins()`-Matrix für IPv6-Loopback und Deduplikation konfigurierter Origins.
+- Geänderte Dateien: `test/better-auth-config.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1648-better-auth-config.md`.
+- Ausgeführte Kommandos: `npm run build && node --test test/better-auth-config.test.mjs`.
+- Ergebnis: Build erfolgreich; `test/better-auth-config.test.mjs` mit 5/5 Tests bestanden.
+- Verbleibende offene Punkte: Weitere empfohlene Subsets für `auth.databasePath`, JSON-Array-Parsing in `test/config.test.mjs`, Gateway-Resolver-Base-URL-Fälle und Plugin-Registrierung sind noch offen.
+
+## Umgesetzt am 2026-05-11 14:53 Europe/Berlin
+
+- Bereich: Config-Tests für `auth.databasePath`-Roundtrip sowie JSON-Array-Parsing und Validierung von `auth.allowedEmails`/`auth.trustedOrigins`.
+- Geänderte Dateien: `test/config.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1648-better-auth-config.md`.
+- Ausgeführte Kommandos: `node --test test/config.test.mjs`.
+- Ergebnis: Grün; `test/config.test.mjs` mit 4/4 Tests bestanden.
+- Verbleibende offene Punkte: Gateway-Resolver-Base-URL-Fälle und Plugin-Registrierung bleiben offen; das `auth.databasePath`-/JSON-Array-Subset aus diesem Report ist abgedeckt.

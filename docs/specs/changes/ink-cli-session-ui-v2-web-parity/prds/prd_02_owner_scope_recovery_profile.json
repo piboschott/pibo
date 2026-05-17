@@ -1,0 +1,90 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-owner-scope-recovery",
+  "description": "Resolve an effective owner scope for host-root CLI recovery, add owner switching, Root recovery profile, and prevent user:unknown sessions.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add owner discovery and Root recovery owner",
+      "description": "As a host-root CLI operator, I want the CLI to discover Web users or fall back to Root recovery so sessions always have a real owner scope.",
+      "acceptanceCriteria": [
+        "Implement owner discovery from rooms, sessions, session_navigation, custom agents, and Better Auth data where available",
+        "Define a stable Root recovery owner scope that is not user:unknown and has no email requirement",
+        "Ensure the selected or fallback owner has a Personal Chat/default room available",
+        "Focused tests cover no owners, one owner, and multiple owners",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in 13c0b33. Implemented LocalCliSessionSource owner discovery and active owner resolution from explicit --owner-scope, session store, Pibo data rooms/session_navigation/sessions/event_log actor owner scopes, and custom-agent owner hints passed by the default CLI source context. Added stable Root recovery owner local:root with label Root recovery and no email requirement. listRooms/getStatus/createSession now ensure or expose a selected-owner Personal Chat/default room; createSession without owner no longer silently writes user:unknown and uses the resolved owner/default room. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs test/cli-ui-session-app.test.mjs' passed 25/25 focused tests (real source/unit path, no PTY required for this source-contract story). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' was run; it failed in unrelated telemetry-store.test.mjs stale/prune test that also fails standalone, while this story's focused tests passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement owner picker and active owner state",
+      "description": "As a recovery operator, I want to choose the effective user/profile before rooms and sessions are shown.",
+      "acceptanceCriteria": [
+        "Startup uses --owner-scope when provided and otherwise resolves or prompts for an owner before room navigation",
+        "Multiple owners show an Ink owner picker with keyboard navigation",
+        "Header and /status include active owner label and scope",
+        "pibo debug pty scenario asserts owner picker appears with multiple owners",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in 19aea5d. Implemented startup active-owner state for the Ink CLI with a keyboard owner picker when multiple owners are discovered, explicit --owner-scope skip behavior, mutable CliSessionSource.setActiveOwner(), and header/status propagation through the selected owner label/scope. The fake and local sources now support switching the effective owner; selection closes any open handle before room navigation. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 28/28 focused tests (real source/unit path plus Ink render/reducer tests). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-owner-room && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-owner-room --timeout-ms 45000 --idle-timeout-ms 12000 --cols 100 --rows 28 --wait-for \"Select effective owner\" --expect \"Web user alpha\" --expect \"Web user beta\" --press Down --press Enter --wait-for \"Select room for Web user beta\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --press CtrlC -- env PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:alpha,user:beta node dist/bin/pibo.js tui:sessions' passed (real PTY path with deterministic mocked local router/source, not live provider); scripted assertions waited for the owner picker, asserted Web user alpha and Web user beta, selected beta with Down/Enter, then continued to room/session creation. Raw PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-room/raw.ansi.log. Clean PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-room/clean.txt. Observed clean output shows \"Select effective owner\", selected \"Web user beta (user:beta)\" in the header, and continued without user:unknown. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' was run; 489/490 tests passed and the only failure remained the pre-existing unrelated telemetry-store.test.mjs stale/prune assertion."
+    },
+    {
+      "id": "US-003",
+      "title": "Add /owner or /profile switch flow",
+      "description": "As a CLI operator, I want to switch the effective owner during a recovery session so I can inspect another user's rooms and sessions.",
+      "acceptanceCriteria": [
+        "Add /owner or /profile command to open the owner picker",
+        "Switching owners closes or clears the active session unless it belongs to the new owner",
+        "Rooms, sessions, agents, and slash actions reload for the selected owner",
+        "Sending to a session owned by another owner is rejected with a clear error",
+        "pibo debug pty scenario switches owner and asserts room list changes",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed in 21dc2e6c35252141d37182d3aa59fa62678dfb7a. Implemented /owner and /profile commands that open the effective-owner picker during a CLI session. Selecting a different owner uses the existing owner picker path to close the open session, clear transcript/session state, and reload rooms for the selected owner; the header and status then show the new active owner. Added source-side owner mismatch protection in the fake CLI source to mirror local-source owner validation so sends/profile changes against a session owned by another active owner fail clearly instead of crossing owner scopes. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 30/30 focused tests (real build plus focused unit/source/Ink paths). docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-owner-switch && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-owner-switch --timeout-ms 60000 --idle-timeout-ms 15000 --cols 110 --rows 30 --wait-for \"Select effective owner\" --expect \"Web user alpha\" --expect \"Web user beta\" --press Enter --wait-for \"Select room for Web user alpha\" --expect \"Alpha Room\" --press Down --press Enter --wait-for \"New session in Alpha Room\" --press Enter --wait-for \"Created session\" --type \"/owner\" --press Enter --wait-for \"Select effective owner\" --press Down --press Enter --wait-for \"Select room for Web user beta\" --expect \"Beta Room\" --expect \"Pibo CLI Sessions | local/direct | Web user beta (user:beta)\" --press CtrlC -- env PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:alpha,user:beta PIBO_DEBUG_PTY_CLI_SESSIONS_ROOMS=\"user:alpha|room_alpha|Alpha Room;user:beta|room_beta|Beta Room\" node dist/bin/pibo.js tui:sessions' passed (real PTY path with deterministic mocked local router/source, not live provider); scripted assertions selected alpha, created a session in Alpha Room, ran /owner, switched to beta, and observed Beta Room plus the beta owner header. Raw PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-switch/raw.ansi.log. Clean PTY artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-owner-switch/clean.txt. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Prevent and repair user:unknown CLI sessions",
+      "description": "As an admin, I want diagnostics and repair for legacy user:unknown sessions so they can be reassigned safely and no new ones are created accidentally.",
+      "acceptanceCriteria": [
+        "New CLI session creation, user message ingest, assistant event ingest, and navigation writes never silently use user:unknown",
+        "Legacy user:unknown sessions are excluded from default new-write flows unless explicitly selected or repaired",
+        "Provide a CLI diagnostic or repair path to reassign legacy CLI sessions to a selected owner",
+        "Tests cover sessions.owner_scope and session_navigation.owner_scope updates",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed in 1b442ef. Implemented LocalCliSessionSource.repairLegacyUserUnknownSessions() and the Ink /repair-user-unknown diagnostic/repair command. The repair path refuses target owner user:unknown, scans legacy CLI sessions currently stored as user:unknown, reassigns only CLI-origin sessions (channel cli-session-ui or metadata source pibo tui:sessions) to the selected owner, maps them to the selected/default room, updates sessions.owner_scope/sessions.room_id through the Pibo data session/read model, and upserts session_navigation with the selected owner/room/status. Existing default owner discovery still excludes user:unknown unless explicitly selected, and new create/send paths continue using the selected owner. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed after a test-only regex fix; rerun docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 36/36 focused tests. Focused tests cover sessions.owner_scope/session_navigation.owner_scope repair, skipped non-CLI user:unknown rows, invalid repair target rejection, and the Ink command invoking source repair for the active owner/room. Path classification: real local source/unit integration against temp PiboDataStore plus Ink command reducer path; no PTY was required by this repair story because no startup/send TUI path changed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 498 tests; 497 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-005",
+      "title": "Verify selected Web owner sessions appear in Web UI",
+      "description": "As a Web user, I want sessions created through host-root CLI impersonation to appear in my Web Personal Chat or selected room.",
+      "acceptanceCriteria": [
+        "pibo debug pty creates a session as a selected Web owner in Personal Chat and sends a message through the real router/source path",
+        "Store/API/Web navigation check confirms the created session is visible for that owner and room",
+        "The session URL /rooms/<roomId>/sessions/<sessionId> opens or is returned for manual verification",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed in f4c2aa6. Verified that a host-root CLI run using explicit selected Web owner user:pty creates Web-visible sessions in that owner\u2019s Personal Chat/default room and sends a message through the local CLI source/read-model path. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-new-web .tmp/pty-new-web-home && mkdir -p .tmp/pty-new-web-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-new-web --timeout-ms 60000 --idle-timeout-ms 15000 --cols 120 --rows 32 --wait-for \"Select room for Web user pty\" --expect \"Personal Chat\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/new\" --press Enter --wait-for \"Created session\" --type \"Persist from PTY\" --press Enter --wait-for \"PTY assistant persisted\" --expect \"Message sent\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-new-web-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_ASSISTANT_REPLY=\"PTY assistant persisted\" node dist/bin/pibo.js tui:sessions --owner-scope user:pty' passed (real PTY path with LocalCliSessionSource plus deterministic mocked local router to avoid live provider credentials; no FakeCliSessionSource/demo path). Scripted assertions selected Personal Chat for Web user pty, created a session, ran /new in the active room, sent Persist from PTY, waited for the assistant reply PTY assistant persisted, and expected Message sent. PTY artifacts: raw /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-new-web/raw.ansi.log; clean /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-new-web/clean.txt. Store/API read-model check queried /workspace/.tmp/pty-new-web-home/pibo.sqlite after the PTY run and confirmed latest session ps_e55f4202-e8d9-4de4-9830-b17598c1d881 has sessions.owner_scope=user:pty, sessions.room_id=room_6b3d9f0e-5d58-4cc0-bfaa-ff3ee2665107, session_navigation owner/room/status idle with last_message_preview=PTY assistant persisted, chat_messages rows for user Persist from PTY and assistant PTY assistant persisted in the same room, and event_log rows for user.message.accepted and assistant_message in the same room. Web URL for manual verification: http://127.0.0.1:4822/apps/chat/rooms/room_6b3d9f0e-5d58-4cc0-bfaa-ff3ee2665107/sessions/ps_e55f4202-e8d9-4de4-9830-b17598c1d881. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/ink-cli-v2-current-state.test.mjs' passed 32/32 focused tests. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 494 tests; 493 passed and only the pre-existing unrelated telemetry-store.test.mjs stale/prune assertion failed."
+    }
+  ]
+}

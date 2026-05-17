@@ -76,6 +76,28 @@ test("compact row generation covers core terminal row kinds deterministically", 
 	assert.match(rowText(rows[5]), /Error boom/);
 });
 
+test("compact row generation preserves streaming order metadata and running state", () => {
+	const rows = buildCompactTerminalRows(traceView([
+		traceNode("user.message", "node-user", { order: 1, status: "done", output: "Start work", orderKey: { streamId: 1, streamFrameIndex: 0 }, source: "event-log", eventId: "evt-user" }),
+		traceNode("model.reasoning", "node-thinking", { order: 2, status: "running", output: "Considering next step", orderKey: { streamId: 1, streamFrameIndex: 1 }, source: "stream", eventId: "evt-thinking" }),
+		traceNode("tool.call", "node-tool-running", { order: 3, status: "running", title: "read", input: { path: "src/index.ts" }, output: "opening file", orderKey: { streamId: 1, streamFrameIndex: 2 }, source: "stream", eventId: "evt-tool" }),
+		traceNode("assistant.message", "node-assistant-running", { order: 4, status: "running", output: "Partial answer", orderKey: { streamId: 1, streamFrameIndex: 3 }, source: "stream", eventId: "evt-assistant" }),
+		traceNode("execution.command", "node-status", { order: 5, status: "done", title: "status", output: { processing: true, streaming: true, queuedMessages: 1, contextUsage: { tokens: 25, contextWindow: 100, percent: 25 } }, orderKey: { streamId: 1, streamFrameIndex: 4 }, source: "local-ui", eventId: "evt-status" }),
+	]), { showThinking: true });
+
+	assert.deepEqual(rows.map((row) => [row.id, row.kind, row.status, row.orderSource, row.orderStreamId, row.orderStreamFrameIndex]), [
+		["node-user", "message.user", "done", "event-log", 1, 0],
+		["node-thinking", "reasoning", "running", "stream", 1, 1],
+		["node-tool-running", "tool.call", "running", "stream", 1, 2],
+		["node-assistant-running", "message.assistant", "running", "stream", 1, 3],
+		["node-status", "tool.status", "done", "local-ui", 1, 4],
+	]);
+	assert.match(rowText(rows[1]), /Thinking/);
+	assert.match(rowText(rows[2]), /Calling/);
+	assert.equal(rows[3].output, "Partial answer");
+	assert.equal(rows[4].output.processing, true);
+});
+
 test("compact row previews handle long text, JSON-like values, empty values, and missing fields", () => {
 	const longLine = "x".repeat(240);
 	const rows = buildCompactTerminalRows(traceView([

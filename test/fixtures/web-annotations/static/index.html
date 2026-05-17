@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pibo Web Annotation Static Fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 40px; }
+    main { max-width: 760px; }
+    .card { border: 1px solid #94a3b8; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    .primary { background: #0f766e; color: white; border: 0; border-radius: 8px; padding: 12px 18px; }
+    .pin-zone { height: 160px; background: linear-gradient(135deg, #e0f2fe, #f8fafc); border: 1px dashed #38bdf8; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 data-pibo-id="static-heading">Static annotation fixture</h1>
+    <section class="card" aria-label="Checkout card">
+      <p id="large-copy">This fixture includes intentionally long copy for truncation checks. The annotation overlay should cap snippets and must not copy full page bodies into model-visible context by default.</p>
+      <button id="primary-action" class="primary" data-testid="checkout-save" aria-label="Save checkout changes">Save changes</button>
+    </section>
+    <section class="card">
+      <h2>Missing source hint target</h2>
+      <p class="anonymous-target">This paragraph has no stable source metadata so the overlay should fall back to DOM selector, text, and geometry.</p>
+    </section>
+    <section class="card pin-zone" aria-label="Free pin target area">Free pin target area</section>
+    <iframe title="Cross-origin unavailable example" src="https://example.com" width="320" height="80"></iframe>
+  </main>
+</body>
+</html>

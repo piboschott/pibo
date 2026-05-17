@@ -15,7 +15,7 @@ Pibo MUST manage user skills as durable local `SKILL.md` resources, expose them 
 
 ## Background / Current State
 
-Current code stores user skill metadata in `.pibo/user-skills.json` and each skill body in `.pibo/user-skills/<name>/SKILL.md`. `UserSkillManager` wraps store operations and remote installation. `pibo skills` provides CLI management. Chat Web exposes `/api/chat/user-skills*` endpoints and a Settings skills panel. Enabled user skills are synchronized into the channel capability registry as `kind: "user"` entries and then become selectable by Custom Agents.
+Current code stores user skill metadata in `.pibo/user-skills.json` and each skill body in `.pibo/user-skills/<name>/SKILL.md` under the configured user-skill root. The `pibo skills` CLI and Chat Web create `UserSkillManager` with `os.homedir()`, so current user skills are user-home resources rather than workspace-local resources. `UserSkillManager` wraps store operations and remote installation. `pibo skills` provides CLI management. Chat Web exposes `/api/chat/user-skills*` endpoints and a Settings skills panel. Enabled user skills are synchronized into the channel capability registry as `kind: "user"` entries and then become selectable by Custom Agents.
 
 Skill descriptions live in `SKILL.md` frontmatter. The JSON store keeps identity, path, enabled state, source, source URL, and timestamps. Runtime inline expansion can append referenced skill content for `$skill-name` tokens from the runtime resource loader.
 
@@ -179,7 +179,7 @@ The system MUST register enabled user skills as user-owned skill capabilities an
 - Enabled user skills appear in the capability catalog as `kind: "user"` without plugin attribution.
 - Disabled or removed user skills no longer appear as selectable user skills after synchronization.
 - Repeated synchronization is idempotent and does not trip duplicate registry guards.
-- Enabling a user skill whose name conflicts with an existing catalog skill is rejected.
+- Enabling, creating, installing, or renaming a user skill to a name that conflicts with an existing catalog skill is rejected or rolled back.
 
 #### Scenario: Disable selected skill
 
@@ -262,13 +262,13 @@ When runtime text references selected skills with `$skill-name`, the system MUST
 
 ### Assumptions
 
-- User skills are local product resources, not owner-scoped database records, in the current implementation.
+- User skills are local user-home product resources, not owner-scoped database records or workspace-local records, in the current CLI and Chat Web implementation.
 - The current simple YAML parser only needs key/value frontmatter for `name` and `description`.
 - Remote source trust will be specified separately if Pibo adds signatures, review, or allowlists.
 
 ### Open Questions
 
-- Should CLI user skills be rooted at the workspace instead of `os.homedir()` for consistency with Chat Web and tests?
+- Should user skills become owner-scoped or workspace-scoped records instead of `os.homedir()` resources?
 - Should deleting or disabling a skill warn when Custom Agents currently select it?
 - Should remote installation support branches other than the default branch through GitHub API URLs?
 - Should skill markdown size be bounded at API and CLI input boundaries?
@@ -282,8 +282,8 @@ When runtime text references selected skills with `$skill-name`, the system MUST
 | REQ-003 Frontmatter owns user-visible description | Imported markdown has frontmatter | `src/user-skills/store.ts`, `test/user-skills.test.mjs` | Specified |
 | REQ-004 CLI manages user skills directly | Unknown skill show | `src/skills/cli.ts`, `src/user-skills/manager.ts` | Specified |
 | REQ-005 Remote installation accepts only supported skill sources | Download has no skill file | `src/user-skills/installer.ts` | Specified |
-| REQ-006 Chat Web user-skill APIs are authenticated same-origin JSON endpoints | Cross-site mutation | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts` | Specified |
-| REQ-007 Enabled user skills synchronize into the capability catalog | Disable selected skill | `src/apps/chat/web-app.ts`, `src/plugins/registry.ts` | Specified |
+| REQ-006 Chat Web user-skill APIs are authenticated same-origin JSON endpoints | Cross-site mutation | `src/apps/chat/web-app.ts`, `src/apps/chat-ui/src/api.ts` | Source-backed |
+| REQ-007 Enabled user skills synchronize into the capability catalog | Disable selected skill | `src/apps/chat/web-app.ts`, `src/plugins/registry.ts` | Source-backed |
 | REQ-008 Custom Agents select user skills by capability name | Deleted selected skill | `src/apps/chat/agent-profiles.ts`, `src/apps/chat/web-app.ts` | Specified |
 | REQ-009 Runtime inline expansion loads selected skill bodies safely | Escaped and unknown references | `src/core/skill-expansion.ts`, `src/core/routed-session.ts` | Specified |
 
@@ -291,5 +291,6 @@ When runtime text references selected skills with `$skill-name`, the system MUST
 
 - `npm test -- --test-name-pattern="user skill"` for store/frontmatter behavior when the project test runner supports filtering.
 - `npm run typecheck` for API and profile integration type safety.
-- Manual CLI checks with `pibo skills list`, `add`, `show`, `enable`, `disable`, and `remove` in a temporary Pibo home.
+- `test/skills-cli.test.mjs` for CLI help, JSON list output, and frontmatter description parsing.
+- Manual CLI checks with `pibo skills list`, `add`, `show`, `enable`, `disable`, and `remove` in a temporary user home.
 - Manual Chat Web checks against `/api/chat/user-skills` with authenticated same-origin requests.

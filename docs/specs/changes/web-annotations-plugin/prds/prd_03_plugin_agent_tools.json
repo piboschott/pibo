@@ -1,0 +1,85 @@
+{
+  "project": "Web Annotations Plugin",
+  "branchName": "ralph/web-annotations-plugin-agent-tools",
+  "description": "Plugin-owned capability registration and selectable native tools for agent annotation lifecycle management.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Register Web Annotations plugin capability",
+      "description": "As a profile author, I want Web Annotations registered as a plugin capability so that it can be selected per agent profile.",
+      "acceptanceCriteria": [
+        "Add a Web Annotations plugin module following existing plugin registry patterns",
+        "Register capability catalog metadata for the plugin and the web-annotation-agent-tools package",
+        "A profile without the package does not expose Web Annotation tools",
+        "A profile with the package exposes Web Annotation tool definitions during runtime assembly",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed by pibo.web-annotations plugin registration, web-annotation-agent-tools capability package metadata, default registry inclusion, contextual native tool definitions, and selected/unselected runtime exposure tests. Focused tests, build, and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement annotation list and get tools",
+      "description": "As an agent, I want to list and inspect annotations for my current session so that I can understand user feedback precisely.",
+      "acceptanceCriteria": [
+        "Implement web_annotations_list with current-session default, optional authorized session id, status filter, limit, newest-first ordering, and compact output",
+        "Implement web_annotations_get returning full authorized target metadata for one annotation id",
+        "Tools derive owner scope from runtime context and never from model input",
+        "Tool outputs omit or truncate long fields according to store/output limits",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed by web_annotations_list and web_annotations_get tools backed by the durable WebAnnotationStore. Tools derive owner scope from runtime context, default to the current Pibo Session, support authorized explicit session id/status/limit, return newest-first bounded compact list output, and bounded detail metadata. Focused tool authorization/truncation tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement annotation lifecycle tools",
+      "description": "As an agent, I want to acknowledge, resolve, and dismiss annotations so that annotation state tracks my work.",
+      "acceptanceCriteria": [
+        "Implement web_annotations_acknowledge with optional summary",
+        "Implement web_annotations_resolve with required or optional completion summary according to existing tool conventions",
+        "Implement web_annotations_dismiss with optional reason",
+        "Lifecycle tools enforce owner/session authorization and valid status transitions",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed by web_annotations_acknowledge, web_annotations_resolve, and web_annotations_dismiss lifecycle tools. Tools enforce owner/session authorization through runtime context and store scoping, reject terminal/invalid lifecycle transitions, persist summaries/reasons and agent resolvedBy metadata. Focused lifecycle authorization tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement bounded annotation watch tool",
+      "description": "As an agent, I want to wait briefly for new annotations so that I can support interactive frontend feedback loops.",
+      "acceptanceCriteria": [
+        "Implement web_annotations_watch as a bounded wait or long-poll for new annotations in the current or authorized session",
+        "Tool returns new annotations compactly and reports timeout/no-new-annotations without error",
+        "If watch can block longer than a short timeout, integrate with Pibo yielded-run control rather than custom run state",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed by web_annotations_watch as a bounded short-poll wait with capped timeout and compact output. It returns new annotations when present and reports timedOut/no annotations without error; longer waits can be run through existing run-control because the tool is yieldable. Focused timeout/new-annotation tests and Docker worker typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Test tool authorization and runtime exposure",
+      "description": "As a maintainer, I want tests for selected/unselected profile exposure and tool authorization so that capability boundaries remain correct.",
+      "acceptanceCriteria": [
+        "Add tests for selected profile exposing Web Annotation tools and unselected profile omitting them",
+        "Add tests for empty lists, missing annotation ids, unauthorized owner/session access, and valid lifecycle updates",
+        "Add tests for bounded list output and detail truncation where applicable",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed by web-annotations tool tests covering selected profile exposure, default unselected profile omission, capability catalog metadata, empty/isolated list behavior, missing/unauthorized ids, bounded output/detail truncation, valid lifecycle updates, and bounded watch behavior. Focused tests, build, and Docker worker typecheck passed."
+    }
+  ]
+}

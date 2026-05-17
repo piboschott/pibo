@@ -17,9 +17,9 @@ The Debug CLI is that read-oriented diagnostic boundary. It must expose enough i
 
 ## Background / Current State
 
-Current code routes `pibo debug` from `src/cli.ts` into `src/debug/index.ts`. The debug commands resolve known stores from the Pibo home directory, inspect SQLite databases with bounded output, rebuild Chat Web trace views from stored sessions and events, query reliability events, list and replay dead durable jobs, inspect yielded runs, and fetch live signal snapshots through Chat Web APIs when `PIBO_GATEWAY_URL` or `PIBO_WEB_URL` is set. The telemetry branch described here is the planned extension for runtime observability telemetry.
+Current code routes `pibo debug` from `src/cli.ts` into `src/debug/index.ts`. The debug commands resolve known stores from the Pibo home directory, inspect SQLite databases with bounded output, rebuild Chat Web trace views from stored sessions and events, query reliability events, list and replay dead durable jobs, inspect yielded runs, fetch live signal snapshots through Chat Web APIs when `PIBO_GATEWAY_URL` or `PIBO_WEB_URL` is set, and inspect runtime observability telemetry from the unified `pibo.sqlite` store. The root debug surface also delegates browser render diagnostics to `src/debug/web.ts` and pseudo-terminal diagnostics to `src/debug/pty.ts`.
 
-Automated coverage lives in `test/debug-cli.test.mjs` and asserts progressive help, read-only SQL behavior, Chat URL session parsing, trace rebuilding, event field extraction, reliability stream inspection, job replay, run inspection, and missing-store errors.
+Automated coverage lives in `test/debug-cli.test.mjs` and asserts progressive help, read-only SQL behavior, Chat URL session parsing, trace rebuilding, event field extraction, reliability stream inspection, job replay, run inspection, telemetry drill-down, stale telemetry detection, stats/prune behavior, browser-debug guardrails, and missing-store errors.
 
 ## Scope
 
@@ -34,7 +34,8 @@ Automated coverage lives in `test/debug-cli.test.mjs` and asserts progressive he
 - Durable job listing, dead-letter listing, and explicit replay.
 - Durable yielded-run listing and inspection.
 - Live signal snapshot inspection through configured web gateway URLs.
-- Runtime observability telemetry discovery, session/turn/provider/tool drill-down, stale-work listing, stats, and dry-run-first pruning.
+- Runtime observability telemetry discovery, session/turn/provider/tool drill-down, provider payload-unavailable diagnostics, stale-work listing, stats, and dry-run-first pruning.
+- Browser render-state diagnostics and PTY diagnostics as delegated debug branches.
 - Bounded, machine-readable JSON output where supported.
 
 ### Out of Scope
@@ -54,7 +55,7 @@ The Debug CLI MUST show only the immediate command surface for the current level
 
 #### Current
 
-`pibo debug --help` lists `db`, `session`, `trace`, `events`, `jobs`, `runs`, `signals`, and, when implemented, `telemetry`. Each branch has its own help text.
+`pibo debug --help` lists `db`, `session`, `trace`, `events`, `jobs`, `runs`, `signals`, `telemetry`, `web`, and `pty`. Each branch has its own help text or delegated discovery output.
 
 #### Acceptance
 
@@ -265,9 +266,9 @@ The Debug CLI MUST inspect live session signal snapshots only through an explici
 
 The Debug CLI MUST expose runtime telemetry through a progressive `pibo debug telemetry` branch that starts broad and drills down by id without dumping raw content.
 
-#### Target
+#### Current
 
-`pibo debug telemetry --help` lists only immediate subcommands and examples. Operators can inspect recent sessions, one session, one turn, one provider request, provider event metadata, one tool call, stale active work, retention stats, and prune plans.
+`pibo debug telemetry --help` lists only immediate subcommands and examples. Operators can inspect recent sessions, one session, one turn, one provider request, provider event metadata, preview-unavailable payload diagnostics, one tool call, stale active work, retention stats, and prune plans.
 
 The intended discovery flow is:
 
@@ -369,7 +370,7 @@ pibo debug telemetry tool <tool-call-id>
 | REQ-008 Durable job diagnostics distinguish live and dead work | Replay dead job | `src/debug/index.ts`, `src/reliability/store.ts` | Draft |
 | REQ-009 Durable yielded runs are inspectable | Inspect completed yielded run | `src/debug/index.ts`, `src/reliability/store.ts` | Draft |
 | REQ-010 Live signals require explicit gateway URL | Missing gateway URL | `src/debug/index.ts` | Draft |
-| REQ-011 Telemetry diagnostics are summary-first and read-oriented | Agent drills down from a stuck session; prune is deliberate | `src/debug/*`, future telemetry service | Draft |
+| REQ-011 Telemetry diagnostics are summary-first and read-oriented | Agent drills down from a stuck session; prune is deliberate | `src/debug/index.ts`, `src/debug/telemetry.ts`, `src/data/telemetry.ts`, `src/core/telemetry-staleness.ts`, `test/debug-cli.test.mjs` | Draft |
 
 ## Operational Examples
 
@@ -395,4 +396,4 @@ The final rollout checklist lives in `docs/project/observability-telemetry-rollo
 
 - `npm test -- --test-name-pattern "debug"` or the project-equivalent filtered test command for `test/debug-cli.test.mjs`.
 - Manual CLI checks against a fixture Pibo home: `pibo debug db stores`, `pibo debug session <id> --json`, `pibo debug trace <id> --check`, and `pibo debug events stream --topic pibo.output`.
-- Telemetry CLI fixture checks: `pibo debug telemetry session <id> --json`, `pibo debug telemetry turn <turn-id>`, `pibo debug telemetry provider <provider-request-id> events --limit 20`, `pibo debug telemetry tool <tool-call-id> --json`, `pibo debug telemetry stats`, and `pibo debug telemetry prune --retention diagnostic --before <iso-date> --dry-run`.
+- Telemetry CLI fixture checks: `pibo debug telemetry sessions --active`, `pibo debug telemetry session <id> --json`, `pibo debug telemetry turn <turn-id>`, `pibo debug telemetry provider <provider-request-id> events --limit 20`, `pibo debug telemetry provider <provider-request-id> payload <payload-ref>`, `pibo debug telemetry tool <tool-call-id> --json`, `pibo debug telemetry stale --threshold-ms 1000`, `pibo debug telemetry stats`, and `pibo debug telemetry prune --retention diagnostic --before <iso-date> --dry-run`.

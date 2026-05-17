@@ -1,6 +1,12 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { PiboThinkingLevel } from "./thinking.js";
 
+export type ToolDefinitionContext = {
+	ownerScope?: string;
+	piboSessionId?: string;
+	piboRoomId?: string;
+};
+
 export type ToolProfile = {
 	name: string;
 	description?: string;
@@ -8,6 +14,7 @@ export type ToolProfile = {
 	yieldable?: boolean;
 	pluginId?: string;
 	definition?: ToolDefinition;
+	createDefinition?: (context: ToolDefinitionContext) => ToolDefinition;
 	providerTool?: ProviderToolProfile;
 	builtInPiboTool?: "runtime";
 };

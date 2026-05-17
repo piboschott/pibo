@@ -1,6 +1,6 @@
 # Spec: Context Build Inspector
 
-**Status:** Draft  
+**Status:** Done
 **Created:** 2026-05-13  
 **Owner / Source:** User request in Pibo session `ps_5abe41b9-745c-4dbc-b84b-9d6061a54be7`  
 **Related docs:** `GLOSSARY.md`, `DESIGN.md`, `docs/specs/capabilities/chat-web-context-area.md`, `docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md`, `docs/specs/capabilities/runtime-prompt-and-compaction.md`, `docs/specs/capabilities/context-files.md`, `docs/specs/capabilities/custom-agents.md`
@@ -19,9 +19,11 @@ Pibo MUST provide a read-only Chat Web Build Context panel that shows the hydrat
 
 Runtime assembly is centered on `src/core/runtime.ts`. `createPiboRuntime()` loads profile context files and skills, injects `pibo://runtime/session-context.md`, merges automatic Pi context files, installed CLI tool context, and MCP context, resolves tools and generated tool definitions, and registers prompt/provider extensions.
 
-`inspectPiboProfile()` currently reports summary data: active skills, tools, subagents, Pi packages, loaded context file paths and byte counts, and diagnostics. It does not expose full hydrated text, nested prompt sections, tool prompt contributions, or the assembly tree.
+`inspectPiboProfile()` reports summary data: active skills, tools, subagents, Pi packages, loaded context file paths and byte counts, and diagnostics. `inspectPiboContextBuild()` now exposes full hydrated text, nested prompt sections, tool prompt contributions, provider payload summaries, runtime extensions, context files, skills, diagnostics, and assembly-order nodes for selected-session inspection.
 
-Chat Web already has a Context area with sidebar categories for Context Files, Base Prompt, Compaction Prompt, Pibo Tools, and MCP Tools. The new feature belongs in this area as its own sidebar category.
+Chat Web has a Context area with sidebar categories for Context Files, Base Prompt, Compaction Prompt, Pibo Tools, MCP Tools, and Build Context. `GET /api/chat/context-build?piboSessionId=...` requires an authenticated owned session and returns the snapshot rendered by `ContextBuildView`.
+
+Source refresh classification (2026-05-17): this change spec is implemented in current code. Historical `Current` subsections below describe the proposal-time baseline where they say no Build Context UI existed.
 
 ## Scope
 
@@ -415,14 +417,14 @@ None blocking for V1. Implementation may decide whether to add a CLI command tha
 
 | Requirement | Scenario / Story | Plan / Task | Status |
 |---|---|---|---|
-| REQ-001 Build Context sidebar category | Open Build Context panel | `tasks.md` T-006 | Pending |
-| REQ-002 Read-only snapshot generation | Inspect without mutating sessions | `tasks.md` T-002, T-003, T-009 | Pending |
-| REQ-003 Collapsed progressive tree | Progressive prompt discovery | `tasks.md` T-006, T-007 | Pending |
-| REQ-004 Metadata headers | Collapsed context file node | `tasks.md` T-004, T-007 | Pending |
-| REQ-005 Hydrated content leaves | Inspect runtime session context | `tasks.md` T-002, T-004, T-007 | Pending |
-| REQ-006 Tool Prompt Surface separation | Provider-backed web search | `tasks.md` T-004, T-007, T-009 | Pending |
-| REQ-007 Context-file order | Duplicate context file path | `tasks.md` T-002, T-004, T-009 | Pending |
-| REQ-008 No final prompt duplicate | Fully expanded tree | `tasks.md` T-007, T-009 | Pending |
-| REQ-009 Design-system alignment | Nested tool inspection | `tasks.md` T-007 | Pending |
-| REQ-010 Auth and redaction | Provider auth configured | `tasks.md` T-003, T-005, T-009 | Pending |
-| REQ-011 Diagnostics | Missing selected context file | `tasks.md` T-004, T-007, T-009 | Pending |
+| REQ-001 Build Context sidebar category | Open Build Context panel | `src/apps/chat-ui/src/App.tsx`, `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Implemented |
+| REQ-002 Read-only snapshot generation | Inspect without mutating sessions | `src/core/context-build.ts`, `src/apps/chat/web-app.ts` | Implemented |
+| REQ-003 Collapsed progressive tree | Progressive prompt discovery | `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Implemented |
+| REQ-004 Metadata headers | Collapsed context file node | `src/core/context-build.ts`, `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Implemented |
+| REQ-005 Hydrated content leaves | Inspect runtime session context | `src/core/context-build.ts`, `test/context-build-inspector.test.mjs` | Implemented |
+| REQ-006 Tool Prompt Surface separation | Provider-backed web search | `src/core/context-build.ts`, `src/tools/web-search.ts`, `test/context-build-inspector.test.mjs` | Implemented |
+| REQ-007 Context-file order | Duplicate context file path | `src/core/runtime.ts`, `src/core/context-build.ts` | Implemented |
+| REQ-008 No final prompt duplicate | Fully expanded tree | `src/core/context-build.ts`, `src/apps/chat-ui/src/context/ContextBuildView.tsx`, `test/context-build-inspector.test.mjs` | Implemented |
+| REQ-009 Design-system alignment | Nested tool inspection | `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Implemented |
+| REQ-010 Auth and redaction | Provider auth configured | `src/apps/chat/web-app.ts`, `src/core/context-build.ts` | Implemented |
+| REQ-011 Diagnostics | Missing selected context file | `src/core/context-build.ts`, `src/apps/chat-ui/src/context/ContextBuildView.tsx` | Implemented |

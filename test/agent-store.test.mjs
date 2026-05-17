@@ -65,6 +65,81 @@ test("custom agent store migrates legacy profile names before listing", () => {
 	store.close();
 });
 
+test("custom agent store migrates old tables with stable defaults", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const db = new DatabaseSync(path);
+	db.exec(`
+		CREATE TABLE chat_agents (
+			id TEXT PRIMARY KEY,
+			profile_name TEXT NOT NULL UNIQUE,
+			owner_scope TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			description TEXT,
+			native_tools_json TEXT NOT NULL,
+			skills_json TEXT NOT NULL,
+			context_files_json TEXT NOT NULL,
+			subagents_json TEXT NOT NULL,
+			builtin_tools TEXT NOT NULL,
+			run_control INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`);
+	db.prepare(`
+		INSERT INTO chat_agents (
+			id,
+			profile_name,
+			owner_scope,
+			display_name,
+			description,
+			native_tools_json,
+			skills_json,
+			context_files_json,
+			subagents_json,
+			builtin_tools,
+			run_control,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`).run(
+		"agent_legacy_defaults",
+		"legacy-defaults",
+		"user:test",
+		"legacy-defaults",
+		null,
+		"[]",
+		"[]",
+		"[]",
+		"[]",
+		"default",
+		0,
+		"2026-05-01T00:00:00.000Z",
+		"2026-05-01T00:00:00.000Z",
+	);
+	db.close();
+
+	const store = new CustomAgentStore(path);
+	const agent = store.get("agent_legacy_defaults");
+	assert.ok(agent);
+
+	assert.equal(agent.autoContextFiles, true);
+	assert.deepEqual(agent.mcpServers, []);
+	assert.deepEqual(agent.piPackages, []);
+	assert.deepEqual(agent.builtinToolNames, ["read", "bash", "edit", "write"]);
+	assert.equal(agent.mainModel, undefined);
+	assert.equal(agent.subagentModel, undefined);
+	assert.equal(agent.thinkingLevel, undefined);
+	assert.equal(agent.mainThinkingLevel, undefined);
+	assert.equal(agent.subagentThinkingLevel, undefined);
+	assert.equal(agent.fast, undefined);
+	assert.equal(agent.mainFast, undefined);
+	assert.equal(agent.subagentFast, undefined);
+	assert.equal(agent.archivedAt, undefined);
+	assert.equal(agent.runControl, false);
+
+	store.close();
+});
+
 test("custom agent store archives and deletes agents", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const store = new CustomAgentStore(path);
@@ -80,6 +155,21 @@ test("custom agent store archives and deletes agents", () => {
 	assert.equal(restored.archivedAt, undefined);
 	assert.equal(store.delete(agent.id), true);
 	assert.equal(store.get(agent.id), undefined);
+
+	store.close();
+});
+
+test("custom agent names are globally unique across owners", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	store.create({ ownerScope: "user:first", displayName: "shared-agent" });
+
+	assert.throws(
+		() => store.create({ ownerScope: "user:second", displayName: "shared-agent" }),
+		/Agent name "shared-agent" already exists/,
+	);
+	assert.deepEqual(store.list("user:first").map((agent) => agent.profileName), ["shared-agent"]);
+	assert.deepEqual(store.list("user:second"), []);
 
 	store.close();
 });
@@ -135,6 +225,51 @@ test("custom agent store persists selected built-in tools", () => {
 	const updated = store.update(agent.id, { builtinToolNames: ["read"] });
 	assert.deepEqual(updated.builtinToolNames, ["read"]);
 	assert.deepEqual(store.get(agent.id).builtinToolNames, ["read"]);
+
+	store.close();
+});
+
+test("custom agent store persists thinking, fast, and built-in mode options", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	const agent = store.create({
+		ownerScope: "user:test",
+		displayName: "runtime-options",
+		thinkingLevel: "medium",
+		mainThinkingLevel: "high",
+		subagentThinkingLevel: "low",
+		fast: true,
+		mainFast: false,
+		subagentFast: true,
+		builtinTools: "none",
+	});
+
+	assert.equal(agent.thinkingLevel, "medium");
+	assert.equal(agent.mainThinkingLevel, "high");
+	assert.equal(agent.subagentThinkingLevel, "low");
+	assert.equal(agent.fast, true);
+	assert.equal(agent.mainFast, false);
+	assert.equal(agent.subagentFast, true);
+	assert.equal(agent.builtinTools, "none");
+
+	const updated = store.update(agent.id, {
+		thinkingLevel: "invalid",
+		mainThinkingLevel: "minimal",
+		subagentThinkingLevel: "xhigh",
+		fast: false,
+		mainFast: true,
+		subagentFast: "yes",
+		builtinTools: "selected",
+	});
+	assert.equal(updated.thinkingLevel, undefined);
+	assert.equal(updated.mainThinkingLevel, "minimal");
+	assert.equal(updated.subagentThinkingLevel, "xhigh");
+	assert.equal(updated.fast, false);
+	assert.equal(updated.mainFast, true);
+	assert.equal(updated.subagentFast, undefined);
+	assert.equal(updated.builtinTools, "selected");
+
+	assert.deepEqual(store.get(agent.id), updated);
 
 	store.close();
 });
