@@ -166,6 +166,9 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 			env: {
 				...env,
 				BROWSER_USE_HOME: browserUseHome,
+				PIBO_BROWSER_POOL_WORKER_ID: "test-worker",
+				PIBO_BROWSER_POOL_LEASE_ID: "lease-default",
+				PIBO_BROWSER_POOL_OWNER: "test-owner",
 				PIBO_BROWSER_USE_CHROME: fakeChromePath,
 				PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
 				PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
@@ -173,6 +176,15 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 		});
 		assert.match(defaultProfile.stderr, /started Chrome profile "PIBo"/);
 		assert.match(defaultProfile.stdout, /--cdp-url\nhttp:\/\/127\.0\.0\.1:\d+\nopen\nhttps:\/\/example\.test/);
+		const poolState = JSON.parse(await readFile(join(browserUseHome, "pibo-browser-pool", "browser-pools", "test-worker", "default", "state.json"), "utf8"));
+		assert.equal(poolState.state, "leased");
+		assert.equal(poolState.workerId, "test-worker");
+		assert.equal(poolState.poolId, "default");
+		assert.equal(poolState.maxBrowserProcesses, 1);
+		assert.equal(poolState.activeLeaseId, "lease-default");
+		assert.equal(poolState.owner, "test-owner");
+		assert.match(poolState.cdpUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+		assert.equal(poolState.userDataDir, chromeUserDataDir);
 		for (let attempt = 0; attempt < 20; attempt += 1) {
 			try {
 				await stat(fakeChromeArgsPath);

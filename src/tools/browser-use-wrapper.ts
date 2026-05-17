@@ -191,7 +191,7 @@ persistent_chrome_url_if_alive() {
   return 1
 }
 
-ensure_persistent_chrome() {
+start_persistent_chrome() {
   safe_session=$(printf '%s' "$session" | tr -c 'A-Za-z0-9_.-' '_')
   state_dir=\${BROWSER_USE_HOME:-$HOME/.browser-use}/pibo-cdp
   mkdir -p "$state_dir"
@@ -199,15 +199,10 @@ ensure_persistent_chrome() {
   port_file=$state_dir/$safe_session.port
   log_file=$state_dir/$safe_session.chrome.log
 
-  if cdp_url=$(persistent_chrome_url_if_alive); then
-    printf '%s\\n' "$cdp_url"
-    return
-  fi
-
   chrome_bin=$(find_chrome)
   if [ -z "$chrome_bin" ]; then
-    echo "pibo browser-use: could not find Chrome; install Chrome or use $fresh_flag for Browser Use managed Chromium." >&2
-    exit 1
+    echo "pibo browser-use: could not find Chrome; managed browser-pool acquire cannot start a browser. Install Chrome/Chromium or use $fresh_flag for Browser Use managed Chromium." >&2
+    return 1
   fi
 
   user_data_dir=\${PIBO_BROWSER_USE_CHROME_USER_DATA_DIR:-}
@@ -228,30 +223,30 @@ ensure_persistent_chrome() {
     fi
     rm -f "$log_file"
     if command -v setsid >/dev/null 2>&1; then
-      setsid "$chrome_bin" \\
-        --user-data-dir="$user_data_dir" \\
-        --profile-directory="$profile_directory" \\
-        --remote-debugging-port="$chrome_port" \\
-        --no-first-run \\
-        --no-default-browser-check \\
-        --disable-default-apps \\
-        --no-sandbox \\
-        --disable-setuid-sandbox \\
-        --disable-dev-shm-usage \\
-        $headless_arg \\
+      setsid "$chrome_bin" \
+        --user-data-dir="$user_data_dir" \
+        --profile-directory="$profile_directory" \
+        --remote-debugging-port="$chrome_port" \
+        --no-first-run \
+        --no-default-browser-check \
+        --disable-default-apps \
+        --no-sandbox \
+        --disable-setuid-sandbox \
+        --disable-dev-shm-usage \
+        $headless_arg \
         about:blank >"$log_file" 2>&1 &
     else
-      nohup "$chrome_bin" \\
-        --user-data-dir="$user_data_dir" \\
-        --profile-directory="$profile_directory" \\
-        --remote-debugging-port="$chrome_port" \\
-        --no-first-run \\
-        --no-default-browser-check \\
-        --disable-default-apps \\
-        --no-sandbox \\
-        --disable-setuid-sandbox \\
-        --disable-dev-shm-usage \\
-        $headless_arg \\
+      nohup "$chrome_bin" \
+        --user-data-dir="$user_data_dir" \
+        --profile-directory="$profile_directory" \
+        --remote-debugging-port="$chrome_port" \
+        --no-first-run \
+        --no-default-browser-check \
+        --disable-default-apps \
+        --no-sandbox \
+        --disable-setuid-sandbox \
+        --disable-dev-shm-usage \
+        $headless_arg \
         about:blank >"$log_file" 2>&1 &
     fi
     chrome_pid=$!
@@ -274,11 +269,11 @@ ensure_persistent_chrome() {
     done
 
     if [ "$ready" -eq 1 ]; then
-      printf '%s\\n' "$chrome_pid" > "$pid_file"
-      printf '%s\\n' "$chrome_port" > "$port_file"
-      printf 'pibo browser-use: started Chrome profile "%s" (%s/%s) on CDP port %s.\\n' "$default_profile" "$user_data_dir" "$profile_directory" "$chrome_port" >&2
-      printf 'http://127.0.0.1:%s\\n' "$chrome_port"
-      return
+      printf '%s\n' "$chrome_pid" > "$pid_file"
+      printf '%s\n' "$chrome_port" > "$port_file"
+      printf 'pibo browser-use: started Chrome profile "%s" (%s/%s) on CDP port %s.\n' "$default_profile" "$user_data_dir" "$profile_directory" "$chrome_port" >&2
+      printf '%s\n%s\nhttp://127.0.0.1:%s\n%s\n' "$chrome_pid" "$chrome_port" "$chrome_port" "$user_data_dir"
+      return 0
     fi
 
     echo "pibo browser-use: Chrome did not expose CDP on port $chrome_port (attempt $retry)." >&2
@@ -291,6 +286,165 @@ ensure_persistent_chrome() {
   done
 
   echo "pibo browser-use: Chrome failed to start after retries." >&2
+  return 1
+}
+
+browser_pool_safe_segment() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+browser_pool_worker_id() {
+  printf '%s\n' "\${PIBO_BROWSER_POOL_WORKER_ID:-\${PIBO_COMPUTE_WORKER_ID:-\${HOSTNAME:-local}}}"
+}
+
+browser_pool_id() {
+  printf '%s\n' "\${PIBO_BROWSER_POOL_ID:-default}"
+}
+
+browser_pool_root() {
+  printf '%s\n' "\${PIBO_BROWSER_POOL_ROOT:-\${BROWSER_USE_HOME:-$HOME/.browser-use}/pibo-browser-pool}"
+}
+
+browser_pool_paths() {
+  worker=$(browser_pool_safe_segment "$(browser_pool_worker_id)")
+  pool=$(browser_pool_safe_segment "$(browser_pool_id)")
+  base=$(browser_pool_root)/browser-pools/$worker/$pool
+  printf '%s\n%s\n' "$base/state.json" "$base/state.lock"
+}
+
+browser_pool_read_summary() {
+  state_file=$1
+  "$python_cmd" - "$state_file" <<'PYSUMMARY'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+try:
+    data = json.loads(path.read_text())
+except FileNotFoundError:
+    print("missing")
+    raise SystemExit(0)
+except Exception as exc:
+    print("malformed")
+    print(str(exc))
+    raise SystemExit(0)
+for key in ("state", "pid", "cdpPort", "cdpUrl", "userDataDir"):
+    value = data.get(key, "")
+    print(value if value is not None else "")
+PYSUMMARY
+}
+
+browser_pool_write_state() {
+  state_file=$1
+  lifecycle_state=$2
+  chrome_pid=$3
+  chrome_port=$4
+  cdp_url=$5
+  user_data_dir=$6
+  active_lease_id=$7
+  owner=$8
+  last_error=$9
+  "$python_cmd" - "$state_file" "$(browser_pool_worker_id)" "$(browser_pool_id)" "\${PIBO_BROWSER_POOL_MAX_PROCESSES:-1}" "$lifecycle_state" "$chrome_pid" "$chrome_port" "$cdp_url" "$user_data_dir" "$active_lease_id" "$owner" "$last_error" <<'PYSTATE'
+import json
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+state_file = Path(sys.argv[1])
+worker_id, pool_id, max_processes, lifecycle_state = sys.argv[2:6]
+pid, port, cdp_url, user_data_dir, lease_id, owner, last_error = sys.argv[6:13]
+now = datetime.now(timezone.utc)
+record = {
+    "workerId": worker_id,
+    "poolId": pool_id,
+    "maxBrowserProcesses": int(max_processes or "1"),
+    "state": lifecycle_state,
+    "lastUsedAt": now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+}
+if pid:
+    record["pid"] = int(pid)
+    record["processGroupId"] = int(pid)
+if port:
+    record["cdpPort"] = int(port)
+if cdp_url:
+    record["cdpUrl"] = cdp_url
+if user_data_dir:
+    record["userDataDir"] = user_data_dir
+if lease_id:
+    record["activeLeaseId"] = lease_id
+    record["idleExpiresAt"] = (now + timedelta(milliseconds=int(os.environ.get("PIBO_BROWSER_POOL_IDLE_TIMEOUT_MS", "600000")))).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+if owner:
+    record["owner"] = owner
+if last_error:
+    record["lastError"] = last_error
+state_file.parent.mkdir(parents=True, exist_ok=True)
+tmp = state_file.with_name(f"{state_file.name}.{os.getpid()}.tmp")
+tmp.write_text(json.dumps(record, indent=2) + "\\n")
+tmp.replace(state_file)
+PYSTATE
+}
+
+browser_pool_acquire() {
+  paths=$(browser_pool_paths)
+  state_file=$(printf '%s\n' "$paths" | sed -n '1p')
+  lock_dir=$(printf '%s\n' "$paths" | sed -n '2p')
+  mkdir -p "$(dirname "$state_file")"
+  lease_id=\${PIBO_BROWSER_POOL_LEASE_ID:-pibo-browser-use-$$-$(date +%s)}
+  owner=\${PIBO_BROWSER_POOL_OWNER:-browser-use:$session}
+  attempts=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge "\${PIBO_BROWSER_POOL_LOCK_ATTEMPTS:-100}" ]; then
+      echo "pibo browser-use: managed browser-pool acquire timed out waiting for $lock_dir" >&2
+      return 1
+    fi
+    sleep 0.05
+  done
+  trap 'rm -rf "$lock_dir"' EXIT INT TERM
+
+  summary=$(browser_pool_read_summary "$state_file")
+  summary_state=$(printf '%s\n' "$summary" | sed -n '1p')
+  if [ "$summary_state" = "malformed" ]; then
+    malformed_reason=$(printf '%s\n' "$summary" | sed -n '2p')
+    browser_pool_write_state "$state_file" dirty "" "" "" "" "" "$owner" "Malformed browser pool state: $malformed_reason"
+  elif [ "$summary_state" != "missing" ]; then
+    recorded_state=$summary_state
+    recorded_pid=$(printf '%s\n' "$summary" | sed -n '2p')
+    recorded_port=$(printf '%s\n' "$summary" | sed -n '3p')
+    recorded_cdp_url=$(printf '%s\n' "$summary" | sed -n '4p')
+    recorded_user_data_dir=$(printf '%s\n' "$summary" | sed -n '5p')
+    if [ "$recorded_state" != "dirty" ] && [ -n "$recorded_pid" ] && [ -n "$recorded_port" ] && [ -n "$recorded_cdp_url" ] && kill -0 "$recorded_pid" 2>/dev/null && pibo_cdp_is_ready "$recorded_port"; then
+      browser_pool_write_state "$state_file" leased "$recorded_pid" "$recorded_port" "$recorded_cdp_url" "$recorded_user_data_dir" "$lease_id" "$owner" ""
+      rm -rf "$lock_dir"
+      trap - EXIT INT TERM
+      printf '%s\n' "$recorded_cdp_url"
+      return 0
+    fi
+    browser_pool_write_state "$state_file" stale "$recorded_pid" "$recorded_port" "$recorded_cdp_url" "$recorded_user_data_dir" "" "$owner" "Recorded browser is not alive or CDP is unreachable"
+  fi
+
+  start_result=$(start_persistent_chrome) || {
+    browser_pool_write_state "$state_file" dirty "" "" "" "" "" "$owner" "Managed browser start failed"
+    rm -rf "$lock_dir"
+    trap - EXIT INT TERM
+    return 1
+  }
+  chrome_pid=$(printf '%s\n' "$start_result" | sed -n '1p')
+  chrome_port=$(printf '%s\n' "$start_result" | sed -n '2p')
+  cdp_url=$(printf '%s\n' "$start_result" | sed -n '3p')
+  user_data_dir=$(printf '%s\n' "$start_result" | sed -n '4p')
+  browser_pool_write_state "$state_file" leased "$chrome_pid" "$chrome_port" "$cdp_url" "$user_data_dir" "$lease_id" "$owner" ""
+  rm -rf "$lock_dir"
+  trap - EXIT INT TERM
+  printf '%s\n' "$cdp_url"
+}
+
+ensure_persistent_chrome() {
+  if cdp_url=$(browser_pool_acquire); then
+    printf '%s\n' "$cdp_url"
+    return 0
+  fi
+  echo "pibo browser-use: managed browser-pool acquire failed; refusing to start an unmanaged browser." >&2
   exit 1
 }
 
@@ -403,9 +557,6 @@ if [ -s "$session_pid_file" ]; then
 fi
 
 if [ "$starts_browser" -eq 1 ] && [ "$explicit_profile" -eq 0 ] && [ "$fresh_profile" -eq 0 ]; then
-  if [ "$session_alive" -eq 1 ] && persistent_chrome_url_if_alive >/dev/null; then
-    exec "$real_browser_use" "$@"
-  fi
   if [ "$session_alive" -eq 1 ]; then
     "$real_browser_use" --session "$session" close >/dev/null 2>&1 || true
     sleep 0.2

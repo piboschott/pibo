@@ -49,8 +49,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented managed browser-pool acquire in the generated browser-use wrapper: default browser-starting commands now acquire a worker/pool-scoped lock, reuse healthy recorded CDP state, start and record one managed Chrome/Chromium process when needed, pass the managed CDP URL through --cdp-url, and fail clearly instead of falling back to unmanaged startup when acquire/start fails. Extended test/tools-cli.test.mjs to assert wrapper-created browser-pool state and lease metadata. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused wrapper/browser-pool tests passed, real Docker worker wrapper validation with Chromium passed, and npm run typecheck passed."
     },
     {
       "id": "US-004",
