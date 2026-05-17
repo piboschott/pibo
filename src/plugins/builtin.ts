@@ -17,6 +17,7 @@ import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } fro
 import { loadModelCatalog } from "../apps/chat/model-catalog.js";
 import { piboCodexCompatPlugin } from "./codex-compat.js";
 import { addPiboNativeToolingContext, registerPiboNativeTooling } from "./native-tooling.js";
+import { piboWebAnnotationsPlugin } from "./web-annotations.js";
 import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
 
@@ -443,12 +444,12 @@ export const piboGatewayProducerPlugin = definePiboPlugin({
 });
 
 export function createDefaultPiboPlugins(): PiboPlugin[] {
-	return [piboCorePlugin, piboCodexCompatPlugin];
+	return [piboCorePlugin, piboCodexCompatPlugin, piboWebAnnotationsPlugin];
 }
 
 export function createGatewayProducerPiboPluginRegistry(): PiboPluginRegistry {
 	return PiboPluginRegistry.create({
-		plugins: [piboCorePlugin, piboGatewayProducerPlugin, piboCodexCompatPlugin],
+		plugins: [piboCorePlugin, piboGatewayProducerPlugin, piboCodexCompatPlugin, piboWebAnnotationsPlugin],
 	});
 }
 

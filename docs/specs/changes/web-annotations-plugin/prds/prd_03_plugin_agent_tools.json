@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by pibo.web-annotations plugin registration, web-annotation-agent-tools capability package metadata, default registry inclusion, contextual native tool definitions, and selected/unselected runtime exposure tests. Focused tests, build, and Docker worker typecheck passed."
     },
     {
       "id": "US-002",
@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by web_annotations_list and web_annotations_get tools backed by the durable WebAnnotationStore. Tools derive owner scope from runtime context, default to the current Pibo Session, support authorized explicit session id/status/limit, return newest-first bounded compact list output, and bounded detail metadata. Focused tool authorization/truncation tests and Docker worker typecheck passed."
     },
     {
       "id": "US-003",
@@ -48,8 +48,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by web_annotations_acknowledge, web_annotations_resolve, and web_annotations_dismiss lifecycle tools. Tools enforce owner/session authorization through runtime context and store scoping, reject terminal/invalid lifecycle transitions, persist summaries/reasons and agent resolvedBy metadata. Focused lifecycle authorization tests and Docker worker typecheck passed."
     },
     {
       "id": "US-004",
@@ -63,8 +63,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by web_annotations_watch as a bounded short-poll wait with capped timeout and compact output. It returns new annotations when present and reports timedOut/no annotations without error; longer waits can be run through existing run-control because the tool is yieldable. Focused timeout/new-annotation tests and Docker worker typecheck passed."
     },
     {
       "id": "US-005",
@@ -78,8 +78,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by web-annotations tool tests covering selected profile exposure, default unselected profile omission, capability catalog metadata, empty/isolated list behavior, missing/unauthorized ids, bounded output/detail truncation, valid lifecycle updates, and bounded watch behavior. Focused tests, build, and Docker worker typecheck passed."
     }
   ]
 }
