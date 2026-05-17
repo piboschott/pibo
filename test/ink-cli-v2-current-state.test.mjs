@@ -40,36 +40,7 @@ test("Ink CLI V2 current-state audit documents shared surface, scope, commands, 
 	assert.match(report, /Project, Workflow, Cron, Ralph, Settings, Context Files/);
 });
 
-test("current local CLI persistence path can create Web-hidden user:unknown sessions", async () => {
-	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pibo-ink-cli-v2-owner-bug-"));
-	const dataStore = new PiboDataStore(path.join(tempDir, "pibo.sqlite"), { payloadRootDir: path.join(tempDir, "payloads") });
-	const sessionStore = new PiboDataSessionStore(dataStore);
-	const source = new LocalCliSessionSource({ dataStore, sessionStore, now: () => fixedNow });
-
-	try {
-		const created = await source.createSession({ roomId: "room_owner_bug", title: "Owner fallback bug", profile: "codex-compat-openai-web" });
-		await source.sendMessage(created.id, "message that should expose navigation owner fallback");
-
-		const sessionRow = dataStore.db.prepare("SELECT owner_scope, room_id FROM sessions WHERE id = ?").get(created.id);
-		assert.equal(sessionRow.owner_scope, "user:unknown");
-		assert.equal(sessionRow.room_id, "room_owner_bug");
-
-		const navigationRow = dataStore.db.prepare("SELECT owner_scope, room_id, session_id FROM session_navigation WHERE session_id = ?").get(created.id);
-		assert.equal(navigationRow.owner_scope, "user:unknown");
-		assert.equal(navigationRow.room_id, "room_owner_bug");
-
-		assert.equal(sessionStore.find({ ownerScope: "user:real-web-owner" }).some((session) => session.id === created.id), false);
-		assert.equal(sessionStore.find({ ownerScope: "user:unknown" }).some((session) => session.id === created.id), true);
-	} finally {
-		await source.close();
-		dataStore.close();
-		fs.rmSync(tempDir, { recursive: true, force: true });
-	}
-});
-
-test.skip("V2 CLI owner resolution prevents implicit user:unknown writes", async () => {
-	// Pending regression fixture for prd_02_owner_scope_recovery_profile.
-	// Once owner resolution exists, this test should be enabled and should create through the default CLI source.
+test("V2 CLI owner resolution prevents implicit user:unknown writes", async () => {
 	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pibo-ink-cli-v2-owner-required-"));
 	const dataStore = new PiboDataStore(path.join(tempDir, "pibo.sqlite"), { payloadRootDir: path.join(tempDir, "payloads") });
 	const sessionStore = new PiboDataSessionStore(dataStore);
@@ -77,8 +48,18 @@ test.skip("V2 CLI owner resolution prevents implicit user:unknown writes", async
 
 	try {
 		const created = await source.createSession({ roomId: "room_owner_required", title: "Owner must be explicit", profile: "codex-compat-openai-web" });
-		assert.notEqual(created.ownerScope, undefined);
-		assert.notEqual(created.ownerScope, "user:unknown");
+		await source.sendMessage(created.id, "message that should keep selected owner fallback");
+		assert.equal(created.ownerScope, "local:root");
+
+		const sessionRow = dataStore.db.prepare("SELECT owner_scope, room_id FROM sessions WHERE id = ?").get(created.id);
+		assert.equal(sessionRow.owner_scope, "local:root");
+		assert.equal(sessionRow.room_id, "room_owner_required");
+
+		const navigationRow = dataStore.db.prepare("SELECT owner_scope, room_id, session_id FROM session_navigation WHERE session_id = ?").get(created.id);
+		assert.equal(navigationRow.owner_scope, "local:root");
+		assert.equal(navigationRow.room_id, "room_owner_required");
+
+		assert.equal(sessionStore.find({ ownerScope: "user:unknown" }).some((session) => session.id === created.id), false);
 	} finally {
 		await source.close();
 		dataStore.close();

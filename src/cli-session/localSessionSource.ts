@@ -8,6 +8,7 @@ import { getDefaultPiboWorkspace } from "../core/workspace.js";
 import { buildTraceView } from "../apps/chat/trace.js";
 import { storedPiboEventFromV2Row, type EventLogRow } from "../apps/chat/data/chat-data-mappers.js";
 import { ChatDataIngestService } from "../data/ingest-service.js";
+import { ChatRoomService } from "../apps/chat/data/room-service.js";
 import type { StoredPiboEventLogRow } from "../data/event-log.js";
 import type { PiboDataStore } from "../data/pibo-store.js";
 import type { PiboSessionTraceView, PiboTraceNode, PiboTraceNodeStatus } from "../shared/trace-types.js";
@@ -15,6 +16,7 @@ import {
 	CliSourceError,
 	type CliAgentSummary,
 	type CliOpenSession,
+	type CliOwnerSummary,
 	type CliRoomSummary,
 	type CliRuntimeStatus,
 	type CliSessionSource,
@@ -48,10 +50,16 @@ export type LocalCliSessionSourceOptions = {
 	dataStore?: PiboDataStore;
 	ownsDataStore?: boolean;
 	agentSummaries?: readonly CliAgentSummary[];
+	ownerSummaries?: readonly CliOwnerSummary[];
 };
 
+export const CLI_ROOT_RECOVERY_OWNER_SCOPE = "local:root";
+export const CLI_ROOT_RECOVERY_OWNER_LABEL = "Root recovery";
+
 export class LocalCliSessionSource implements CliSessionSource {
-	private readonly ownerScope?: string;
+	private readonly ownerScope: string;
+	private readonly activeOwner: CliOwnerSummary;
+	private readonly discoveredOwners: readonly CliOwnerSummary[];
 	private readonly sessionStore: PiboSessionStore;
 	private readonly ownsSessionStore: boolean;
 	private readonly roomProvider?: CliRoomProvider;
@@ -64,6 +72,7 @@ export class LocalCliSessionSource implements CliSessionSource {
 	private readonly dataStore?: PiboDataStore;
 	private readonly ownsDataStore: boolean;
 	private readonly ingestService?: ChatDataIngestService;
+	private readonly roomService?: ChatRoomService;
 	private readonly agentSummaries?: readonly CliAgentSummary[];
 	private readonly traceViews = new Map<string, PiboSessionTraceView>();
 	private readonly listeners = new Map<string, Set<CliSessionUpdateListener>>();
@@ -71,7 +80,6 @@ export class LocalCliSessionSource implements CliSessionSource {
 	private closed = false;
 
 	constructor(options: LocalCliSessionSourceOptions = {}) {
-		this.ownerScope = options.ownerScope;
 		this.sessionStore = options.sessionStore ?? createDefaultPiboDataSessionStore();
 		this.ownsSessionStore = options.ownsSessionStore ?? options.sessionStore === undefined;
 		this.roomProvider = options.roomProvider;
@@ -84,20 +92,56 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.dataStore = options.dataStore;
 		this.ownsDataStore = options.ownsDataStore === true;
 		this.ingestService = options.dataStore ? new ChatDataIngestService(options.dataStore) : undefined;
+		this.roomService = options.dataStore ? new ChatRoomService(options.dataStore) : undefined;
 		this.agentSummaries = options.agentSummaries ? [...options.agentSummaries] : undefined;
+		const ownerContext = resolveCliOwnerContext({
+			explicitOwnerScope: options.ownerScope,
+			sessionStore: this.sessionStore,
+			dataStore: this.dataStore,
+			ownerSummaries: options.ownerSummaries,
+		});
+		this.activeOwner = ownerContext.activeOwner;
+		this.ownerScope = ownerContext.activeOwner.ownerScope;
+		this.discoveredOwners = ownerContext.owners;
 	}
 
-	async listRooms(): Promise<readonly CliRoomSummary[]> {
+	async getActiveOwner(): Promise<CliOwnerSummary> {
 		this.assertOpen();
+		return cloneJson(this.activeOwner);
+	}
+
+	async listOwners(): Promise<readonly CliOwnerSummary[]> {
+		this.assertOpen();
+		return this.discoveredOwners.map(cloneJson);
+	}
+
+	async listRooms(input: { ownerScope?: string } = {}): Promise<readonly CliRoomSummary[]> {
+		this.assertOpen();
+		const ownerScope = normalizeOwnerScope(input.ownerScope ?? this.ownerScope);
 		if (this.roomProvider) {
-			return (await this.roomProvider.listRooms({ ownerScope: this.ownerScope })).map(cloneJson);
+			return ensureDefaultRoomSummary(ownerScope, (await this.roomProvider.listRooms({ ownerScope })).map(cloneJson));
 		}
-		return deriveRoomsFromSessions(this.readSessions()).map(cloneJson);
+		if (this.roomService) {
+			const defaultRoom = this.roomService.ensureDefaultRoom({ ownerScope, principalId: ownerScope, name: "Personal Chat" });
+			const rooms = mergeRoomSummaries([
+				...this.roomService.listRooms(ownerScope).map((room) => ({
+					id: room.id,
+					title: room.name,
+					description: room.topic,
+					ownerScope: room.ownerScope,
+					isDefault: room.id === defaultRoom.id || room.metadata.default === true,
+				})),
+				...deriveRoomsFromSessions(this.readSessions(ownerScope)),
+			]);
+			return ensureDefaultRoomSummary(ownerScope, rooms).map(cloneJson);
+		}
+		return ensureDefaultRoomSummary(ownerScope, deriveRoomsFromSessions(this.readSessions(ownerScope))).map(cloneJson);
 	}
 
-	async listSessions(input: { roomId?: string } = {}): Promise<readonly CliSessionSummary[]> {
+	async listSessions(input: { roomId?: string; ownerScope?: string } = {}): Promise<readonly CliSessionSummary[]> {
 		this.assertOpen();
-		return this.readSessions()
+		const ownerScope = normalizeOwnerScope(input.ownerScope ?? this.ownerScope);
+		return this.readSessions(ownerScope)
 			.filter((session) => input.roomId === undefined || roomIdFromSession(session) === input.roomId)
 			.map(sessionToSummary);
 	}
@@ -106,12 +150,15 @@ export class LocalCliSessionSource implements CliSessionSource {
 		this.assertOpen();
 		const agent = input.agentId ? this.resolveAgent(input.agentId) : undefined;
 		const profile = this.resolveProfile(input.profile ?? agent?.profileName ?? agent?.id ?? this.defaultProfileName());
-		const metadata = buildSessionMetadata(input.roomId, "idle");
+		const ownerScope = normalizeOwnerScope(input.ownerScope ?? this.ownerScope);
+		const room = input.roomId ? undefined : this.ensureDefaultRoomForOwner(ownerScope);
+		const roomId = input.roomId ?? room?.id;
+		const metadata = buildSessionMetadata(roomId, "idle", room?.title);
 		const session = this.sessionStore.create({
 			channel: "cli-session-ui",
 			kind: "chat",
 			profile,
-			ownerScope: input.ownerScope ?? this.ownerScope,
+			ownerScope,
 			workspace: input.workspace ?? getDefaultPiboWorkspace(),
 			title: input.title?.trim() || "New CLI session",
 			metadata,
@@ -214,13 +261,16 @@ export class LocalCliSessionSource implements CliSessionSource {
 			const session = this.resolveSession(input.sessionId);
 			return this.buildStatus(session);
 		}
-		const sessions = this.readSessions();
-		const rooms = this.roomProvider ? "supported" : deriveRoomsFromSessions(sessions).length > 0 ? "supported" : "unknown";
+		const sessions = this.readSessions(this.ownerScope);
+		const rooms = this.roomProvider ? "supported" : "supported";
 		return {
 			source: "local/direct",
 			mode: "local",
 			connected: true,
 			rooms,
+			activeOwnerScope: this.activeOwner.ownerScope,
+			activeOwnerLabel: this.activeOwner.label,
+			activeRoomId: this.ensureDefaultRoomForOwner(this.ownerScope).id,
 			sessions: "supported",
 			agents: "supported",
 			message: redactCliSecretText(this.statusMessage ?? `Local CLI source ready; discovered ${sessions.length} session${sessions.length === 1 ? "" : "s"}.`),
@@ -246,10 +296,10 @@ export class LocalCliSessionSource implements CliSessionSource {
 		return count;
 	}
 
-	private readSessions(): PiboSession[] {
+	private readSessions(ownerScope = this.ownerScope): PiboSession[] {
 		const sessions = this.sessionStore.list ? this.sessionStore.list() : this.sessionStore.find({});
 		return sessions
-			.filter((session) => this.ownerScope === undefined || session.ownerScope === this.ownerScope)
+			.filter((session) => session.ownerScope === ownerScope)
 			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 	}
 
@@ -474,15 +524,25 @@ export class LocalCliSessionSource implements CliSessionSource {
 			mode: "local",
 			connected: true,
 			rooms: "supported",
+			activeOwnerScope: this.activeOwner.ownerScope,
+			activeOwnerLabel: this.activeOwner.label,
 			sessions: "supported",
 			agents: "supported",
-			activeRoomId: roomIdFromSession(session),
+			activeRoomId: roomIdFromSession(session) ?? this.ensureDefaultRoomForOwner(this.ownerScope).id,
 			activeSessionId: session.id,
 			activeAgentId: session.profile,
 			activeModel: session.activeModel,
 			message: redactCliSecretText(runtime ? `Runtime ready; queued=${runtime.queuedMessages} processing=${runtime.processing} streaming=${runtime.streaming}` : this.statusMessage ?? "Local CLI source ready."),
 			updatedAt: this.now(),
 		};
+	}
+
+	private ensureDefaultRoomForOwner(ownerScope: string): CliRoomSummary {
+		if (this.roomService) {
+			const room = this.roomService.ensureDefaultRoom({ ownerScope, principalId: ownerScope, name: "Personal Chat" });
+			return { id: room.id, title: room.name, description: room.topic, ownerScope: room.ownerScope, isDefault: true };
+		}
+		return defaultCliRoomSummary(ownerScope);
 	}
 
 	private emit(sessionId: string, update: CliSessionUpdate): void {
@@ -531,6 +591,7 @@ function deriveRoomsFromSessions(sessions: readonly PiboSession[]): CliRoomSumma
 			id: roomId,
 			title: stringMetadata(session, "chatRoomName") ?? stringMetadata(session, "roomName") ?? roomId,
 			description: "Derived from local session metadata",
+			ownerScope: session.ownerScope,
 		});
 	}
 	return [...rooms.values()].sort((left, right) => left.title.localeCompare(right.title));
@@ -550,10 +611,11 @@ function stringMetadata(session: PiboSession, key: string): string | undefined {
 	return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-function buildSessionMetadata(roomId: string | undefined, status: CliSessionSummary["status"]): PiboSession["metadata"] {
-	return roomId
-		? { chatRoomId: roomId, roomId, status, source: "pibo tui:sessions" }
-		: { status, source: "pibo tui:sessions" };
+function buildSessionMetadata(roomId: string | undefined, status: CliSessionSummary["status"], roomName?: string): PiboSession["metadata"] {
+	if (!roomId) return { status, source: "pibo tui:sessions" };
+	return roomName
+		? { chatRoomId: roomId, roomId, chatRoomName: roomName, status, source: "pibo tui:sessions" }
+		: { chatRoomId: roomId, roomId, status, source: "pibo tui:sessions" };
 }
 
 function eventLogRowToV2MapperRow(row: StoredPiboEventLogRow): EventLogRow {
@@ -605,6 +667,132 @@ function traceNodeId(kind: string, eventId: string | undefined, index?: number):
 
 function toCliSourceError(code: string, message: string, cause: unknown): CliSourceError {
 	return cause instanceof CliSourceError ? cause : new CliSourceError(code, message, { cause });
+}
+
+function resolveCliOwnerContext(input: { explicitOwnerScope?: string; sessionStore: PiboSessionStore; dataStore?: PiboDataStore; ownerSummaries?: readonly CliOwnerSummary[] }): { activeOwner: CliOwnerSummary; owners: readonly CliOwnerSummary[] } {
+	const owners = new Map<string, CliOwnerSummary>();
+	const addOwner = (owner: CliOwnerSummary, options: { explicit?: boolean } = {}) => {
+		const ownerScope = normalizeOwnerScope(owner.ownerScope);
+		if (!options.explicit && ownerScope === "user:unknown") return;
+		owners.set(ownerScope, { ...owner, ownerScope });
+	};
+	if (input.explicitOwnerScope) addOwner(ownerSummaryForScope(input.explicitOwnerScope, { explicit: true }), { explicit: true });
+	for (const owner of input.ownerSummaries ?? []) addOwner(owner);
+	const sessions = input.sessionStore.list ? input.sessionStore.list() : input.sessionStore.find({});
+	for (const session of sessions) if (session.ownerScope) addOwner(ownerSummaryForScope(session.ownerScope));
+	for (const ownerScope of discoverOwnerScopesFromDataStore(input.dataStore)) addOwner(ownerSummaryForScope(ownerScope));
+	if (owners.size === 0) addOwner(rootRecoveryOwnerSummary(), { explicit: true });
+	const ownerList = [...owners.values()].sort(compareOwners);
+	const explicit = input.explicitOwnerScope ? ownerList.find((owner) => owner.ownerScope === normalizeOwnerScope(input.explicitOwnerScope)) : undefined;
+	const activeOwner = explicit ?? ownerList.find((owner) => owner.kind !== "legacy") ?? rootRecoveryOwnerSummary();
+	return { activeOwner, owners: ownerList.some((owner) => owner.ownerScope === activeOwner.ownerScope) ? ownerList : [activeOwner, ...ownerList] };
+}
+
+function discoverOwnerScopesFromDataStore(dataStore: PiboDataStore | undefined): string[] {
+	if (!dataStore) return [];
+	const scopes = new Set<string>();
+	for (const table of ["rooms", "session_navigation", "sessions"] as const) {
+		try {
+			const rows = dataStore.db.prepare(`SELECT DISTINCT owner_scope FROM ${table} WHERE owner_scope IS NOT NULL AND owner_scope <> ''`).all() as Array<{ owner_scope?: string }>;
+			for (const row of rows) if (row.owner_scope) scopes.add(row.owner_scope);
+		} catch {
+			// Discovery is best-effort because older/local databases may not have every table.
+		}
+	}
+	try {
+		const rows = dataStore.db.prepare("SELECT DISTINCT actor_id FROM event_log WHERE actor_id IS NOT NULL AND actor_id <> ''").all() as Array<{ actor_id?: string }>;
+		for (const row of rows) if (row.actor_id && looksLikeOwnerScope(row.actor_id)) scopes.add(row.actor_id);
+	} catch {
+		// Best-effort discovery only.
+	}
+	return [...scopes];
+}
+
+function rootRecoveryOwnerSummary(): CliOwnerSummary {
+	return {
+		ownerScope: CLI_ROOT_RECOVERY_OWNER_SCOPE,
+		label: CLI_ROOT_RECOVERY_OWNER_LABEL,
+		description: "Local host-root recovery owner with no Web email requirement",
+		kind: "root-recovery",
+		isFallback: true,
+	};
+}
+
+function ownerSummaryForScope(ownerScope: string, options: { explicit?: boolean } = {}): CliOwnerSummary {
+	const normalized = normalizeOwnerScope(ownerScope);
+	if (normalized === CLI_ROOT_RECOVERY_OWNER_SCOPE) return rootRecoveryOwnerSummary();
+	if (normalized === "user:unknown") {
+		return {
+			ownerScope: normalized,
+			label: "Legacy user:unknown",
+			description: options.explicit ? "Explicitly selected legacy owner scope" : "Legacy owner scope",
+			kind: "legacy",
+		};
+	}
+	if (normalized.startsWith("user:")) {
+		return {
+			ownerScope: normalized,
+			label: `Web user ${normalized.slice("user:".length)}`,
+			description: "Discovered local Web owner scope",
+			kind: "web-user",
+		};
+	}
+	return {
+		ownerScope: normalized,
+		label: normalized,
+		description: "Discovered local owner scope",
+		kind: "local",
+	};
+}
+
+function compareOwners(left: CliOwnerSummary, right: CliOwnerSummary): number {
+	return ownerRank(left) - ownerRank(right) || left.label.localeCompare(right.label) || left.ownerScope.localeCompare(right.ownerScope);
+}
+
+function ownerRank(owner: CliOwnerSummary): number {
+	if (owner.kind === "web-user") return 0;
+	if (owner.kind === "local") return 1;
+	if (owner.kind === "root-recovery") return 2;
+	return 3;
+}
+
+function looksLikeOwnerScope(value: string): boolean {
+	return value.startsWith("user:") || value.startsWith("local:");
+}
+
+function normalizeOwnerScope(value: string | undefined): string {
+	const trimmed = value?.trim();
+	return trimmed || CLI_ROOT_RECOVERY_OWNER_SCOPE;
+}
+
+function mergeRoomSummaries(rooms: readonly CliRoomSummary[]): CliRoomSummary[] {
+	const byId = new Map<string, CliRoomSummary>();
+	for (const room of rooms) {
+		const existing = byId.get(room.id);
+		byId.set(room.id, existing ? { ...room, description: existing.description ?? room.description, isDefault: existing.isDefault === true || room.isDefault === true } : room);
+	}
+	return [...byId.values()];
+}
+
+function ensureDefaultRoomSummary(ownerScope: string, rooms: readonly CliRoomSummary[]): CliRoomSummary[] {
+	const defaultRoom = rooms.find((room) => room.isDefault === true || room.title === "Personal Chat");
+	const normalizedRooms = rooms.map((room) => ({ ...room, ownerScope: room.ownerScope ?? ownerScope, isDefault: defaultRoom ? room.id === defaultRoom.id || room.isDefault === true : room.isDefault === true }));
+	if (defaultRoom) return normalizedRooms;
+	return [defaultCliRoomSummary(ownerScope), ...normalizedRooms];
+}
+
+function defaultCliRoomSummary(ownerScope: string): CliRoomSummary {
+	return {
+		id: cliDefaultRoomIdForOwner(ownerScope),
+		title: "Personal Chat",
+		description: ownerScope === CLI_ROOT_RECOVERY_OWNER_SCOPE ? "Root recovery Personal Chat" : "Default Personal Chat room",
+		ownerScope,
+		isDefault: true,
+	};
+}
+
+export function cliDefaultRoomIdForOwner(ownerScope: string): string {
+	return `room_cli_personal_${Buffer.from(ownerScope).toString("base64url")}`;
 }
 
 function cloneJson<T>(value: T): T {

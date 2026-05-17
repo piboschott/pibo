@@ -94,3 +94,19 @@ Validation and results for PRD 01 current-state audit batch:
 - Completed stories marked `passes: true`: PRD 01 `US-001`, `US-002`, `US-003`.
 - Implementation commit: `d8095bc` (`Audit Ink CLI V2 current state`).
 - Next recommended group: PRD 02 `US-001` owner discovery and Root recovery owner, then PRD 04 `US-001` source owner/room contract expansion if needed as a dependency.
+
+## 2026-05-17 run: PRD 02 owner discovery and source contract batch
+
+Selected story group:
+
+- `prd_02_owner_scope_recovery_profile.json` / `US-001` — Add owner discovery and Root recovery owner.
+- `prd_04_room_session_navigation.json` / `US-001` — Expand CLI source owner and room contracts, limited to the source/API foundation needed by owner discovery and default-room mapping.
+
+Intended validation plan:
+
+- Add renderer-neutral CLI session source owner types/methods for active owner, discovered owners, owner-scoped room/session listing, and room-scoped creation.
+- Implement local owner discovery from session store, session navigation, rooms, event log, custom agents when available, plus explicit configured owner scope.
+- Define a stable Root recovery owner scope and ensure a selected/fallback owner has a Personal Chat/default room available through local data room service when available, or a deterministic virtual room for memory-only tests.
+- Preserve `--session`/existing source compatibility by defaulting local sources with no explicit owner to the resolved single/fallback owner rather than `user:unknown`.
+- Add focused source tests for no owners, one owner, multiple owners, owner/room/session filtering, and create-session owner/default-room behavior.
+- Run `npm run build`, focused source tests, and `npm run typecheck` inside `pibo-dev-ink-cli-v2-web-parity` before committing.

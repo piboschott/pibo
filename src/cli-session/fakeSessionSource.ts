@@ -3,6 +3,7 @@ import {
 	CliSourceError,
 	type CliAgentSummary,
 	type CliOpenSession,
+	type CliOwnerSummary,
 	type CliRoomSummary,
 	type CliRuntimeStatus,
 	type CliSessionSource,
@@ -49,6 +50,16 @@ export class FakeCliSessionSource implements CliSessionSource {
 		this.statusOverrides = options.status ?? {};
 	}
 
+	async getActiveOwner(): Promise<CliOwnerSummary> {
+		this.assertOpen();
+		return { ownerScope: "user:fake", label: "Fake user", description: "Fake CLI session source owner", kind: "web-user" };
+	}
+
+	async listOwners(): Promise<readonly CliOwnerSummary[]> {
+		this.assertOpen();
+		return [await this.getActiveOwner()];
+	}
+
 	async listRooms(): Promise<readonly CliRoomSummary[]> {
 		this.assertOpen();
 		return this.rooms.map(cloneJson);
@@ -73,7 +84,7 @@ export class FakeCliSessionSource implements CliSessionSource {
 			roomId: input.roomId,
 			profile,
 			agentId: agent?.id ?? input.agentId,
-			ownerScope: input.ownerScope,
+			ownerScope: input.ownerScope ?? "user:fake",
 			workspace: input.workspace,
 			status: "idle",
 			createdAt,
@@ -235,6 +246,8 @@ export class FakeCliSessionSource implements CliSessionSource {
 			rooms: "supported",
 			sessions: "supported",
 			agents: "supported",
+			activeOwnerScope: session?.ownerScope ?? "user:fake",
+			activeOwnerLabel: "Fake user",
 			activeRoomId: session?.roomId,
 			activeSessionId: session?.id,
 			activeAgentId: session?.agentId,

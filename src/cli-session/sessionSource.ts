@@ -3,10 +3,20 @@ import type { PiboSessionTraceView } from "../shared/trace-types.js";
 
 export type CliSourceCapability = "supported" | "unsupported" | "unknown";
 
+export type CliOwnerSummary = {
+	ownerScope: string;
+	label: string;
+	description?: string;
+	kind: "web-user" | "root-recovery" | "local" | "legacy";
+	isFallback?: boolean;
+};
+
 export type CliRoomSummary = {
 	id: string;
 	title: string;
 	description?: string;
+	ownerScope?: string;
+	isDefault?: boolean;
 };
 
 export type CliSessionSummary = {
@@ -37,6 +47,8 @@ export type CliRuntimeStatus = {
 	rooms: CliSourceCapability;
 	sessions: CliSourceCapability;
 	agents: CliSourceCapability;
+	activeOwnerScope?: string;
+	activeOwnerLabel?: string;
 	activeRoomId?: string;
 	activeSessionId?: string;
 	activeAgentId?: string;
@@ -73,8 +85,10 @@ export type CliOpenSession = {
 };
 
 export interface CliSessionSource {
-	listRooms(): Promise<readonly CliRoomSummary[]>;
-	listSessions(input?: { roomId?: string }): Promise<readonly CliSessionSummary[]>;
+	getActiveOwner(): Promise<CliOwnerSummary>;
+	listOwners(): Promise<readonly CliOwnerSummary[]>;
+	listRooms(input?: { ownerScope?: string }): Promise<readonly CliRoomSummary[]>;
+	listSessions(input?: { roomId?: string; ownerScope?: string }): Promise<readonly CliSessionSummary[]>;
 	createSession(input?: CreateCliSessionInput): Promise<CliSessionSummary>;
 	openSession(sessionId: string): Promise<CliOpenSession>;
 	sendMessage(sessionId: string, text: string): Promise<void>;

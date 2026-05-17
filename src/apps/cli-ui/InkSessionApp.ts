@@ -311,6 +311,7 @@ export function formatCliSessionStatus(status: CliRuntimeStatus | undefined, ses
 		`source=${status?.source ?? "unknown"}`,
 		`mode=${status?.mode ?? "unknown"}`,
 		`connected=${status?.connected === false ? "no" : "yes"}`,
+		`owner=${status?.activeOwnerLabel ?? "unknown"} (${status?.activeOwnerScope ?? session?.ownerScope ?? "unknown"})`,
 		`session=${session?.id ?? status?.activeSessionId ?? "none"}`,
 		`agent=${session?.agentId ?? session?.profile ?? status?.activeAgentId ?? "default"}`,
 		`model=${status?.activeModel ? `${status.activeModel.provider}/${status.activeModel.id}` : "unknown"}`,
@@ -441,11 +442,12 @@ function agentPickerItem(agent: CliAgentSummary): InkSessionPickerItem {
 
 function formatStatusLine(state: InkSessionAppState): string {
 	const source = state.status?.source ?? "starting";
+	const owner = state.status?.activeOwnerLabel ? `${state.status.activeOwnerLabel} (${state.status.activeOwnerScope ?? "unknown"})` : state.status?.activeOwnerScope ?? state.session?.ownerScope ?? "owner unknown";
 	const session = state.session?.title ?? state.status?.activeSessionId ?? "no session";
 	const agent = state.session?.agentId ?? state.session?.profile ?? state.status?.activeAgentId ?? "default";
 	const model = state.status?.activeModel ? `${state.status.activeModel.provider}/${state.status.activeModel.id}` : "model unknown";
 	const mode = state.mode === "transcript" ? "transcript" : state.mode;
-	return boundedLine(`Pibo CLI Sessions | ${source} | ${session} | ${agent} | ${model} | ${mode}`);
+	return boundedLine(`Pibo CLI Sessions | ${source} | ${owner} | ${session} | ${agent} | ${model} | ${mode}`);
 }
 
 function boundedLine(value: string, max = 220): string {

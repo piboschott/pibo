@@ -133,7 +133,7 @@ test("InkSessionAppView renders status bar transcript viewport and input line", 
 		maxRows: 20,
 	}));
 
-	assert.match(output, /Pibo CLI Sessions \| fake \| CLI app shell fixture \| pibo-agent/);
+	assert.match(output, /Pibo CLI Sessions \| fake \| owner unknown \| CLI app shell fixture \| pibo-agent/);
 	assert.match(output, /Commands: \/help \/new \/session \/agent \/status \/clear \/exit \/quit/);
 	assert.match(output, /› Show me status/);
 	assert.match(output, /Status looks healthy\./);

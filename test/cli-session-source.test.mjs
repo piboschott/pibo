@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { buildCompactTerminalRows } from "../dist/session-ui/index.js";
-import { CliSourceError, createDefaultFakeCliSessionSource, LocalCliSessionSource, redactCliSecretText } from "../dist/cli-session/index.js";
+import { ChatRoomService } from "../dist/apps/chat/data/room-service.js";
+import { CliSourceError, CLI_ROOT_RECOVERY_OWNER_SCOPE, cliDefaultRoomIdForOwner, createDefaultFakeCliSessionSource, LocalCliSessionSource, redactCliSecretText } from "../dist/cli-session/index.js";
+import { PiboDataStore } from "../dist/data/pibo-store.js";
+import { PiboDataSessionStore } from "../dist/sessions/pibo-data-store.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
 
 const fixedNow = "2026-05-16T12:00:00.000Z";
@@ -128,7 +131,8 @@ test("local CLI session source lists existing sessions, derived rooms, agents, a
 	});
 
 	const rooms = await source.listRooms();
-	assert.deepEqual(rooms, [{ id: "room_one", title: "Main Room", description: "Derived from local session metadata" }]);
+	assert.ok(rooms.some((room) => room.title === "Personal Chat" && room.ownerScope === "user:one" && room.isDefault === true));
+	assert.ok(rooms.some((room) => room.id === "room_one" && room.title === "Main Room" && room.ownerScope === "user:one"));
 
 	const sessions = await source.listSessions({ roomId: "room_one" });
 	assert.equal(sessions.length, 1);
@@ -150,6 +154,85 @@ test("local CLI session source lists existing sessions, derived rooms, agents, a
 	assert.equal(status.updatedAt, fixedNow);
 	assert.doesNotMatch(status.message ?? "", /sk-testsecret|abcdef123456|hunter2/);
 	assert.match(status.message ?? "", /\[redacted\]/);
+});
+
+test("local CLI session source resolves Root recovery owner and default Personal Chat when no owners exist", async () => {
+	const store = new InMemoryPiboSessionStore();
+	const source = new LocalCliSessionSource({ sessionStore: store, now: () => fixedNow });
+
+	const activeOwner = await source.getActiveOwner();
+	assert.equal(activeOwner.ownerScope, CLI_ROOT_RECOVERY_OWNER_SCOPE);
+	assert.equal(activeOwner.kind, "root-recovery");
+	assert.equal(activeOwner.isFallback, true);
+	assert.deepEqual((await source.listOwners()).map((owner) => owner.ownerScope), [CLI_ROOT_RECOVERY_OWNER_SCOPE]);
+
+	const rooms = await source.listRooms();
+	assert.equal(rooms[0].id, cliDefaultRoomIdForOwner(CLI_ROOT_RECOVERY_OWNER_SCOPE));
+	assert.equal(rooms[0].title, "Personal Chat");
+	assert.equal(rooms[0].ownerScope, CLI_ROOT_RECOVERY_OWNER_SCOPE);
+	assert.equal(rooms[0].isDefault, true);
+
+	const created = await source.createSession({ title: "Root recovery created", profile: "codex-compat-openai-web" });
+	assert.equal(created.ownerScope, CLI_ROOT_RECOVERY_OWNER_SCOPE);
+	assert.equal(created.roomId, rooms[0].id);
+	assert.equal(store.get(created.id).ownerScope, CLI_ROOT_RECOVERY_OWNER_SCOPE);
+	assert.notEqual(created.ownerScope, "user:unknown");
+});
+
+test("local CLI session source discovers one owner and multiple owners from sessions rooms navigation and custom agents", async () => {
+	const dataStore = new PiboDataStore(":memory:");
+	const sessionStore = new PiboDataSessionStore(dataStore);
+	const rooms = new ChatRoomService(dataStore);
+	rooms.createRoom({ id: "room_two", ownerScope: "user:two", name: "Two Room", type: "chat" });
+	dataStore.navigation.upsertSession({ ownerScope: "user:three", roomId: "room_three", sessionId: "ps_nav_three", title: "Nav Three", profile: "pibo-agent", status: "idle", lastActivityAt: fixedNow, sortKey: fixedNow, updatedAt: fixedNow });
+	dataStore.eventLog.appendEvent({ sessionId: "ps_event_four", roomId: "room_four", topic: "chat", type: "message.accepted", source: "test", actorType: "user", actorId: "user:four", retentionClass: "standard", previewText: "owner discovery", createdAt: fixedNow });
+	const session = sessionStore.create({ id: "ps_owner_one", piSessionId: "pi_owner_one", channel: "chat-web", kind: "chat", profile: "pibo-agent", ownerScope: "user:one", title: "Owner One", metadata: { chatRoomId: "room_one", chatRoomName: "One Room", status: "idle" } });
+	assert.equal(session.ownerScope, "user:one");
+
+	const source = new LocalCliSessionSource({
+		dataStore,
+		sessionStore,
+		ownerSummaries: [{ ownerScope: "user:custom", label: "Custom owner", description: "custom agent", kind: "web-user" }],
+		now: () => fixedNow,
+	});
+
+	const ownerScopes = (await source.listOwners()).map((owner) => owner.ownerScope);
+	assert.deepEqual(ownerScopes, ["user:custom", "user:four", "user:one", "user:three", "user:two"]);
+	assert.equal((await source.getActiveOwner()).ownerScope, "user:custom");
+
+	const oneSource = new LocalCliSessionSource({ sessionStore, ownerScope: "user:one", dataStore, now: () => fixedNow });
+	assert.equal((await oneSource.getActiveOwner()).ownerScope, "user:one");
+	const oneRooms = await oneSource.listRooms();
+	assert.ok(oneRooms.some((room) => room.title === "Personal Chat" && room.isDefault === true));
+	assert.ok(oneRooms.some((room) => room.id === "room_one"));
+	await source.close();
+	await oneSource.close();
+	dataStore.close();
+});
+
+test("local CLI session source owner and room contract filters sessions and creates in selected owner default room", async () => {
+	const dataStore = new PiboDataStore(":memory:");
+	const sessionStore = new PiboDataSessionStore(dataStore);
+	const rooms = new ChatRoomService(dataStore);
+	const defaultRoom = rooms.ensureDefaultRoom({ ownerScope: "user:one", principalId: "user:one", name: "Personal Chat" });
+	rooms.createRoom({ id: "room_two", ownerScope: "user:two", name: "Other Owner Room", type: "chat" });
+	const one = sessionStore.create({ id: "ps_filter_one", piSessionId: "pi_filter_one", channel: "chat-web", kind: "chat", profile: "pibo-agent", ownerScope: "user:one", title: "Filter One", metadata: { chatRoomId: defaultRoom.id, chatRoomName: "Personal Chat", status: "idle" } });
+	const two = sessionStore.create({ id: "ps_filter_two", piSessionId: "pi_filter_two", channel: "chat-web", kind: "chat", profile: "pibo-agent", ownerScope: "user:two", title: "Filter Two", metadata: { chatRoomId: "room_two", chatRoomName: "Other Owner Room", status: "idle" } });
+
+	const source = new LocalCliSessionSource({ dataStore, sessionStore, ownerScope: "user:one", now: () => fixedNow });
+	assert.deepEqual((await source.listSessions()).map((session) => session.id), [one.id]);
+	assert.deepEqual((await source.listSessions({ ownerScope: "user:two" })).map((session) => session.id), [two.id]);
+	assert.deepEqual((await source.listSessions({ roomId: defaultRoom.id })).map((session) => session.id), [one.id]);
+
+	const created = await source.createSession({ title: "Created in default", profile: "codex-compat-openai-web" });
+	assert.equal(created.ownerScope, "user:one");
+	assert.equal(created.roomId, defaultRoom.id);
+	const persisted = dataStore.db.prepare("SELECT owner_scope, room_id FROM sessions WHERE id = ?").get(created.id);
+	assert.equal(persisted.owner_scope, "user:one");
+	assert.equal(persisted.room_id, defaultRoom.id);
+
+	await source.close();
+	dataStore.close();
 });
 
 test("local CLI session source creates opens sends and cleans local trace subscriptions", async () => {
@@ -236,10 +319,12 @@ test("local CLI session source can project router live events into trace updates
 test("local CLI session source reports clear errors and current-session agent limits", async () => {
 	const store = new InMemoryPiboSessionStore();
 	const source = new LocalCliSessionSource({ sessionStore: store, now: () => fixedNow, agentSummaries: [{ id: "codex-compat-openai-web", name: "codex-compat-openai-web", profileName: "codex-compat-openai-web", description: "Built-in" }, { id: "custom-agent", name: "custom-agent", profileName: "custom-agent", description: "Custom agent" }] });
-	assert.deepEqual(await source.listRooms(), []);
+	const rooms = await source.listRooms();
+	assert.equal(rooms.length, 1);
+	assert.equal(rooms[0].ownerScope, CLI_ROOT_RECOVERY_OWNER_SCOPE);
 	assert.deepEqual(await source.listSessions(), []);
 	const status = await source.getStatus();
-	assert.equal(status.rooms, "unknown");
+	assert.equal(status.rooms, "supported");
 	assert.equal(status.message, "Local CLI source ready; discovered 0 sessions.");
 
 	await assert.rejects(() => source.openSession("missing"), (error) => error instanceof CliSourceError && error.code === "session_not_found");
