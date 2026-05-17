@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:46:29Z",
+    "lastUpdatedAt": "2026-05-17T00:54:32Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -598,6 +598,15 @@
         "q-signals-telemetry"
       ],
       "message": "docs: refresh signals telemetry specs"
+    },
+    {
+      "hash": "68f30dcaaa14bfc1d9cc0add932fb2beaed5f5b7",
+      "shortHash": "68f30dc",
+      "committedAt": "2026-05-17T00:54:32Z",
+      "queueIds": [
+        "q-skills-context-runtime"
+      ],
+      "message": "docs: refresh skills context runtime specs"
     }
   ],
   "runNotes": [
@@ -624,6 +633,10 @@
     {
       "at": "2026-05-17T00:46:29Z",
       "note": "Audited q-skills-context-runtime. Updated user skills, core plugin built-in skills/native tooling, plugin registry Ralph stop conditions, runtime Build Context inspection, Chat Web Context area, and Context Build Inspector change spec/tasks."
+    },
+    {
+      "at": "2026-05-17T00:54:32Z",
+      "note": "Recorded commit 68f30dc for q-skills-context-runtime source-spec refresh."
     }
   ]
 }
