@@ -228,5 +228,5 @@ Validation and results for /new Web-visible selected owner/room batch:
   - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck'` — passed.
   - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test'` — ran 494 tests; 493 passed and only the pre-existing unrelated `test/telemetry-store.test.mjs` stale/prune assertion failed.
 - Completed stories marked `passes: true`: PRD 04 `US-004`; PRD 02 `US-005`.
-- Implementation commit: pending.
+- Implementation commit: f4c2aa6 (`Make CLI new sessions Web-visible`).
 - Next recommended group: PRD 04 `US-005` existing room session/transcript hydration, then PRD 02 `US-004` diagnostics/repair for legacy `user:unknown` sessions.
