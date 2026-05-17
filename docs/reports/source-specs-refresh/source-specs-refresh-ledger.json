@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:35:50Z",
+    "lastUpdatedAt": "2026-05-17T00:37:55Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -259,7 +259,17 @@
     }
   ],
   "blockedItems": [],
-  "commits": [],
+  "commits": [
+    {
+      "hash": "9df6b85cf080c46c1825d31b498d770e53a60786",
+      "shortHash": "9df6b85",
+      "committedAt": "2026-05-17T00:37:55Z",
+      "queueIds": [
+        "q-project-workflow"
+      ],
+      "message": "docs: refresh project workflow specs"
+    }
+  ],
   "runNotes": [
     {
       "at": "2026-05-17T00:17:50Z",
@@ -268,6 +278,10 @@
     {
       "at": "2026-05-17T00:35:50Z",
       "note": "Audited q-project-workflow. Updated source-backed capability specs and preserved Workflow System V1 / Workflow UI Authoring V2 change specs as mixed current/future target specs."
+    },
+    {
+      "at": "2026-05-17T00:37:55Z",
+      "note": "Recorded commit 9df6b85 for q-project-workflow source-spec refresh."
     }
   ]
 }
