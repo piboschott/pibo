@@ -45,6 +45,7 @@ import {
 	savePiboModelDefaults,
 	type PiboModelDefaults,
 } from "../../core/model-defaults.js";
+import { inspectPiboContextBuild } from "../../core/context-build.js";
 import { loadPiboUserSettings, sanitizeTimezone, updatePiboUserSettings } from "../../core/user-settings.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import type { ModelProfile } from "../../core/profiles.js";
@@ -1864,6 +1865,38 @@ function resolveCreateSessionProfile(
 	return matched.name;
 }
 
+async function buildContextBuildSnapshotForRequest(input: {
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	defaultProfile: string;
+	piboSessionId?: string;
+	profile?: string;
+}) {
+	const createProfile = input.context.channelContext.createProfile;
+	if (!createProfile) throw new PiboWebHttpError("Profile inspection is not available", 503);
+
+	const selectedSession = input.piboSessionId
+		? requireOwnedSession(input.context, input.webSession, input.piboSessionId)
+		: undefined;
+	const profileName = selectedSession?.profile ?? resolveCreateSessionProfile(input.context, input.defaultProfile, input.profile);
+	const profile = createProfile(profileName);
+	const userSettings = loadPiboUserSettings(input.webSession.ownerScope);
+	const cwd = selectedSession?.workspace ?? getDefaultPiboWorkspace();
+	return inspectPiboContextBuild({
+		cwd,
+		profile,
+		activeModel: selectedSession?.activeModel,
+		persistSession: false,
+		sessionContext: {
+			userId: input.webSession.authSession.identity.userId,
+			ownerScope: input.webSession.ownerScope,
+			piboSessionId: selectedSession?.id,
+			piboRoomId: selectedSession ? chatRoomIdFromMetadata(selectedSession.metadata) : undefined,
+			timezone: userSettings.timezone,
+		},
+	});
+}
+
 function indexOwnedSessions(sessionQuery: ChatSessionQuery, sessions: PiboSession[]): void {
 	sessionQuery.upsertSessionsIfChanged(sessions);
 }
@@ -3414,6 +3447,18 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					sessions,
 					...catalog,
 				});
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/context-build` && request.method === "GET") {
+				const webSession = await requireSession(request, context);
+				const snapshot = await buildContextBuildSnapshotForRequest({
+					context,
+					webSession,
+					defaultProfile,
+					piboSessionId: url.searchParams.get("piboSessionId") || undefined,
+					profile: url.searchParams.get("profile") || undefined,
+				});
+				return responseJson({ snapshot });
 			}
 
 			if (url.pathname.startsWith(`${CHAT_WEB_API_PREFIX}/cron`)) {

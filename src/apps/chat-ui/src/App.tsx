@@ -59,6 +59,7 @@ import { BasePromptView } from "./context/BasePromptView";
 import { CompactionPromptView } from "./context/CompactionPromptView";
 import { PiboToolsView } from "./context/PiboToolsView";
 import { McpToolsView } from "./context/McpToolsView";
+import { ContextBuildView } from "./context/ContextBuildView";
 import { CronArea } from "./CronArea";
 import { RalphArea } from "./RalphArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
@@ -78,7 +79,7 @@ import {
 } from "./cache";
 
 type Area = "sessions" | "projects" | "cron" | "ralph" | "agents" | "context" | "settings";
-type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
+type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
 type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
 
 export type ChatAppRoute =
@@ -1814,6 +1815,11 @@ export function App({ route }: { route: ChatAppRoute }) {
 										servers={bootstrap.agentCatalog?.mcpServers ?? []}
 										selectedServerName={selectedMcpServerName}
 										onServerSaved={updateMcpServerInBootstrap}
+									/>
+								) : contextPanel === "build-context" ? (
+									<ContextBuildView
+										piboSessionId={selectedPiboSessionId}
+										profile={selectedSessionNode?.profile ?? defaultProfileFromBootstrap(bootstrap)}
 									/>
 								) : contextPanel === "base-prompt" ? (
 									<BasePromptView />
@@ -5840,7 +5846,7 @@ function ContextSidebar({
 				<button
 					type="button"
 					onClick={() => onSelect("mcp-tools")}
-					className={`flex w-full items-center gap-2 border p-2 text-left ${
+					className={`mb-1 flex w-full items-center gap-2 border p-2 text-left ${
 						activePanel === "mcp-tools"
 							? "border-[#11a4d4] bg-[#11a4d4]/10"
 							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
@@ -5854,6 +5860,21 @@ function ContextSidebar({
 					<span className="inline-flex min-w-6 items-center justify-center border border-slate-700 bg-[#101d22] px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
 						{mcpServerCount}
 					</span>
+				</button>
+				<button
+					type="button"
+					onClick={() => onSelect("build-context")}
+					className={`flex w-full items-center gap-2 border p-2 text-left ${
+						activePanel === "build-context"
+							? "border-[#11a4d4] bg-[#11a4d4]/10"
+							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+					}`}
+				>
+					<Bug size={13} className="text-[#11a4d4]" />
+					<div className="min-w-0">
+						<span className="block truncate text-sm text-slate-200">Build Context</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">runtime-snapshot</span>
+					</div>
 				</button>
 			</div>
 		</div>
