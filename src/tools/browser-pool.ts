@@ -6,6 +6,8 @@ export type BrowserPoolLifecycleState = "empty" | "ready" | "leased" | "stale" |
 
 export type BrowserPoolMutationKind = "acquire" | "release" | "reap";
 
+export type BrowserPoolCleanupStatus = "not-attempted" | "success" | "failed" | "skipped";
+
 export interface BrowserPoolState {
 	workerId: string;
 	poolId: string;
@@ -16,10 +18,12 @@ export interface BrowserPoolState {
 	cdpUrl?: string;
 	userDataDir?: string;
 	activeLeaseId?: string;
+	activeLeaseCount?: number;
 	owner?: string;
 	lastUsedAt?: string;
 	idleExpiresAt?: string;
 	state: BrowserPoolLifecycleState;
+	cleanupStatus?: BrowserPoolCleanupStatus;
 	lastError?: string;
 }
 
@@ -56,6 +60,18 @@ export interface BrowserPoolCdpHealthOptions {
 	timeoutMs?: number;
 }
 
+export interface BrowserPoolCdpCleanupOptions {
+	timeoutMs?: number;
+	maxTargets?: number;
+}
+
+export interface BrowserPoolCdpCleanupResult {
+	ok: boolean;
+	status: BrowserPoolCleanupStatus;
+	closedTargets: number;
+	reason?: string;
+}
+
 export interface BrowserPoolStartedBrowser {
 	pid: number;
 	processGroupId?: number;
@@ -76,6 +92,16 @@ export interface BrowserPoolAcquireOptions {
 	startBrowser?: (state: BrowserPoolState) => Promise<BrowserPoolStartedBrowser>;
 }
 
+export interface BrowserPoolReleaseOptions {
+	leaseId?: string;
+	idleTimeoutMs?: number;
+	cdpTimeoutMs?: number;
+	lockOptions?: BrowserPoolLockOptions;
+	now?: () => Date;
+	isPidAlive?: (pid: number) => boolean | Promise<boolean>;
+	cleanupCdp?: (cdpUrl: string, options: BrowserPoolCdpCleanupOptions) => Promise<BrowserPoolCdpCleanupResult>;
+}
+
 export type BrowserPoolAcquireResult =
 	| {
 		acquired: true;
@@ -93,11 +119,20 @@ export type BrowserPoolAcquireResult =
 		staleReason: string;
 	};
 
+export interface BrowserPoolReleaseResult {
+	released: boolean;
+	cleanupStatus: BrowserPoolCleanupStatus;
+	closedTargets: number;
+	state: BrowserPoolState;
+	lastError?: string;
+}
+
 const DEFAULT_MAX_BROWSER_PROCESSES = 1;
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
 const DEFAULT_LOCK_POLL_INTERVAL_MS = 50;
 const DEFAULT_LOCK_STALE_MS = 10 * 60_000;
 const DEFAULT_CDP_HEALTH_TIMEOUT_MS = 2_500;
+const DEFAULT_CDP_CLEANUP_MAX_TARGETS = 25;
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 
 export class BrowserPoolLockTimeoutError extends Error {
@@ -119,7 +154,9 @@ export function createEmptyBrowserPoolState(identity: BrowserPoolIdentity): Brow
 		workerId: identity.workerId,
 		poolId: identity.poolId,
 		maxBrowserProcesses: identity.maxBrowserProcesses ?? DEFAULT_MAX_BROWSER_PROCESSES,
+		activeLeaseCount: 0,
 		state: "empty",
+		cleanupStatus: "not-attempted",
 	};
 }
 
@@ -216,10 +253,8 @@ export async function mutateBrowserPoolState<T>(
 
 export async function checkBrowserPoolCdpHealth(cdpUrl: string, options: BrowserPoolCdpHealthOptions = {}): Promise<BrowserPoolCdpHealthResult> {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_HEALTH_TIMEOUT_MS;
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		const response = await fetch(`${trimTrailingSlash(cdpUrl)}/json/version`, { signal: controller.signal });
+		const response = await fetchWithTimeout(`${trimTrailingSlash(cdpUrl)}/json/version`, timeoutMs);
 		if (!response.ok) return { ok: false, reason: `CDP /json/version returned HTTP ${response.status}` };
 		const payload = await response.json() as unknown;
 		if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { ok: false, reason: "CDP /json/version returned malformed JSON" };
@@ -228,8 +263,37 @@ export async function checkBrowserPoolCdpHealth(cdpUrl: string, options: Browser
 		return { ok: true, browser };
 	} catch (error) {
 		return { ok: false, reason: `CDP health check failed: ${error instanceof Error ? error.message : String(error)}` };
-	} finally {
-		clearTimeout(timer);
+	}
+}
+
+export async function cleanupBrowserPoolCdpTargets(cdpUrl: string, options: BrowserPoolCdpCleanupOptions = {}): Promise<BrowserPoolCdpCleanupResult> {
+	const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_HEALTH_TIMEOUT_MS;
+	const maxTargets = options.maxTargets ?? DEFAULT_CDP_CLEANUP_MAX_TARGETS;
+	try {
+		const baseUrl = trimTrailingSlash(cdpUrl);
+		const response = await fetchWithTimeout(`${baseUrl}/json/list`, timeoutMs);
+		if (!response.ok) return { ok: false, status: "failed", closedTargets: 0, reason: `CDP /json/list returned HTTP ${response.status}` };
+		const payload = await response.json() as unknown;
+		if (!Array.isArray(payload)) return { ok: false, status: "failed", closedTargets: 0, reason: "CDP /json/list returned malformed JSON" };
+
+		const pageTargetIds = payload
+			.slice(0, maxTargets)
+			.filter((target): target is Record<string, unknown> => Boolean(target) && typeof target === "object" && !Array.isArray(target))
+			.filter((target) => target.type === "page" && typeof target.id === "string" && target.id.length > 0)
+			.map((target) => target.id as string);
+
+		let closedTargets = 0;
+		for (const targetId of pageTargetIds) {
+			const closeResponse = await fetchWithTimeout(`${baseUrl}/json/close/${encodeURIComponent(targetId)}`, timeoutMs);
+			if (!closeResponse.ok) {
+				return { ok: false, status: "failed", closedTargets, reason: `CDP /json/close/${targetId} returned HTTP ${closeResponse.status}` };
+			}
+			closedTargets += 1;
+		}
+
+		return { ok: true, status: "success", closedTargets };
+	} catch (error) {
+		return { ok: false, status: "failed", closedTargets: 0, reason: `CDP cleanup failed: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
 
@@ -261,9 +325,11 @@ export async function acquireBrowserPoolLease(
 				...current,
 				state: "leased" as const,
 				activeLeaseId: leaseId,
+				activeLeaseCount: 1,
 				owner: options.owner,
 				lastUsedAt,
 				idleExpiresAt,
+				cleanupStatus: "not-attempted" as const,
 				lastError: undefined,
 			});
 			return {
@@ -276,6 +342,7 @@ export async function acquireBrowserPoolLease(
 			...current,
 			state: current.state === "dirty" ? "dirty" as const : "stale" as const,
 			activeLeaseId: undefined,
+			activeLeaseCount: 0,
 			owner: undefined,
 			lastUsedAt,
 			idleExpiresAt: undefined,
@@ -298,10 +365,12 @@ export async function acquireBrowserPoolLease(
 				cdpUrl: started.cdpUrl,
 				userDataDir: started.userDataDir,
 				activeLeaseId: leaseId,
+				activeLeaseCount: 1,
 				owner: options.owner,
 				lastUsedAt,
 				idleExpiresAt,
 				state: "leased" as const,
+				cleanupStatus: "not-attempted" as const,
 			});
 			return {
 				state: nextState,
@@ -311,6 +380,74 @@ export async function acquireBrowserPoolLease(
 			const dirtyState = stripUndefined({ ...staleState, state: "dirty" as const, lastError: `Browser replacement failed: ${error instanceof Error ? error.message : String(error)}` });
 			return { state: dirtyState, result: { acquired: false, state: dirtyState, staleReason: dirtyState.lastError! } };
 		}
+	}, options.lockOptions);
+}
+
+export async function releaseBrowserPoolLease(
+	paths: BrowserPoolPaths,
+	identity: BrowserPoolIdentity,
+	options: BrowserPoolReleaseOptions = {},
+): Promise<BrowserPoolReleaseResult> {
+	const now = options.now ?? (() => new Date());
+	const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+	const cleanupCdp = options.cleanupCdp ?? cleanupBrowserPoolCdpTargets;
+	const cdpTimeoutMs = options.cdpTimeoutMs ?? DEFAULT_CDP_HEALTH_TIMEOUT_MS;
+	const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+
+	return mutateBrowserPoolState<BrowserPoolReleaseResult>(paths, { ...identity, onMissing: "empty", onMalformed: "empty" }, "release", async (current) => {
+		const releasedAt = now();
+		const lastUsedAt = releasedAt.toISOString();
+		const idleExpiresAt = new Date(releasedAt.getTime() + idleTimeoutMs).toISOString();
+		const requestedLeaseId = options.leaseId;
+
+		if (current.state !== "leased" || !current.activeLeaseId) {
+			const nextState = stripUndefined({
+				...current,
+				activeLeaseId: undefined,
+				activeLeaseCount: 0,
+				owner: undefined,
+				lastUsedAt,
+				cleanupStatus: "skipped" as const,
+				lastError: "No active browser pool lease to release",
+			});
+			return { state: nextState, result: { released: false, cleanupStatus: "skipped", closedTargets: 0, state: nextState, lastError: nextState.lastError } };
+		}
+
+		if (requestedLeaseId && current.activeLeaseId !== requestedLeaseId) {
+			const lastError = `Active browser pool lease is ${current.activeLeaseId}, not ${requestedLeaseId}`;
+			const nextState = stripUndefined({ ...current, lastUsedAt, lastError });
+			return { state: nextState, result: { released: false, cleanupStatus: current.cleanupStatus ?? "not-attempted", closedTargets: 0, state: nextState, lastError } };
+		}
+
+		let cleanup: BrowserPoolCdpCleanupResult = { ok: false, status: "skipped", closedTargets: 0, reason: "Browser process is not reachable" };
+		let nextLifecycleState: BrowserPoolLifecycleState = "ready";
+		if (!current.pid || !(await isPidAlive(current.pid))) {
+			cleanup = { ok: false, status: "skipped", closedTargets: 0, reason: current.pid ? `Recorded browser pid ${current.pid} is not alive` : "Browser pool has no recorded pid" };
+			nextLifecycleState = "stale";
+		} else if (!current.cdpUrl) {
+			cleanup = { ok: false, status: "skipped", closedTargets: 0, reason: "Browser pool has no recorded CDP URL" };
+			nextLifecycleState = "stale";
+		} else {
+			cleanup = await cleanupCdp(current.cdpUrl, { timeoutMs: cdpTimeoutMs });
+			if (!cleanup.ok && cleanup.status === "failed") nextLifecycleState = "dirty";
+		}
+
+		const lastError = cleanup.ok ? undefined : cleanup.reason;
+		const nextState = stripUndefined({
+			...current,
+			state: nextLifecycleState,
+			activeLeaseId: undefined,
+			activeLeaseCount: 0,
+			owner: undefined,
+			lastUsedAt,
+			idleExpiresAt: nextLifecycleState === "ready" ? idleExpiresAt : undefined,
+			cleanupStatus: cleanup.status,
+			lastError,
+		});
+		return {
+			state: nextState,
+			result: { released: true, cleanupStatus: cleanup.status, closedTargets: cleanup.closedTargets, state: nextState, lastError },
+		};
 	}, options.lockOptions);
 }
 
@@ -333,10 +470,12 @@ export function normalizeBrowserPoolState(value: unknown, identity: BrowserPoolI
 		cdpUrl: readOptionalString(record.cdpUrl, "cdpUrl"),
 		userDataDir: readOptionalString(record.userDataDir, "userDataDir"),
 		activeLeaseId: readOptionalString(record.activeLeaseId, "activeLeaseId"),
+		activeLeaseCount: readOptionalNonNegativeInteger(record.activeLeaseCount, "activeLeaseCount"),
 		owner: readOptionalString(record.owner, "owner"),
 		lastUsedAt: readOptionalString(record.lastUsedAt, "lastUsedAt"),
 		idleExpiresAt: readOptionalString(record.idleExpiresAt, "idleExpiresAt"),
 		state,
+		cleanupStatus: readOptionalCleanupStatus(record.cleanupStatus),
 		lastError: readOptionalString(record.lastError, "lastError"),
 	});
 }
@@ -428,9 +567,31 @@ function readOptionalPositiveInteger(value: unknown, key: string): number | unde
 	return readPositiveInteger(value, key);
 }
 
+function readOptionalNonNegativeInteger(value: unknown, key: string): number | undefined {
+	if (value === undefined) return undefined;
+	if (!Number.isInteger(value) || typeof value !== "number" || value < 0) throw new BrowserPoolStateError(`Browser pool state field ${key} must be a non-negative integer when present`);
+	return value;
+}
+
 function readLifecycleState(value: unknown): BrowserPoolLifecycleState {
 	if (value === "empty" || value === "ready" || value === "leased" || value === "stale" || value === "dirty") return value;
 	throw new BrowserPoolStateError("Browser pool state field state is invalid");
+}
+
+function readOptionalCleanupStatus(value: unknown): BrowserPoolCleanupStatus | undefined {
+	if (value === undefined) return undefined;
+	if (value === "not-attempted" || value === "success" || value === "failed" || value === "skipped") return value;
+	throw new BrowserPoolStateError("Browser pool state field cleanupStatus is invalid");
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await fetch(url, { signal: controller.signal });
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

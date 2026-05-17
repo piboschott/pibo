@@ -49,8 +49,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented bounded CDP tab cleanup on browser-pool lease release; release clears active lease state/counters and records cleanupStatus/lastError for success, CDP failure, and exited-browser paths. Evidence recorded in IMPLEMENTATION_PROGRESS.md."
     },
     {
       "id": "US-004",

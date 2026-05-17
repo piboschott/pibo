@@ -13,6 +13,7 @@ import {
 	createEmptyBrowserPoolState,
 	loadBrowserPoolState,
 	mutateBrowserPoolState,
+	releaseBrowserPoolLease,
 	saveBrowserPoolState,
 	withBrowserPoolLock,
 } from "../dist/tools/browser-pool.js";
@@ -368,5 +369,149 @@ test("browser pool acquire treats state identity mismatches as dirty invalid sta
 		const saved = await loadBrowserPoolState(paths.statePath, identity);
 		assert.equal(saved.state, "dirty");
 		assert.match(saved.lastError, /worker id mismatch/i);
+	});
+});
+
+test("browser pool release closes page targets through bounded CDP cleanup", async () => {
+	await withTempDir(async (dir) => {
+		const closed = [];
+		const server = createServer((request, response) => {
+			if (request.url === "/json/list") {
+				response.setHeader("content-type", "application/json");
+				response.end(JSON.stringify([
+					{ id: "page-a", type: "page" },
+					{ id: "worker-a", type: "service_worker" },
+					{ id: "page-b", type: "page" },
+				]));
+				return;
+			}
+			if (request.url?.startsWith("/json/close/")) {
+				closed.push(decodeURIComponent(request.url.slice("/json/close/".length)));
+				response.end("Target is closing");
+				return;
+			}
+			response.statusCode = 404;
+			response.end("not found");
+		});
+		await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			assert.equal(typeof address, "object");
+			const paths = browserPoolPaths(dir, identity);
+			await saveBrowserPoolState(paths.statePath, {
+				...createEmptyBrowserPoolState(identity),
+				pid: 4321,
+				cdpPort: address.port,
+				cdpUrl: `http://127.0.0.1:${address.port}`,
+				userDataDir: join(dir, "profile"),
+				activeLeaseId: "lease-a",
+				activeLeaseCount: 1,
+				owner: "owner-a",
+				state: "leased",
+			});
+
+			const result = await releaseBrowserPoolLease(paths, identity, {
+				leaseId: "lease-a",
+				now: () => new Date("2026-05-17T00:30:00.000Z"),
+				isPidAlive: () => true,
+				cdpTimeoutMs: 200,
+			});
+
+			assert.equal(result.released, true);
+			assert.equal(result.cleanupStatus, "success");
+			assert.equal(result.closedTargets, 2);
+			assert.deepEqual(closed.sort(), ["page-a", "page-b"]);
+			const saved = await loadBrowserPoolState(paths.statePath, identity);
+			assert.equal(saved.state, "ready");
+			assert.equal(saved.activeLeaseId, undefined);
+			assert.equal(saved.activeLeaseCount, 0);
+			assert.equal(saved.owner, undefined);
+			assert.equal(saved.cleanupStatus, "success");
+			assert.equal(saved.lastError, undefined);
+			assert.equal(saved.lastUsedAt, "2026-05-17T00:30:00.000Z");
+		} finally {
+			await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+		}
+	});
+});
+
+test("browser pool release clears the lease and records CDP cleanup failure", async () => {
+	await withTempDir(async (dir) => {
+		const server = createServer((request, response) => {
+			if (request.url === "/json/list") {
+				setTimeout(() => response.end(JSON.stringify([{ id: "page-a", type: "page" }])), 100);
+				return;
+			}
+			response.statusCode = 404;
+			response.end("not found");
+		});
+		await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			assert.equal(typeof address, "object");
+			const paths = browserPoolPaths(dir, identity);
+			await saveBrowserPoolState(paths.statePath, {
+				...createEmptyBrowserPoolState(identity),
+				pid: 4321,
+				cdpPort: address.port,
+				cdpUrl: `http://127.0.0.1:${address.port}`,
+				userDataDir: join(dir, "profile"),
+				activeLeaseId: "lease-a",
+				activeLeaseCount: 1,
+				owner: "owner-a",
+				state: "leased",
+			});
+
+			const result = await releaseBrowserPoolLease(paths, identity, {
+				leaseId: "lease-a",
+				isPidAlive: () => true,
+				cdpTimeoutMs: 10,
+			});
+
+			assert.equal(result.released, true);
+			assert.equal(result.cleanupStatus, "failed");
+			assert.match(result.lastError, /CDP cleanup failed/i);
+			const saved = await loadBrowserPoolState(paths.statePath, identity);
+			assert.equal(saved.state, "dirty");
+			assert.equal(saved.activeLeaseId, undefined);
+			assert.equal(saved.activeLeaseCount, 0);
+			assert.equal(saved.cleanupStatus, "failed");
+			assert.match(saved.lastError, /CDP cleanup failed/i);
+		} finally {
+			await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+		}
+	});
+});
+
+test("browser pool release after browser process exit clears lease state and records stale cleanup", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			activeLeaseId: "lease-a",
+			activeLeaseCount: 1,
+			owner: "owner-a",
+			state: "leased",
+		});
+
+		const result = await releaseBrowserPoolLease(paths, identity, {
+			leaseId: "lease-a",
+			isPidAlive: () => false,
+		});
+
+		assert.equal(result.released, true);
+		assert.equal(result.cleanupStatus, "skipped");
+		assert.match(result.lastError, /pid 4321 is not alive/);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.state, "stale");
+		assert.equal(saved.activeLeaseId, undefined);
+		assert.equal(saved.activeLeaseCount, 0);
+		assert.equal(saved.owner, undefined);
+		assert.equal(saved.cleanupStatus, "skipped");
+		assert.match(saved.lastError, /pid 4321 is not alive/);
 	});
 });

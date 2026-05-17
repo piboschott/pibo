@@ -496,7 +496,7 @@ except Exception as exc:
     print("malformed")
     print(str(exc))
     raise SystemExit(0)
-for key in ("state", "pid", "cdpPort", "cdpUrl", "userDataDir", "activeLeaseId", "idleExpiresAt", "owner"):
+for key in ("state", "pid", "cdpPort", "cdpUrl", "userDataDir", "activeLeaseId", "activeLeaseCount", "idleExpiresAt", "owner"):
     value = data.get(key, "")
     print(value if value is not None else "")
 PYSUMMARY
@@ -563,7 +563,11 @@ if user_data_dir:
     record["userDataDir"] = user_data_dir
 if lease_id:
     record["activeLeaseId"] = lease_id
+    record["activeLeaseCount"] = 1
+    record["cleanupStatus"] = "not-attempted"
     record["idleExpiresAt"] = (now + timedelta(milliseconds=int(os.environ.get("PIBO_BROWSER_POOL_IDLE_TIMEOUT_MS", "600000")))).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+else:
+    record["activeLeaseCount"] = 0
 if owner:
     record["owner"] = owner
 if last_error:
@@ -606,8 +610,8 @@ browser_pool_acquire() {
     recorded_cdp_url=$(printf '%s\n' "$summary" | sed -n '4p')
     recorded_user_data_dir=$(printf '%s\n' "$summary" | sed -n '5p')
     recorded_active_lease_id=$(printf '%s\n' "$summary" | sed -n '6p')
-    recorded_idle_expires_at=$(printf '%s\n' "$summary" | sed -n '7p')
-    recorded_owner=$(printf '%s\n' "$summary" | sed -n '8p')
+    recorded_idle_expires_at=$(printf '%s\n' "$summary" | sed -n '8p')
+    recorded_owner=$(printf '%s\n' "$summary" | sed -n '9p')
     if [ "$recorded_state" = "leased" ] && browser_pool_lease_is_busy "$recorded_active_lease_id" "$lease_id" "$recorded_idle_expires_at" && [ -n "$recorded_pid" ] && [ -n "$recorded_port" ] && [ -n "$recorded_cdp_url" ] && kill -0 "$recorded_pid" 2>/dev/null && pibo_cdp_is_ready "$recorded_port"; then
       busy_reason="pool-exhausted: browser pool $(browser_pool_id) is already leased by $recorded_active_lease_id until \${recorded_idle_expires_at:-unknown}"
       echo "pibo browser-use: $busy_reason" >&2
