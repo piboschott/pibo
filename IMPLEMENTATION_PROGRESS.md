@@ -6,7 +6,8 @@
 - Owner scope: `user:ueR3mwuqBMPNTber3xuTwLmODbUlF4Sa`
 - Target room: `room_d45b1be3-7317-4c35-86b3-5e4550336cdc`
 - Profile: `pibo-agent`
-- Template intent: `prd-batch-stories` with flexible coherent story batching
+- Ralph job: `ralph_2573cc4a-d1d4-4a0e-88e9-c6224222c2d4`
+- Template: `prd-batch-stories` with flexible coherent story batching
 - Host worktree: `/root/code/pibo/.worktrees/ink-cli-terminal-rendering-parity`
 - Branch: `ralph/ink-cli-terminal-rendering-parity`
 - Docker dev worker: `pibo-dev-ink-cli-terminal-rendering-parity`
@@ -45,4 +46,4 @@ Implement:
 
 ## Progress log
 
-- 2026-05-17: Created worktree, committed PRD Markdown/JSON batch, started Docker dev worker, and prepared Ralph job prompt.
+- 2026-05-17: Created worktree, committed PRD Markdown/JSON batch, started Docker dev worker, prepared Ralph job prompt, and created stopped Ralph job `ralph_2573cc4a-d1d4-4a0e-88e9-c6224222c2d4`.
