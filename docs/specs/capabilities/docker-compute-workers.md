@@ -2,9 +2,9 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Updated:** 2026-05-11  
-**Owner / Source:** Current Pibo codebase; Scheduled Pibo Source Specs Coverage  
-**Related docs:** `GLOSSARY.md`, `AGENTS.md`, `docs/specs/README.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`
+**Updated:** 2026-05-17  
+**Owner / Source:** Current Pibo codebase; Scheduled Pibo Source Specs Coverage; 2026-05-17 compute/browser resource incident analysis  
+**Related docs:** `GLOSSARY.md`, `AGENTS.md`, `docs/specs/README.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`, `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`
 
 ## Why
 
@@ -190,31 +190,152 @@ The compute CLI MUST let operators inspect, stop, and remove workers explicitly,
 
 #### Current
 
-`releaseWorker()` stops a named container with a 10-second timeout and removes it. `listWorkers()` lists role `worker` and `dev` containers by default. `reapWorkers()` removes old one-time workers by default and includes dev workers only when `--include-dev` is supplied.
+`releaseWorker()` stops a named container with a 10-second timeout and removes it. `listWorkers()` lists role `worker` and `dev` containers by default. `pibo compute reap` builds a dry-run cleanup plan by default, selects stopped, dirty/OOM, and old one-time workers, and includes dev workers only when `--include-dev` is supplied. Destructive removal requires `--apply`.
 
 #### Acceptance
 
 - `pibo compute release <id>` stops and removes the named container or id.
 - Releasing an already stopped container still attempts removal.
-- `pibo compute reap --max-age-minutes <n>` removes one-time workers older than the requested age.
+- `pibo compute reap --dry-run --max-age-minutes <n>` previews one-time workers selected because they are stopped, dirty/OOM-killed, or older than the requested age.
 - The default reap age is 60 minutes.
-- `pibo compute reap --include-dev` also makes old dev workers eligible for removal.
+- `pibo compute reap --apply --max-age-minutes <n>` removes selected containers.
+- `pibo compute reap --include-dev` also makes selected dev workers eligible for removal.
 - `pibo compute list` shows running one-time and dev workers with name, role, status, ports, and created time, or an empty-state message.
 - Releasing or reaping a dev worker container does not remove its Git worktree automatically.
 
-#### Scenario: Reap old one-time worker
+#### Scenario: Preview and reap old one-time worker
 
 - GIVEN a running one-time worker has a created-at label older than 60 minutes
-- WHEN an operator runs `pibo compute reap`
-- THEN Pibo stops and removes that worker container
-- AND old dev workers are left running unless `--include-dev` is supplied.
+- WHEN an operator runs `pibo compute reap --dry-run`
+- THEN Pibo reports that worker as selected with reason `old`
+- AND old dev workers are skipped unless `--include-dev` is supplied.
+- WHEN the operator runs `pibo compute reap --apply`
+- THEN Pibo stops and removes only selected containers
+- AND Git worktrees are preserved.
+
+### Requirement: Worker containers enforce resource budgets
+
+Compute workers MUST start with host-safe resource limits and MUST expose those limits in inspectable metadata.
+
+#### Current
+
+Docker run commands apply the default compute resource policy to one-time and dev workers: `memory=2g`, `memory-swap=2g`, `pids-limit=512`, `shm-size=512m`, `--init`, `restart=no`, and bounded Docker JSON logs. The same policy is written to inspectable labels. Worker metadata labels include role, created time, owner scope, worktree/path when known, port block or dynamic ports, TTL/idle seconds, and Ralph job/run ids when supplied by the spawn caller.
+
+#### Target
+
+Every compute worker has a resource policy. Defaults protect small hosts, and operators can override limits for larger hosts through documented settings.
+
+Default policy values are intentionally conservative for small hosts: `memory=2g`, `memory-swap=2g`, `pids-limit=512`, `shm-size=512m`, `--init`, `restart=no`, Docker JSON logs with `max-size=10m`, and `max-file=3`. Larger hosts may override only the sizing fields through environment variables read at spawn time: `PIBO_COMPUTE_MEMORY`, `PIBO_COMPUTE_MEMORY_SWAP`, `PIBO_COMPUTE_PIDS_LIMIT`, `PIBO_COMPUTE_SHM_SIZE`, `PIBO_COMPUTE_INIT`, `PIBO_COMPUTE_LOG_MAX_SIZE`, and `PIBO_COMPUTE_LOG_MAX_FILE`. TTL and idle labels default to 3600 and 1800 seconds and can be overridden with `PIBO_COMPUTE_TTL_SECONDS`, `PIBO_COMPUTE_IDLE_SECONDS`, or the `pibo compute spawn` / `pibo compute dev spawn` options `--ttl-seconds` and `--idle-seconds`. Ralph-owned callers can pass `--ralph-job-id` and `--ralph-run-id` so the worker is traceable. The restart policy remains `no` so OOM or PID-limit failures do not create restart loops.
+
+#### Acceptance
+
+- One-time and dev worker Docker runs include memory, memory-swap, PIDs, shm-size, init, restart, and log options.
+- Resource policy values are recorded through labels or equivalent inspectable metadata.
+- A worker that is OOM-killed or hits a PID/resource limit is marked visible in compute status output.
+- Limits do not apply to host `pibo-web` or `pibo-web-dev` services.
+
+#### Scenario: Browser leak remains contained
+
+- GIVEN a worker starts too many browser processes
+- WHEN it reaches the configured PID or memory limit
+- THEN the failure is contained to the worker
+- AND host Pibo health checks remain available
+- AND compute diagnostics identify the constrained worker.
+
+### Requirement: Worker listing and reaping cover stopped and dirty resources
+
+The compute CLI MUST make stopped, OOM-killed, and dirty Pibo worker containers visible before cleanup.
+
+#### Current
+
+Listing covers all-state containers when `--all` is supplied. Reaping is plan-first, defaults to dry-run, selects stopped/dirty/OOM/old one-time workers, and requires explicit `--include-dev` before dev workers can be removed.
+
+#### Target
+
+Operators can inspect all Pibo compute containers and preview cleanup for stopped, dirty, old, one-time, and dev worker classes.
+
+#### Acceptance
+
+- `pibo compute list --all` or an equivalent command shows running and stopped Pibo compute containers.
+- Output includes status, OOM flag when available, role, owner, worktree, Ralph ids, created time, last-used time, and cleanup eligibility.
+- Reap supports dry-run/preview output and `--apply` for destructive cleanup.
+- Reap selectors cover stopped containers, dirty/OOM workers, age filters, one-time workers, and explicitly included dev workers.
+- Reap explains why each worker is selected or skipped.
+- Reap never deletes Git worktrees unless an explicit worktree cleanup option or command is used.
+
+#### Scenario: Stopped OOM worker remains inspectable
+
+- GIVEN a dev worker exited after host pressure
+- WHEN an operator lists all compute workers
+- THEN the stopped container appears with its worktree, owner, OOM/exit status, and next cleanup command.
+
+### Requirement: Docker build context and cache stay bounded
+
+The compute build workflow MUST avoid copying local worktrees, browser profiles, logs, screenshots, and Pibo local state into images and MUST expose Docker disk pressure diagnostics.
+
+#### Current
+
+The Docker build context excludes generated dependencies and now explicitly excludes local worktrees, Pibo state, browser-use/profile state, logs, screenshots, and browser/debug artifacts. BuildKit cache and old image layers are visible through read-only compute diagnostics.
+
+#### Target
+
+Build context excludes local state, and Pibo exposes image/container/cache usage and safe cleanup suggestions.
+
+#### Acceptance
+
+- `.dockerignore` excludes `.worktrees`, browser-use local profiles, screenshots, logs, and Pibo local state that should not enter images.
+- `pibo compute diagnostics` (alias `pibo compute disk`) is read-only and reports Docker image size, container size, build-cache size, volume size, and reclaimable bytes.
+- `pibo compute diagnostics --json` exposes stable rows, byte counts, totals, Docker availability, and cleanup suggestions for agents.
+- Cleanup suggestions distinguish container cleanup, image cleanup, build-cache prune, and worktree cleanup.
+
+#### Scenario: Build cache exceeds budget
+
+- GIVEN Docker build cache exceeds the configured or documented budget
+- WHEN an operator runs compute resource diagnostics
+- THEN Pibo reports the cache size and a safe prune command.
+
+### Requirement: Aggregate resource health is read-only and actionable
+
+Operators and agents MUST have one Pibo-native health command that summarizes browser, worker, Docker disk, and reaper/timer risk without cleaning anything.
+
+#### Current
+
+`pibo compute health` (alias `pibo compute doctor`) is read-only. Text output summarizes severity, browser process counts, active browser leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status. `--json` exposes stable fields for agents and monitoring.
+
+#### Acceptance
+
+- `pibo compute health` performs no browser reap, Docker removal, image prune, build-cache prune, gateway restart, or worktree deletion.
+- JSON output includes `readOnly`, `severity`, `checks`, `browserProcesses`, `browserLeases`, `computeWorkers`, `dockerDisk`, `reaperTimers`, and `nextCommands`.
+- Browser health includes total Chromium process count, total Chromium main-process count, per-pool/worker managed counts, active browser-pool leases, and stale CDP pid/port files.
+- Worker health includes dirty workers, OOM-killed containers, cleanup-eligible workers, and Docker availability.
+- Docker health includes disk totals, reclaimable bytes, BuildKit cache bytes, and disk-pressure warnings.
+- Text output gives concrete next commands such as `pibo tools browser-use pool reap --json`, `pibo compute reap --dry-run --json`, and `pibo compute diagnostics --json`.
+
+#### Scenario: Browser leak warning
+
+- GIVEN a worker has more Chromium main processes than its managed browser-pool limit
+- WHEN an operator runs `pibo compute health --json`
+- THEN health severity is at least `warning`
+- AND the `browser-leak` check points to browser-pool status/reap and compute reap dry-run commands.
+
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Compute workers must enforce memory, memory-swap, PID, shm, init, restart, and log budgets by default.
+- Worker labels/status must expose resource policy, owner scope, worktree, Ralph job/run ids when present, last-used time, dirty state, and cleanup eligibility.
+- `pibo compute list --all` and reap dry-run behavior must include running, stopped, OOM-killed, dirty, one-time, and dev workers.
+- Docker hygiene diagnostics must distinguish image reuse from container writable state, BuildKit cache, volumes, logs, browser state, screenshots, and worktrees.
+- `pibo compute health` must stay read-only and report browser leaks, active leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status with safe next commands.
+- Container/browser cleanup must not delete Git worktrees unless a separate explicit worktree cleanup command or flag is selected.
 
 ## Edge Cases
 
 - Existing Git branches or worktrees can make `git worktree add -b <name>` fail; the current code retries by adding the existing branch name.
 - Docker port parsing can return `0` if Docker returns no parseable host port; callers should treat that as unusable connection data.
 - `pibo compute list` includes dev containers by default, but `pibo compute reap` excludes dev containers unless `--include-dev` is supplied.
-- `release` removes containers but intentionally does not delete worktree directories.
+- `pibo compute reap` is dry-run by default; `--apply` is required to remove containers.
+- `release` and `reap --apply` remove containers but intentionally do not delete worktree directories.
 
 ## Constraints
 
@@ -230,8 +351,12 @@ The compute CLI MUST let operators inspect, stop, and remove workers explicitly,
 - [ ] SC-002: `pibo compute dev spawn --worktree <name>` creates a worktree, starts a dev container, and returns deterministic non-overlapping ports.
 - [ ] SC-003: Worker `gateway:web` exposes Chat Web with Docker-only dev auth and rejects host dev-auth activation.
 - [ ] SC-004: `pibo compute release <id>` removes the target container without deleting source worktrees.
-- [ ] SC-005: `pibo compute reap` removes old one-time worker containers, leaves dev workers running by default, and includes old dev workers only with `--include-dev`.
+- [ ] SC-005: `pibo compute reap --dry-run` previews old/stopped/dirty one-time worker cleanup, `--apply` removes selected containers, dev workers are skipped by default, and old dev workers are included only with `--include-dev`.
 - [ ] SC-006: A built-CLI discovery test verifies `pibo compute --help` and `pibo compute dev --help` expose only immediate next-step commands without starting Docker.
+- [ ] SC-007: Worker Docker run command tests verify resource limits and labels for one-time and dev workers.
+- [ ] SC-008: `pibo compute list --all` and reap dry-run tests cover stopped/OOM containers, dirty workers, and worktree-preserving cleanup.
+- [x] SC-009: Docker hygiene diagnostics report image, container, build-cache, volume, and reclaimable byte counts.
+- [x] SC-010: Resource health tests cover healthy state, browser leak warning, dirty worker, OOM container, Docker disk pressure, and missing reaper/timer state.
 
 ## Verification Coverage
 
@@ -242,7 +367,7 @@ The compute CLI MUST let operators inspect, stop, and remove workers explicitly,
 ### Source-Inspected Only
 
 - Compute CLI discovery, command registration, help text, required `--worktree`, and JSON printing are source-inspected from `src/compute/cli.ts`.
-- Image rebuild predicates, source/dependency hash files, Docker build invocation, one-time worker spawn, dev worker spawn, deterministic port blocks, worktree creation, list/release/reap behavior, and `--include-dev` cleanup selection are source-inspected from `src/compute/docker.ts`.
+- Image rebuild predicates, source/dependency hash files, Docker build invocation, one-time worker spawn, dev worker spawn, deterministic port blocks, worktree creation, list/release/reap behavior, dry-run/apply planning, and `--include-dev` cleanup selection are source-inspected from `src/compute/docker.ts`.
 - Worker entrypoint browser setup and dev-auth gateway dispatch are source-inspected from `scripts/docker-entrypoint.sh`.
 - Docker image dependencies and port exposure are source-inspected from `Dockerfile`.
 
@@ -260,7 +385,24 @@ The compute CLI MUST let operators inspect, stop, and remove workers explicitly,
 
 - Add built-CLI discovery tests before changing compute help text so the progressive discovery rule remains enforced.
 - Add Docker-command stub tests before changing worker labels, port mappings, or cleanup defaults; these tests should not require a real Docker daemon.
-- Keep real Docker spawn validation as an explicit integration check outside normal unit tests because it requires host Docker privileges and can create containers.
+- Keep real Docker spawn validation as an explicit integration check outside normal unit tests because it requires host Docker privileges and can create containers. The checked-in smoke script defaults to a dry run and skips clearly when Docker is unavailable or worker creation is not requested:
+
+  ```bash
+  npm run compute:limited-worker-smoke -- --dry-run
+  npm run compute:limited-worker-smoke -- --apply --json
+  ```
+
+  The apply path creates a temporary one-time worker with the default resource policy, verifies shell access, runs a bounded Chromium smoke command when browser dependencies are present, records Docker inspect values for memory, swap, PID, shm, restart, log, TTL/idle, owner, and resource-policy labels, confirms the worker appears in `pibo compute list --all --json`, and releases the worker in a `finally` cleanup path. Operators who need each primitive command can run the equivalent manual sequence:
+
+  ```bash
+  worker="pibo-worker-policy-smoke-$(date +%s)"
+  npm run dev -- compute spawn --name "$worker" --owner user:smoke --ttl-seconds 600 --idle-seconds 300
+  docker inspect "$worker" --format '{{json .HostConfig.Memory}} {{json .HostConfig.MemorySwap}} {{json .HostConfig.PidsLimit}} {{json .HostConfig.ShmSize}} {{json .HostConfig.RestartPolicy}} {{json .HostConfig.LogConfig}} {{json .Config.Labels}}'
+  docker exec "$worker" bash -lc 'node --version && test -x /usr/bin/chromium && /usr/bin/chromium --version'
+  docker exec "$worker" bash -lc "export DISPLAY=:99; timeout 20s /usr/bin/chromium --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<p>pibo-smoke</p>' | grep pibo-smoke"
+  npm run dev -- compute list --all --json
+  npm run dev -- compute release "$worker"
+  ```
 
 ## Assumptions and Open Questions
 
@@ -287,3 +429,6 @@ The compute CLI MUST let operators inspect, stop, and remove workers explicitly,
 | REQ-005 Worker entrypoint prepares browser-capable runtime | Browser automation dependency is available | `scripts/docker-entrypoint.sh`, `Dockerfile` | Source-inspected; real container integration check deferred | Source-inspected |
 | REQ-006 Dev auth remains worker-only | Host cannot enable dev auth by accident | `src/gateway/web.ts`, `src/plugins/dev-auth.ts`, `scripts/docker-entrypoint.sh` | `test/web-gateway.test.mjs`, `test/dev-auth.test.mjs`; compute entrypoint source-inspected | Partly tested |
 | REQ-007 Worker cleanup is explicit and bounded | Reap old one-time worker | `src/compute/cli.ts`, `src/compute/docker.ts` | Source-inspected; add cleanup selection tests | Source-inspected |
+| REQ-008 Worker containers enforce resource budgets | Browser leak remains contained | `src/compute/docker.ts` | Add Docker command construction tests | Draft |
+| REQ-009 Worker listing and reaping cover stopped and dirty resources | Stopped OOM worker remains inspectable | `src/compute/cli.ts`, `src/compute/docker.ts` | Add all-state list/reap tests | Draft |
+| REQ-010 Docker build context and cache stay bounded | Build cache exceeds budget | `.dockerignore`, `src/compute/cli.ts`, `src/compute/docker.ts` | `test/compute-resource-policy.test.mjs`; real read-only `pibo compute diagnostics --json` validation | Implemented |

@@ -33,6 +33,7 @@
     "build": "tsc -p tsconfig.json && npm run web-ui:build && node scripts/ensure-bin-executable.mjs",
     "start": "node dist/bin/pibo.js",
     "test": "npm run build && node --test test/*.test.mjs",
+    "compute:limited-worker-smoke": "node scripts/compute-limited-worker-smoke.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run chat-ui:typecheck && npm run context-files-ui:typecheck",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "prepack": "npm run build"

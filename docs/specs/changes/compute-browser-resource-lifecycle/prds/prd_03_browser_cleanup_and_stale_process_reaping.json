@@ -1,0 +1,90 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/browser-cleanup-stale-process-reaping",
+  "description": "Reliable browser release and stale chrome/chromium process cleanup for Pibo-managed browser pools and auth profile leases.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fix stale browser process matching for chrome and chromium",
+      "description": "As an operator, I want stale cleanup to detect both Chrome and Chromium processes so that worker browser leaks are not missed because of binary naming.",
+      "acceptanceCriteria": [
+        "Update stale browser process matching to recognize both chrome and chromium command names",
+        "Scope process matching to Pibo-managed user-data directories, recorded pool state, or recorded pid metadata",
+        "Do not match unrelated host browser processes that lack Pibo-managed profile metadata",
+        "Add tests covering /usr/bin/chromium, google-chrome, unrelated chromium profile, and auth template profile cases",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented process-table based stale browser matching in the browser-use wrapper. Cleanup now recognizes chrome, google-chrome, chromium, and chromium-browser command names only when the command line includes the exact managed --user-data-dir path. Added focused wrapper tests covering /usr/bin/chromium, google-chrome, an unrelated chromium profile, and auth-template profile preservation. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, real wrapper/process-table validation with actual Chromium passed, and npm run typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Terminate stale managed browser process trees safely",
+      "description": "As a tooling engineer, I want cleanup to terminate the exact stale managed browser process tree so that Chromium children do not survive release or reap.",
+      "acceptanceCriteria": [
+        "Reap prefers recorded pid and process group id before command-line matching",
+        "Termination uses a bounded graceful signal then a stronger fallback only for Pibo-managed browser process trees",
+        "Reap handles already-dead pids and missing pid files without failing the entire cleanup",
+        "Stale CDP pid and port files are removed only after the process is confirmed dead or killed",
+        "Focused tests cover live process group, dead pid, missing pid file, and stale CDP file cleanup",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented safer stale managed browser cleanup in the browser-use wrapper. Cleanup now prefers recorded browser-pool state and CDP pid metadata, uses bounded TERM then KILL for the matching managed process group when safe, falls back to exact Pibo-managed chrome/chromium user-data-dir process matching, tolerates dead or missing pid metadata, treats zombies as gone, and removes stale CDP pid/port and Singleton files only after the managed browser is confirmed gone. Added focused tests for live process-group termination, dead pid stale CDP cleanup, missing pid-file tolerance, and stale CDP file cleanup. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, real Docker-worker Chromium wrapper validation passed, and npm run typecheck passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Clean browser lease tabs and contexts on release",
+      "description": "As an agent, I want browser lease release to close or reset my browser state so that the next check starts from a clean context when the browser is reused.",
+      "acceptanceCriteria": [
+        "Release attempts bounded CDP cleanup for lease-owned tabs or contexts when the managed browser is reachable",
+        "Release updates active lease counters and last-used timestamps even when CDP cleanup fails",
+        "Release records cleanup status and last error for diagnostics",
+        "Tests cover successful CDP cleanup, CDP timeout/failure, and release after browser process exit",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented bounded CDP tab cleanup on browser-pool lease release; release clears active lease state/counters and records cleanupStatus/lastError for success, CDP failure, and exited-browser paths. Evidence recorded in IMPLEMENTATION_PROGRESS.md."
+    },
+    {
+      "id": "US-004",
+      "title": "Coordinate authenticated profile leases with browser pool leases",
+      "description": "As an auth workflow user, I want releasing an authenticated browser-use slot to also release the matching managed browser lease without touching the reusable auth template.",
+      "acceptanceCriteria": [
+        "Auth lease acquire records or returns the associated browser-pool lease id when managed-pool mode is active",
+        "Auth lease release releases the associated browser-pool lease when present",
+        "Auth lease reap-stale terminates known managed browser processes for expired slots when safe",
+        "Cleanup never deletes or kills the auth template profile unless an explicit auth-template workflow targets it",
+        "Tests cover auth slot release, expired auth slot reap, missing browser-pool lease, and template preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented auth lease/browser-pool coordination. Auth lease acquire now records/returns browserPoolLeaseId and exports PIBO_BROWSER_POOL_LEASE_ID; release calls browser-pool release when an associated managed pool lease is present; reap-stale safely terminates the matching managed browser process only when the pool state active lease id and user-data dir match the expired auth slot, preserving the auth template. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker CLI tests passed and npm run typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Add idle browser pool reaping and cleanup reporting",
+      "description": "As an operator, I want idle managed browsers to recycle automatically or manually so that long-lived workers do not keep Chromium running forever.",
+      "acceptanceCriteria": [
+        "Implement idle reap behavior for pools with no active lease and last-used time older than the configured idle timeout",
+        "Reap output reports affected leases, browser pools, process trees, and stale state files",
+        "Text output includes safe next commands when cleanup fails or a worker is marked dirty",
+        "JSON output includes counts and per-pool cleanup results",
+        "Tests cover idle eligible pool, active non-eligible pool, stale process cleanup, and dirty cleanup failure state",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented idle browser-pool reaping and cleanup reporting. Added a locked reap API that skips active leases, reaps no-active idle/stale/dirty pools, terminates managed process trees using recorded pid/process-group metadata, removes stale browser state files, clears reaped pool state to empty, and marks cleanup failures dirty with diagnostics. Added `pibo tools browser-use pool reap` text/JSON output with affected lease, pool, process-tree, and stale-file counts plus safe next commands on dirty failures. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, real Docker-worker process-tree reap validation passed, and npm run typecheck passed."
+    }
+  ]
+}

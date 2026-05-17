@@ -11,9 +11,15 @@ import {
 	spawnDevWorker,
 	listWorkers,
 	releaseWorker,
-	reapWorkers,
+	planReapWorkers,
+	applyComputeWorkerReapPlan,
 	getSourceHash,
+	getComputeDiskDiagnostics,
+	type ComputeDiskDiagnostics,
+	type ComputeWorkerReapPlan,
+	type WorkerInfo,
 } from "./docker.js";
+import { getComputeResourceHealth, type ComputeResourceHealth, type ResourceHealthSeverity } from "./resource-health.js";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -24,6 +30,123 @@ const DEP_HASH_FILE = path.join(os.homedir(), ".pibo", "compute-dep-hash");
 
 function printJson(value: unknown): void {
 	console.log(JSON.stringify(value, null, 2));
+}
+
+function parsePositiveIntegerOption(value: string | undefined): number | undefined {
+	if (value === undefined || value.trim() === "") return undefined;
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function formatResourcePolicy(worker: WorkerInfo): string {
+	const policy = worker.resourcePolicy;
+	if (!policy) return "-";
+	const parts = [
+		policy.memory ? `mem=${policy.memory}` : undefined,
+		policy.pidsLimit !== undefined ? `pids=${policy.pidsLimit}` : undefined,
+		policy.shmSize ? `shm=${policy.shmSize}` : undefined,
+	].filter(Boolean);
+	return parts.length ? parts.join(",") : "-";
+}
+
+function formatCleanup(worker: WorkerInfo): string {
+	const prefix = worker.cleanupEligibility.eligible ? "eligible" : "skip";
+	return `${prefix}:${worker.cleanupEligibility.reasons.join("+") || "none"}`;
+}
+
+export function renderComputeWorkerListText(workers: WorkerInfo[], options: { all?: boolean } = {}): string {
+	if (workers.length === 0) {
+		return [
+			options.all ? "No Pibo worker containers found." : "No worker containers running.",
+			"Next: pibo compute list --all --json",
+			"Next: pibo compute reap --help",
+		].join("\n");
+	}
+	const lines = ["NAME\tROLE\tSTATE\tSTATUS\tOOM\tPORTS\tCREATED\tLAST_USED\tOWNER\tWORKTREE\tRALPH_JOB\tRALPH_RUN\tRESOURCE\tCLEANUP"];
+	for (const w of workers) {
+		lines.push(`${w.name}\t${w.role}\t${w.state}\t${w.status}\t${w.oomKilled ? "yes" : "no"}\t${w.ports || "-"}\t${w.createdAt}\t${w.lastUsedAt ?? "-"}\t${w.ownerScope ?? "-"}\t${w.worktree ?? "-"}\t${w.ralphJobId ?? "-"}\t${w.ralphRunId ?? "-"}\t${formatResourcePolicy(w)}\t${formatCleanup(w)}`);
+	}
+	lines.push("Next: pibo compute list --all --json");
+	return lines.join("\n");
+}
+
+export function renderComputeReapPlanText(plan: ComputeWorkerReapPlan, options: { applied?: boolean; removed?: string[] } = {}): string {
+	const mode = options.applied ? "apply" : "dry-run";
+	const lines = [`Compute reap ${mode}: ${plan.summary.selected} selected, ${plan.summary.skipped} skipped, ${plan.summary.worktreesPreserved} worktree(s) preserved`];
+	if (plan.items.length === 0) {
+		lines.push("No Pibo worker containers found.");
+	} else {
+		lines.push("ACTION\tNAME\tROLE\tSTATE\tAGE_MIN\tREASONS\tSKIP_REASONS\tWORKTREE");
+		for (const item of plan.items) {
+			lines.push(`${item.action}\t${item.worker.name}\t${item.worker.role}\t${item.worker.state}\t${item.ageMinutes === undefined ? "-" : Math.floor(item.ageMinutes)}\t${item.reasons.join("+") || "-"}\t${item.skipReasons.join("+") || "-"}\t${item.preservesWorktree ? "preserve" : "-"}`);
+		}
+	}
+	if (options.applied) lines.push(`Removed: ${options.removed?.join(", ") || "none"}`);
+	else lines.push("Dry-run only. Apply with: pibo compute reap --apply");
+	lines.push("Worktrees are preserved; remove Git worktrees only with an explicit worktree cleanup command.");
+	lines.push(...plan.nextCommands.map((command) => `Next: ${command}`));
+	return lines.join("\n");
+}
+
+function formatMaybeBytes(bytes: number | undefined): string {
+	return bytes === undefined ? "-" : String(bytes);
+}
+
+function severityRank(severity: ResourceHealthSeverity): number {
+	if (severity === "critical") return 2;
+	if (severity === "warning") return 1;
+	return 0;
+}
+
+export function renderComputeResourceHealthText(health: ComputeResourceHealth): string {
+	const lines = [`Compute resource health: ${health.severity} (read-only)`];
+	lines.push(`Generated at: ${health.generatedAt}`);
+	lines.push(`Browser processes: ${health.browserProcesses.totalChromiumMainProcesses} main / ${health.browserProcesses.totalChromiumProcesses} total Chromium processes`);
+	lines.push(`Active browser leases: ${health.browserLeases.active}`);
+	lines.push(`Stale CDP files: ${health.browserLeases.staleCdpFiles.pidFiles} pid, ${health.browserLeases.staleCdpFiles.portFiles} port`);
+	lines.push(`Compute workers: ${health.computeWorkers.total} total, ${health.computeWorkers.dirty} dirty, ${health.computeWorkers.oomKilled} OOM-killed, ${health.computeWorkers.cleanupEligible} cleanup-eligible`);
+	lines.push(`Docker disk: reclaimable=${formatMaybeBytes(health.dockerDisk.reclaimableBytes)} buildCache=${formatMaybeBytes(health.dockerDisk.buildCacheBytes)} pressure=${health.dockerDisk.pressure ? "yes" : "no"}`);
+	lines.push(`Reaper/timer: ${health.reaperTimers.status}${health.reaperTimers.details ? ` - ${health.reaperTimers.details}` : ""}`);
+	if (health.browserProcesses.perWorker.length > 0) {
+		lines.push("Browser pools:");
+		lines.push("WORKER	POOL	STATE	PID	ACTIVE_LEASES	MAIN_PROCESSES	SEVERITY");
+		for (const pool of health.browserProcesses.perWorker) {
+			lines.push(`${pool.workerId}\t${pool.poolId}\t${pool.state}\t${pool.pid ?? "-"}\t${pool.activeLeaseCount}\t${pool.browserMainProcessCount}\t${pool.severity}`);
+		}
+	}
+	lines.push("Checks:");
+	for (const check of [...health.checks].sort((a, b) => severityRank(b.severity) - severityRank(a.severity))) {
+		lines.push(`- [${check.severity}] ${check.id}: ${check.message}`);
+		for (const command of check.nextCommands) lines.push(`  Next: ${command}`);
+	}
+	lines.push("Next commands:");
+	for (const command of health.nextCommands.slice(0, 8)) lines.push(`- ${command}`);
+	return lines.join("\n");
+}
+
+export function renderComputeDiskDiagnosticsText(diagnostics: ComputeDiskDiagnostics): string {
+	const lines = ["Compute disk diagnostics (read-only)"];
+	if (!diagnostics.dockerAvailable) {
+		lines.push(`Docker unavailable: ${diagnostics.dockerError ?? "unknown error"}`);
+		lines.push("Next: ensure Docker is installed and the daemon is reachable, then run pibo compute diagnostics --json");
+		return lines.join("\n");
+	}
+	if (diagnostics.rows.length === 0) {
+		lines.push("Docker reported no disk usage rows.");
+	} else {
+		lines.push("TYPE\tCOUNT\tACTIVE\tSIZE\tSIZE_BYTES\tRECLAIMABLE\tRECLAIMABLE_BYTES");
+		for (const row of diagnostics.rows) {
+			lines.push(`${row.label}\t${row.totalCount ?? "-"}\t${row.active ?? "-"}\t${row.size || "-"}\t${formatMaybeBytes(row.sizeBytes)}\t${row.reclaimable || "-"}\t${formatMaybeBytes(row.reclaimableBytes)}`);
+		}
+	}
+	lines.push(`Total bytes: ${formatMaybeBytes(diagnostics.totals.sizeBytes)}`);
+	lines.push(`Reclaimable bytes: ${formatMaybeBytes(diagnostics.totals.reclaimableBytes)}`);
+	lines.push("Cleanup suggestions:");
+	for (const suggestion of diagnostics.suggestions) {
+		lines.push(`- ${suggestion.kind}: ${suggestion.reason}`);
+		for (const command of suggestion.nextCommands) lines.push(`  Next: ${command}`);
+	}
+	return lines.join("\n");
 }
 
 export async function runComputeCli(argv: string[]): Promise<void> {
@@ -53,7 +176,11 @@ Next:
 		.command("spawn")
 		.description("Create a one-time worker from the current Docker image")
 		.option("--name <name>", "Set the container name")
-		.option("--owner <owner>", "Tag the container owner")
+		.option("--owner <owner>", "Tag the container owner scope")
+		.option("--ttl-seconds <n>", "Tag the worker TTL in seconds")
+		.option("--idle-seconds <n>", "Tag the worker idle retention in seconds")
+		.option("--ralph-job-id <id>", "Tag the Ralph job id when this worker is Ralph-owned")
+		.option("--ralph-run-id <id>", "Tag the Ralph run id when this worker is Ralph-owned")
 		.addHelpText(
 			"after",
 			`
@@ -63,7 +190,7 @@ Use this for quick isolated checks. For code changes, prefer:
   $ pibo compute dev spawn --worktree my-fix
 `,
 		)
-		.action(async (options: { name?: string; owner?: string }) => {
+		.action(async (options: { name?: string; owner?: string; ttlSeconds?: string; idleSeconds?: string; ralphJobId?: string; ralphRunId?: string }) => {
 			await mkdir(path.dirname(HASH_FILE), { recursive: true });
 
 			const needsBuild = !(await imageExists(IMAGE_NAME)) || (await shouldRebuild(WORKSPACE_DIR, HASH_FILE));
@@ -78,6 +205,10 @@ Use this for quick isolated checks. For code changes, prefer:
 				workspaceDir: WORKSPACE_DIR,
 				name: options.name,
 				owner: options.owner,
+				ttlSeconds: parsePositiveIntegerOption(options.ttlSeconds),
+				idleSeconds: parsePositiveIntegerOption(options.idleSeconds),
+				ralphJobId: options.ralphJobId,
+				ralphRunId: options.ralphRunId,
 			});
 
 			printJson(worker);
@@ -102,7 +233,11 @@ Next:
 		.description("Create a development worker with a Git worktree")
 		.requiredOption("--worktree <name>", "Name the Git worktree and branch")
 		.option("--repo <path>", "Use this repository", WORKSPACE_DIR)
-		.option("--owner <owner>", "Tag the container owner")
+		.option("--owner <owner>", "Tag the container owner scope")
+		.option("--ttl-seconds <n>", "Tag the worker TTL in seconds")
+		.option("--idle-seconds <n>", "Tag the worker idle retention in seconds")
+		.option("--ralph-job-id <id>", "Tag the Ralph job id when this worker is Ralph-owned")
+		.option("--ralph-run-id <id>", "Tag the Ralph run id when this worker is Ralph-owned")
 		.addHelpText(
 			"after",
 			`
@@ -112,7 +247,7 @@ Example:
   $ pibo compute dev spawn --worktree my-fix
 `,
 		)
-		.action(async (options: { worktree: string; repo: string; owner?: string }) => {
+		.action(async (options: { worktree: string; repo: string; owner?: string; ttlSeconds?: string; idleSeconds?: string; ralphJobId?: string; ralphRunId?: string }) => {
 			await mkdir(path.dirname(DEP_HASH_FILE), { recursive: true });
 
 			console.error("[pibo compute] Checking Docker image status...");
@@ -132,6 +267,10 @@ Example:
 				repoDir: options.repo,
 				worktreeName: options.worktree,
 				owner: options.owner,
+				ttlSeconds: parsePositiveIntegerOption(options.ttlSeconds),
+				idleSeconds: parsePositiveIntegerOption(options.idleSeconds),
+				ralphJobId: options.ralphJobId,
+				ralphRunId: options.ralphRunId,
 			});
 			console.error(`[pibo compute] Dev container '${worker.id}' started.`);
 			console.error(`[pibo compute] Ports: gateway=${worker.gatewayPort}, cdp=${worker.cdpPort}, web=${worker.webPort}, chat-ui=${worker.webUIPortChat}, context-files=${worker.webUIPortContext}`);
@@ -160,23 +299,78 @@ Rebuilds from the current workspace and refreshes compute image hashes.
 
 	program
 		.command("list")
-		.description("List running Pibo worker and dev-worker containers")
+		.description("List Pibo worker and dev-worker containers")
+		.option("--all", "Include stopped, exited, dead, and restarting Pibo workers")
+		.option("--json", "Print machine-readable worker metadata")
 		.addHelpText(
 			"after",
 			`
-Shows each worker's name, role, status, mapped ports, and creation time.
+Shows each worker's name, role, status, mapped ports, creation time, owner, and Ralph ownership when labeled.
+
+Next:
+  $ pibo compute list --all --json
 `,
 		)
-		.action(async () => {
-			const workers = await listWorkers();
-			if (workers.length === 0) {
-				console.log("No worker containers running.");
+		.action(async (options: { all?: boolean; json?: boolean }) => {
+			const workers = await listWorkers({ all: options.all === true });
+			if (options.json) {
+				printJson({ workers });
 				return;
 			}
-			console.log("NAME\t\tROLE\t\tSTATUS\t\tPORTS\t\tCREATED");
-			for (const w of workers) {
-				console.log(`${w.name}\t${w.role}\t${w.status}\t${w.ports}\t${w.createdAt}`);
+			console.log(renderComputeWorkerListText(workers, { all: options.all === true }));
+		});
+
+	program
+		.command("health")
+		.alias("doctor")
+		.description("Show read-only compute, browser, Docker, and reaper resource health")
+		.option("--json", "Print machine-readable resource health")
+		.option("--browser-pool-root <path>", "Browser pool root directory to scan")
+		.option("--browser-use-home <path>", "Browser-use home directory to scan for stale CDP files")
+		.addHelpText(
+			"after",
+			`
+Reports browser main-process counts, active browser-pool leases, stale CDP files, dirty/OOM workers, Docker disk pressure, and reaper/timer status.
+The command is read-only and never reaps, prunes, stops, or removes resources.
+
+Next:
+  $ pibo compute health --json
+  $ pibo tools browser-use pool reap --json
+  $ pibo compute reap --dry-run --json
+`,
+		)
+		.action(async (options: { json?: boolean; browserPoolRoot?: string; browserUseHome?: string }) => {
+			const health = await getComputeResourceHealth({ browserPoolRoot: options.browserPoolRoot, browserUseHome: options.browserUseHome });
+			if (options.json) {
+				printJson(health);
+				return;
 			}
+			console.log(renderComputeResourceHealthText(health));
+		});
+
+	program
+		.command("diagnostics")
+		.alias("disk")
+		.description("Show read-only Docker disk and build-cache diagnostics")
+		.option("--json", "Print machine-readable disk diagnostics")
+		.addHelpText(
+			"after",
+			`
+Reports Docker image, container, local volume, and build-cache usage without pruning anything.
+Cleanup suggestions distinguish compute containers, images, build cache, and Git worktrees.
+
+Next:
+  $ pibo compute diagnostics --json
+  $ pibo compute reap --dry-run --json
+`,
+		)
+		.action(async (options: { json?: boolean }) => {
+			const diagnostics = await getComputeDiskDiagnostics();
+			if (options.json) {
+				printJson(diagnostics);
+				return;
+			}
+			console.log(renderComputeDiskDiagnosticsText(diagnostics));
 		});
 
 	program
@@ -197,23 +391,37 @@ Use the name or id shown by:
 
 	program
 		.command("reap")
-		.description("Remove old worker containers")
-		.option("--max-age-minutes <n>", "Remove workers older than this many minutes", "60")
-		.option("--include-dev", "Also remove old dev-worker containers")
+		.description("Preview or apply compute worker container cleanup")
+		.option("--max-age-minutes <n>", "Select workers older than this many minutes", "60")
+		.option("--include-dev", "Also select dev-worker containers; dev workers are skipped by default")
+		.option("--no-stopped", "Do not select stopped, dead, created, or restarting containers")
+		.option("--no-dirty", "Do not select dirty or OOM-killed containers")
+		.option("--dry-run", "Preview the cleanup plan without removing containers")
+		.option("--apply", "Apply the cleanup plan and remove selected containers")
+		.option("--json", "Print machine-readable cleanup plan/result")
 		.addHelpText(
 			"after",
 			`
-Defaults to 60 minutes and one-time workers only. Use --include-dev to reap dev workers too.
+Defaults to a dry-run plan for one-time workers. Dev workers require --include-dev.
+Stopped, dirty/OOM, and old workers are selected unless disabled by selector flags.
+Worktrees are preserved; container cleanup never deletes Git worktrees.
 `,
 		)
-		.action(async (options: { maxAgeMinutes: string; includeDev?: boolean }) => {
+		.action(async (options: { maxAgeMinutes: string; includeDev?: boolean; stopped?: boolean; dirty?: boolean; dryRun?: boolean; apply?: boolean; json?: boolean }) => {
 			const maxAge = Number(options.maxAgeMinutes);
-			const removed = await reapWorkers(maxAge, { includeDev: options.includeDev === true });
-			if (removed.length === 0) {
-				console.log("No old workers to reap.");
-			} else {
-				console.log(`Reaped ${removed.length} worker(s): ${removed.join(", ")}`);
+			const plan = await planReapWorkers({
+				includeDev: options.includeDev === true,
+				includeStopped: options.stopped !== false,
+				includeDirty: options.dirty !== false,
+				maxAgeMinutes: Number.isFinite(maxAge) ? maxAge : 60,
+			});
+			const shouldApply = options.apply === true;
+			const removed = shouldApply ? await applyComputeWorkerReapPlan(plan) : [];
+			if (options.json) {
+				printJson({ dryRun: !shouldApply, applied: shouldApply, removed, plan });
+				return;
 			}
+			console.log(renderComputeReapPlanText(plan, { applied: shouldApply, removed }));
 		});
 
 	await program.parseAsync(argv);

@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { formatBrowserUseTargets, selectBestChatTarget } from "../dist/tools/browser-use-cdp.js";
@@ -11,6 +11,88 @@ import { createPiboXvfbServiceUnit, PIBO_XVFB_SERVICE_PATH, PIBO_XVFB_SERVICE_NA
 
 const execFileAsync = promisify(execFile);
 const cliPath = resolve("dist/bin/pibo.js");
+
+function shellQuote(value) {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function processIsAlive(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function waitForProcess(pid, alive) {
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		if (processIsAlive(pid) === alive) return;
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	assert.equal(processIsAlive(pid), alive);
+}
+
+function spawnBrowserLikeProcess(commandName, userDataDir) {
+	const script = "setInterval(() => {}, 1000)";
+	const command = `exec -a ${shellQuote(commandName)} ${shellQuote(process.execPath)} -e ${shellQuote(script)} -- --user-data-dir=${shellQuote(userDataDir)}`;
+	return spawn("bash", ["-lc", command], { stdio: "ignore" });
+}
+
+function terminateProcess(child) {
+	if (!child.killed && processIsAlive(child.pid)) child.kill("SIGKILL");
+}
+
+function terminatePid(pid) {
+	if (pid && processIsAlive(pid)) process.kill(pid, "SIGKILL");
+}
+
+async function waitForFile(path) {
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		try {
+			return await readFile(path, "utf8");
+		} catch {
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+		}
+	}
+	return await readFile(path, "utf8");
+}
+
+async function processIsRunningOrSleeping(pid) {
+	try {
+		const statText = await readFile(`/proc/${pid}/stat`, "utf8");
+		const endCommand = statText.lastIndexOf(")");
+		const state = statText.slice(endCommand + 2).split(" ")[0];
+		return state !== "Z";
+	} catch {
+		return false;
+	}
+}
+
+async function waitForProcessGoneOrZombie(pid) {
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		if (!(await processIsRunningOrSleeping(pid))) return;
+		await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+	}
+	assert.equal(await processIsRunningOrSleeping(pid), false);
+}
+
+function spawnManagedBrowserProcessTree(commandName, userDataDir, leaderPidPath, childPidPath) {
+	const childScript = "setInterval(() => {}, 1000)";
+	const script = `
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const child = spawn(process.execPath, ["-e", ${JSON.stringify(childScript)}], { stdio: "ignore" });
+writeFileSync(${JSON.stringify(leaderPidPath)}, String(process.pid));
+writeFileSync(${JSON.stringify(childPidPath)}, String(child.pid));
+setInterval(() => {}, 1000);
+`;
+	return spawn(process.execPath, ["-e", script, "--", `--user-data-dir=${userDataDir}`], {
+		argv0: commandName,
+		detached: true,
+		stdio: "ignore",
+	});
+}
 
 async function withTargetListServer(targets, run) {
 	const server = createServer((request, response) => {
@@ -161,11 +243,54 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 
 		const browserUseHome = join(cwd, "browser-use-home");
 		const chromeUserDataDir = join(cwd, "chrome-user-data");
+		const unrelatedChromeUserDataDir = join(cwd, "unrelated-chrome-user-data");
+		const authTemplateUserDataDir = join(cwd, "auth-template-user-data");
+		await mkdir(chromeUserDataDir, { recursive: true });
+		await mkdir(unrelatedChromeUserDataDir, { recursive: true });
+		await mkdir(authTemplateUserDataDir, { recursive: true });
+
+		const managedChromium = spawnBrowserLikeProcess("/usr/bin/chromium", chromeUserDataDir);
+		const managedGoogleChrome = spawnBrowserLikeProcess("google-chrome", chromeUserDataDir);
+		const unrelatedChromium = spawnBrowserLikeProcess("/usr/bin/chromium", unrelatedChromeUserDataDir);
+		const authTemplateChromium = spawnBrowserLikeProcess("/usr/bin/chromium", authTemplateUserDataDir);
+		try {
+			await Promise.all([
+				waitForProcess(managedChromium.pid, true),
+				waitForProcess(managedGoogleChrome.pid, true),
+				waitForProcess(unrelatedChromium.pid, true),
+				waitForProcess(authTemplateChromium.pid, true),
+			]);
+			const staleCleanup = await execFileAsync(wrapperPath, ["--pibo-ensure-chrome"], {
+				cwd,
+				env: {
+					...env,
+					BROWSER_USE_HOME: join(cwd, "browser-use-home-stale-cleanup"),
+					PIBO_BROWSER_POOL_WORKER_ID: "test-worker-stale-cleanup",
+					PIBO_BROWSER_USE_CHROME: fakeChromePath,
+					PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+					PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
+				},
+			});
+			assert.match(staleCleanup.stderr, /terminating stale Chrome process/);
+			assert.match(staleCleanup.stdout, /^http:\/\/127\.0\.0\.1:\d+/);
+			await Promise.all([
+				waitForProcess(managedChromium.pid, false),
+				waitForProcess(managedGoogleChrome.pid, false),
+			]);
+			assert.equal(processIsAlive(unrelatedChromium.pid), true);
+			assert.equal(processIsAlive(authTemplateChromium.pid), true);
+		} finally {
+			for (const child of [managedChromium, managedGoogleChrome, unrelatedChromium, authTemplateChromium]) terminateProcess(child);
+		}
+
 		const defaultProfile = await execFileAsync(wrapperPath, ["open", "https://example.test"], {
 			cwd,
 			env: {
 				...env,
 				BROWSER_USE_HOME: browserUseHome,
+				PIBO_BROWSER_POOL_WORKER_ID: "test-worker",
+				PIBO_BROWSER_POOL_LEASE_ID: "lease-default",
+				PIBO_BROWSER_POOL_OWNER: "test-owner",
 				PIBO_BROWSER_USE_CHROME: fakeChromePath,
 				PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
 				PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
@@ -173,6 +298,61 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 		});
 		assert.match(defaultProfile.stderr, /started Chrome profile "PIBo"/);
 		assert.match(defaultProfile.stdout, /--cdp-url\nhttp:\/\/127\.0\.0\.1:\d+\nopen\nhttps:\/\/example\.test/);
+		const poolStatePath = join(browserUseHome, "pibo-browser-pool", "browser-pools", "test-worker", "default", "state.json");
+		const poolState = JSON.parse(await readFile(poolStatePath, "utf8"));
+		assert.equal(poolState.state, "leased");
+		assert.equal(poolState.workerId, "test-worker");
+		assert.equal(poolState.poolId, "default");
+		assert.equal(poolState.maxBrowserProcesses, 1);
+		assert.equal(poolState.activeLeaseId, "lease-default");
+		assert.equal(poolState.owner, "test-owner");
+		assert.match(poolState.cdpUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+		assert.equal(poolState.userDataDir, chromeUserDataDir);
+
+		const busyServer = createServer((request, response) => {
+			if (request.url === "/json/version") {
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(JSON.stringify({ Browser: "FakeChrome/1.0" }));
+				return;
+			}
+			response.writeHead(404);
+			response.end("not found");
+		});
+		await new Promise((resolveListen) => busyServer.listen(0, "127.0.0.1", resolveListen));
+		try {
+			const busyAddress = busyServer.address();
+			assert.ok(busyAddress && typeof busyAddress === "object");
+			await writeFile(poolStatePath, `${JSON.stringify({
+				...poolState,
+				pid: process.pid,
+				cdpPort: busyAddress.port,
+				cdpUrl: `http://127.0.0.1:${busyAddress.port}`,
+				activeLeaseId: "other-lease",
+				owner: "other-owner",
+				idleExpiresAt: "2099-01-01T00:00:00.000Z",
+			}, null, 2)}\n`, "utf8");
+			await assert.rejects(
+				execFileAsync(wrapperPath, ["--pibo-ensure-chrome"], {
+					cwd,
+					env: {
+						...env,
+						BROWSER_USE_HOME: browserUseHome,
+						PIBO_BROWSER_POOL_WORKER_ID: "test-worker",
+						PIBO_BROWSER_POOL_LEASE_ID: "blocked-lease",
+						PIBO_BROWSER_USE_CHROME: fakeChromePath,
+						PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+						PIBO_BROWSER_USE_SKIP_CDP_WAIT: "1",
+					},
+				}),
+				(error) => {
+					assert.match(error.stderr, /pool-exhausted/);
+					return true;
+				},
+			);
+		} finally {
+			await new Promise((resolveClose) => busyServer.close(resolveClose));
+		}
+		await writeFile(poolStatePath, `${JSON.stringify(poolState, null, 2)}\n`, "utf8");
 		for (let attempt = 0; attempt < 20; attempt += 1) {
 			try {
 				await stat(fakeChromeArgsPath);
@@ -224,6 +404,227 @@ test("pibo tools env wraps browser-use with the PIBo default profile", async () 
 	}
 });
 
+test("pibo browser-use wrapper terminates stale managed process trees and stale CDP files safely", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-env-tree-cleanup-"));
+	try {
+		const env = { ...process.env, PIBO_HOME: join(cwd, "pibo-home") };
+		await execFileAsync("node", [cliPath, "tools", "env", "browser-use"], { cwd, env });
+		const wrapperPath = join(env.PIBO_HOME, "tools", "browser-use", "home", "bin", "browser-use");
+		const browserUseHome = join(cwd, "browser-use-home");
+		const chromeUserDataDir = join(cwd, "chrome-user-data");
+		const statePath = join(browserUseHome, "pibo-browser-pool", "browser-pools", "tree-worker", "default", "state.json");
+		const cdpDir = join(browserUseHome, "pibo-cdp");
+		const pidFile = join(cdpDir, "tree.pid");
+		const portFile = join(cdpDir, "tree.port");
+		const fakeChromePath = join(cwd, "failing-chrome");
+		await mkdir(dirname(statePath), { recursive: true });
+		await mkdir(cdpDir, { recursive: true });
+		await mkdir(chromeUserDataDir, { recursive: true });
+		await writeFile(fakeChromePath, "#!/bin/sh\nexit 1\n");
+		await chmod(fakeChromePath, 0o755);
+
+		const leaderPidPath = join(cwd, "leader.pid");
+		const childPidPath = join(cwd, "child.pid");
+		const processTree = spawnManagedBrowserProcessTree("/usr/bin/chromium", chromeUserDataDir, leaderPidPath, childPidPath);
+		let leaderPid;
+		let childPid;
+		try {
+			leaderPid = Number.parseInt(await waitForFile(leaderPidPath), 10);
+			childPid = Number.parseInt(await waitForFile(childPidPath), 10);
+			await waitForProcess(leaderPid, true);
+			await waitForProcess(childPid, true);
+			await writeFile(statePath, `${JSON.stringify({
+				workerId: "tree-worker",
+				poolId: "default",
+				maxBrowserProcesses: 1,
+				pid: leaderPid,
+				processGroupId: leaderPid,
+				cdpPort: 47777,
+				cdpUrl: "http://127.0.0.1:47777",
+				userDataDir: chromeUserDataDir,
+				state: "stale",
+			}, null, 2)}\n`, "utf8");
+			await writeFile(pidFile, `${leaderPid}\n`, "utf8");
+			await writeFile(portFile, "47777\n", "utf8");
+
+			await assert.rejects(
+				execFileAsync(wrapperPath, ["--session", "tree", "--pibo-ensure-chrome"], {
+					cwd,
+					env: {
+						...env,
+						BROWSER_USE_HOME: browserUseHome,
+						PIBO_BROWSER_POOL_WORKER_ID: "tree-worker",
+						PIBO_BROWSER_USE_CHROME: fakeChromePath,
+						PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+					},
+				}),
+				(error) => {
+					assert.match(error.stderr, /terminating stale Chrome process group/);
+					return true;
+				},
+			);
+			await waitForProcessGoneOrZombie(leaderPid);
+			await waitForProcessGoneOrZombie(childPid);
+			await assert.rejects(readFile(pidFile, "utf8"), /ENOENT/);
+			await assert.rejects(readFile(portFile, "utf8"), /ENOENT/);
+		} finally {
+			terminatePid(childPid);
+			terminatePid(leaderPid);
+			terminateProcess(processTree);
+		}
+
+		await writeFile(pidFile, "999999\n", "utf8");
+		await writeFile(portFile, "47778\n", "utf8");
+		await rm(statePath, { force: true });
+		await assert.rejects(
+			execFileAsync(wrapperPath, ["--session", "tree", "--pibo-ensure-chrome"], {
+				cwd,
+				env: {
+					...env,
+					BROWSER_USE_HOME: browserUseHome,
+					PIBO_BROWSER_POOL_WORKER_ID: "tree-worker",
+					PIBO_BROWSER_USE_CHROME: fakeChromePath,
+					PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+				},
+			}),
+		);
+		await assert.rejects(readFile(pidFile, "utf8"), /ENOENT/);
+		await assert.rejects(readFile(portFile, "utf8"), /ENOENT/);
+
+		await assert.rejects(
+			execFileAsync(wrapperPath, ["--session", "missing-pid", "--pibo-ensure-chrome"], {
+				cwd,
+				env: {
+					...env,
+					BROWSER_USE_HOME: browserUseHome,
+					PIBO_BROWSER_POOL_WORKER_ID: "tree-worker",
+					PIBO_BROWSER_USE_CHROME: fakeChromePath,
+					PIBO_BROWSER_USE_CHROME_USER_DATA_DIR: chromeUserDataDir,
+				},
+			}),
+		);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pibo tools browser-use pool status reports empty, ready, stale, text, and JSON read-only", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-pool-status-"));
+	try {
+		const env = { ...process.env, PIBO_HOME: join(cwd, "pibo-home"), BROWSER_USE_HOME: join(cwd, "browser-use-home") };
+		const statePath = join(env.BROWSER_USE_HOME, "pibo-browser-pool", "browser-pools", "worker-status", "default", "state.json");
+
+		const empty = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "status", "--worker-id", "worker-status"], { cwd, env });
+		assert.match(empty.stdout, /browser pool status: empty/);
+		assert.match(empty.stdout, /worker id: worker-status/);
+		assert.match(empty.stdout, /pool id: default/);
+		assert.match(empty.stdout, /state file: .*state\.json \(missing\)/);
+		await assert.rejects(readFile(statePath, "utf8"), /ENOENT/);
+
+		await mkdir(dirname(statePath), { recursive: true });
+		await writeFile(statePath, `${JSON.stringify({
+			workerId: "worker-status",
+			poolId: "default",
+			maxBrowserProcesses: 1,
+			pid: 1234,
+			processGroupId: 1234,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(cwd, "profile"),
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T00:10:00.000Z",
+			state: "ready",
+		}, null, 2)}\n`, "utf8");
+
+		const readyJson = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "status", "--worker-id", "worker-status", "--json"], { cwd, env });
+		const ready = JSON.parse(readyJson.stdout);
+		assert.equal(ready.state, "ready");
+		assert.equal(ready.readOnly, true);
+		assert.equal(ready.cdpUrl, "http://127.0.0.1:4831");
+		assert.equal(ready.stateFileExists, true);
+		assert.deepEqual(ready.nextCommands, ["pibo tools browser-use pool status --json"]);
+
+		await writeFile(statePath, `${JSON.stringify({
+			...ready,
+			rootDir: undefined,
+			statePath: undefined,
+			lockPath: undefined,
+			stateFileExists: undefined,
+			readOnly: undefined,
+			nextCommands: undefined,
+			state: "stale",
+			lastError: "Recorded browser pid 1234 is not alive",
+		}, null, 2)}\n`, "utf8");
+
+		const staleText = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "status", "--worker-id", "worker-status"], { cwd, env });
+		assert.match(staleText.stdout, /browser pool status: stale/);
+		assert.match(staleText.stdout, /stale\/dirty reason: Recorded browser pid 1234 is not alive/);
+		assert.match(staleText.stdout, /Next:/);
+		assert.match(staleText.stdout, /pibo tools browser-use pool status --json/);
+		assert.match(staleText.stdout, /pibo tools browser-use health/);
+
+		const staleJson = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "status", "--worker-id", "worker-status", "--json"], { cwd, env });
+		const stale = JSON.parse(staleJson.stdout);
+		assert.equal(stale.state, "stale");
+		assert.equal(stale.staleReason, "Recorded browser pid 1234 is not alive");
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pibo tools browser-use pool reap reports JSON counts and dirty next commands", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-pool-reap-"));
+	try {
+		const env = { ...process.env, PIBO_HOME: join(cwd, "pibo-home"), BROWSER_USE_HOME: join(cwd, "browser-use-home") };
+		const statePath = join(env.BROWSER_USE_HOME, "pibo-browser-pool", "browser-pools", "worker-reap", "default", "state.json");
+		await mkdir(dirname(statePath), { recursive: true });
+		await writeFile(statePath, `${JSON.stringify({
+			workerId: "worker-reap",
+			poolId: "default",
+			maxBrowserProcesses: 1,
+			pid: 987654321,
+			processGroupId: 987654321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(cwd, "profile"),
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			state: "stale",
+			lastError: "Recorded browser pid 987654321 is not alive",
+		}, null, 2)}\n`, "utf8");
+
+		const jsonResult = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "reap", "--worker-id", "worker-reap", "--json"], { cwd, env });
+		const parsed = JSON.parse(jsonResult.stdout);
+		assert.equal(parsed.counts.affectedBrowserPools, 1);
+		assert.equal(parsed.counts.terminatedProcessTrees, 0);
+		assert.equal(parsed.pools[0].reaped, true);
+		assert.equal(parsed.pools[0].cleanupStatus, "success");
+		assert.equal(parsed.pools[0].state.state, "empty");
+
+		await writeFile(statePath, `${JSON.stringify({
+			workerId: "worker-reap",
+			poolId: "default",
+			maxBrowserProcesses: 1,
+			pid: process.pid,
+			processGroupId: process.pid,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T00:05:00.000Z",
+			state: "ready",
+		}, null, 2)}\n`, "utf8");
+
+		const dirty = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "reap", "--worker-id", "worker-reap"], { cwd, env });
+		assert.match(dirty.stdout, /browser pool reap: failed/);
+		assert.match(dirty.stdout, /cleanup status: failed/);
+		assert.match(dirty.stdout, /Refusing to terminate browser pid/);
+		assert.match(dirty.stdout, /Next:/);
+		assert.match(dirty.stdout, /pibo tools browser-use pool status --json/);
+		assert.match(dirty.stdout, /pibo tools browser-use health/);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
 test("pibo tools browser-use manages isolated authenticated leases", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-use-leases-"));
 	try {
@@ -240,6 +641,7 @@ test("pibo tools browser-use manages isolated authenticated leases", async () =>
 		assert.match(discovery.stdout, /targets/);
 		assert.match(discovery.stdout, /attach-chat/);
 		assert.match(discovery.stdout, /lease acquire/);
+		assert.match(discovery.stdout, /pool status/);
 
 		const templateEnv = await execFileAsync("node", [cliPath, "tools", "browser-use", "auth-template", "env"], { cwd, env });
 		assert.match(templateEnv.stdout, /PIBO_BROWSER_USE_SESSION='pibo-auth-template'/);
@@ -285,6 +687,134 @@ test("pibo tools browser-use manages isolated authenticated leases", async () =>
 		assert.match(released.stdout, /Released pibo-chat-slot-001/);
 		await assert.rejects(readFile(join(slotDir, "Cookies"), "utf8"), /ENOENT/);
 	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pibo tools browser-use auth leases coordinate managed browser-pool leases", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-use-managed-leases-"));
+	const children = [];
+	try {
+		const env = {
+			...process.env,
+			PIBO_HOME: join(cwd, "pibo-home"),
+			PIBO_BROWSER_POOL_WORKER_ID: "auth-worker",
+			PIBO_BROWSER_USE_CHROME: join(cwd, "missing-chrome"),
+		};
+		const templateDir = join(cwd, "auth-template");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "Cookies"), "auth-cookie");
+		await writeFile(join(templateDir, "SingletonLock"), "template-lock");
+
+		const acquireMissing = await execFileAsync("node", [
+			cliPath,
+			"tools",
+			"browser-use",
+			"lease",
+			"acquire",
+			"--app",
+			"pibo-chat",
+			"--owner",
+			"agent-missing",
+			"--template-dir",
+			join(cwd, "empty-template"),
+			"--json",
+		], { cwd, env });
+		const missingLease = JSON.parse(acquireMissing.stdout);
+		assert.equal(missingLease.browserPoolLeaseId, "browser-use:pibo-auth-pibo-chat-slot-001");
+		assert.equal(missingLease.exports.PIBO_BROWSER_POOL_LEASE_ID, missingLease.browserPoolLeaseId);
+		const missingRelease = await execFileAsync("node", [cliPath, "tools", "browser-use", "lease", "release", missingLease.id], { cwd, env });
+		assert.match(missingRelease.stdout, /Released pibo-chat-slot-001/);
+
+		const acquireRelease = await execFileAsync("node", [
+			cliPath,
+			"tools",
+			"browser-use",
+			"lease",
+			"acquire",
+			"--app",
+			"pibo-chat",
+			"--owner",
+			"agent-release",
+			"--template-dir",
+			join(cwd, "empty-template"),
+			"--json",
+		], { cwd, env });
+		const releaseLease = JSON.parse(acquireRelease.stdout);
+		const poolStatePath = join(releaseLease.browserPoolRootDir, "browser-pools", releaseLease.browserPoolWorkerId, releaseLease.browserPoolId, "state.json");
+		await mkdir(dirname(poolStatePath), { recursive: true });
+		await writeFile(poolStatePath, `${JSON.stringify({
+			workerId: releaseLease.browserPoolWorkerId,
+			poolId: releaseLease.browserPoolId,
+			maxBrowserProcesses: 1,
+			pid: 999999,
+			cdpUrl: "http://127.0.0.1:9",
+			userDataDir: releaseLease.userDataDir,
+			activeLeaseId: releaseLease.browserPoolLeaseId,
+			activeLeaseCount: 1,
+			owner: "agent-release",
+			state: "leased",
+			cleanupStatus: "not-attempted",
+		}, null, 2)}\n`, "utf8");
+		await execFileAsync("node", [cliPath, "tools", "browser-use", "lease", "release", releaseLease.id], { cwd, env });
+		const releasedPoolState = JSON.parse(await readFile(poolStatePath, "utf8"));
+		assert.equal(releasedPoolState.activeLeaseId, undefined);
+		assert.equal(releasedPoolState.activeLeaseCount, 0);
+		assert.equal(releasedPoolState.cleanupStatus, "skipped");
+
+		const acquireExpired = await execFileAsync("node", [
+			cliPath,
+			"tools",
+			"browser-use",
+			"lease",
+			"acquire",
+			"--app",
+			"pibo-chat",
+			"--owner",
+			"agent-expired",
+			"--template-dir",
+			join(cwd, "empty-template"),
+			"--json",
+		], { cwd, env });
+		const expiredLease = JSON.parse(acquireExpired.stdout);
+		const browser = spawnBrowserLikeProcess("chromium", expiredLease.userDataDir);
+		children.push(browser);
+		await waitForProcess(browser.pid, true);
+		const templateBrowser = spawnBrowserLikeProcess("chromium", templateDir);
+		children.push(templateBrowser);
+		await waitForProcess(templateBrowser.pid, true);
+		const expiredPoolStatePath = join(expiredLease.browserPoolRootDir, "browser-pools", expiredLease.browserPoolWorkerId, expiredLease.browserPoolId, "state.json");
+		await mkdir(dirname(expiredPoolStatePath), { recursive: true });
+		await writeFile(expiredPoolStatePath, `${JSON.stringify({
+			workerId: expiredLease.browserPoolWorkerId,
+			poolId: expiredLease.browserPoolId,
+			maxBrowserProcesses: 1,
+			pid: browser.pid,
+			cdpUrl: "http://127.0.0.1:9",
+			userDataDir: expiredLease.userDataDir,
+			activeLeaseId: expiredLease.browserPoolLeaseId,
+			activeLeaseCount: 1,
+			owner: "agent-expired",
+			state: "leased",
+			cleanupStatus: "not-attempted",
+		}, null, 2)}\n`, "utf8");
+		const registryPath = join(expiredLease.browserUseHome, "auth-pool", "leases.json");
+		const registry = JSON.parse(await readFile(registryPath, "utf8"));
+		const registryLease = registry.leases.find((lease) => lease.id === expiredLease.id);
+		registryLease.expiresAt = new Date(Date.now() - 60_000).toISOString();
+		await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+
+		const reaped = await execFileAsync("node", [cliPath, "tools", "browser-use", "lease", "reap-stale"], { cwd, env });
+		assert.match(reaped.stdout, /Reaped 1 stale browser-use auth lease/);
+		await waitForProcess(browser.pid, false);
+		assert.equal(processIsAlive(templateBrowser.pid), true);
+		assert.equal(await readFile(join(templateDir, "Cookies"), "utf8"), "auth-cookie");
+		assert.equal(await readFile(join(templateDir, "SingletonLock"), "utf8"), "template-lock");
+		const reapedPoolState = JSON.parse(await readFile(expiredPoolStatePath, "utf8"));
+		assert.equal(reapedPoolState.activeLeaseId, undefined);
+		assert.equal(reapedPoolState.cleanupStatus, "success");
+	} finally {
+		for (const child of children) terminateProcess(child);
 		await rm(cwd, { recursive: true, force: true });
 	}
 });

@@ -2,9 +2,30 @@ node_modules
 dist
 .git
 .pibo
+.pibo/**
+.worktrees
+.worktrees/**
 *.md
 docs
 examples
 plans
 sketches
 test
+
+# Local browser/runtime state must never enter compute images.
+**/browser-use/**
+**/pibo-browser-pool/**
+**/auth-template*/**
+**/chrome-profile*/**
+**/chromium-profile*/**
+**/Default/Singleton*
+
+# Local artifacts from browser/debug sessions.
+*.log
+logs
+logs/**
+screenshots
+screenshots/**
+**/screenshot*.png
+*.webm
+*.trace

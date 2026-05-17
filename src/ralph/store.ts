@@ -7,12 +7,12 @@ import { isPiboThinkingLevel } from '../core/thinking.js';
 import type { PiboJsonObject } from '../core/events.js';
 import type { ModelProfile } from '../core/profiles.js';
 import type { PiboThinkingLevel } from '../core/thinking.js';
-import type { PiboRalphFactReader, PiboRalphJob, PiboRalphJobCreateInput, PiboRalphJobPatchInput, PiboRalphJobState, PiboRalphRun, PiboRalphRunFact, PiboRalphRunStatus, PiboRalphStopEvaluationSummary, PiboRalphStopPolicy } from './types.js';
+import type { PiboRalphFactReader, PiboRalphJob, PiboRalphJobCreateInput, PiboRalphJobPatchInput, PiboRalphJobState, PiboRalphResourceCleanupState, PiboRalphResourceMetadata, PiboRalphRun, PiboRalphRunFact, PiboRalphRunStatus, PiboRalphStopEvaluationSummary, PiboRalphStopPolicy } from './types.js';
 
 export type PiboRalphStoreOptions = { path?: string };
 
-type RalphJobRow = { id: string; owner_scope: string; name: string; description: string | null; enabled: number; target_json: string; profile: string; prompt: string; max_iterations: number | null; runtime_options_json: string | null; stop_policy_json: string | null; state_json: string; created_at: string; updated_at: string };
-type RalphRunRow = { id: string; job_id: string; owner_scope: string; pibo_session_id: string | null; status: PiboRalphRunStatus; reason: string | null; error: string | null; started_at: string | null; completed_at: string | null; created_at: string; updated_at: string };
+type RalphJobRow = { id: string; owner_scope: string; name: string; description: string | null; enabled: number; target_json: string; profile: string; prompt: string; max_iterations: number | null; runtime_options_json: string | null; stop_policy_json: string | null; resource_json?: string | null; state_json: string; created_at: string; updated_at: string };
+type RalphRunRow = { id: string; job_id: string; owner_scope: string; pibo_session_id: string | null; status: PiboRalphRunStatus; reason: string | null; error: string | null; resource_json?: string | null; started_at: string | null; completed_at: string | null; created_at: string; updated_at: string };
 type RalphRunFactRow = { id: string; owner_scope: string; job_id: string; run_id: string | null; pibo_session_id: string | null; type: string; source: PiboRalphRunFact['source']; payload_json: string; created_at: string };
 
 function nowIso(now = new Date()): string { return now.toISOString(); }
@@ -22,11 +22,60 @@ function isJsonObject(value: unknown): value is PiboJsonObject { return !!value 
 
 type RalphRuntimeOptions = { modelOverride?: ModelProfile; thinkingLevel?: PiboThinkingLevel; fastMode?: boolean };
 
+const cleanupStates = new Set<PiboRalphResourceCleanupState>(['none', 'active', 'released', 'retained', 'dirty']);
+
+function optionalString(value: unknown, field: string): string | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== 'string') throw new Error(`${field} must be a string`);
+	const trimmed = value.trim();
+	return trimmed || undefined;
+}
+function normalizeBrowserLeaseIds(value: unknown): string[] | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!Array.isArray(value)) throw new Error('resources.browserLeaseIds must be an array');
+	const ids = [...new Set(value.map((item) => optionalString(item, 'resources.browserLeaseIds[]')).filter((item): item is string => !!item))];
+	return ids.length ? ids : undefined;
+}
+export function normalizeRalphResourceMetadata(value: PiboRalphResourceMetadata | null | undefined): PiboRalphResourceMetadata | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('resources must be an object');
+	const cleanupState = optionalString(value.cleanupState, 'resources.cleanupState') as PiboRalphResourceCleanupState | undefined;
+	if (cleanupState && !cleanupStates.has(cleanupState)) throw new Error('resources.cleanupState must be one of none, active, released, retained, dirty');
+	const resources: PiboRalphResourceMetadata = {};
+	const workerId = optionalString(value.workerId, 'resources.workerId');
+	const browserLeaseIds = normalizeBrowserLeaseIds(value.browserLeaseIds);
+	const retainedUntil = optionalString(value.retainedUntil, 'resources.retainedUntil');
+	const dirtyReason = optionalString(value.dirtyReason, 'resources.dirtyReason');
+	const updatedAt = optionalString(value.updatedAt, 'resources.updatedAt');
+	if (workerId) resources.workerId = workerId;
+	if (browserLeaseIds) resources.browserLeaseIds = browserLeaseIds;
+	if (cleanupState) resources.cleanupState = cleanupState;
+	if (retainedUntil) resources.retainedUntil = retainedUntil;
+	if (dirtyReason) resources.dirtyReason = dirtyReason;
+	if (updatedAt) resources.updatedAt = updatedAt;
+	return Object.keys(resources).length ? resources : undefined;
+}
+function parseResourceMetadata(json: string | null | undefined): PiboRalphResourceMetadata | undefined {
+	if (!json) return undefined;
+	try { return normalizeRalphResourceMetadata(JSON.parse(json) as PiboRalphResourceMetadata); } catch { return undefined; }
+}
+function resourceMetadataJson(resources: PiboRalphResourceMetadata | null | undefined): string | null {
+	const normalized = normalizeRalphResourceMetadata(resources);
+	return normalized ? JSON.stringify(normalized) : null;
+}
+
 function jobFromRow(row: RalphJobRow): PiboRalphJob {
-	return { id: row.id, ownerScope: row.owner_scope, name: row.name, description: row.description ?? undefined, enabled: row.enabled === 1, target: parseJson(row.target_json), profile: row.profile, prompt: row.prompt, maxIterations: row.max_iterations ?? undefined, stopPolicy: parseStopPolicy(row.stop_policy_json), ...parseRuntimeOptions(row.runtime_options_json), state: parseJson(row.state_json), createdAt: row.created_at, updatedAt: row.updated_at };
+	const resources = parseResourceMetadata(row.resource_json);
+	return { id: row.id, ownerScope: row.owner_scope, name: row.name, description: row.description ?? undefined, enabled: row.enabled === 1, target: parseJson(row.target_json), profile: row.profile, prompt: row.prompt, maxIterations: row.max_iterations ?? undefined, stopPolicy: parseStopPolicy(row.stop_policy_json), ...parseRuntimeOptions(row.runtime_options_json), ...(resources ? { resources } : {}), state: parseJson(row.state_json), createdAt: row.created_at, updatedAt: row.updated_at };
 }
 function runFromRow(row: RalphRunRow): PiboRalphRun {
-	return { id: row.id, jobId: row.job_id, ownerScope: row.owner_scope, piboSessionId: row.pibo_session_id ?? undefined, status: row.status, reason: row.reason ?? undefined, error: row.error ?? undefined, startedAt: row.started_at ?? undefined, completedAt: row.completed_at ?? undefined, createdAt: row.created_at, updatedAt: row.updated_at };
+	const resources = parseResourceMetadata(row.resource_json);
+	return { id: row.id, jobId: row.job_id, ownerScope: row.owner_scope, piboSessionId: row.pibo_session_id ?? undefined, status: row.status, reason: row.reason ?? undefined, error: row.error ?? undefined, startedAt: row.started_at ?? undefined, completedAt: row.completed_at ?? undefined, ...(resources ? { resources } : {}), createdAt: row.created_at, updatedAt: row.updated_at };
+}
+function mergeResourceMetadata(jobResources: PiboRalphResourceMetadata | undefined, runResources: PiboRalphResourceMetadata | undefined): PiboRalphResourceMetadata | undefined {
+	if (!jobResources && !runResources) return undefined;
+	const browserLeaseIds = [...new Set([...(jobResources?.browserLeaseIds ?? []), ...(runResources?.browserLeaseIds ?? [])])];
+	return { ...(jobResources ?? {}), ...(runResources ?? {}), ...(browserLeaseIds.length ? { browserLeaseIds } : {}) };
 }
 function factFromRow(row: RalphRunFactRow): PiboRalphRunFact {
 	return { id: row.id, ownerScope: row.owner_scope, jobId: row.job_id, runId: row.run_id ?? undefined, piboSessionId: row.pibo_session_id ?? undefined, type: row.type, source: row.source, payload: parseJson(row.payload_json), createdAt: row.created_at };
@@ -95,7 +144,7 @@ function parseStopPolicy(json: string | null): PiboRalphStopPolicy | undefined {
 	try { return normalizeRalphStopPolicy(JSON.parse(json) as PiboRalphStopPolicy); } catch { return undefined; }
 }
 function stopPolicyJson(policy: PiboRalphStopPolicy | undefined): string | null { return policy ? JSON.stringify(normalizeRalphStopPolicy(policy)) : null; }
-function validateJobInput(input: Pick<PiboRalphJobCreateInput, 'ownerScope' | 'target' | 'profile' | 'prompt' | 'maxIterations' | 'modelOverride' | 'thinkingLevel' | 'fastMode' | 'stopPolicy'>): void {
+function validateJobInput(input: Pick<PiboRalphJobCreateInput, 'ownerScope' | 'target' | 'profile' | 'prompt' | 'maxIterations' | 'modelOverride' | 'thinkingLevel' | 'fastMode' | 'stopPolicy' | 'resources'>): void {
 	if (!input.ownerScope.trim()) throw new Error('ownerScope is required');
 	if (!input.profile.trim()) throw new Error('profile is required');
 	if (!input.prompt.trim()) throw new Error('prompt is required');
@@ -104,6 +153,7 @@ function validateJobInput(input: Pick<PiboRalphJobCreateInput, 'ownerScope' | 't
 	normalizeMaxIterations(input.maxIterations);
 	normalizeRuntimeOptions(input);
 	normalizeRalphStopPolicy(input.stopPolicy);
+	normalizeRalphResourceMetadata(input.resources);
 }
 
 export class PiboRalphStore {
@@ -123,7 +173,8 @@ export class PiboRalphStore {
 		validateJobInput(input);
 		const timestamp = nowIso(now);
 		const runtimeOptions = normalizeRuntimeOptions(input);
-		const job: PiboRalphJob = { id: `ralph_${randomUUID()}`, ownerScope: input.ownerScope, name: (input.name ?? defaultName(input.prompt)).trim(), description: input.description?.trim() || undefined, enabled: input.enabled === true, target: input.target, profile: input.profile, prompt: input.prompt, maxIterations: normalizeMaxIterations(input.maxIterations), stopPolicy: normalizeRalphStopPolicy(input.stopPolicy), ...runtimeOptions, state: { completedIterations: 0 }, createdAt: timestamp, updatedAt: timestamp };
+		const resources = normalizeRalphResourceMetadata(input.resources);
+		const job: PiboRalphJob = { id: `ralph_${randomUUID()}`, ownerScope: input.ownerScope, name: (input.name ?? defaultName(input.prompt)).trim(), description: input.description?.trim() || undefined, enabled: input.enabled === true, target: input.target, profile: input.profile, prompt: input.prompt, maxIterations: normalizeMaxIterations(input.maxIterations), stopPolicy: normalizeRalphStopPolicy(input.stopPolicy), ...runtimeOptions, ...(resources ? { resources } : {}), state: { completedIterations: 0 }, createdAt: timestamp, updatedAt: timestamp };
 		this.insertJob(job);
 		return this.getJob(job.id)!;
 	}
@@ -146,6 +197,22 @@ export class PiboRalphStore {
 		const stopPolicy = hasOwn(patch, 'stopPolicy') ? normalizeRalphStopPolicy(patch.stopPolicy ?? undefined) : existing.stopPolicy;
 		const next: PiboRalphJob = { ...existing, name: patch.name !== undefined ? patch.name.trim() : existing.name, description: patch.description !== undefined ? patch.description?.trim() || undefined : existing.description, enabled: patch.enabled ?? existing.enabled, target: patch.target ?? existing.target, profile: patch.profile ?? existing.profile, prompt: patch.prompt ?? existing.prompt, maxIterations: hasOwn(patch, 'maxIterations') ? normalizeMaxIterations(patch.maxIterations ?? undefined) : existing.maxIterations, stopPolicy, modelOverride: runtimeOptions.modelOverride, thinkingLevel: runtimeOptions.thinkingLevel, fastMode: runtimeOptions.fastMode, updatedAt: nowIso(now) };
 		validateJobInput(next); this.writeJob(next); return this.getJob(id);
+	}
+	updateJobResources(ownerScope: string, id: string, resources: PiboRalphResourceMetadata | null | undefined, now = new Date()): PiboRalphJob | undefined {
+		const existing = this.getOwnedJob(ownerScope, id); if (!existing) return undefined;
+		const timestamp = nowIso(now);
+		this.db.prepare('UPDATE pibo_ralph_jobs SET resource_json = ?, updated_at = ? WHERE id = ? AND owner_scope = ?').run(resourceMetadataJson(resources), timestamp, id, ownerScope);
+		return this.getJob(id);
+	}
+	updateRunResources(input: { ownerScope: string; runId: string; jobId?: string; resources?: PiboRalphResourceMetadata | null }, now = new Date()): PiboRalphRun | undefined {
+		const clauses = ['id = ?', 'owner_scope = ?'];
+		const values: Array<string | null> = [input.runId, input.ownerScope];
+		if (input.jobId) { clauses.push('job_id = ?'); values.push(input.jobId); }
+		const timestamp = nowIso(now);
+		const result = this.db.prepare(`UPDATE pibo_ralph_runs SET resource_json = ?, updated_at = ? WHERE ${clauses.join(' AND ')}`).run(resourceMetadataJson(input.resources), timestamp, ...values);
+		if (Number(result.changes ?? 0) === 0) return undefined;
+		const row = this.db.prepare('SELECT * FROM pibo_ralph_runs WHERE id = ? AND owner_scope = ?').get(input.runId, input.ownerScope) as RalphRunRow | undefined;
+		return row ? runFromRow(row) : undefined;
 	}
 	removeJob(ownerScope: string, id: string): boolean { const result = this.db.prepare('DELETE FROM pibo_ralph_jobs WHERE id = ? AND owner_scope = ?').run(id, ownerScope); return Number(result.changes ?? 0) > 0; }
 	listRuns(input: { ownerScope?: string; jobId?: string; limit?: number } = {}): PiboRalphRun[] {
@@ -215,25 +282,39 @@ export class PiboRalphStore {
 	createFactReader(job: PiboRalphJob): PiboRalphFactReader {
 		return { list: (input = {}) => this.listRunFacts({ ownerScope: job.ownerScope, jobId: job.id, type: input.type, runId: input.runId, limit: input.limit }), count: (input = {}) => this.listRunFacts({ ownerScope: job.ownerScope, jobId: job.id, type: input.type, runId: input.runId, limit: 500 }).length };
 	}
-	recoverInterruptedRuns(cutoff = new Date(Date.now() - 5 * 60_000)): number { const cutoffIso = nowIso(cutoff); const rows = this.db.prepare("SELECT * FROM pibo_ralph_jobs WHERE json_extract(state_json, '$.runningAt') IS NOT NULL").all() as RalphJobRow[]; let recovered = 0; for (const row of rows) { const job = jobFromRow(row); if (!job.state.runningAt || job.state.runningAt > cutoffIso) continue; if (job.state.lastRunId) this.completeRun({ jobId: job.id, runId: job.state.lastRunId, status: 'error', error: 'Ralph run was interrupted by gateway restart', reason: 'interrupted' }); recovered += 1; } return recovered; }
+	recoverInterruptedRuns(cutoff = new Date(Date.now() - 5 * 60_000)): number { const cutoffIso = nowIso(cutoff); const rows = this.db.prepare("SELECT * FROM pibo_ralph_jobs WHERE json_extract(state_json, '$.runningAt') IS NOT NULL").all() as RalphJobRow[]; let recovered = 0; for (const row of rows) { const job = jobFromRow(row); if (!job.state.runningAt || job.state.runningAt > cutoffIso) continue; if (job.state.lastRunId) { this.completeRun({ jobId: job.id, runId: job.state.lastRunId, status: 'error', error: 'Ralph run was interrupted by gateway restart', reason: 'interrupted' }); this.markInterruptedRunResourcesDirty(job, job.state.lastRunId); } recovered += 1; } return recovered; }
 	status(): { jobs: number; running: number } { const jobs = this.listJobs({ includeDisabled: false }); return { jobs: jobs.length, running: jobs.filter((job) => job.state.runningAt).length }; }
+	private markInterruptedRunResourcesDirty(job: PiboRalphJob, runId: string): void {
+		const runRow = this.db.prepare('SELECT * FROM pibo_ralph_runs WHERE id = ? AND job_id = ?').get(runId, job.id) as RalphRunRow | undefined;
+		const resources = mergeResourceMetadata(job.resources, runRow ? runFromRow(runRow).resources : undefined);
+		if (!resources || (!resources.workerId && (resources.browserLeaseIds ?? []).length === 0)) return;
+		const nextResources: PiboRalphResourceMetadata = { ...resources, cleanupState: 'dirty', dirtyReason: 'Ralph run was interrupted before browser resource cleanup could be confirmed', updatedAt: nowIso() };
+		this.updateRunResources({ ownerScope: job.ownerScope, jobId: job.id, runId, resources: nextResources });
+		this.updateJobResources(job.ownerScope, job.id, nextResources);
+	}
 	private reserveJob(id: string, now = new Date()): { job: PiboRalphJob; run: PiboRalphRun } | undefined {
 		const timestamp = nowIso(now); this.db.exec('BEGIN IMMEDIATE');
 		try { const job = this.getJob(id); if (!job || !job.enabled || job.state.runningAt) { this.db.exec('COMMIT'); return undefined; } const run = this.createRunLocked(job, timestamp); const state = { ...job.state, runningAt: timestamp, lastRunAt: timestamp, lastRunId: run.id }; this.updateJobStateLocked(job.id, state, timestamp); this.db.exec('COMMIT'); return { job: { ...job, state, updatedAt: timestamp }, run }; } catch (error) { this.db.exec('ROLLBACK'); throw error; }
 	}
 	private applySchema(): void {
-		this.db.exec(`CREATE TABLE IF NOT EXISTS pibo_ralph_jobs (id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT, enabled INTEGER NOT NULL, target_json TEXT NOT NULL, profile TEXT NOT NULL, prompt TEXT NOT NULL, max_iterations INTEGER, runtime_options_json TEXT, stop_policy_json TEXT, state_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_jobs_owner ON pibo_ralph_jobs(owner_scope, updated_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_jobs_enabled ON pibo_ralph_jobs(enabled, updated_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, owner_scope TEXT NOT NULL, pibo_session_id TEXT, status TEXT NOT NULL, reason TEXT, error TEXT, started_at TEXT, completed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_runs_job_created ON pibo_ralph_runs(job_id, created_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_runs_owner_created ON pibo_ralph_runs(owner_scope, created_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_run_facts (id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, job_id TEXT NOT NULL, run_id TEXT, pibo_session_id TEXT, type TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_job_created ON pibo_ralph_run_facts(job_id, created_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_run_type ON pibo_ralph_run_facts(run_id, type, created_at DESC);`);
+		this.db.exec(`CREATE TABLE IF NOT EXISTS pibo_ralph_jobs (id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT, enabled INTEGER NOT NULL, target_json TEXT NOT NULL, profile TEXT NOT NULL, prompt TEXT NOT NULL, max_iterations INTEGER, runtime_options_json TEXT, stop_policy_json TEXT, resource_json TEXT, state_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_jobs_owner ON pibo_ralph_jobs(owner_scope, updated_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_jobs_enabled ON pibo_ralph_jobs(enabled, updated_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, owner_scope TEXT NOT NULL, pibo_session_id TEXT, status TEXT NOT NULL, reason TEXT, error TEXT, resource_json TEXT, started_at TEXT, completed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_runs_job_created ON pibo_ralph_runs(job_id, created_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_runs_owner_created ON pibo_ralph_runs(owner_scope, created_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_run_facts (id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, job_id TEXT NOT NULL, run_id TEXT, pibo_session_id TEXT, type TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_job_created ON pibo_ralph_run_facts(job_id, created_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_run_type ON pibo_ralph_run_facts(run_id, type, created_at DESC);`);
 		this.ensureJobColumn('max_iterations', 'INTEGER');
 		this.ensureJobColumn('runtime_options_json', 'TEXT');
 		this.ensureJobColumn('stop_policy_json', 'TEXT');
+		this.ensureJobColumn('resource_json', 'TEXT');
+		this.ensureRunColumn('resource_json', 'TEXT');
 	}
 	private ensureJobColumn(name: string, definition: string): void {
 		const columns = this.db.prepare('PRAGMA table_info(pibo_ralph_jobs)').all() as Array<{ name: string }>;
 		if (!columns.some((column) => column.name === name)) this.db.exec(`ALTER TABLE pibo_ralph_jobs ADD COLUMN ${name} ${definition}`);
 	}
-	private insertJob(job: PiboRalphJob): void { this.db.prepare('INSERT INTO pibo_ralph_jobs (id, owner_scope, name, description, enabled, target_json, profile, prompt, max_iterations, runtime_options_json, stop_policy_json, state_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(job.id, job.ownerScope, job.name, job.description ?? null, job.enabled ? 1 : 0, JSON.stringify(job.target), job.profile, job.prompt, job.maxIterations ?? null, runtimeOptionsJson(job), stopPolicyJson(job.stopPolicy), JSON.stringify(job.state), job.createdAt, job.updatedAt); }
-	private writeJob(job: PiboRalphJob): void { this.db.prepare('UPDATE pibo_ralph_jobs SET name = ?, description = ?, enabled = ?, target_json = ?, profile = ?, prompt = ?, max_iterations = ?, runtime_options_json = ?, stop_policy_json = ?, state_json = ?, updated_at = ? WHERE id = ? AND owner_scope = ?').run(job.name, job.description ?? null, job.enabled ? 1 : 0, JSON.stringify(job.target), job.profile, job.prompt, job.maxIterations ?? null, runtimeOptionsJson(job), stopPolicyJson(job.stopPolicy), JSON.stringify(job.state), job.updatedAt, job.id, job.ownerScope); }
+	private ensureRunColumn(name: string, definition: string): void {
+		const columns = this.db.prepare('PRAGMA table_info(pibo_ralph_runs)').all() as Array<{ name: string }>;
+		if (!columns.some((column) => column.name === name)) this.db.exec(`ALTER TABLE pibo_ralph_runs ADD COLUMN ${name} ${definition}`);
+	}
+	private insertJob(job: PiboRalphJob): void { this.db.prepare('INSERT INTO pibo_ralph_jobs (id, owner_scope, name, description, enabled, target_json, profile, prompt, max_iterations, runtime_options_json, stop_policy_json, resource_json, state_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(job.id, job.ownerScope, job.name, job.description ?? null, job.enabled ? 1 : 0, JSON.stringify(job.target), job.profile, job.prompt, job.maxIterations ?? null, runtimeOptionsJson(job), stopPolicyJson(job.stopPolicy), resourceMetadataJson(job.resources), JSON.stringify(job.state), job.createdAt, job.updatedAt); }
+	private writeJob(job: PiboRalphJob): void { this.db.prepare('UPDATE pibo_ralph_jobs SET name = ?, description = ?, enabled = ?, target_json = ?, profile = ?, prompt = ?, max_iterations = ?, runtime_options_json = ?, stop_policy_json = ?, resource_json = ?, state_json = ?, updated_at = ? WHERE id = ? AND owner_scope = ?').run(job.name, job.description ?? null, job.enabled ? 1 : 0, JSON.stringify(job.target), job.profile, job.prompt, job.maxIterations ?? null, runtimeOptionsJson(job), stopPolicyJson(job.stopPolicy), resourceMetadataJson(job.resources), JSON.stringify(job.state), job.updatedAt, job.id, job.ownerScope); }
 	private updateJobStateLocked(id: string, state: PiboRalphJobState, updatedAt: string): void { this.db.prepare('UPDATE pibo_ralph_jobs SET state_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(state), updatedAt, id); }
-	private createRunLocked(job: PiboRalphJob, timestamp: string): PiboRalphRun { const run: PiboRalphRun = { id: `rrun_${randomUUID()}`, jobId: job.id, ownerScope: job.ownerScope, status: 'running', startedAt: timestamp, createdAt: timestamp, updatedAt: timestamp }; this.db.prepare('INSERT INTO pibo_ralph_runs (id, job_id, owner_scope, pibo_session_id, status, reason, error, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, ?, ?)').run(run.id, run.jobId, run.ownerScope, run.status, run.startedAt ?? null, run.createdAt, run.updatedAt); return run; }
+	private createRunLocked(job: PiboRalphJob, timestamp: string): PiboRalphRun { const run: PiboRalphRun = { id: `rrun_${randomUUID()}`, jobId: job.id, ownerScope: job.ownerScope, status: 'running', startedAt: timestamp, ...(job.resources ? { resources: job.resources } : {}), createdAt: timestamp, updatedAt: timestamp }; this.db.prepare('INSERT INTO pibo_ralph_runs (id, job_id, owner_scope, pibo_session_id, status, reason, error, resource_json, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?, NULL, ?, ?)').run(run.id, run.jobId, run.ownerScope, run.status, resourceMetadataJson(run.resources), run.startedAt ?? null, run.createdAt, run.updatedAt); return run; }
 }
 export function createDefaultPiboRalphStore(options: PiboRalphStoreOptions = {}): PiboRalphStore { return new PiboRalphStore(options); }

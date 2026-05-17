@@ -2,9 +2,9 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Updated:** 2026-05-11  
-**Owner / Source:** Scheduled Pibo Source Specs Coverage  
-**Related docs:** [Browser Automation Desktop Environment](./browser-automation-desktop-environment.md), [Curated CLI Tools](./curated-cli-tools.md), [Docker Compute Workers](./docker-compute-workers.md), `AGENTS.md`
+**Updated:** 2026-05-17  
+**Owner / Source:** Scheduled Pibo Source Specs Coverage; 2026-05-17 compute/browser resource incident analysis  
+**Related docs:** [Browser Automation Desktop Environment](./browser-automation-desktop-environment.md), [Curated CLI Tools](./curated-cli-tools.md), [Docker Compute Workers](./docker-compute-workers.md), `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`, `AGENTS.md`
 
 ## Why
 
@@ -212,6 +212,42 @@ The system MUST turn expired active leases into released leases, terminating the
 - WHEN an agent runs `lease reap-stale` and then acquires a lease for `pibo-chat`
 - THEN Pibo may reuse the released slot id after refreshing its slot directory from the template.
 
+### Requirement: Auth profile leases coordinate with managed browser leases
+
+Authenticated browser-use leases MUST use the managed browser pool when running inside compute workers and MUST release or reap matching browser processes without touching the auth template profile.
+
+#### Current
+
+Auth leases manage profile slots and known CDP pid files. Browser process lifecycle is not governed by a shared worker-level pool.
+
+#### Target
+
+An acquired auth slot can be bound to a browser-pool lease. Release closes or reaps the managed browser state for that slot while preserving template safety.
+
+#### Acceptance
+
+- Lease acquire exposes the profile slot and the browser-pool CDP URL when managed pool mode is active.
+- Lease release closes or marks the associated browser-pool lease released.
+- Reap-stale terminates known managed browser processes for expired auth slots when safe.
+- Cleanup never kills or deletes the auth template profile unless the user explicitly targets that template workflow.
+- JSON lease output includes enough fields for agents to distinguish profile lease state from browser-pool lease state.
+
+#### Scenario: Auth slot release frees browser pool
+
+- GIVEN an agent acquired `pibo-chat-slot-001` and used it through the managed browser pool
+- WHEN the agent releases that auth lease
+- THEN Pibo releases the matching browser-pool lease
+- AND the auth template profile remains untouched.
+
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Auth profile leases are separate from browser-pool leases; automation in compute workers must coordinate both when managed pool mode is active.
+- Lease acquire should expose enough state for agents to distinguish auth slot identity, browser-pool lease identity, CDP URL, owner, expiry, and cleanup status.
+- Lease release and stale reap must release matching managed browser leases when safe, while preserving the authenticated template profile unless the user explicitly targets template cleanup.
+- Cleanup must match stale `chrome|chromium` processes only when tied to Pibo-managed lease or profile metadata.
+
 ## Edge Cases
 
 - The lease registry file may be missing; Pibo MUST treat that as an empty versioned registry.
@@ -237,6 +273,7 @@ The system MUST turn expired active leases into released leases, terminating the
 - [ ] SC-004: Concurrency and max-slot tests prove the registry lock and pool exhaustion behavior.
 - [ ] SC-005: Release and reap tests prove process-safe state transitions and optional profile deletion.
 - [ ] SC-006: Error tests cover running templates, unknown lease ids, malformed registries, and lock timeout.
+- [ ] SC-007: Auth/profile lease tests cover coordination with managed browser leases, including release and stale-process reap without touching the template profile.
 
 ## Verification Coverage
 
@@ -291,6 +328,7 @@ This section separates behavior with direct tests from behavior that is currentl
 | REQ-006 Lease warm-up is helpful but non-destructive | Chrome warm-up unavailable | `src/tools/browser-use-leases.ts` | Source inspection only | Source-inspected |
 | REQ-007 Listing and release reflect live lease state | Release and delete a slot | `src/tools/browser-use-leases.ts`, `test/tools-cli.test.mjs` | List and release/delete tested; error/reap states source-inspected | Partial |
 | REQ-008 Expired active leases can be reaped and reused | Expired lease is reused | `src/tools/browser-use-leases.ts` | Source inspection only | Source-inspected |
+| REQ-009 Auth profile leases coordinate with managed browser leases | Auth slot release frees browser pool | `src/tools/browser-use-leases.ts`, `src/tools/browser-use-wrapper.ts` | Add coordination tests | Draft |
 
 ## Verification Basis
 

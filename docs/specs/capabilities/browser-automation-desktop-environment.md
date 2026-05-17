@@ -2,8 +2,9 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Owner / Source:** Current Pibo codebase  
-**Related docs:** `GLOSSARY.md`, `docs/specs/capabilities/curated-cli-tools.md`, `docs/specs/capabilities/docker-compute-workers.md`
+**Updated:** 2026-05-17  
+**Owner / Source:** Current Pibo codebase; 2026-05-17 compute/browser resource incident analysis  
+**Related docs:** `GLOSSARY.md`, `docs/specs/capabilities/curated-cli-tools.md`, `docs/specs/capabilities/docker-compute-workers.md`, `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`
 
 ## Why
 
@@ -154,6 +155,42 @@ Browser-use target discovery MUST find the most recent reachable Pibo-managed Ch
 - WHEN an agent lists browser-use targets without `--cdp-url`
 - THEN Pibo lists targets from that reachable managed Chrome instance.
 
+### Requirement: Browser automation is bounded by a managed pool
+
+Browser automation inside a compute worker MUST use a Pibo-managed browser pool rather than starting unlimited unmanaged Chromium processes.
+
+#### Current
+
+Pibo can discover Pibo-managed CDP state, but browser-use invocations can still create new browser process trees when state is missing, stale, or not reused.
+
+#### Target
+
+Pibo owns the browser process lifecycle, exposes a managed CDP URL to browser-use, serializes acquire/release through pool state, and recycles idle or stale managed browsers.
+
+#### Acceptance
+
+- A compute-worker browser-use invocation receives a managed CDP URL when browser automation is requested.
+- The pool enforces a configured maximum number of Chromium main process trees per worker.
+- Reuse of a healthy CDP browser does not start another Chromium main process.
+- Pool health reports pid, port, profile path, active lease, last-used time, stale state, and cleanup suggestion.
+- Stale cleanup matches both `chrome` and `chromium` process names, scoped to Pibo-managed user-data directories or recorded process ids.
+
+#### Scenario: Repeated UI checks reuse the browser
+
+- GIVEN an agent has run one browser-use UI check inside a compute worker
+- WHEN a later agent session in the same worker runs another check
+- THEN Pibo reuses the managed CDP browser when it is healthy
+- AND the worker does not accumulate additional Chromium main process trees.
+
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Browser automation inside compute workers must acquire a managed browser-pool lease and attach to the managed CDP URL instead of starting unlimited unmanaged Chromium processes.
+- Pool status and health output must expose pid, port, profile path, active lease, last-used time, stale state, and cleanup suggestions in text and JSON forms.
+- Stale cleanup must match both `chrome` and `chromium`, scoped to Pibo-managed pid/process-group metadata or Pibo-managed user-data directories.
+- Repeated browser-use validation must prove the worker's Chromium main-process count remains bounded.
+
 ## Edge Cases
 
 - A runtime directory may not exist; detection MUST continue without X authority, Wayland, or DBus values.
@@ -176,6 +213,7 @@ Browser-use target discovery MUST find the most recent reachable Pibo-managed Ch
 - [ ] SC-003: Virtual-display setup tests prove no-op behavior for existing display and non-root headless hosts, and systemd provisioning for root headless hosts.
 - [ ] SC-004: Browser-use health reports `ok`, `degraded`, and `critical` for the documented conditions in both text and JSON modes.
 - [ ] SC-005: CDP target discovery prefers reachable recent Pibo CDP state and ignores stale or invalid files.
+- [ ] SC-006: Managed browser-pool tests prove repeated browser-use checks reuse a CDP browser and stale `chrome|chromium` processes are cleaned only when tied to Pibo-managed state.
 
 ## Assumptions and Open Questions
 
@@ -200,6 +238,7 @@ Browser-use target discovery MUST find the most recent reachable Pibo-managed Ch
 | REQ-003 Automatic virtual display setup is safe and bounded | Headless non-root host | `src/tools/linux-virtual-display.ts`, `src/tools/registry.ts` | Draft |
 | REQ-004 Browser-use health distinguishes critical and degraded states | Stale CDP state | `src/tools/index.ts`, `src/tools/browser-use-leases.ts` | Draft |
 | REQ-005 CDP discovery prefers live Pibo-managed Chrome state | Reuse existing managed Chrome | `src/tools/browser-use-cdp.ts` | Draft |
+| REQ-006 Browser automation is bounded by a managed pool | Repeated UI checks reuse the browser | `src/tools/browser-use-wrapper.ts`, `src/tools/browser-use-cdp.ts` | Draft |
 
 ## Verification Basis
 
