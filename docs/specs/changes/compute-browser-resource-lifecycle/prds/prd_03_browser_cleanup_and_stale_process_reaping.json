@@ -1,0 +1,90 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/browser-cleanup-stale-process-reaping",
+  "description": "Reliable browser release and stale chrome/chromium process cleanup for Pibo-managed browser pools and auth profile leases.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fix stale browser process matching for chrome and chromium",
+      "description": "As an operator, I want stale cleanup to detect both Chrome and Chromium processes so that worker browser leaks are not missed because of binary naming.",
+      "acceptanceCriteria": [
+        "Update stale browser process matching to recognize both chrome and chromium command names",
+        "Scope process matching to Pibo-managed user-data directories, recorded pool state, or recorded pid metadata",
+        "Do not match unrelated host browser processes that lack Pibo-managed profile metadata",
+        "Add tests covering /usr/bin/chromium, google-chrome, unrelated chromium profile, and auth template profile cases",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Terminate stale managed browser process trees safely",
+      "description": "As a tooling engineer, I want cleanup to terminate the exact stale managed browser process tree so that Chromium children do not survive release or reap.",
+      "acceptanceCriteria": [
+        "Reap prefers recorded pid and process group id before command-line matching",
+        "Termination uses a bounded graceful signal then a stronger fallback only for Pibo-managed browser process trees",
+        "Reap handles already-dead pids and missing pid files without failing the entire cleanup",
+        "Stale CDP pid and port files are removed only after the process is confirmed dead or killed",
+        "Focused tests cover live process group, dead pid, missing pid file, and stale CDP file cleanup",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Clean browser lease tabs and contexts on release",
+      "description": "As an agent, I want browser lease release to close or reset my browser state so that the next check starts from a clean context when the browser is reused.",
+      "acceptanceCriteria": [
+        "Release attempts bounded CDP cleanup for lease-owned tabs or contexts when the managed browser is reachable",
+        "Release updates active lease counters and last-used timestamps even when CDP cleanup fails",
+        "Release records cleanup status and last error for diagnostics",
+        "Tests cover successful CDP cleanup, CDP timeout/failure, and release after browser process exit",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Coordinate authenticated profile leases with browser pool leases",
+      "description": "As an auth workflow user, I want releasing an authenticated browser-use slot to also release the matching managed browser lease without touching the reusable auth template.",
+      "acceptanceCriteria": [
+        "Auth lease acquire records or returns the associated browser-pool lease id when managed-pool mode is active",
+        "Auth lease release releases the associated browser-pool lease when present",
+        "Auth lease reap-stale terminates known managed browser processes for expired slots when safe",
+        "Cleanup never deletes or kills the auth template profile unless an explicit auth-template workflow targets it",
+        "Tests cover auth slot release, expired auth slot reap, missing browser-pool lease, and template preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add idle browser pool reaping and cleanup reporting",
+      "description": "As an operator, I want idle managed browsers to recycle automatically or manually so that long-lived workers do not keep Chromium running forever.",
+      "acceptanceCriteria": [
+        "Implement idle reap behavior for pools with no active lease and last-used time older than the configured idle timeout",
+        "Reap output reports affected leases, browser pools, process trees, and stale state files",
+        "Text output includes safe next commands when cleanup fails or a worker is marked dirty",
+        "JSON output includes counts and per-pool cleanup results",
+        "Tests cover idle eligible pool, active non-eligible pool, stale process cleanup, and dirty cleanup failure state",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/compute-worker-limits-lifecycle",
+  "description": "Docker compute worker resource limits, all-state lifecycle inspection, dry-run cleanup, and Docker hygiene diagnostics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add compute worker resource policy and Docker run tests",
+      "description": "As a compute engineer, I want Docker run command construction tested for resource limits so that worker safety is enforced before integration changes run on a host.",
+      "acceptanceCriteria": [
+        "Add a compute resource policy model with defaults for memory, memory-swap, pids-limit, shm-size, init, restart policy, and log options",
+        "Add documented override sources for larger hosts without changing safe defaults",
+        "Add command-stub tests for one-time worker and dev worker Docker run arguments",
+        "Tests assert resource policy labels or inspectable metadata are included in Docker run configuration",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Apply Docker resource limits to one-time and dev workers",
+      "description": "As an operator, I want every compute worker to start with host-safe Docker limits so that browser leaks are contained inside the worker.",
+      "acceptanceCriteria": [
+        "Update one-time and dev worker spawn paths to include memory, memory-swap, pids-limit, shm-size, init, restart=no or equivalent, and bounded log options",
+        "Worker labels expose resource policy values, owner scope, role, created time, worktree, port block, TTL/idle values, and Ralph ids when applicable",
+        "OOM or PID-limit failures inside a worker do not configure Docker to restart it in a loop",
+        "Real-path Docker smoke check starts a limited worker and verifies basic gateway or shell access when Docker is available; if not feasible in unit tests, document the integration command",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement all-state compute worker listing",
+      "description": "As an operator, I want Pibo to list running and stopped worker containers so that OOM-killed and retained debug containers are not hidden.",
+      "acceptanceCriteria": [
+        "Add or extend compute listing with an --all mode that includes running, exited, dead, restarting, and OOM-killed Pibo compute containers",
+        "Output includes container id/name, role, status, OOM flag when available, owner, worktree, Ralph ids, created time, last-used time, resource policy, ports when available, and cleanup eligibility",
+        "Text output has a clear empty state and suggests next diagnostic commands",
+        "JSON output exposes stable fields for agents and monitoring",
+        "Tests cover running, stopped, OOM-killed, no-port stopped container, and empty-state fixtures",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add dry-run compute reap planning for stopped, dirty, old, and dev workers",
+      "description": "As an operator, I want cleanup preview output before deleting containers so that debug state and worktrees are not removed accidentally.",
+      "acceptanceCriteria": [
+        "Reap builds a cleanup plan before destructive actions and supports dry-run or preview output",
+        "Selectors cover one-time workers, dev workers when explicitly included, stopped containers, dirty workers, and max-age filters",
+        "Plan output explains why each worker is eligible or skipped",
+        "Apply removes selected containers but does not delete Git worktrees unless an explicit worktree cleanup option or command is used",
+        "Tests cover dry-run, apply, dev exclusion by default, include-dev behavior, stopped container cleanup, dirty worker cleanup, and worktree preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add Docker build context and disk hygiene diagnostics",
+      "description": "As a maintainer, I want Docker build context and cache diagnostics so that few image tags do not hide large retained layers or BuildKit cache.",
+      "acceptanceCriteria": [
+        "Update .dockerignore to exclude .worktrees, local browser-use profile/state, screenshots, logs, and Pibo local state that should not enter images",
+        "Add diagnostics that report Docker image size, container size, local volume size, build-cache size, and reclaimable bytes when Docker is available",
+        "Diagnostics distinguish container cleanup, image cleanup, build-cache prune, and worktree cleanup suggestions",
+        "Diagnostics are read-only by default and provide JSON output",
+        "Tests or fixtures cover parsed Docker disk usage and safe next-command rendering",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Validate limited worker behavior with real Docker when available",
+      "description": "As an operator, I want an integration validation path proving that limited workers can still run Pibo checks while remaining bounded.",
+      "acceptanceCriteria": [
+        "Add a documented integration command or test script that spawns a limited compute worker and verifies connect/gateway or shell access",
+        "Validation includes a browser-use or Chromium smoke path when the environment supports Docker and browser dependencies",
+        "Validation records resource policy values from Docker inspect or compute list output",
+        "If Docker is unavailable in CI, the test skips with a clear message and the manual command remains documented",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
