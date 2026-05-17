@@ -53,9 +53,11 @@ Reference docs:
 - Every user-facing TUI story must include the closest practical `pibo tui:sessions` / `pibo debug pty run` validation against the Terminal UI, not only render snapshots.
 - Web-impacting stories require Web Compact Terminal regression checks.
 - Fake/demo/mocked checks are supporting evidence; real/default-path checks are required when locally feasible.
+- Web UI preservation gate is mandatory: Web Compact Terminal is the source of truth; Ink adapts to Web. Do not change Web Compact Terminal visual/behavioral render logic unless the user explicitly approves it. Any `src/session-ui/**` change is Web-impacting and requires Web regression evidence. Direct Web Compact Terminal edits are limited to tests/semantic hooks or restoring existing Web behavior.
 
 ## Progress log
 
 - 2026-05-17: Created Phase 2 worktree and Docker worker. Prepared PRD batch for Ralph but did not start it yet.
 - 2026-05-17: Created stopped Ralph job `ralph_fcef0e46-fe5e-45d3-95d4-7a0ef31db09d` with `maxIterations=90`, room `room_d1949701-2009-4b88-9a13-7eb4a3c8f466`, and prompt `/tmp/ralph-ink-cli-terminal-web-derived-parity-prompt.txt`.
 - 2026-05-17: Cleaned browser processes in Docker worker with narrow process-name cleanup and verified container build command: `docker exec pibo-dev-ink-cli-terminal-web-derived-parity bash -lc 'cd /workspace && npm run build'` passed.
+- 2026-05-17: Added and merged Web UI preservation gate from `dev`, updated Phase 2 PRD JSON acceptance criteria, and edited Ralph job prompt `ralph_fcef0e46-fe5e-45d3-95d4-7a0ef31db09d` so Web UI must remain unchanged and shared/Web-impacting changes require Web regression evidence.
