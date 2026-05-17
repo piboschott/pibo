@@ -126,6 +126,15 @@ export type PiboSessionStatus = {
 	disposed: boolean;
 	thinkingLevel?: PiboThinkingLevel;
 	fastMode?: boolean;
+	contextUsage?: { tokens?: number; contextWindow?: number; percent?: number } | null;
+	providerUsage?: {
+		provider?: string;
+		planType?: string;
+		limits?: readonly { label?: string; usedPercent?: number; remainingPercent?: number; resetsAt?: string }[];
+		credits?: { unlimited?: boolean; balance?: string };
+	} | null;
+	warnings?: readonly string[];
+	errors?: readonly string[];
 };
 
 export type PiboPiSessionSnapshot = {

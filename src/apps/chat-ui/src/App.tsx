@@ -4761,47 +4761,7 @@ function SessionNode({
 				)}
 				{editing ? null : (
 					<div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100">
-						<div className="hidden min-[981px]:flex items-center gap-1">
-							<button
-								type="button"
-								onClick={() => setEditing(true)}
-								title="Rename Session"
-								aria-label="Rename Session"
-								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-							>
-								<Edit3 size={13} />
-							</button>
-							<button
-								type="button"
-								onClick={() => onArchive(node.piboSessionId, !node.archived)}
-								title={node.archived ? "Restore Session" : "Archive Session"}
-								aria-label={node.archived ? "Restore Session" : "Archive Session"}
-								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-							>
-								{node.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-							</button>
-							<button
-								type="button"
-								onClick={() => onViewContext(node.piboSessionId)}
-								title="View Context"
-								aria-label="View Context"
-								className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-							>
-								<Bug size={13} />
-							</button>
-							{node.archived ? (
-								<button
-									type="button"
-									onClick={() => onDelete(node)}
-									title="Delete Session"
-									aria-label="Delete Session"
-									className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-red-500 hover:text-red-300"
-								>
-									<Trash2 size={13} />
-								</button>
-							) : null}
-						</div>
-						<div className="min-[981px]:hidden relative" ref={menuRef}>
+						<div className="relative" ref={menuRef}>
 							<button
 								type="button"
 								onClick={() => setMenuOpen((v) => !v)}

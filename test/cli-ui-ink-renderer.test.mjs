@@ -5,7 +5,7 @@ import React from "react";
 import test from "node:test";
 import { renderToString } from "ink";
 import { buildCompactTerminalRows } from "../dist/session-ui/index.js";
-import { formatInkJson, InkTerminalView, renderInkMarkdownLines, rowWindow } from "../dist/apps/cli-ui/index.js";
+import { formatInkJson, formatStatusHeaderLines, InkSessionAppView, InkTerminalView, renderInkMarkdownLines, rowWindow } from "../dist/apps/cli-ui/index.js";
 
 const sessionId = "pibo:ink-renderer-test";
 
@@ -60,10 +60,103 @@ test("InkTerminalView renders representative compact rows to terminal text", () 
 	assert.match(output, /› Investigate issue/);
 	assert.match(output, /I will check\./);
 	assert.match(output, /- first/);
-	assert.match(output, /✓ • Called read/);
+	assert.match(output, /▣ Tool — tool · done/);
+	assert.match(output, /Called read/);
 	assert.match(output, /src\/index\.ts/);
-	assert.match(output, /… • Waiting on runs typecheck/);
-	assert.match(output, /✕ • Error boom/);
+	assert.match(output, /▣ Yielded run — yielded-run · running/);
+	assert.match(output, /Waiting on runs typecheck/);
+	assert.match(output, /✕ ▣ Error — error · error/);
+	assert.match(output, /Error: boom/);
+});
+
+test("InkTerminalView renders rich shared card descriptors with Web-parity labels", () => {
+	const rows = [
+		{ id: "user", kind: "message.user", status: "done", lines: [{ prefix: "prompt", tokens: [{ text: "User prompt" }] }], sourceNodeIds: ["user"] },
+		{ id: "assistant", kind: "message.assistant", status: "done", lines: [], output: "Assistant reply", sourceNodeIds: ["assistant"] },
+		{ id: "reason", kind: "reasoning", status: "done", markdown: "Reasoned safely", lines: [{ prefix: "bullet", tokens: [{ text: "Thought", tone: "amber", weight: "semibold" }] }], sourceNodeIds: ["reason"] },
+		{ id: "tool", kind: "tool.call", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Called ", tone: "green", weight: "semibold" }], functionCall: { name: "read", input: { path: "src/index.ts" } } }], sourceNodeIds: ["tool"] },
+		{ id: "status", kind: "tool.status", status: "done", lines: [], output: { piboSessionId: "ps_rich", queuedMessages: 0, processing: false, streaming: false, cwd: "/workspace", contextUsage: { tokens: 125, contextWindow: 1000, percent: 12.5 }, providerUsage: { provider: "openai", limits: [{ label: "requests", usedPercent: 25 }] } }, sourceNodeIds: ["status"] },
+		{ id: "thinking", kind: "tool.thinking", status: "done", lines: [], output: { level: "high", availableLevels: ["low", "high"] }, sourceNodeIds: ["thinking"] },
+		{ id: "model", kind: "tool.model", status: "done", lines: [], output: { providers: [{ id: "openai", label: "OpenAI", models: [{ id: "gpt-test", label: "GPT Test" }] }] }, sourceNodeIds: ["model"] },
+		{ id: "login", kind: "tool.login", status: "done", lines: [], output: { providers: [{ id: "openai", name: "OpenAI", authMethods: ["api_key"] }] }, sourceNodeIds: ["login"] },
+		{ id: "run", kind: "yielded.run", status: "running", lines: [{ prefix: "bullet", tokens: [{ text: "Waiting on runs typecheck" }] }], sourceNodeIds: ["run"] },
+		{ id: "compact", kind: "execution.compaction", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Compacted transcript" }] }], sourceNodeIds: ["compact"] },
+		{ id: "command", kind: "execution.command", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Ran /status" }] }], sourceNodeIds: ["command"] },
+		{ id: "error", kind: "error", status: "error", lines: [], error: "TOKEN=secret-value failed", sourceNodeIds: ["error"] },
+	];
+	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 20, maxLineChars: 160 }));
+
+	assert.match(output, /› User prompt/);
+	assert.match(output, /Assistant reply/);
+	assert.match(output, /Thought/);
+	assert.match(output, /▣ Tool — tool · done/);
+	assert.match(output, /Called read/);
+	assert.match(output, /▣ Status — status · done/);
+	assert.match(output, /Context: █/);
+	assert.match(output, /openai requests:/);
+	assert.match(output, /▣ Thinking — thinking · done/);
+	assert.match(output, /Actions: .*low.*high/);
+	assert.match(output, /▣ Model — model · done/);
+	assert.match(output, /OpenAI \/ GPT Test/);
+	assert.match(output, /▣ Login — login · done/);
+	assert.match(output, /▣ Yielded run — yielded-run · running/);
+	assert.match(output, /▣ Compaction — compaction · done/);
+	assert.match(output, /▣ Command — command · done/);
+	assert.match(output, /✕ ▣ Error — error · error/);
+	assert.match(output, /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(output, /secret-value/);
+});
+
+test("Ink Session app keeps owner, session, error, and command state readable at narrow widths", () => {
+	const state = {
+		loading: false,
+		status: {
+			source: "local/direct",
+			mode: "local",
+			connected: true,
+			activeOwnerLabel: "Web user narrow",
+			activeOwnerScope: "user:narrow",
+			activeAgentId: "pibo-agent",
+			activeModel: { provider: "openai", id: "gpt-test", label: "GPT Test" },
+		},
+		session: { id: "ps_narrow", title: "Narrow Session", ownerScope: "user:narrow", profile: "pibo-agent", status: "idle" },
+		rows: [
+			{ id: "err", kind: "error", status: "error", lines: [], error: "Provider TOKEN=secret-value failed in a narrow terminal", sourceNodeIds: ["err"] },
+		],
+		input: "/status",
+		mode: "transcript",
+		error: "Action failed but remains visible",
+		message: "Status card remains readable.",
+	};
+	const headerLines = formatStatusHeaderLines(state, 60);
+	assert.ok(headerLines.some((line) => line.includes("Owner:")), "narrow header includes an owner line");
+	assert.ok(headerLines.some((line) => line.includes("Session:")), "narrow header includes a session line");
+	const output = renderToString(React.createElement(InkSessionAppView, { state, maxRows: 5, maxLineChars: 60 }));
+
+	assert.match(output, /Owner: Web user narrow/);
+	assert.match(output, /Session: Narrow Session/);
+	assert.match(output, /Error:/);
+	assert.match(output, /Status card remains readable/);
+	assert.match(output, /› \/status/);
+	assert.match(output, /✕ ▣ Error/);
+	assert.match(output, /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(output, /secret-value/);
+});
+
+test("Ink renderer no-color output remains readable through text markers", () => {
+	const previousNoColor = process.env.NO_COLOR;
+	process.env.NO_COLOR = "1";
+	try {
+		const output = renderToString(React.createElement(InkTerminalView, { rows: fixtureRows(), maxRows: 20, maxLineChars: 80 }));
+		assert.match(output, /› Investigate issue/);
+		assert.match(output, /▣ Tool — tool · done/);
+		assert.match(output, /↳ Called read/);
+		assert.match(output, /✕ ▣ Error — error · error/);
+		assert.doesNotMatch(output, /\u001b\[/);
+	} finally {
+		if (previousNoColor === undefined) delete process.env.NO_COLOR;
+		else process.env.NO_COLOR = previousNoColor;
+	}
 });
 
 test("InkTerminalView bounds large row lists to a tail window", () => {

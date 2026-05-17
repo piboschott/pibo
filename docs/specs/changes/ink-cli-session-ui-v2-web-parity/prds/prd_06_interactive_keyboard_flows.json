@@ -1,0 +1,91 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-interactive-keyboard-flows",
+  "description": "Adapt Web interactive Slash Command flows to keyboard-native Ink pickers and terminal-safe prompts.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement generic overlay stack for command menus",
+      "description": "As an Ink UI implementer, I need a reusable overlay stack for nested pickers, confirmations, and details.",
+      "acceptanceCriteria": [
+        "Overlay stack supports suggestions, owner picker, room picker, session picker, command menus, confirmations, and detail views",
+        "Up/Down, Enter, Escape, and Ctrl+C behavior is consistent",
+        "State reducer tests cover nested back/cancel/confirm behavior",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented a generic Ink overlay stack model (`InkOverlayState`) with exported push/pop/active helpers, picker-backed overlay state, Escape back behavior for nested pickers, and command-menu picker support for terminal command flows. Existing owner, room, session, and agent pickers remain compatible through the same picker state, while command menus now support nested parent pickers, disabled options, and detail/confirmation overlay descriptor variants for future flows. Evidence: `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/session-ui-view-models.test.mjs'` passed 47/47 focused tests; `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/session-ui-view-models.test.mjs && npm run typecheck'` passed focused tests and typecheck. Path classification: focused Ink reducer/view/source tests plus real PTY-backed CLI/TUI validation for command-menu overlays. Implementation commit: f98054b."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement /thinking direct and picker flows",
+      "description": "As a CLI user, I want to set thinking level by argument or arrow-key picker.",
+      "acceptanceCriteria": [
+        "/thinking <level> validates and applies supported levels",
+        "/thinking opens picker with current/default/off/minimal/low/medium/high/xhigh options when supported",
+        "Picker result posts the routed thinking action and updates status output",
+        "pibo debug pty runs /thinking, navigates levels with arrows, confirms with Enter, and asserts changed status or supported no-op result",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented `/thinking <level>` validation and direct source/routed execution for off/minimal/low/medium/high/xhigh, plus `/thinking` keyboard picker with current/default and all supported levels. Picker confirmation executes the routed/source thinking action and updates the visible command result/status. Fake and debug PTY local sources now provide deterministic thinking action results. PTY evidence: `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-thinking-model .tmp/pty-thinking-model-home && mkdir -p .tmp/pty-thinking-model-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-thinking-model --timeout-ms 80000 --idle-timeout-ms 15000 --cols 140 --rows 46 --wait-for \"Select room for Web user flow\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/thinking high\" --press Enter --wait-for \"Thinking level set to high\" --type \"/thinking\" --press Enter --wait-for \"Select thinking level\" --expect \"current/default\" --expect \"xhigh\" --press Down --press Down --press Down --press Down --press Down --press Enter --wait-for \"Thinking level set to high\" --type \"/model\" --press Enter --wait-for \"Select model provider\" --expect \"OpenAI\" --expect \"Offline Provider\" --press Enter --wait-for \"Select model for OpenAI\" --expect \"GPT PTY Large\" --expect \"GPT PTY Mini\" --press Down --press Enter --wait-for \"Model set to openai/gpt-pty-mini\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-thinking-model-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:flow node dist/bin/pibo.js tui:sessions --owner-scope user:flow'` passed. PTY classification: real PTY-backed `pibo tui:sessions` path with `LocalCliSessionSource`, temp `PIBO_HOME`, and deterministic mocked local router/source; not live provider. Raw artifact: `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-thinking-model/raw.ansi.log`; clean artifact: `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-thinking-model/clean.txt`. Focused tests and typecheck passed as listed in US-001. Implementation commit: f98054b."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement /model provider and model picker",
+      "description": "As a CLI user, I want to choose model provider and model through terminal menus.",
+      "acceptanceCriteria": [
+        "/model opens provider picker then model picker from the routed model menu result",
+        "Disabled or unavailable providers/models remain visible with reasons where available",
+        "Applying a model uses the supported action flow or returns clear unsupported instructions",
+        "pibo debug pty runs /model and asserts provider/model menu structure; if provider auth is unavailable, notes record the reason",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented `/model` provider/model command menu flow. `/model` requests the routed/source model menu, renders provider choices including disabled/unavailable providers with reasons, opens a nested model picker for the selected provider, and applies the chosen model using a terminal-safe `provider/model` action argument. `/model <provider>/<model>` also executes directly and refreshes status. Fake and debug PTY local sources now expose deterministic model menus and model-set results; local source serializes model params as `{ provider, model }`. PTY evidence reused from the combined command-menu run: the script asserted `Select model provider`, `OpenAI`, disabled `Offline Provider`, `Select model for OpenAI`, `GPT PTY Large`, `GPT PTY Mini`, and final `Model set to openai/gpt-pty-mini`. Raw artifact: `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-thinking-model/raw.ansi.log`; clean artifact: `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-thinking-model/clean.txt`. Path classification: real PTY-backed CLI/TUI path with deterministic mocked local router/source, plus focused source and Ink unit tests; no Web DOM behavior changed, so browser checks were not required. `npm test` ran 511 tests; 510 passed and only the pre-existing unrelated `test/telemetry-store.test.mjs` stale/prune assertion failed. Implementation commit: f98054b."
+    },
+    {
+      "id": "US-004",
+      "title": "Implement /login terminal provider flow",
+      "description": "As a CLI user, I want login providers and auth methods shown in a terminal-safe picker.",
+      "acceptanceCriteria": [
+        "/login opens provider/auth-method picker from routed login menu result",
+        "OAuth flows show URL and completion instructions without requiring mouse interaction",
+        "API-key flows do not echo secrets; if hidden input is not implemented, show safe instructions",
+        "pibo debug pty runs /login and asserts provider/auth options or no-provider state",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented /login as a terminal provider/auth-method flow using the existing Ink command-menu overlay stack. /login opens a provider picker, then an auth-method picker; device-code/OAuth selection executes the routed/source login.start path and prints a URL/code/completion instructions for use from any browser, while API-key selection returns safe setup instructions and does not collect or echo secrets. Fake and debug PTY sources provide deterministic provider/auth fixtures; LocalCliSessionSource maps /login <provider>/device_code to login.start and returns terminal-safe API-key instructions for api_key without sending a secret. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/session-ui-view-models.test.mjs' passed 49/49 focused tests; docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. PTY evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-login-flow .tmp/pty-login-flow-home && mkdir -p .tmp/pty-login-flow-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-login-flow --timeout-ms 80000 --idle-timeout-ms 15000 --cols 140 --rows 46 --wait-for \"Select room for Web user login\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/login\" --press Enter --wait-for \"Select login provider\" --expect \"OpenAI (ChatGPT Plus/Pro)\" --expect \"OpenAI API\" --press Enter --wait-for \"Select auth method for OpenAI (ChatGPT Plus/Pro)\" --expect \"Device code / OAuth\" --press Enter --wait-for \"Open openai-codex login URL\" --expect \"PTY-1234\" --type \"/login openai/api_key\" --press Enter --wait-for \"API-key login requires secret input\" --expect \"will not echo\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-login-flow-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:login node dist/bin/pibo.js tui:sessions --owner-scope user:login' passed. PTY classification: real PTY-backed pibo tui:sessions path with LocalCliSessionSource, temp PIBO_HOME, and deterministic mocked local router/source; no live provider credentials. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-login-flow/raw.ansi.log; clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-login-flow/clean.txt. Observed result: clean output shows provider choices, Device code / OAuth, Open openai-codex login URL, PTY-1234, and safe API-key instructions. npm test ran 513 tests; 512 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed. Implementation commit: 33ea4db."
+    },
+    {
+      "id": "US-005",
+      "title": "Define fork upload download terminal equivalents",
+      "description": "As a CLI user, I want fork/upload/download commands to be usable or clearly marked when terminal support differs from Web.",
+      "acceptanceCriteria": [
+        "/fork-candidates lists candidates and supports keyboard selection if implemented",
+        "/download supports terminal path-based download or returns clear instructions",
+        "/upload supports path-based upload to the existing upload destination or returns clear unsupported reason",
+        "Tests cover supported or explicitly unsupported behavior for each command",
+        "pibo debug pty asserts the visible terminal behavior for at least fork-candidates and one file command",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented terminal equivalents for fork/file commands. /fork-candidates is now terminal-adapted: without args it renders routed/source fork candidates as a keyboard picker, and selecting or passing an entry id attempts the routed session.fork path; debug PTY returns a clear mocked-router unsupported reason while live routed sessions can return a visible fork session id. /download <path> and /upload <path> now provide terminal path-based instructions instead of browser-only file picker/download behavior; missing paths return explicit usage and unsupported reasons, and no file content or secrets are echoed. Evidence: focused build/tests passed with docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-session-app.test.mjs test/cli-session-source.test.mjs test/session-ui-view-models.test.mjs' (49/49); typecheck passed with docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck'. PTY evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-fork-file .tmp/pty-fork-file-home && mkdir -p .tmp/pty-fork-file-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-fork-file --timeout-ms 80000 --idle-timeout-ms 15000 --cols 140 --rows 48 --wait-for \"Select room for Web user files\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/fork-candidates\" --press Enter --wait-for \"Select fork candidate\" --expect \"Fork from PTY prompt one\" --expect \"Fork from PTY prompt two\" --press Enter --wait-for \"Debug PTY mocked router cannot fork\" --type \"/download /tmp/report.txt\" --press Enter --wait-for \"Terminal download for /tmp/report.txt\" --expect \"scp\" --type \"/upload /tmp/input.txt\" --press Enter --wait-for \"Terminal upload for /tmp/input.txt\" --expect \"~/.pibo/uploads\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-fork-file-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:files node dist/bin/pibo.js tui:sessions --owner-scope user:files' passed. PTY classification: real PTY-backed pibo tui:sessions path with LocalCliSessionSource, temp PIBO_HOME, and deterministic mocked local router/source; no fake app/demo path and no live provider. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-fork-file/raw.ansi.log; clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-fork-file/clean.txt. Observed result: clean output shows fork candidate picker entries, explicit debug-router fork unsupported reason, terminal download instructions for /tmp/report.txt including scp, and terminal upload instructions for /tmp/input.txt including ~/.pibo/uploads. npm test ran 513 tests; 512 passed and only the pre-existing unrelated telemetry-store stale/prune assertion failed. Implementation commit: 33ea4db."
+    }
+  ]
+}

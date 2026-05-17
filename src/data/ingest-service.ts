@@ -211,7 +211,8 @@ export class ChatDataIngestService {
 			});
 
 			if (input.roomId && (event.type === "assistant_message" || event.type === "message_finished" || event.type === "session_error")) {
-				this.upsertNavigation(input.session, input.roomId, previewTextForOutputEvent(event), now, outputSessionStatus(event));
+				const navigationPreview = event.type === "message_finished" ? undefined : previewTextForOutputEvent(event);
+				this.upsertNavigation(input.session, input.roomId, navigationPreview, now, outputSessionStatus(event));
 			}
 
 			return { streamId: storedEvent.streamId, duplicate: false, messageId, observationId };

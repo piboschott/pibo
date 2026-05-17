@@ -1,0 +1,88 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-rendering-pty-validation",
+  "description": "Implement Web-parity Ink rendering for shared descriptors and final real PTY-backed end-to-end validation.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Render rich shared descriptors in Ink",
+      "description": "As a CLI user, I want the terminal transcript and cards to match Web Compact Terminal semantics.",
+      "acceptanceCriteria": [
+        "Ink renders user, assistant, reasoning, tool call, tool status, thinking, login, model, yielded-run, compaction, and error descriptors",
+        "Markers, labels, ordering, tones, and status meanings align with Web Compact Terminal View within terminal limits",
+        "Snapshot-like clean-output tests cover representative descriptors",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in d77b423. Ink transcript rendering now consumes shared terminal card descriptors through InkTerminalCard for status, thinking, model, login, tool, yielded-run, compaction, command, and error rows while preserving user, assistant, and reasoning row rendering. Shared card descriptor extraction now includes function-call names/inputs and string output fallback so tool and run cards carry Web-aligned labels and details. Snapshot-like evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-ink-renderer.test.mjs test/cli-ui-session-app.test.mjs test/session-ui-view-models.test.mjs test/cli-session-source.test.mjs' passed 56/56 focused tests. test/cli-ui-ink-renderer.test.mjs asserts rich descriptor clean output for user, assistant, reasoning, tool call/status, thinking, login, model, yielded-run, compaction, command, and redacted error cards. Path classification: renderer/shared unit path plus real PTY validation for the status card in US-002; no Web DOM imports were added to Ink modules. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 515 tests; 514 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-002",
+      "title": "Render shared rich status card with bars",
+      "description": "As a CLI user, I want /status to show owner, runtime, context, and quota information with terminal bars.",
+      "acceptanceCriteria": [
+        "Status card shows effective owner, session id/title/profile, model, runtime state, queue/stream state, cwd, thinking, fast mode, and warnings/errors",
+        "Context and provider usage render as readable terminal bars when available",
+        "Missing data displays as unavailable and secrets are redacted",
+        "pibo debug pty runs /status and asserts owner, session, model/runtime, and bar labels in clean output",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in d77b423. /status now renders a shared rich terminal status card text built from buildTerminalStatusViewModel, including owner, session id/title/profile, model, runtime state, queue, processing/streaming, cwd, thinking level, fast mode, context usage bar, provider usage bar, warnings/errors, and redacted message text. Local CLI status now forwards runtime queued/processing/streaming/cwd/thinking/fast/context/provider/warning/error fields, and the deterministic debug PTY router supplies context and provider usage fixtures. Focused evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-ink-renderer.test.mjs test/cli-ui-session-app.test.mjs test/session-ui-view-models.test.mjs test/cli-session-source.test.mjs' passed 56/56 focused tests; renderCliStatusCardText tests assert bars, unavailable-vs-zero semantics, and redaction. PTY command: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-rich-status .tmp/pty-rich-status-home && mkdir -p .tmp/pty-rich-status-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-rich-status --timeout-ms 70000 --idle-timeout-ms 15000 --cols 140 --rows 46 --wait-for \"Select room for Web user status\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"/status\" --press Enter --wait-for \"Status: source=local/direct\" --expect \"Owner: Web user status (user:status)\" --expect \"Session: New CLI session\" --expect \"Runtime: local\" --expect \"Model: unknown\" --expect \"Context:\" --expect \"openai requests:\" --expect \"TOKEN=[redacted]\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-rich-status-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:status node dist/bin/pibo.js tui:sessions --owner-scope user:status' — passed. PTY classification: real PTY-backed pibo tui:sessions path with LocalCliSessionSource, temp PIBO_HOME, and deterministic mocked local router/source; no live provider credentials. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-rich-status/raw.ansi.log. Clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-rich-status/clean.txt. Observed clean output shows Status: source=local/direct, Owner Web user status, Session New CLI session, Model unknown, Runtime local, Queue/Processing/Streaming/CWD, Thinking high, Fast mode off, Context bar 12.5%, openai requests bar 25.0%, and TOKEN=[redacted]. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 515 tests; 514 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-003",
+      "title": "Add narrow terminal and no-color fallbacks",
+      "description": "As an SSH user, I want the TUI to remain readable in small or limited terminals.",
+      "acceptanceCriteria": [
+        "Narrow terminals wrap or truncate without hiding owner, session, errors, or active command state",
+        "No-color mode remains readable with text markers",
+        "Large transcripts remain bounded and performant",
+        "pibo debug pty runs with constrained columns and asserts clean readable output",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed in dd6b70433e48a080cc2229dab378611c836e4990. Added a narrow-terminal header fallback in InkSessionAppView: when line width is constrained, the header expands into bounded lines for Pibo CLI Sessions/source/mode, Owner, Session, and Agent/Model so owner and session state remain visible instead of being hidden behind a single truncated line. Existing row/card rendering remains bounded through maxLineChars and tail-window maxRows. Added focused renderer tests in test/cli-ui-ink-renderer.test.mjs covering constrained-width owner/session/error/active-command readability, secret redaction, no-color text-marker readability, and bounded large transcripts. Focused evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-ink-renderer.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/debug-pty.test.mjs' passed 15/15 focused tests. Narrow/no-color PTY command: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-narrow-no-color .tmp/pty-narrow-no-color-home && mkdir -p .tmp/pty-narrow-no-color-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-narrow-no-color --timeout-ms 70000 --idle-timeout-ms 15000 --cols 44 --rows 26 --env NO_COLOR=1 --wait-for \"Select room for Web user nar\" --press Enter --wait-for \"New session in Personal\" --press Enter --wait-for \"Created session\" --type \"/status\" --press Enter --wait-for \"Status: source=local/direct\" --expect \"Owner: Web user narrow\" --expect \"Session: New CLI session\" --expect \"Context:\" --type \"/th\" --wait-for \"Slash commands\" --expect \"/thinking\" --expect \"› /th\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-narrow-no-color-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:narrow node dist/bin/pibo.js tui:sessions --owner-scope user:narrow' — passed. PTY classification: real PTY-backed pibo tui:sessions path with LocalCliSessionSource, temp PIBO_HOME, deterministic mocked local router/source, constrained columns, and NO_COLOR=1; no live provider credentials. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-narrow-no-color/raw.ansi.log. Clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-narrow-no-color/clean.txt. Observed result: clean output shows the split narrow header with Owner Web user narrow, Session New CLI session, status card owner/session/context lines, slash suggestions with /thinking, and preserved active input › /th. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/cli-ui-ink-renderer.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/debug-pty.test.mjs && npm run typecheck' passed focused tests and typecheck. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 520 tests; 519 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-004",
+      "title": "Create reusable pibo debug pty smoke scripts",
+      "description": "As a reviewer, I want repeatable PTY scripts and artifacts for user-facing TUI behavior.",
+      "acceptanceCriteria": [
+        "Add documented pibo debug pty scenarios for owner picker, room picker, session creation, message send, slash suggestions, /status, /thinking or equivalent interactive command, and --session transcript hydration",
+        "Scenarios assert clean output and retain raw ANSI artifacts for debugging",
+        "Scripts have bounded timeouts and clear failure diagnostics",
+        "Documentation explains how Ralph agents must record artifact paths in story notes",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed in dd6b70433e48a080cc2229dab378611c836e4990. Added reusable PTY smoke runner scripts/ink-cli-v2-pty-smoke.mjs and documentation docs/reports/ink-cli-v2-pty-smoke-scenarios.md. The runner exposes --list, --dry-run, --scenario, and --artifact-root; uses bounded pibo debug pty run timeouts; saves raw/clean/screen/metadata/input/assertion artifacts; and includes deterministic scenarios for owner picker + room picker + session creation + message send, slash suggestions + /status + /thinking picker, and prepared --session transcript hydration. Added test/ink-cli-v2-pty-smoke.test.mjs to verify scenario discovery, dry-run command construction, bounded timeout flags, and evidence documentation. Focused evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-ink-renderer.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/debug-pty.test.mjs' passed 15/15 focused tests. Reusable smoke command executed: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node scripts/ink-cli-v2-pty-smoke.mjs --scenario slash-suggestions-status-thinking --artifact-root .tmp/ink-cli-v2-pty-smoke-validation' — passed. Script classification: reusable deterministic real PTY-backed pibo tui:sessions smoke path with LocalCliSessionSource, temp PIBO_HOME, and mocked local router/source; not live provider. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/ink-cli-v2-pty-smoke-validation/slash-suggestions-status-thinking/raw.ansi.log. Clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/ink-cli-v2-pty-smoke-validation/slash-suggestions-status-thinking/clean.txt. Observed result: clean output shows room/session creation, slash suggestions while typing /status and /th, /status rich card with owner/context fields, /thinking picker with xhigh available, and Thinking level set to high. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/cli-ui-ink-renderer.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/debug-pty.test.mjs && npm run typecheck' passed focused tests and typecheck. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 520 tests; 519 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
+    },
+    {
+      "id": "US-005",
+      "title": "Final Web parity and installed CLI validation",
+      "description": "As a release reviewer, I want full test and installed CLI evidence before deployment.",
+      "acceptanceCriteria": [
+        "npm test passes",
+        "npm run typecheck passes",
+        "Chat Web regression/typecheck/build checks pass for Web-impacting changes",
+        "Global or built package install is tested, then pibo debug pty runs installed pibo tui:sessions through owner/room/session/message flow",
+        "Web/API/store check confirms the installed CLI-created session appears in the selected user's Web room",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed in 0370e039a1de7782b863858927af73fe4eceafd6. Final gates passed after installing the built package in the dedicated Docker worker and fixing the telemetry retention prune regression that previously blocked the full suite. Commands: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run chat-ui:typecheck && npm run chat-ui:build && npm run typecheck' passed; docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/telemetry-store.test.mjs test/session-ui-view-models.test.mjs' passed 17/17 focused tests; docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck && npm test' passed 521/521 tests. Installed CLI validation command: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm install -g . >/tmp/pibo-install-global.log && rm -rf .tmp/pty-installed-final .tmp/pty-installed-final-home && mkdir -p .tmp/pty-installed-final-home && pibo debug pty run --artifact --artifact-dir /workspace/.tmp/pty-installed-final --timeout-ms 90000 --idle-timeout-ms 18000 --cols 140 --rows 46 --wait-for \"Select room for Web user final\" --expect \"Personal Chat\" --press Enter --wait-for \"New session in Personal Chat\" --press Enter --wait-for \"Created session\" --type \"Installed PTY visible in Web\" --press Enter --wait-for \"Installed assistant final\" --expect \"Message sent\" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-installed-final-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_ASSISTANT_REPLY=\"Installed assistant final\" pibo tui:sessions --owner-scope user:final' — PTY passed. PTY classification: installed global pibo command, real PTY-backed pibo tui:sessions path with LocalCliSessionSource and real temp PiboDataStore; deterministic mocked local router/source only to avoid live provider credentials. Raw artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-installed-final/raw.ansi.log. Clean artifact: /root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-installed-final/clean.txt. Observed clean output shows selected owner Web user final (user:final), Personal Chat room picker, + New session in Personal Chat, Created session, typed user message Installed PTY visible in Web, assistant reply Installed assistant final, and Message sent. Store/Web-read-model check queried /workspace/.tmp/pty-installed-final-home/pibo.sqlite and confirmed session ps_81d9f8a4-20c7-43bd-9e70-ed91e0c76d22 has owner_scope=user:final, room_id=room_0cdb603e-c6fc-4ae7-8ae9-d01e671aa1db, matching session_navigation owner/room/status idle and last_message_preview Installed assistant final, plus user and assistant chat_messages and event_log rows in the same room. Web URL for manual/API verification: http://127.0.0.1:4822/apps/chat/rooms/room_0cdb603e-c6fc-4ae7-8ae9-d01e671aa1db/sessions/ps_81d9f8a4-20c7-43bd-9e70-ed91e0c76d22."
+    }
+  ]
+}

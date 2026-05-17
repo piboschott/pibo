@@ -1,0 +1,51 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-product-scope-current-state",
+  "description": "Audit the current Ink/Web terminal implementation, document Web-parity gaps, and establish PTY-backed validation guardrails.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Audit current Web and Ink terminal sharing",
+      "description": "As an implementer, I need a current-state map so I can reuse existing shared code and avoid duplicating Web terminal logic.",
+      "acceptanceCriteria": [
+        "Document shared modules under src/session-ui and their current Web/Ink consumers",
+        "Document DOM-only Web Compact Terminal components and current Ink renderer components",
+        "Document where current CLI source/runtime integration lives",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in docs/reports/ink-cli-session-ui-v2-current-state.md. Evidence: audited src/session-ui/terminalRows.ts, src/session-ui/terminalValue.ts, Web compact terminal files under src/apps/chat-ui/src/session-views/compact-terminal/, Ink files under src/apps/cli-ui/, and src/cli-session runtime/source integration; added test/ink-cli-v2-current-state.test.mjs report coverage. Validation: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/ink-cli-v2-current-state.test.mjs' passed (2 pass, 1 skipped pending fixture); docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. Path classification: documentation/test audit, no user-facing TUI behavior changed, so no PTY artifact required. Implementation commit: d8095bc."
+    },
+    {
+      "id": "US-002",
+      "title": "Document V2 parity scope and command inventory",
+      "description": "As a reviewer, I want a clear V2 scope matrix so the implementation knows what must match Web and what remains Web-only.",
+      "acceptanceCriteria": [
+        "Document Web Slash Commands from gateway capabilities and Web-added commands",
+        "Document CLI-only commands required for owner, room, session, and exit flows",
+        "Document explicit unsupported/product-area boundaries",
+        "Docs include pibo debug pty as the required CLI/TUI E2E validation tool",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in docs/reports/ink-cli-session-ui-v2-current-state.md. Evidence: documented gateway slash commands from src/plugins/builtin.ts, Web-added commands from src/apps/chat-ui/src/App.tsx, CLI-only commands (/help, /new, /room, /agent, /owner or /profile, /exit, /quit), unsupported/product-area boundaries, and pibo debug pty validation convention. Validation: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run dev -- debug pty --help' confirmed PTY command surface; node --test test/ink-cli-v2-current-state.test.mjs passed; npm run typecheck passed. Path classification: documentation/test audit, no PTY artifact required. Implementation commit: d8095bc."
+    },
+    {
+      "id": "US-003",
+      "title": "Reproduce and document owner-scope visibility bug",
+      "description": "As a host operator, I need the known CLI owner-scope bug captured so the V2 implementation fixes Web invisibility for CLI-created sessions.",
+      "acceptanceCriteria": [
+        "Reproduce or document from local data that CLI-created sessions can use user:unknown and be hidden by Web owner filtering",
+        "Add an implementation note explaining sessions.owner_scope and session_navigation.owner_scope requirements",
+        "Add a focused regression test or pending test fixture that fails for user:unknown fallback if feasible",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed in docs/reports/ink-cli-session-ui-v2-current-state.md and test/ink-cli-v2-current-state.test.mjs. Evidence: reproduced current LocalCliSessionSource + PiboDataSessionStore + ChatDataIngestService path where a CLI session created without ownerScope stores sessions.owner_scope=user:unknown and session_navigation.owner_scope=user:unknown, and verified find({ ownerScope: 'user:real-web-owner' }) does not return it. Added pending regression fixture 'V2 CLI owner resolution prevents implicit user:unknown writes' for the future fix. Validation: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && node --test test/ink-cli-v2-current-state.test.mjs' passed (2 pass, 1 skipped pending fixture); docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. Path classification: focused persistent-source reproduction, not fake/demo; no user-facing TUI path changed, so no PTY artifact required. Implementation commit: d8095bc."
+    }
+  ]
+}
