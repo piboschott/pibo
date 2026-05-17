@@ -9,10 +9,10 @@
 - Template: `prd-batch-stories`
 - Worktree: `/root/code/pibo/.worktrees/compute-browser-resource-lifecycle`
 - Branch: `compute-browser-resource-lifecycle`
-- Docker dev worker: pending
-- Docker web port: pending
-- Docker gateway port: pending
-- Docker CDP port: pending
+- Docker dev worker: `pibo-dev-compute-browser-resource-lifecycle`
+- Docker web port: `4832`
+- Docker gateway port: `4830`
+- Docker CDP port: `4831`
 
 ## Scope
 
@@ -42,3 +42,4 @@ Related docs:
 ## Progress log
 
 - 2026-05-17: Created worktree, copied specs/PRDs/JSON files, and prepared Ralph loop baseline.
+- 2026-05-17: Rebuilt `pibo:latest` and started Docker dev worker `pibo-dev-compute-browser-resource-lifecycle` with manual safety limits (`2g` memory, `512` PIDs, `512m` shm).
