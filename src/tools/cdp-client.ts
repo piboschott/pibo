@@ -58,7 +58,7 @@ export class CdpClient {
 
 			socket.addEventListener("open", succeed);
 			socket.addEventListener("message", (event) => this.handleMessage(String(event.data)));
-			socket.addEventListener("error", () => fail(new Error("CDP WebSocket error")));
+			socket.addEventListener("error", () => fail(new Error(`CDP WebSocket error connecting to ${this.webSocketUrl}`)));
 			socket.addEventListener("close", () => {
 				for (const [id, pending] of this.pending) {
 					clearTimeout(pending.timer);
@@ -132,6 +132,9 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, init: Req
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 	try {
 		return await fetch(url, { ...init, signal: controller.signal });
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to fetch ${url}: ${reason}`);
 	} finally {
 		clearTimeout(timeout);
 	}
@@ -139,26 +142,40 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, init: Req
 
 export async function listCdpTargets(options: CdpTargetListOptions = {}): Promise<CdpTarget[]> {
 	const cdpUrl = normalizeCdpUrlSync(options.cdpUrl ?? DEFAULT_CDP_URL);
-	const response = await fetchWithTimeout(`${cdpUrl}/json/list`, options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS);
-	if (!response.ok) {
-		throw new Error(`Chrome target discovery failed: ${response.status} ${response.statusText}`);
+	try {
+		const response = await fetchWithTimeout(`${cdpUrl}/json/list`, options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS);
+		if (!response.ok) {
+			throw new Error(`Chrome target discovery responded with HTTP ${response.status} ${response.statusText}`);
+		}
+		const payload = await response.json();
+		if (!Array.isArray(payload)) throw new Error("Chrome target discovery returned invalid JSON");
+		return payload.map(normalizeCdpTarget);
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("Failed to fetch")) {
+			throw new Error(`CDP endpoint ${cdpUrl} is unreachable. Is Chrome running with remote debugging? (${error.message})`);
+		}
+		throw error;
 	}
-	const payload = await response.json();
-	if (!Array.isArray(payload)) throw new Error("Chrome target discovery returned invalid JSON");
-	return payload.map(normalizeCdpTarget);
 }
 
 export async function openCdpTarget(url: string, options: CdpTargetListOptions = {}): Promise<CdpTarget> {
 	const cdpUrl = normalizeCdpUrlSync(options.cdpUrl ?? DEFAULT_CDP_URL);
 	const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
 	const endpoint = `${cdpUrl}/json/new?${encodeURIComponent(url)}`;
-	let response = await fetchWithTimeout(endpoint, timeoutMs, { method: "PUT" });
-	if (response.status === 404 || response.status === 405) {
-		response = await fetchWithTimeout(endpoint, timeoutMs);
+	try {
+		let response = await fetchWithTimeout(endpoint, timeoutMs, { method: "PUT" });
+		if (response.status === 404 || response.status === 405) {
+			response = await fetchWithTimeout(endpoint, timeoutMs);
+		}
+		if (!response.ok) throw new Error(`Chrome target creation responded with HTTP ${response.status} ${response.statusText}`);
+		const payload = await response.json();
+		return normalizeCdpTarget(payload);
+	} catch (error) {
+		if (error instanceof Error && error.message.startsWith("Failed to fetch")) {
+			throw new Error(`CDP endpoint ${cdpUrl} is unreachable. Is Chrome running with remote debugging? (${error.message})`);
+		}
+		throw error;
 	}
-	if (!response.ok) throw new Error(`Chrome target creation failed: ${response.status} ${response.statusText}`);
-	const payload = await response.json();
-	return normalizeCdpTarget(payload);
 }
 
 export function findCdpTarget(targets: readonly CdpTarget[], targetIdOrUrl: string): CdpTarget | undefined {
@@ -166,9 +183,14 @@ export function findCdpTarget(targets: readonly CdpTarget[], targetIdOrUrl: stri
 }
 
 export async function connectCdpTarget(target: CdpTarget, timeoutMs = 3_000): Promise<CdpClient> {
-	if (!target.webSocketDebuggerUrl) throw new Error(`CDP target ${target.id || target.url} is not attachable`);
+	if (!target.webSocketDebuggerUrl) throw new Error(`CDP target ${target.id || target.url} is not attachable (no webSocketDebuggerUrl)`);
 	const client = new CdpClient(target.webSocketDebuggerUrl);
-	await client.connect(timeoutMs);
+	try {
+		await client.connect(timeoutMs);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to connect to CDP target ${target.id || target.url}: ${reason}`);
+	}
 	return client;
 }
 

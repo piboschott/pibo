@@ -185,7 +185,8 @@ export function createWebAnnotationsWebApp(options: WebAnnotationsWebAppOptions 
 				return undefined;
 			} catch (error) {
 				if (error instanceof PiboWebHttpError) throw error;
-				throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+				const message = error instanceof Error ? error.message : String(error);
+				throw new PiboWebHttpError(message, 400);
 			}
 		},
 	};

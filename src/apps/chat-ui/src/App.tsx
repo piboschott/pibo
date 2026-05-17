@@ -5510,7 +5510,9 @@ function compactWebAnnotationError(caught: unknown, fallback: string): string {
 	if (!message || message === "undefined") return fallback;
 	if (/target.*not found|selected cdp target/i.test(message)) return `Target not found: ${message}`;
 	if (/inject|overlay|evaluation/i.test(message)) return `Injection failed: ${message}`;
-	if (/chrome target discovery|failed to fetch|cdp|econnrefused|connect/i.test(message)) return `CDP unavailable: ${message}`;
+	if (/cdp endpoint.*is unreachable|failed to fetch|fetch failed|chrome target discovery|cdp unavailable|econnrefused|connect/i.test(message)) {
+		return `CDP unavailable: ${message}`;
+	}
 	return `${fallback}: ${message}`;
 }
 
