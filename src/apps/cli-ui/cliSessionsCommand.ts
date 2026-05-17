@@ -41,6 +41,7 @@ export async function runCliSessionsUi(options: RunCliSessionsUiOptions = {}): P
 			: createDefaultLocalCliSessionSource({ ownerScope: options.ownerScope }));
 	const instance = render(React.createElement(InkSessionApp, {
 		initialSessionId: options.initialSessionId,
+		skipOwnerPicker: options.ownerScope !== undefined,
 		maxLineChars: options.maxLineChars ?? terminalLineLimitFromColumns(stdout.columns),
 		maxRows: options.maxRows,
 		source,
@@ -60,8 +61,23 @@ export function createDefaultLocalCliSessionSource(options: { ownerScope?: strin
 
 function createDebugMockedLocalCliSessionSource(options: { ownerScope?: string; assistantReply: string }): LocalCliSessionSource {
 	const context = createLocalCliSessionSourceContext();
+	const debugOwners = debugOwnerSummariesFromEnv();
 	const router = new DebugMockCliSessionRouter(options.assistantReply);
-	return createLocalCliSessionSourceFromContext({ ...context, ownerScope: options.ownerScope, router, ownsRouter: true, statusMessage: "Debug PTY mocked local router" });
+	return createLocalCliSessionSourceFromContext({ ...context, ownerScope: options.ownerScope, router, ownsRouter: true, ownerSummaries: debugOwners.length > 0 ? debugOwners : context.ownerSummaries, statusMessage: "Debug PTY mocked local router" });
+}
+
+function debugOwnerSummariesFromEnv(): CliOwnerSummary[] {
+	const raw = process.env.PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS;
+	if (!raw) return [];
+	return raw.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean)
+		.map((ownerScope) => ({
+			ownerScope,
+			label: ownerScope.startsWith("user:") ? `Web user ${ownerScope.slice("user:".length)}` : ownerScope,
+			description: "Debug PTY owner fixture",
+			kind: ownerScope.startsWith("user:") ? "web-user" as const : "local" as const,
+		}));
 }
 
 function createLocalCliSessionSourceContext(): { dataStore: PiboDataStore; sessionStore: PiboDataSessionStore; pluginRegistry: ReturnType<typeof createDefaultPiboPluginRegistry>; agentSummaries: { id: string; name: string; description?: string; profileName: string }[]; ownerSummaries: CliOwnerSummary[] } {

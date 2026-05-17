@@ -14,6 +14,8 @@ import {
 } from "./sessionSource.js";
 
 export type FakeCliSessionSourceOptions = {
+	owners?: readonly CliOwnerSummary[];
+	activeOwnerScope?: string;
 	rooms?: readonly CliRoomSummary[];
 	sessions?: readonly CliSessionSummary[];
 	agents?: readonly CliAgentSummary[];
@@ -24,6 +26,8 @@ export type FakeCliSessionSourceOptions = {
 };
 
 export class FakeCliSessionSource implements CliSessionSource {
+	private readonly owners: CliOwnerSummary[];
+	private activeOwnerScope: string;
 	private readonly rooms: CliRoomSummary[];
 	private readonly sessions = new Map<string, CliSessionSummary>();
 	private readonly agents: CliAgentSummary[];
@@ -39,6 +43,8 @@ export class FakeCliSessionSource implements CliSessionSource {
 	constructor(options: FakeCliSessionSourceOptions = {}) {
 		this.now = options.now ?? (() => new Date().toISOString());
 		this.assistantReply = options.assistantReply;
+		this.owners = [...(options.owners ?? defaultOwners())].map(cloneJson);
+		this.activeOwnerScope = options.activeOwnerScope ?? this.owners[0]?.ownerScope ?? "user:fake";
 		this.rooms = [...(options.rooms ?? defaultRooms())].map(cloneJson);
 		this.agents = [...(options.agents ?? defaultAgents())].map(cloneJson);
 		for (const session of options.sessions ?? defaultSessions()) {
@@ -52,22 +58,33 @@ export class FakeCliSessionSource implements CliSessionSource {
 
 	async getActiveOwner(): Promise<CliOwnerSummary> {
 		this.assertOpen();
-		return { ownerScope: "user:fake", label: "Fake user", description: "Fake CLI session source owner", kind: "web-user" };
+		return cloneJson(this.activeOwner());
+	}
+
+	async setActiveOwner(ownerScope: string): Promise<CliOwnerSummary> {
+		this.assertOpen();
+		const owner = this.owners.find((candidate) => candidate.ownerScope === ownerScope);
+		if (!owner) throw new CliSourceError("owner_not_found", `No CLI owner fixture found for "${ownerScope}"`);
+		this.activeOwnerScope = owner.ownerScope;
+		return cloneJson(owner);
 	}
 
 	async listOwners(): Promise<readonly CliOwnerSummary[]> {
 		this.assertOpen();
-		return [await this.getActiveOwner()];
+		return this.owners.map(cloneJson);
 	}
 
-	async listRooms(): Promise<readonly CliRoomSummary[]> {
+	async listRooms(input: { ownerScope?: string } = {}): Promise<readonly CliRoomSummary[]> {
 		this.assertOpen();
-		return this.rooms.map(cloneJson);
+		const ownerScope = input.ownerScope ?? this.activeOwnerScope;
+		return this.rooms.filter((room) => room.ownerScope === undefined || room.ownerScope === ownerScope).map(cloneJson);
 	}
 
-	async listSessions(input: { roomId?: string } = {}): Promise<readonly CliSessionSummary[]> {
+	async listSessions(input: { roomId?: string; ownerScope?: string } = {}): Promise<readonly CliSessionSummary[]> {
 		this.assertOpen();
+		const ownerScope = input.ownerScope ?? this.activeOwnerScope;
 		return [...this.sessions.values()]
+			.filter((session) => session.ownerScope === undefined || session.ownerScope === ownerScope)
 			.filter((session) => input.roomId === undefined || session.roomId === input.roomId)
 			.sort((left, right) => (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""))
 			.map(cloneJson);
@@ -84,7 +101,7 @@ export class FakeCliSessionSource implements CliSessionSource {
 			roomId: input.roomId,
 			profile,
 			agentId: agent?.id ?? input.agentId,
-			ownerScope: input.ownerScope ?? "user:fake",
+			ownerScope: input.ownerScope ?? this.activeOwnerScope,
 			workspace: input.workspace,
 			status: "idle",
 			createdAt,
@@ -246,8 +263,8 @@ export class FakeCliSessionSource implements CliSessionSource {
 			rooms: "supported",
 			sessions: "supported",
 			agents: "supported",
-			activeOwnerScope: session?.ownerScope ?? "user:fake",
-			activeOwnerLabel: "Fake user",
+			activeOwnerScope: session?.ownerScope ?? this.activeOwnerScope,
+			activeOwnerLabel: this.activeOwner().label,
 			activeRoomId: session?.roomId,
 			activeSessionId: session?.id,
 			activeAgentId: session?.agentId,
@@ -256,6 +273,10 @@ export class FakeCliSessionSource implements CliSessionSource {
 			updatedAt: this.now(),
 			...this.statusOverrides,
 		};
+	}
+
+	private activeOwner(): CliOwnerSummary {
+		return this.owners.find((owner) => owner.ownerScope === this.activeOwnerScope) ?? this.owners[0] ?? { ownerScope: "user:fake", label: "Fake user", description: "Fake CLI session source owner", kind: "web-user" };
 	}
 
 	private emit(sessionId: string, update: CliSessionUpdate): void {
@@ -282,6 +303,10 @@ export class FakeCliSessionSource implements CliSessionSource {
 
 export function createDefaultFakeCliSessionSource(options: Pick<FakeCliSessionSourceOptions, "assistantReply"> = {}): FakeCliSessionSource {
 	return new FakeCliSessionSource({ now: deterministicNow, assistantReply: options.assistantReply });
+}
+
+function defaultOwners(): CliOwnerSummary[] {
+	return [{ ownerScope: "user:fake", label: "Fake user", description: "Fake CLI session source owner", kind: "web-user" }];
 }
 
 function defaultRooms(): CliRoomSummary[] {

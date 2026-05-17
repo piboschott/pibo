@@ -86,6 +86,7 @@ export type CliOpenSession = {
 
 export interface CliSessionSource {
 	getActiveOwner(): Promise<CliOwnerSummary>;
+	setActiveOwner(ownerScope: string): Promise<CliOwnerSummary>;
 	listOwners(): Promise<readonly CliOwnerSummary[]>;
 	listRooms(input?: { ownerScope?: string }): Promise<readonly CliRoomSummary[]>;
 	listSessions(input?: { roomId?: string; ownerScope?: string }): Promise<readonly CliSessionSummary[]>;

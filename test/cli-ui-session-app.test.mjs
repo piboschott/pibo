@@ -140,6 +140,47 @@ test("InkSessionAppView renders status bar transcript viewport and input line", 
 	assert.match(output, /› \/status/);
 });
 
+test("InkSessionAppView renders owner room and create-session pickers", () => {
+	const ownerOutput = renderToString(React.createElement(InkSessionAppView, {
+		state: {
+			...baseState(),
+			mode: "picker",
+			picker: {
+				kind: "owner",
+				title: "Select effective owner",
+				items: [
+					{ id: "user:alpha", kind: "owner", ownerScope: "user:alpha", label: "Web user alpha", description: "user:alpha" },
+					{ id: "user:beta", kind: "owner", ownerScope: "user:beta", label: "Web user beta", description: "user:beta" },
+				],
+				selectedIndex: 1,
+				emptyMessage: "No owners",
+			},
+			message: "Select the Web user or Root recovery owner to use in this CLI session.",
+		},
+	}));
+	assert.match(ownerOutput, /Select effective owner/);
+	assert.match(ownerOutput, /Web user alpha/);
+	assert.match(ownerOutput, /❯ Web user beta/);
+
+	const sessionOutput = renderToString(React.createElement(InkSessionAppView, {
+		state: {
+			...baseState(),
+			mode: "session-picker",
+			picker: {
+				kind: "session",
+				title: "Select session in Personal Chat",
+				items: [{ id: "create:room_personal", kind: "create-session", roomId: "room_personal", ownerScope: "user:alpha", label: "+ New session in Personal Chat", description: "Create and open" }],
+				selectedIndex: 0,
+				emptyMessage: "No sessions",
+				roomId: "room_personal",
+				ownerScope: "user:alpha",
+			},
+		},
+	}));
+	assert.match(sessionOutput, /Select session in Personal Chat/);
+	assert.match(sessionOutput, /New session in Personal Chat/);
+});
+
 test("Ink session input reducer captures text, enter, navigation, and escape", () => {
 	const base = { loading: false, rows: [], input: "", mode: "session-picker", picker: { kind: "session", title: "Pick", items: [{ id: "one", label: "One" }, { id: "two", label: "Two" }], selectedIndex: 0, emptyMessage: "None" } };
 	const typed = reduceInkSessionInputState(base, { type: "text", value: "hi" });
@@ -182,6 +223,23 @@ test("exit cleanup closes open session subscriptions and source idempotently", a
 	assert.equal(closeSessionCalls, 1);
 	assert.equal(source.listenerCount("ps_fake_existing"), 0);
 	assert.throws(() => source.setStatus({ message: "after-close" }), /source is closed/);
+});
+
+test("Slash /new uses selected owner and room from Ink state", async () => {
+	const source = new FakeCliSessionSource({
+		owners: [{ ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }],
+		rooms: [{ id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" }],
+		sessions: [],
+	});
+	const harness = stateHarness({ ...baseState(), session: undefined, activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: { id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" }, rows: [] });
+	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+
+	await handleCliSessionSubmittedInput("/new", source, harness.state, harness.setState, openSession, () => {});
+
+	assert.match(harness.state.session.id, /^ps_fake_created_/);
+	assert.equal(harness.state.session.ownerScope, "user:alpha");
+	assert.equal(harness.state.session.roomId, "room_alpha");
+	assert.match(harness.state.message, /Created session/);
 });
 
 test("Slash commands handle help status clear pickers unknown exit and normal sends", async () => {

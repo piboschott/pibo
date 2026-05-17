@@ -57,8 +57,8 @@ export const CLI_ROOT_RECOVERY_OWNER_SCOPE = "local:root";
 export const CLI_ROOT_RECOVERY_OWNER_LABEL = "Root recovery";
 
 export class LocalCliSessionSource implements CliSessionSource {
-	private readonly ownerScope: string;
-	private readonly activeOwner: CliOwnerSummary;
+	private ownerScope: string;
+	private activeOwner: CliOwnerSummary;
 	private readonly discoveredOwners: readonly CliOwnerSummary[];
 	private readonly sessionStore: PiboSessionStore;
 	private readonly ownsSessionStore: boolean;
@@ -107,6 +107,16 @@ export class LocalCliSessionSource implements CliSessionSource {
 
 	async getActiveOwner(): Promise<CliOwnerSummary> {
 		this.assertOpen();
+		return cloneJson(this.activeOwner);
+	}
+
+	async setActiveOwner(ownerScope: string): Promise<CliOwnerSummary> {
+		this.assertOpen();
+		const normalized = normalizeOwnerScope(ownerScope);
+		const owner = this.discoveredOwners.find((candidate) => candidate.ownerScope === normalized) ?? ownerSummaryForScope(normalized, { explicit: true });
+		this.activeOwner = cloneJson(owner);
+		this.ownerScope = this.activeOwner.ownerScope;
+		this.ensureDefaultRoomForOwner(this.ownerScope);
 		return cloneJson(this.activeOwner);
 	}
 

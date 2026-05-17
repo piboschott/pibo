@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildCompactTerminalRows } from "../dist/session-ui/index.js";
 import { ChatRoomService } from "../dist/apps/chat/data/room-service.js";
-import { CliSourceError, CLI_ROOT_RECOVERY_OWNER_SCOPE, cliDefaultRoomIdForOwner, createDefaultFakeCliSessionSource, LocalCliSessionSource, redactCliSecretText } from "../dist/cli-session/index.js";
+import { CliSourceError, CLI_ROOT_RECOVERY_OWNER_SCOPE, cliDefaultRoomIdForOwner, createDefaultFakeCliSessionSource, FakeCliSessionSource, LocalCliSessionSource, redactCliSecretText } from "../dist/cli-session/index.js";
 import { PiboDataStore } from "../dist/data/pibo-store.js";
 import { PiboDataSessionStore } from "../dist/sessions/pibo-data-store.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
@@ -75,6 +75,35 @@ test("fake CLI session source emits trace and session updates and cleans subscri
 	source.close();
 	assert.equal(source.listenerCount(), 0);
 	await assert.rejects(() => source.listSessions(), (error) => error instanceof CliSourceError && error.code === "source_closed");
+});
+
+test("fake CLI session source switches active owners and filters owner-scoped rooms and sessions", async () => {
+	const source = new FakeCliSessionSource({
+		owners: [
+			{ ownerScope: "user:alpha", label: "Alpha", kind: "web-user" },
+			{ ownerScope: "user:beta", label: "Beta", kind: "web-user" },
+		],
+		rooms: [
+			{ id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" },
+			{ id: "room_beta", title: "Beta Room", ownerScope: "user:beta" },
+		],
+		sessions: [
+			{ id: "ps_alpha", title: "Alpha Session", roomId: "room_alpha", ownerScope: "user:alpha", profile: "pibo-agent", status: "idle" },
+			{ id: "ps_beta", title: "Beta Session", roomId: "room_beta", ownerScope: "user:beta", profile: "pibo-agent", status: "idle" },
+		],
+	});
+
+	assert.equal((await source.getActiveOwner()).ownerScope, "user:alpha");
+	assert.deepEqual((await source.listRooms()).map((room) => room.id), ["room_alpha"]);
+	assert.deepEqual((await source.listSessions()).map((session) => session.id), ["ps_alpha"]);
+
+	await source.setActiveOwner("user:beta");
+	assert.equal((await source.getActiveOwner()).ownerScope, "user:beta");
+	assert.deepEqual((await source.listRooms()).map((room) => room.id), ["room_beta"]);
+	assert.deepEqual((await source.listSessions()).map((session) => session.id), ["ps_beta"]);
+	const created = await source.createSession({ roomId: "room_beta", title: "Beta Created" });
+	assert.equal(created.ownerScope, "user:beta");
+	assert.equal(created.roomId, "room_beta");
 });
 
 test("fake CLI session source creates sessions and applies existing agents only", async () => {
@@ -199,6 +228,10 @@ test("local CLI session source discovers one owner and multiple owners from sess
 	const ownerScopes = (await source.listOwners()).map((owner) => owner.ownerScope);
 	assert.deepEqual(ownerScopes, ["user:custom", "user:four", "user:one", "user:three", "user:two"]);
 	assert.equal((await source.getActiveOwner()).ownerScope, "user:custom");
+
+	await source.setActiveOwner("user:two");
+	assert.equal((await source.getActiveOwner()).ownerScope, "user:two");
+	assert.ok((await source.listRooms()).every((room) => room.ownerScope === "user:two"));
 
 	const oneSource = new LocalCliSessionSource({ sessionStore, ownerScope: "user:one", dataStore, now: () => fixedNow });
 	assert.equal((await oneSource.getActiveOwner()).ownerScope, "user:one");

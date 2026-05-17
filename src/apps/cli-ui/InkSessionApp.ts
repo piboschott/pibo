@@ -5,6 +5,8 @@ import { buildCompactTerminalRows, type CompactTerminalRow } from "../../session
 import type {
 	CliAgentSummary,
 	CliOpenSession,
+	CliOwnerSummary,
+	CliRoomSummary,
 	CliRuntimeStatus,
 	CliSessionSource,
 	CliSessionSummary,
@@ -15,19 +17,26 @@ export type InkSessionPickerItem = {
 	id: string;
 	label: string;
 	description?: string;
+	kind?: "owner" | "room" | "session" | "create-session" | "agent";
+	ownerScope?: string;
+	roomId?: string;
 };
 
 export type InkSessionPickerState = {
-	kind: "session" | "agent";
+	kind: "owner" | "room" | "session" | "agent";
 	title: string;
 	items: readonly InkSessionPickerItem[];
 	selectedIndex: number;
 	emptyMessage: string;
+	ownerScope?: string;
+	roomId?: string;
 };
 
 export type InkSessionAppState = {
 	loading: boolean;
 	status?: CliRuntimeStatus;
+	activeOwner?: CliOwnerSummary;
+	activeRoom?: CliRoomSummary;
 	session?: CliSessionSummary;
 	rows: readonly CompactTerminalRow[];
 	input: string;
@@ -40,6 +49,7 @@ export type InkSessionAppState = {
 export type InkSessionAppProps = {
 	source: CliSessionSource;
 	initialSessionId?: string;
+	skipOwnerPicker?: boolean;
 	maxRows?: number;
 	maxLineChars?: number;
 	onExit?: () => void;
@@ -52,7 +62,7 @@ const INITIAL_STATE: InkSessionAppState = {
 	mode: "transcript",
 };
 
-export function InkSessionApp({ source, initialSessionId, maxRows, maxLineChars, onExit }: InkSessionAppProps): React.ReactElement {
+export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = false, maxRows, maxLineChars, onExit }: InkSessionAppProps): React.ReactElement {
 	const app = useApp();
 	const [state, setState] = useState<InkSessionAppState>(INITIAL_STATE);
 	const openedRef = useRef<CliOpenSession | undefined>(undefined);
@@ -112,6 +122,63 @@ export function InkSessionApp({ source, initialSessionId, maxRows, maxLineChars,
 		await handleCliSessionSubmittedInput(rawInput, source, stateRef.current, setState, openSession, requestExit);
 	}, [openSession, requestExit, source]);
 
+	const openSessionPickerForRoom = useCallback(async (room: CliRoomSummary, ownerScope: string) => {
+		const sessions = await source.listSessions({ roomId: room.id, ownerScope });
+		const createItem: InkSessionPickerItem = {
+			id: `create:${room.id}`,
+			kind: "create-session",
+			label: `+ New session in ${room.title}`,
+			description: "Create and open a new CLI session in this room",
+			roomId: room.id,
+			ownerScope,
+		};
+		const status = await source.getStatus();
+		setState((current) => ({
+			...current,
+			loading: false,
+			status,
+			activeRoom: room,
+			mode: "session-picker",
+			picker: {
+				kind: "session",
+				title: `Select session in ${room.title}`,
+				items: [...sessions.map(sessionPickerItem), createItem],
+				selectedIndex: 0,
+				emptyMessage: `No sessions in ${room.title}. Create a new session to start chatting.`,
+				ownerScope,
+				roomId: room.id,
+			},
+			message: sessions.length === 0 ? `No sessions in ${room.title}. Press Enter to create one.` : "Select a session with arrow keys, or create a new one.",
+			error: undefined,
+		}));
+	}, [source]);
+
+	const openRoomPicker = useCallback(async (owner: CliOwnerSummary) => {
+		const rooms = await source.listRooms({ ownerScope: owner.ownerScope });
+		const defaultIndex = Math.max(0, rooms.findIndex((room) => room.isDefault));
+		const status = await source.getStatus();
+		setState((current) => ({
+			...current,
+			loading: false,
+			status,
+			activeOwner: owner,
+			activeRoom: undefined,
+			session: undefined,
+			rows: [],
+			mode: "picker",
+			picker: {
+				kind: "room",
+				title: `Select room for ${owner.label}`,
+				items: rooms.map(roomPickerItem),
+				selectedIndex: defaultIndex,
+				emptyMessage: "No rooms are available for the selected owner.",
+				ownerScope: owner.ownerScope,
+			},
+			message: rooms.length === 0 ? "No rooms are available for the selected owner." : "Select a room with arrow keys.",
+			error: undefined,
+		}));
+	}, [source]);
+
 	const selectPickerItem = useCallback(async () => {
 		const picker = stateRef.current.picker;
 		const item = picker?.items[picker.selectedIndex];
@@ -120,7 +187,22 @@ export function InkSessionApp({ source, initialSessionId, maxRows, maxLineChars,
 			return;
 		}
 		try {
+			if (picker.kind === "owner") {
+				closeOpenSession();
+				const owner = await source.setActiveOwner(item.ownerScope ?? item.id);
+				await openRoomPicker(owner);
+				return;
+			}
+			if (picker.kind === "room") {
+				await openSessionPickerForRoom({ id: item.roomId ?? item.id, title: item.label, description: item.description, ownerScope: item.ownerScope ?? picker.ownerScope, isDefault: item.id === stateRef.current.status?.activeRoomId }, item.ownerScope ?? picker.ownerScope ?? stateRef.current.activeOwner?.ownerScope ?? "");
+				return;
+			}
 			if (picker.kind === "session") {
+				if (item.kind === "create-session") {
+					const created = await source.createSession({ roomId: item.roomId ?? picker.roomId, ownerScope: item.ownerScope ?? picker.ownerScope, agentId: stateRef.current.status?.activeAgentId });
+					await openSession(created.id, `Created session ${created.title}.`);
+					return;
+				}
 				await openSession(item.id, `Opened session ${item.label}.`);
 				return;
 			}
@@ -140,26 +222,40 @@ export function InkSessionApp({ source, initialSessionId, maxRows, maxLineChars,
 		} catch (error) {
 			setState((current) => ({ ...current, mode: "transcript", picker: undefined, error: boundedLine(formatCliSessionError(error)), message: undefined }));
 		}
-	}, [openSession, source]);
+	}, [closeOpenSession, openRoomPicker, openSession, openSessionPickerForRoom, source]);
 
 	useEffect(() => {
 		closedRef.current = false;
 		void (async () => {
 			try {
-				const sessions = await source.listSessions();
-				const sessionId = initialSessionId ?? sessions[0]?.id;
-				if (!sessionId) {
+				if (initialSessionId) {
+					await openSession(initialSessionId);
+					return;
+				}
+				const activeOwner = await source.getActiveOwner();
+				const owners = await source.listOwners();
+				if (!skipOwnerPicker && owners.length > 1) {
+					const selectedIndex = Math.max(0, owners.findIndex((owner) => owner.ownerScope === activeOwner.ownerScope));
 					const status = await source.getStatus();
-					const rooms = await safeListRooms(source);
 					setState((current) => ({
 						...current,
 						loading: false,
 						status,
-						message: emptySessionRecoveryMessage(status, rooms),
+						activeOwner,
+						mode: "picker",
+						picker: {
+							kind: "owner",
+							title: "Select effective owner",
+							items: owners.map(ownerPickerItem),
+							selectedIndex,
+							emptyMessage: "No owners are available.",
+						},
+						message: "Select the Web user or Root recovery owner to use in this CLI session.",
+						error: undefined,
 					}));
 					return;
 				}
-				await openSession(sessionId);
+				await openRoomPicker(activeOwner);
 			} catch (error) {
 				setState((current) => ({ ...current, loading: false, error: formatCliSessionError(error) }));
 			}
@@ -169,7 +265,7 @@ export function InkSessionApp({ source, initialSessionId, maxRows, maxLineChars,
 			closedRef.current = true;
 			cleanup();
 		};
-	}, [cleanup, initialSessionId, openSession, source]);
+	}, [cleanup, initialSessionId, openRoomPicker, openSession, skipOwnerPicker, source]);
 
 	useInput((input, key) => {
 		if (closedRef.current) return;
@@ -379,7 +475,9 @@ async function handleSlashCommand(
 		return;
 	}
 	if (command.name === "new") {
-		const created = await source.createSession({ roomId: state.status?.activeRoomId, agentId: state.status?.activeAgentId });
+		const roomId = state.activeRoom?.id ?? state.status?.activeRoomId;
+		const ownerScope = state.activeOwner?.ownerScope ?? state.status?.activeOwnerScope;
+		const created = await source.createSession({ roomId, ownerScope, agentId: state.status?.activeAgentId });
 		await openSession(created.id, `Created session ${created.title}.`);
 		return;
 	}
@@ -424,9 +522,33 @@ async function handleSlashCommand(
 	setState((current) => ({ ...current, error: `Unknown command ${command.raw}. Use /help for supported CLI commands.`, message: undefined }));
 }
 
+function ownerPickerItem(owner: CliOwnerSummary): InkSessionPickerItem {
+	return {
+		id: owner.ownerScope,
+		kind: "owner",
+		ownerScope: owner.ownerScope,
+		label: owner.label,
+		description: [owner.ownerScope, owner.description].filter(Boolean).join(" | "),
+	};
+}
+
+function roomPickerItem(room: CliRoomSummary): InkSessionPickerItem {
+	return {
+		id: room.id,
+		kind: "room",
+		roomId: room.id,
+		ownerScope: room.ownerScope,
+		label: room.title || room.id,
+		description: [room.isDefault ? "default" : undefined, room.description].filter(Boolean).join(" | "),
+	};
+}
+
 function sessionPickerItem(session: CliSessionSummary): InkSessionPickerItem {
 	return {
 		id: session.id,
+		kind: "session",
+		roomId: session.roomId,
+		ownerScope: session.ownerScope,
 		label: session.title || session.id,
 		description: [session.profile, session.status, session.updatedAt].filter(Boolean).join(" | "),
 	};
