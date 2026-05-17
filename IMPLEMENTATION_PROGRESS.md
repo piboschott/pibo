@@ -470,3 +470,22 @@ Intended validation plan:
 - Run focused tests after build inside `pibo-dev-ink-cli-v2-web-parity`.
 - Run `pibo debug pty` for `/status` with raw/clean artifacts and assertions for owner, session, model/runtime, context/provider bars, and redacted sensitive text when available through deterministic local fixtures.
 - Run `npm run typecheck` before committing; run broader tests if shared/renderer changes affect more than the focused paths.
+
+Validation and results for rich Ink descriptor and status card rendering batch:
+
+- Wired Ink transcript rendering through shared `buildTerminalCardDescriptor()` via a new `InkTerminalCard` renderer. Rich cards now render status, thinking, model, login, tool, yielded-run, compaction, command, and error descriptors with Web-aligned title/status/tone semantics, while user, assistant, and reasoning rows retain terminal-native row rendering.
+- Improved shared card descriptor detail extraction so tool cards include function-call names/inputs and output-only cards have terminal detail rows; secret-shaped values remain redacted.
+- `/status` now renders a shared rich terminal status card text built from `buildTerminalStatusViewModel()`, including owner, session/profile, model, runtime, queue/processing/streaming, cwd, thinking, fast mode, context and provider usage bars, warnings/errors, and redacted status messages.
+- Local CLI status forwards runtime queued/processing/streaming/cwd/thinking/fast/context/provider/warning/error fields. The deterministic debug PTY router now supplies context/provider usage and redaction fixtures for `/status` validation.
+- Validation commands:
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/cli-ui-ink-renderer.test.mjs test/cli-ui-session-app.test.mjs test/session-ui-view-models.test.mjs test/cli-session-source.test.mjs'` — passed 56/56 focused tests.
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && rm -rf .tmp/pty-rich-status .tmp/pty-rich-status-home && mkdir -p .tmp/pty-rich-status-home && npm run dev -- debug pty run --artifact --artifact-dir /workspace/.tmp/pty-rich-status --timeout-ms 70000 --idle-timeout-ms 15000 --cols 140 --rows 46 --wait-for "Select room for Web user status" --press Enter --wait-for "New session in Personal Chat" --press Enter --wait-for "Created session" --type "/status" --press Enter --wait-for "Status: source=local/direct" --expect "Owner: Web user status (user:status)" --expect "Session: New CLI session" --expect "Runtime: local" --expect "Model: unknown" --expect "Context:" --expect "openai requests:" --expect "TOKEN=[redacted]" --press CtrlC -- env PIBO_HOME=/workspace/.tmp/pty-rich-status-home PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1 PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS=user:status node dist/bin/pibo.js tui:sessions --owner-scope user:status'` — passed.
+  - PTY classification: real PTY-backed `pibo tui:sessions` path with `LocalCliSessionSource`, temp `PIBO_HOME`, and deterministic mocked local router/source; no live provider credentials.
+  - PTY artifacts: raw `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-rich-status/raw.ansi.log`; clean `/root/code/pibo/.worktrees/ink-cli-v2-web-parity/.tmp/pty-rich-status/clean.txt`.
+  - Observed PTY result: clean output shows `Status: source=local/direct`, `Owner: Web user status (user:status)`, `Session: New CLI session`, `Model: unknown`, `Runtime: local`, queue/processing/streaming/CWD rows, `Thinking: high`, `Fast mode: off`, a `Context` bar at 12.5%, an `openai requests` provider bar at 25.0%, and `TOKEN=[redacted]`.
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test'` — ran 515 tests; 514 passed and only the pre-existing unrelated `test/telemetry-store.test.mjs` stale/prune assertion failed.
+- Path classification: shared renderer-neutral model additions, Ink renderer/unit path, and real PTY-backed CLI/TUI path with deterministic mocked local router/source. No Web DOM behavior changed, so browser checks were not required for this batch.
+- Completed stories marked `passes: true`: PRD 07 `US-001`, `US-002`.
+- Implementation commit: `d77b423` (`Render rich Ink terminal status cards`).
+- Next recommended group: PRD 07 `US-003` and `US-004` for narrow/no-color PTY fallback checks and reusable `pibo debug pty` smoke scripts.
