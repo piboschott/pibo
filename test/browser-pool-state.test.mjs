@@ -14,6 +14,7 @@ import {
 	loadBrowserPoolState,
 	mutateBrowserPoolState,
 	releaseBrowserPoolLease,
+	reapIdleBrowserPool,
 	saveBrowserPoolState,
 	withBrowserPoolLock,
 } from "../dist/tools/browser-pool.js";
@@ -513,5 +514,167 @@ test("browser pool release after browser process exit clears lease state and rec
 		assert.equal(saved.owner, undefined);
 		assert.equal(saved.cleanupStatus, "skipped");
 		assert.match(saved.lastError, /pid 4321 is not alive/);
+	});
+});
+
+test("browser pool reap terminates an idle eligible pool and clears stale files", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		const profileDir = join(dir, "profile");
+		await mkdir(profileDir, { recursive: true });
+		await writeFile(join(profileDir, "DevToolsActivePort"), "1234\n");
+		await writeFile(join(profileDir, "SingletonLock"), "lock");
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			processGroupId: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: profileDir,
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T00:05:00.000Z",
+			state: "ready",
+			cleanupStatus: "success",
+		});
+
+		const result = await reapIdleBrowserPool(paths, identity, {
+			now: () => new Date("2026-05-17T00:20:00.000Z"),
+			isPidAlive: () => true,
+			terminateBrowserProcessTree: async (state) => {
+				assert.equal(state.pid, 4321);
+				return { ok: true, terminatedProcessTrees: 1 };
+			},
+		});
+
+		assert.equal(result.reaped, true);
+		assert.equal(result.eligible, true);
+		assert.equal(result.cleanupStatus, "success");
+		assert.equal(result.affectedBrowserPools, 1);
+		assert.equal(result.affectedLeases, 0);
+		assert.equal(result.terminatedProcessTrees, 1);
+		assert.equal(result.staleStateFiles, 2);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.state, "empty");
+		assert.equal(saved.pid, undefined);
+		assert.equal(saved.activeLeaseCount, 0);
+		await assert.rejects(readFile(join(profileDir, "DevToolsActivePort"), "utf8"), /ENOENT/);
+		await assert.rejects(readFile(join(profileDir, "SingletonLock"), "utf8"), /ENOENT/);
+	});
+});
+
+test("browser pool reap skips active and not-yet-idle pools", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			activeLeaseId: "lease-a",
+			activeLeaseCount: 1,
+			owner: "owner-a",
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T01:00:00.000Z",
+			state: "leased",
+		});
+
+		const active = await reapIdleBrowserPool(paths, identity, {
+			now: () => new Date("2026-05-17T00:20:00.000Z"),
+			isPidAlive: () => true,
+			terminateBrowserProcessTree: async () => {
+				throw new Error("active lease should not be terminated");
+			},
+		});
+		assert.equal(active.reaped, false);
+		assert.equal(active.eligible, false);
+		assert.match(active.reason, /active lease lease-a/);
+		assert.equal(active.affectedLeases, 1);
+
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			lastUsedAt: "2026-05-17T00:15:00.000Z",
+			idleExpiresAt: "2026-05-17T00:30:00.000Z",
+			state: "ready",
+		});
+
+		const notIdle = await reapIdleBrowserPool(paths, identity, {
+			now: () => new Date("2026-05-17T00:20:00.000Z"),
+			idleTimeoutMs: 15 * 60_000,
+			isPidAlive: () => true,
+			terminateBrowserProcessTree: async () => {
+				throw new Error("not-idle pool should not be terminated");
+			},
+		});
+		assert.equal(notIdle.reaped, false);
+		assert.equal(notIdle.eligible, false);
+		assert.match(notIdle.reason, /not idle long enough/);
+	});
+});
+
+test("browser pool reap cleans stale pools even when the recorded process already exited", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			state: "stale",
+			lastError: "Recorded browser pid 4321 is not alive",
+		});
+
+		const result = await reapIdleBrowserPool(paths, identity, {
+			isPidAlive: () => false,
+			terminateBrowserProcessTree: async () => {
+				throw new Error("dead process should not be terminated");
+			},
+		});
+
+		assert.equal(result.reaped, true);
+		assert.equal(result.cleanupStatus, "success");
+		assert.equal(result.terminatedProcessTrees, 0);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.state, "empty");
+		assert.equal(saved.lastError, undefined);
+	});
+});
+
+test("browser pool reap marks dirty when managed process cleanup fails", async () => {
+	await withTempDir(async (dir) => {
+		const paths = browserPoolPaths(dir, identity);
+		await saveBrowserPoolState(paths.statePath, {
+			...createEmptyBrowserPoolState(identity),
+			pid: 4321,
+			processGroupId: 4321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(dir, "profile"),
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T00:05:00.000Z",
+			state: "ready",
+		});
+
+		const result = await reapIdleBrowserPool(paths, identity, {
+			now: () => new Date("2026-05-17T00:20:00.000Z"),
+			isPidAlive: () => true,
+			terminateBrowserProcessTree: async () => ({ ok: false, terminatedProcessTrees: 0, reason: "TERM/KILL failed" }),
+		});
+
+		assert.equal(result.reaped, false);
+		assert.equal(result.eligible, true);
+		assert.equal(result.cleanupStatus, "failed");
+		assert.equal(result.affectedBrowserPools, 1);
+		assert.match(result.lastError, /TERM\/KILL failed/);
+		const saved = await loadBrowserPoolState(paths.statePath, identity);
+		assert.equal(saved.state, "dirty");
+		assert.equal(saved.cleanupStatus, "failed");
+		assert.match(saved.lastError, /TERM\/KILL failed/);
 	});
 });

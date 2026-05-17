@@ -572,6 +572,59 @@ test("pibo tools browser-use pool status reports empty, ready, stale, text, and 
 	}
 });
 
+test("pibo tools browser-use pool reap reports JSON counts and dirty next commands", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-pool-reap-"));
+	try {
+		const env = { ...process.env, PIBO_HOME: join(cwd, "pibo-home"), BROWSER_USE_HOME: join(cwd, "browser-use-home") };
+		const statePath = join(env.BROWSER_USE_HOME, "pibo-browser-pool", "browser-pools", "worker-reap", "default", "state.json");
+		await mkdir(dirname(statePath), { recursive: true });
+		await writeFile(statePath, `${JSON.stringify({
+			workerId: "worker-reap",
+			poolId: "default",
+			maxBrowserProcesses: 1,
+			pid: 987654321,
+			processGroupId: 987654321,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			userDataDir: join(cwd, "profile"),
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			state: "stale",
+			lastError: "Recorded browser pid 987654321 is not alive",
+		}, null, 2)}\n`, "utf8");
+
+		const jsonResult = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "reap", "--worker-id", "worker-reap", "--json"], { cwd, env });
+		const parsed = JSON.parse(jsonResult.stdout);
+		assert.equal(parsed.counts.affectedBrowserPools, 1);
+		assert.equal(parsed.counts.terminatedProcessTrees, 0);
+		assert.equal(parsed.pools[0].reaped, true);
+		assert.equal(parsed.pools[0].cleanupStatus, "success");
+		assert.equal(parsed.pools[0].state.state, "empty");
+
+		await writeFile(statePath, `${JSON.stringify({
+			workerId: "worker-reap",
+			poolId: "default",
+			maxBrowserProcesses: 1,
+			pid: process.pid,
+			processGroupId: process.pid,
+			cdpPort: 4831,
+			cdpUrl: "http://127.0.0.1:4831",
+			lastUsedAt: "2026-05-17T00:00:00.000Z",
+			idleExpiresAt: "2026-05-17T00:05:00.000Z",
+			state: "ready",
+		}, null, 2)}\n`, "utf8");
+
+		const dirty = await execFileAsync("node", [cliPath, "tools", "browser-use", "pool", "reap", "--worker-id", "worker-reap"], { cwd, env });
+		assert.match(dirty.stdout, /browser pool reap: failed/);
+		assert.match(dirty.stdout, /cleanup status: failed/);
+		assert.match(dirty.stdout, /Refusing to terminate browser pid/);
+		assert.match(dirty.stdout, /Next:/);
+		assert.match(dirty.stdout, /pibo tools browser-use pool status --json/);
+		assert.match(dirty.stdout, /pibo tools browser-use health/);
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+
 test("pibo tools browser-use manages isolated authenticated leases", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pibo-tools-browser-use-leases-"));
 	try {

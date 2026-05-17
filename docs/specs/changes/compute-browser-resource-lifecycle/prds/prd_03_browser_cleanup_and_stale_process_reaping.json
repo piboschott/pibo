@@ -83,8 +83,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented idle browser-pool reaping and cleanup reporting. Added a locked reap API that skips active leases, reaps no-active idle/stale/dirty pools, terminates managed process trees using recorded pid/process-group metadata, removes stale browser state files, clears reaped pool state to empty, and marks cleanup failures dirty with diagnostics. Added `pibo tools browser-use pool reap` text/JSON output with affected lease, pool, process-tree, and stale-file counts plus safe next commands on dirty failures. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, real Docker-worker process-tree reap validation passed, and npm run typecheck passed."
     }
   ]
 }

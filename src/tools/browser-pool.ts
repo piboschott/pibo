@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -102,6 +102,21 @@ export interface BrowserPoolReleaseOptions {
 	cleanupCdp?: (cdpUrl: string, options: BrowserPoolCdpCleanupOptions) => Promise<BrowserPoolCdpCleanupResult>;
 }
 
+export interface BrowserPoolTerminateResult {
+	ok: boolean;
+	terminatedProcessTrees: number;
+	reason?: string;
+}
+
+export interface BrowserPoolReapOptions {
+	idleTimeoutMs?: number;
+	lockOptions?: BrowserPoolLockOptions;
+	now?: () => Date;
+	isPidAlive?: (pid: number) => boolean | Promise<boolean>;
+	terminateBrowserProcessTree?: (state: BrowserPoolState) => Promise<BrowserPoolTerminateResult>;
+	removeStaleFiles?: (state: BrowserPoolState) => Promise<number>;
+}
+
 export type BrowserPoolAcquireResult =
 	| {
 		acquired: true;
@@ -123,6 +138,19 @@ export interface BrowserPoolReleaseResult {
 	released: boolean;
 	cleanupStatus: BrowserPoolCleanupStatus;
 	closedTargets: number;
+	state: BrowserPoolState;
+	lastError?: string;
+}
+
+export interface BrowserPoolReapResult {
+	reaped: boolean;
+	eligible: boolean;
+	reason?: string;
+	affectedLeases: number;
+	affectedBrowserPools: number;
+	terminatedProcessTrees: number;
+	staleStateFiles: number;
+	cleanupStatus: BrowserPoolCleanupStatus;
 	state: BrowserPoolState;
 	lastError?: string;
 }
@@ -451,6 +479,94 @@ export async function releaseBrowserPoolLease(
 	}, options.lockOptions);
 }
 
+export async function reapIdleBrowserPool(
+	paths: BrowserPoolPaths,
+	identity: BrowserPoolIdentity,
+	options: BrowserPoolReapOptions = {},
+): Promise<BrowserPoolReapResult> {
+	const now = options.now ?? (() => new Date());
+	const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+	const terminateBrowserProcessTree = options.terminateBrowserProcessTree ?? defaultTerminateBrowserProcessTree;
+	const removeStaleFiles = options.removeStaleFiles ?? removeDefaultStaleBrowserFiles;
+	const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+
+	return mutateBrowserPoolState<BrowserPoolReapResult>(paths, { ...identity, onMissing: "empty", onMalformed: "empty" }, "reap", async (current) => {
+		const reapedAt = now();
+		const lastUsedAt = reapedAt.toISOString();
+		const activeLeaseCount = current.activeLeaseId ? Math.max(1, current.activeLeaseCount ?? 1) : current.activeLeaseCount ?? 0;
+
+		if (current.state === "empty" || (!current.pid && !current.cdpUrl && !current.userDataDir)) {
+			const reason = "Browser pool has no recorded browser to reap";
+			const nextState = stripUndefined({ ...current, activeLeaseCount: 0, cleanupStatus: "skipped" as const, lastError: reason });
+			return { state: nextState, result: skippedReapResult(nextState, reason) };
+		}
+
+		if (current.activeLeaseId || activeLeaseCount > 0 || current.state === "leased") {
+			const reason = current.activeLeaseId ? `Browser pool has active lease ${current.activeLeaseId}` : "Browser pool has active leases";
+			const nextState = stripUndefined({ ...current, cleanupStatus: "skipped" as const, lastError: reason });
+			return { state: nextState, result: skippedReapResult(nextState, reason) };
+		}
+
+		const idleReason = browserPoolReapEligibilityReason(current, reapedAt, idleTimeoutMs);
+		if (!idleReason) {
+			const reason = "Browser pool is not idle long enough to reap";
+			const nextState = stripUndefined({ ...current, cleanupStatus: "skipped" as const, lastError: reason });
+			return { state: nextState, result: skippedReapResult(nextState, reason) };
+		}
+
+		let terminatedProcessTrees = 0;
+		let lastError: string | undefined;
+		if (current.pid && await isPidAlive(current.pid)) {
+			const termination = await terminateBrowserProcessTree(current);
+			terminatedProcessTrees = termination.terminatedProcessTrees;
+			if (!termination.ok) {
+				lastError = termination.reason ?? `Failed to terminate browser process tree for pid ${current.pid}`;
+				const dirtyState = stripUndefined({ ...current, state: "dirty" as const, cleanupStatus: "failed" as const, lastError });
+				return {
+					state: dirtyState,
+					result: {
+						reaped: false,
+						eligible: true,
+						reason: idleReason,
+						affectedLeases: 0,
+						affectedBrowserPools: 1,
+						terminatedProcessTrees,
+						staleStateFiles: 0,
+						cleanupStatus: "failed",
+						state: dirtyState,
+						lastError,
+					},
+				};
+			}
+		}
+
+		const staleStateFiles = await removeStaleFiles(current);
+		const nextState = stripUndefined({
+			workerId: current.workerId,
+			poolId: current.poolId,
+			maxBrowserProcesses: current.maxBrowserProcesses,
+			activeLeaseCount: 0,
+			lastUsedAt,
+			state: "empty" as const,
+			cleanupStatus: "success" as const,
+		});
+		return {
+			state: nextState,
+			result: {
+				reaped: true,
+				eligible: true,
+				reason: idleReason,
+				affectedLeases: 0,
+				affectedBrowserPools: 1,
+				terminatedProcessTrees,
+				staleStateFiles,
+				cleanupStatus: "success",
+				state: nextState,
+			},
+		};
+	}, options.lockOptions);
+}
+
 export function normalizeBrowserPoolState(value: unknown, identity: BrowserPoolIdentity): BrowserPoolState {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new BrowserPoolStateError("Browser pool state must be a JSON object");
 	const record = value as Record<string, unknown>;
@@ -486,6 +602,78 @@ function activeLeaseBusyReason(state: BrowserPoolState, requestedLeaseId: string
 	const owner = state.owner ? ` owned by ${state.owner}` : "";
 	const until = state.idleExpiresAt ? ` until ${state.idleExpiresAt}` : "";
 	return `pool-exhausted: browser pool ${state.poolId} is already leased by ${state.activeLeaseId}${owner}${until}`;
+}
+
+function skippedReapResult(state: BrowserPoolState, reason: string): BrowserPoolReapResult {
+	return {
+		reaped: false,
+		eligible: false,
+		reason,
+		affectedLeases: state.activeLeaseId ? Math.max(1, state.activeLeaseCount ?? 1) : state.activeLeaseCount ?? 0,
+		affectedBrowserPools: 0,
+		terminatedProcessTrees: 0,
+		staleStateFiles: 0,
+		cleanupStatus: "skipped",
+		state,
+		lastError: reason,
+	};
+}
+
+function browserPoolReapEligibilityReason(state: BrowserPoolState, now: Date, idleTimeoutMs: number): string | undefined {
+	if (state.state === "stale" || state.state === "dirty") return `Browser pool is ${state.state}`;
+	if (leaseExpired(state.idleExpiresAt, now)) return `Browser pool idle expiry ${state.idleExpiresAt} has passed`;
+	if (!state.lastUsedAt) return undefined;
+	const lastUsedAt = Date.parse(state.lastUsedAt);
+	if (Number.isNaN(lastUsedAt)) return undefined;
+	if (lastUsedAt + idleTimeoutMs <= now.getTime()) return `Browser pool last used at ${state.lastUsedAt} is older than idle timeout ${idleTimeoutMs}ms`;
+	return undefined;
+}
+
+async function defaultTerminateBrowserProcessTree(state: BrowserPoolState): Promise<BrowserPoolTerminateResult> {
+	if (!state.pid) return { ok: true, terminatedProcessTrees: 0 };
+	if (!state.userDataDir) return { ok: false, terminatedProcessTrees: 0, reason: `Refusing to terminate browser pid ${state.pid} without a recorded Pibo-managed user-data dir` };
+	if (!defaultIsPidAlive(state.pid)) return { ok: true, terminatedProcessTrees: 0 };
+
+	const targetGroup = state.processGroupId && state.processGroupId > 1 && state.processGroupId === state.pid && state.processGroupId !== process.pid ? state.processGroupId : undefined;
+	const target = targetGroup ? -targetGroup : state.pid;
+	try {
+		process.kill(target, "SIGTERM");
+	} catch (error) {
+		if (!isNodeError(error) || error.code !== "ESRCH") return { ok: false, terminatedProcessTrees: 0, reason: `Failed to signal browser pid ${state.pid}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (await waitForPidExit(state.pid, 1_000)) return { ok: true, terminatedProcessTrees: 1 };
+	try {
+		process.kill(target, "SIGKILL");
+	} catch (error) {
+		if (!isNodeError(error) || error.code !== "ESRCH") return { ok: false, terminatedProcessTrees: 0, reason: `Failed to kill browser pid ${state.pid}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (await waitForPidExit(state.pid, 1_000)) return { ok: true, terminatedProcessTrees: 1 };
+	return { ok: false, terminatedProcessTrees: 0, reason: `Browser pid ${state.pid} did not exit after TERM/KILL` };
+}
+
+async function removeDefaultStaleBrowserFiles(state: BrowserPoolState): Promise<number> {
+	if (!state.userDataDir) return 0;
+	let removed = 0;
+	for (const fileName of ["DevToolsActivePort", "SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+		const path = join(state.userDataDir, fileName);
+		try {
+			await access(path);
+		} catch {
+			continue;
+		}
+		await rm(path, { force: true });
+		removed += 1;
+	}
+	return removed;
+}
+
+async function waitForPidExit(pid: number, timeoutMs: number): Promise<boolean> {
+	const startedAt = Date.now();
+	while (Date.now() - startedAt <= timeoutMs) {
+		if (!defaultIsPidAlive(pid)) return true;
+		await delay(50);
+	}
+	return !defaultIsPidAlive(pid);
 }
 
 function leaseExpired(idleExpiresAt: string | undefined, now: Date): boolean {

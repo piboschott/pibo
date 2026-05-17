@@ -25,7 +25,9 @@ import {
   browserPoolPaths,
   createEmptyBrowserPoolState,
   loadBrowserPoolState,
+  reapIdleBrowserPool,
   type BrowserPoolIdentity,
+  type BrowserPoolReapResult,
   type BrowserPoolState,
 } from './browser-pool.js';
 import { detectDesktopEnv, hasDesktopDisplay } from './desktop-env.js';
@@ -224,6 +226,7 @@ Commands:
   lease release <id>          Release one browser slot
   lease reap-stale            Release expired or dead browser slots
   pool status                 Show read-only managed browser-pool status
+  pool reap                   Reap an idle managed browser pool
   health                      Check browser-use health and report issues
 
 Next:
@@ -232,7 +235,8 @@ Next:
   pibo tools browser-use targets
   pibo tools browser-use auth-template env
   pibo tools browser-use lease acquire
-  pibo tools browser-use pool status`);
+  pibo tools browser-use pool status
+  pibo tools browser-use pool reap --json`);
 }
 
 interface BrowserPoolStatusOptions {
@@ -240,6 +244,10 @@ interface BrowserPoolStatusOptions {
   poolId?: string;
   root?: string;
   json?: boolean;
+}
+
+interface BrowserPoolReapOptions extends BrowserPoolStatusOptions {
+  idleTimeoutMs?: number;
 }
 
 interface BrowserPoolStatusResult extends BrowserPoolState {
@@ -269,6 +277,7 @@ function browserPoolStatusNextCommands(state: BrowserPoolState): string[] {
   if (state.state === 'stale' || state.state === 'dirty') {
     return [
       'pibo tools browser-use pool status --json',
+      'pibo tools browser-use pool reap --json',
       'pibo tools browser-use health',
       'eval "$(pibo tools env browser-use)" && browser-use --pibo-ensure-chrome',
     ];
@@ -335,6 +344,79 @@ async function printBrowserPoolStatus(status: CliToolStatus, options: BrowserPoo
     return;
   }
   printBrowserPoolStatusText(result);
+}
+
+function browserPoolReapNextCommands(result: BrowserPoolReapResult): string[] {
+  if (result.cleanupStatus === 'failed' || result.state.state === 'dirty') {
+    return [
+      'pibo tools browser-use pool status --json',
+      'pibo tools browser-use health',
+      'pibo tools browser-use pool reap --json',
+    ];
+  }
+  return ['pibo tools browser-use pool status --json'];
+}
+
+async function getBrowserPoolReap(status: CliToolStatus, options: BrowserPoolReapOptions) {
+  const identity = getBrowserPoolStatusIdentity(options);
+  const rootDir = getBrowserPoolRoot(status, options);
+  const paths = browserPoolPaths(rootDir, identity);
+  const result = await reapIdleBrowserPool(paths, identity, { idleTimeoutMs: options.idleTimeoutMs });
+  return {
+    rootDir,
+    statePath: paths.statePath,
+    lockPath: paths.lockPath,
+    counts: {
+      affectedLeases: result.affectedLeases,
+      affectedBrowserPools: result.affectedBrowserPools,
+      terminatedProcessTrees: result.terminatedProcessTrees,
+      staleStateFiles: result.staleStateFiles,
+    },
+    pools: [{
+      workerId: result.state.workerId,
+      poolId: result.state.poolId,
+      reaped: result.reaped,
+      eligible: result.eligible,
+      reason: result.reason,
+      cleanupStatus: result.cleanupStatus,
+      lastError: result.lastError,
+      state: result.state,
+      terminatedProcessTrees: result.terminatedProcessTrees,
+      staleStateFiles: result.staleStateFiles,
+      affectedLeases: result.affectedLeases,
+    }],
+    nextCommands: browserPoolReapNextCommands(result),
+  };
+}
+
+function printBrowserPoolReapText(result: Awaited<ReturnType<typeof getBrowserPoolReap>>): void {
+  const pool = result.pools[0];
+  const label = pool.cleanupStatus === 'failed' ? 'failed' : pool.reaped ? 'success' : 'no-op';
+  console.log(`browser pool reap: ${label}`);
+  console.log(`  worker id: ${pool.workerId}`);
+  console.log(`  pool id: ${pool.poolId}`);
+  console.log(`  reason: ${pool.reason ?? '-'}`);
+  console.log(`  cleanup status: ${pool.cleanupStatus}`);
+  console.log(`  affected leases: ${result.counts.affectedLeases}`);
+  console.log(`  affected browser pools: ${result.counts.affectedBrowserPools}`);
+  console.log(`  terminated process trees: ${result.counts.terminatedProcessTrees}`);
+  console.log(`  stale state files: ${result.counts.staleStateFiles}`);
+  console.log(`  state file: ${result.statePath}`);
+  if (pool.lastError) console.log(`  error: ${pool.lastError}`);
+  if (pool.cleanupStatus === 'failed' || pool.state.state === 'dirty') {
+    console.log('');
+    console.log('Next:');
+    for (const command of result.nextCommands) console.log(`  ${command}`);
+  }
+}
+
+async function printBrowserPoolReap(status: CliToolStatus, options: BrowserPoolReapOptions): Promise<void> {
+  const result = await getBrowserPoolReap(status, options);
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  printBrowserPoolReapText(result);
 }
 
 function findChromeBinary(): string | undefined {
@@ -625,12 +707,13 @@ export async function runToolsCli(argv = process.argv): Promise<void> {
 
   const pool = browserUse
     .command('pool')
-    .description('Inspect the managed browser pool')
+    .description('Inspect and reap the managed browser pool')
     .action(() => {
       console.log(`pibo tools browser-use pool
 
 Commands:
-  status    Show read-only managed browser-pool status`);
+  status    Show read-only managed browser-pool status
+  reap      Reap an idle managed browser pool`);
     });
 
   pool
@@ -642,6 +725,18 @@ Commands:
     .option('--json', 'Print machine-readable pool status')
     .action(async (options: BrowserPoolStatusOptions) => {
       await printBrowserPoolStatus(getCliToolStatus(requireEntry('browser-use')), options);
+    });
+
+  pool
+    .command('reap')
+    .description('Reap an idle managed browser pool')
+    .option('--worker-id <id>', 'Worker id to inspect')
+    .option('--pool-id <id>', 'Browser pool id to inspect')
+    .option('--root <path>', 'Browser pool root directory')
+    .option('--idle-timeout-ms <ms>', 'Idle timeout in milliseconds', parsePositiveInteger)
+    .option('--json', 'Print machine-readable reap result')
+    .action(async (options: BrowserPoolReapOptions) => {
+      await printBrowserPoolReap(getCliToolStatus(requireEntry('browser-use')), options);
     });
 
   const authTemplate = browserUse
