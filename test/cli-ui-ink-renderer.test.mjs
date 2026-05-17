@@ -151,9 +151,14 @@ test("Ink renderer gives user and assistant rows distinct terminal markers", () 
 	assert.doesNotMatch(output, /› assistant marker/);
 });
 
-test("Ink renderer renders inline detail sections with bounded redacted values", () => {
-	const output = renderToString(React.createElement(InkTerminalView, { rows: [buildExpandableDetailFixtureRow()], maxRows: 5, maxLineChars: 120 }));
+test("Ink renderer renders selected detail affordance collapsed and inline detail sections when expanded", () => {
+	const row = buildExpandableDetailFixtureRow();
+	const collapsed = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, maxRows: 5, maxLineChars: 120 }));
+	assert.match(collapsed, /details available · press d or enter/);
+	assert.doesNotMatch(collapsed, /Command args:/);
 
+	const output = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, expandedRowIds: [row.id], maxRows: 5, maxLineChars: 120 }));
+	assert.match(output, /└ Details/);
 	for (const label of ["Input", "Output", "Error", "Linked session", "Command args", "Tool result preview", "Large JSON", "Long markdown"]) {
 		assert.match(output, new RegExp(`${label}:`));
 	}
@@ -161,7 +166,7 @@ test("Ink renderer renders inline detail sections with bounded redacted values",
 	assert.match(output, /more items|fixture-value-0/);
 	assert.match(output, /token=\[redacted\]/);
 	assert.doesNotMatch(output, /detail-secret-value|sk_fixture_secret/);
-	assert.ok(output.length < 5000, "detail rendering stays bounded");
+	assert.ok(output.length < 8000, "detail rendering stays bounded");
 });
 
 test("Ink status card renders compact runtime fields bars unavailable states tools credits and provider labels", () => {

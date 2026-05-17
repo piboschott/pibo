@@ -23,6 +23,7 @@ import {
 	popInkSessionOverlay,
 	pushInkSessionOverlay,
 	reduceInkSessionInputState,
+	normalizeInkRowSelection,
 	runCliSessionsUi,
 	terminalLineLimitFromColumns,
 } from "../dist/apps/cli-ui/index.js";
@@ -268,6 +269,30 @@ test("Ink session input reducer captures text, enter, navigation, escape, and sl
 	const closed = reduceInkSessionInputState(filtered, { type: "escape" });
 	assert.equal(closed.input, "/th");
 	assert.equal(closed.slashSuggestions, undefined);
+});
+
+test("Ink session input reducer selects expandable rows and toggles inline details without breaking input or pickers", () => {
+	const expandableRows = [
+		{ id: "plain", kind: "message.assistant", status: "done", lines: [{ prefix: "none", tokens: [{ text: "plain" }] }], sourceNodeIds: ["plain"] },
+		{ id: "tool-a", kind: "tool.call", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Called a" }] }], output: "a", sourceNodeIds: ["tool-a"] },
+		{ id: "tool-b", kind: "execution.command", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Ran b" }] }], output: "b", sourceNodeIds: ["tool-b"] },
+	];
+	const normalized = normalizeInkRowSelection({ loading: false, rows: expandableRows, input: "", mode: "transcript" });
+	assert.equal(normalized.selectedRowId, "tool-b");
+	const selectedUp = reduceInkSessionInputState(normalized, { type: "up" });
+	assert.equal(selectedUp.selectedRowId, "tool-a");
+	const opened = reduceInkSessionInputState(selectedUp, { type: "toggle-details" });
+	assert.deepEqual(opened.expandedRowIds, ["tool-a"]);
+	const closed = reduceInkSessionInputState(opened, { type: "toggle-details" });
+	assert.deepEqual(closed.expandedRowIds, []);
+
+	const typing = reduceInkSessionInputState({ ...normalized, input: "h" }, { type: "down" });
+	assert.equal(typing.selectedRowId, "tool-b", "typing input keeps row focus unchanged");
+	assert.equal(typing.input, "h");
+
+	const picker = { kind: "session", title: "Pick", items: [{ id: "one", label: "One" }, { id: "two", label: "Two" }], selectedIndex: 0, emptyMessage: "None" };
+	const pickerState = reduceInkSessionInputState({ ...normalized, picker, mode: "session-picker" }, { type: "down" });
+	assert.equal(pickerState.picker.selectedIndex, 1, "picker navigation remains picker-owned");
 });
 
 test("generic Ink overlay stack supports nested picker back and active overlay", () => {

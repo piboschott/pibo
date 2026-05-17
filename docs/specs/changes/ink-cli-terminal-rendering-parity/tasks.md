@@ -74,10 +74,10 @@
 
 ## 10. Requirement: Ink Row Expansion and Details
 
-- [ ] 10.1 Add selected-row and expanded-row state to `InkSessionApp` or a small controller model.
-- [ ] 10.2 Add keyboard handling for selecting expandable rows and toggling details without breaking text input/slash picker behavior.
-- [ ] 10.3 Render terminal-native details below the parent row with `Input`, `Output`, `Error`, linked session controls, compacted-output disclosure, and redaction.
-- [ ] 10.4 Add controller and renderer tests for expand/collapse, full output visibility, and collapsed transcript density.
+- [x] 10.1 Add selected-row and expanded-row state to `InkSessionApp` or a small controller model.
+- [x] 10.2 Add keyboard handling for selecting expandable rows and toggling details without breaking text input/slash picker behavior.
+- [x] 10.3 Render terminal-native details below the parent row with `Input`, `Output`, `Error`, linked session controls, compacted-output disclosure, and redaction.
+- [x] 10.4 Add controller and renderer tests for expand/collapse, full output visibility, and collapsed transcript density.
 - [ ] 10.5 Add a PTY flow that opens details for a long-output row.
 
 ## 11. Requirement: Ink JSON and Markdown Semantic Parity
