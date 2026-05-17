@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:42:36Z",
+    "lastUpdatedAt": "2026-05-17T00:43:43Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -404,6 +404,15 @@
         "q-project-workflow"
       ],
       "message": "docs: refresh project workflow specs"
+    },
+    {
+      "hash": "d0888dcb5f535a36995d54d0f15531f1713df5ae",
+      "shortHash": "d0888dc",
+      "committedAt": "2026-05-17T00:43:43Z",
+      "queueIds": [
+        "q-signals-telemetry"
+      ],
+      "message": "docs: refresh signals telemetry specs"
     }
   ],
   "runNotes": [
@@ -422,6 +431,10 @@
     {
       "at": "2026-05-17T00:42:36Z",
       "note": "Audited q-signals-telemetry. Updated session signals, debug CLI, runtime telemetry capability specs, and clarified the observability telemetry change spec as proposal-time baseline with implemented V1 traceability."
+    },
+    {
+      "at": "2026-05-17T00:43:43Z",
+      "note": "Recorded commit d0888dc for q-signals-telemetry source-spec refresh."
     }
   ]
 }
