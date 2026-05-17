@@ -216,6 +216,6 @@ The service worker improves repeat asset loads without making live Chat Web APIs
 | REQ-004 Static compression follows client support | Prefer Brotli for JavaScript | `src/apps/chat/web-app.ts`, `test/web-channel.test.mjs` | Draft |
 | REQ-005 Service worker caches only Chat Web assets | API request bypasses service worker cache | `src/apps/chat-ui/public/sw.js`, `src/apps/chat-ui/src/main.tsx` | Draft |
 
-## Source Basis
+## Verification Basis
 
-This spec was derived from current source code in `src/apps/chat/web-app.ts`, `src/apps/chat-ui/index.html`, `src/apps/chat-ui/src/main.tsx`, `src/apps/chat-ui/public/sw.js`, `src/apps/chat-ui/public/manifest.webmanifest`, and related web-channel tests in `test/web-channel.test.mjs`. Existing specs under `docs/specs/` were inspected to avoid duplicating broader web-host, browser-shell, cache, and rendering contracts.
+This spec was refreshed against current source code in `src/apps/chat/web-app.ts`, `src/apps/chat-ui/index.html`, `src/apps/chat-ui/src/main.tsx`, `src/apps/chat-ui/public/sw.js`, `src/apps/chat-ui/public/manifest.webmanifest`, and related web-channel tests in `test/web-channel.test.mjs`. Existing specs under `docs/specs/` were inspected to avoid duplicating broader web-host, browser-shell, cache, and rendering contracts.

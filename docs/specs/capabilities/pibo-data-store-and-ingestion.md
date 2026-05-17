@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Created:** 2026-05-10
-**Updated:** 2026-05-11
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage
 **Related docs:** [Chat Web Rooms and Event Streams](./chat-web-rooms-and-event-streams.md), [Pibo Session Routing](./pibo-session-routing.md), [Debug CLI](./debug-cli.md)
 
@@ -10,17 +10,17 @@
 
 Pibo needs one local, queryable data model for sessions, rooms, messages, observations, payload references, navigation, and migration bookkeeping. Legacy stores still exist for compatibility, but new Chat Web and debugging behavior needs a stable v2 store that can ingest user input and runtime output without duplicating rows or losing large payloads.
 
-This spec captures the current `src/data` behavior as a durable product contract. It does not replace the legacy session store, Chat Web read model, or reliability store specs; it defines the v2 data-store capability used to shadow and index conversation data.
+This spec captures the current `src/data` behavior as a durable product contract. It does not replace the Pibo Session Store, Chat Web room, runtime telemetry, workflow, or reliability specs; it defines the v2 data-store capability used for default session storage, Chat Web projections, event ingestion, payload storage, navigation, and data CLI repair/migration operations.
 
 ## Goal
 
-Pibo SHALL maintain a SQLite-backed v2 data store that idempotently ingests Chat Web user messages and Pibo output events into ordered event, message, observation, payload, session, and navigation projections.
+Pibo SHALL maintain a SQLite-backed v2 data store that can serve as the default routed session store and that idempotently ingests Chat Web user messages and Pibo output events into ordered event, message, observation, payload, session, and navigation projections.
 
 ## Background / Current State
 
-The current implementation creates `.pibo/pibo.sqlite` through `PiboDataStore`, applies schema version 1, enables foreign keys, sets a busy timeout, and uses WAL for file-backed stores. The store owns sub-stores for payloads, event log rows, chat messages, observations, session navigation, and sessions.
+The current implementation creates `.pibo/pibo.sqlite` through `PiboDataStore`, applies schema version 2, enables foreign keys, sets a busy timeout, and uses WAL for file-backed stores. The store owns sub-stores for payloads, event log rows, chat messages, observations, session navigation, sessions, and runtime telemetry. Chat Web also creates workflow authoring/catalog tables in this same database; those tables are covered by workflow specs and local store ownership docs rather than by the `src/data` sub-store contract.
 
-`ChatDataIngestService` writes accepted user messages and normalized `PiboOutputEvent` records. It records append-only event rows, creates message and observation projections, upserts session and navigation metadata, and externalizes large content into a compressed payload directory.
+`PiboDataSessionStore` implements the default gateway `PiboSessionStore` on the shared `sessions` table. `ChatDataIngestService` writes accepted user messages and normalized `PiboOutputEvent` records. It records append-only event rows, creates message and observation projections, upserts session and navigation metadata, and externalizes large content into a compressed payload directory.
 
 ## Scope
 
@@ -37,7 +37,9 @@ The current implementation creates `.pibo/pibo.sqlite` through `PiboDataStore`, 
 ### Out of Scope
 
 - Legacy Chat Web read model semantics — covered by Chat Web specs.
-- Runtime routing and Pi transcript persistence — covered by session routing and trace specs.
+- Session-store semantics above the v2 table adapter — covered by the Pibo Session Store spec.
+- Runtime telemetry table semantics — covered by Runtime Observability Telemetry.
+- Workflow UI authoring/catalog tables created in `pibo.sqlite` by Chat Web — covered by workflow and local-store ownership specs.
 - Reliability event streams, durable jobs, and yielded-run records in `.pibo/pibo-events.sqlite` — separate capability.
 - UI rendering of messages and observations — consumers of this store decide presentation.
 
@@ -58,14 +60,14 @@ Opening an existing or new v2 store yields the same table/index contract and set
 #### Acceptance
 
 - Applying the schema twice leaves one copy of each expected table and index.
-- The database contains sessions, rooms, room members, payloads, event log, chat messages, observations, stats, navigation, indexer offsets, and migration import map tables.
+- The database contains sessions, rooms, room members, payloads, event log, chat messages, observations, stats, navigation, indexer offsets, migration import map, and telemetry tables.
 - File-backed stores use the configured database path and payload root.
 
 #### Scenario: Fresh v2 store
 
 - GIVEN no v2 database file exists
 - WHEN Pibo opens `PiboDataStore`
-- THEN the database is created with schema version 1 and all v2 tables are present
+- THEN the database is created with schema version 2 and all v2 tables are present
 
 ### Requirement: Event log appends are ordered and idempotent
 
@@ -164,20 +166,21 @@ The v2 store can reconstruct high-level message lists and operational observatio
 - WHEN that output event is ingested twice
 - THEN one event, one assistant message, and one observation exist for the session
 
-### Requirement: Session and navigation projections track current conversation placement
+### Requirement: Session and navigation rows track current conversation placement
 
-The system MUST upsert session metadata and navigation rows when ingestion establishes or updates room activity.
+The system MUST upsert session metadata and navigation rows when session-store operations or ingestion establishes or updates room activity.
 
 #### Current
 
-The session projection stores Pibo Session identity, linked Pi session id, owner scope, room id, root/parent/origin ids, channel, kind, profile, active model, workspace, title, status, metadata, timestamps, and first-message preview. The navigation projection stores owner, room, session hierarchy, title, profile, status, last activity, last message preview, child count, sort key, and archive state.
+The `sessions` table stores Pibo Session identity, linked Pi session id, owner scope, room id, root/parent/origin ids, channel, kind, profile, active model, workspace, title, status, metadata, timestamps, and first-message preview. In normal gateway startup, `PiboDataSessionStore` uses this table as the routed Pibo Session Store. The navigation projection stores owner, room, session hierarchy, title, profile, status, last activity, last message preview, child count, sort key, and archive state.
 
 #### Target
 
-Room/session lists can query v2 projections by owner and room without scanning transcripts or raw events.
+Routing can use the v2 session table through `PiboDataSessionStore`, and room/session lists can query v2 projections by owner and room without scanning transcripts or raw events.
 
 #### Acceptance
 
+- V2-backed session-store create, update, delete, list, and find operations preserve Pibo Session identity semantics.
 - User-message ingestion sets first message preview only when not already present.
 - Root session id is the session id for roots and uses parent/root metadata for children.
 - Navigation listing filters by owner, optional room id, archive visibility, and bounded limit, ordered by sort key descending.
@@ -261,7 +264,7 @@ Operators and agents can inspect data-store state, migrate session projections, 
 
 ## Success Criteria
 
-- [x] SC-001: Opening a v2 store twice leaves schema version and table/index inventory stable, as covered by `test/data-v2-store.test.mjs`.
+- [x] SC-001: Opening a v2 store twice leaves schema version and table/index inventory stable, as covered by `test/data-v2-store.test.mjs` and telemetry schema coverage in `test/telemetry-store.test.mjs`.
 - [x] SC-002: Retried user-message ingestion with the same client transaction creates one event and one message, as covered by `test/data-v2-ingest-service.test.mjs`.
 - [x] SC-003: Retried assistant output ingestion with the same event identity creates one output event, one assistant message, and one observation, as covered by `test/data-v2-ingest-service.test.mjs`.
 - [x] SC-004: Large message payloads are externalized and readable from their payload reference, as covered by `test/data-v2-ingest-service.test.mjs`.
@@ -275,7 +278,7 @@ This section maps current tests to this source-backed contract. It avoids creati
 
 ### Directly Tested
 
-- Store initialization, schema idempotency, payload read/write/deduplication, event-log idempotency, and simple message/observation listing are covered by `test/data-v2-store.test.mjs`.
+- Store initialization, schema idempotency, payload read/write/deduplication, event-log idempotency, and simple message/observation listing are covered by `test/data-v2-store.test.mjs`; telemetry schema additions are covered by `test/telemetry-store.test.mjs`.
 - User-message ingestion idempotency, large-message payload externalization, assistant-output idempotency, progressive tool-call snapshots, and tool-output observation projection are covered by `test/data-v2-ingest-service.test.mjs`.
 - V2-native room, session, timeline, command-event, trace-event, and read-state service behavior is covered by `test/chat-v2-native-services.test.mjs`.
 - Data inventory and unread-baseline repair behavior are covered by `test/data-cli.test.mjs`.
@@ -291,14 +294,14 @@ This section maps current tests to this source-backed contract. It avoids creati
 ### Test Gaps
 
 - Add focused assertions for WAL mode and foreign-key behavior on file-backed stores if those become release gates.
-- Add schema inventory assertions when a future migration increases `PIBO_DATA_SCHEMA_VERSION`.
+- Add non-telemetry schema inventory assertions when a future migration increases `PIBO_DATA_SCHEMA_VERSION`.
 - Add integration tests that exercise Chat Web HTTP routes through v2-native services without legacy read-model fallback.
 
 ## Assumptions and Open Questions
 
 ### Assumptions
 
-- The v2 store is a projection/indexing store for current Chat Web behavior, not yet the sole canonical replacement for every legacy store.
+- The v2 store is the normal default store for routed Pibo Session identity and current Chat Web behavior, but it is not the sole canonical replacement for every legacy or focused store.
 - Retention classes are stored as strings so new policy names can be introduced without a schema change.
 - The current inline threshold of 16 KiB for message and JSON payloads is an implementation-level policy that consumers should not rely on for UX decisions.
 
@@ -312,15 +315,15 @@ This section maps current tests to this source-backed contract. It avoids creati
 
 | Requirement | Scenario / Story | Plan / Task | Status |
 |---|---|---|---|
-| REQ-001 V2 store initializes deterministically | Fresh v2 store | `src/data/schema.ts`, `src/data/pibo-store.ts`, `test/data-v2-store.test.mjs` | Covered, with PRAGMA details source-inspected |
+| REQ-001 V2 store initializes deterministically | Fresh v2 store | `src/data/schema.ts`, `src/data/pibo-store.ts`, `test/data-v2-store.test.mjs`, `test/telemetry-store.test.mjs` | Covered, with PRAGMA details source-inspected |
 | REQ-002 Event log appends are ordered and idempotent | Retried append | `src/data/event-log.ts`, `test/data-v2-store.test.mjs` | Covered |
 | REQ-003 Payloads are content-addressed and externalized for large values | Large user message | `src/data/payload-store.ts`, `src/data/ingest-service.ts`, `test/data-v2-store.test.mjs`, `test/data-v2-ingest-service.test.mjs` | Covered |
 | REQ-004 User-message ingestion is idempotent per client transaction | Retried accepted input | `src/data/ingest-service.ts`, `test/data-v2-ingest-service.test.mjs` | Covered |
 | REQ-005 Runtime output ingestion shadows messages and observations | Assistant output retry | `src/data/ingest-service.ts`, `src/data/message-store.ts`, `src/data/observation-store.ts`, `test/data-v2-ingest-service.test.mjs` | Covered |
-| REQ-006 Session and navigation projections track current conversation placement | New room activity | `src/data/session-store.ts`, `src/data/navigation-store.ts`, `test/data-v2-ingest-service.test.mjs`, `test/pibo-data-session-store.test.mjs` | Covered for ingestion and session-store paths; navigation edge cases source-inspected |
+| REQ-006 Session and navigation rows track current conversation placement | New room activity | `src/data/session-store.ts`, `src/data/navigation-store.ts`, `src/sessions/pibo-data-store.ts`, `test/data-v2-ingest-service.test.mjs`, `test/pibo-data-session-store.test.mjs` | Covered for ingestion and session-store paths; navigation edge cases source-inspected |
 | REQ-007 V2-native Chat Web services read and write through the v2 store | V2-native chat service flow | `src/apps/chat/data/*.ts`, `test/chat-v2-native-services.test.mjs` | Covered |
 | REQ-008 Data CLI reports and repair operations are bounded | Inventory for missing root store | `src/data/cli.ts`, `test/data-cli.test.mjs`, `test/pibo-data-session-store.test.mjs` | Covered |
 
 ## Verification Basis
 
-This spec is based on the current code in `src/data/schema.ts`, `src/data/pibo-store.ts`, `src/data/event-log.ts`, `src/data/payload-store.ts`, `src/data/ingest-service.ts`, `src/data/message-store.ts`, `src/data/observation-store.ts`, `src/data/navigation-store.ts`, `src/data/session-store.ts`, `src/data/cli.ts`, and `src/apps/chat/data/*.ts`, plus behavior asserted in `test/data-v2-store.test.mjs`, `test/data-v2-ingest-service.test.mjs`, `test/chat-v2-native-services.test.mjs`, `test/data-cli.test.mjs`, and `test/pibo-data-session-store.test.mjs`.
+This spec is based on the current code in `src/data/schema.ts`, `src/data/pibo-store.ts`, `src/data/event-log.ts`, `src/data/payload-store.ts`, `src/data/ingest-service.ts`, `src/data/message-store.ts`, `src/data/observation-store.ts`, `src/data/navigation-store.ts`, `src/data/session-store.ts`, `src/data/telemetry.ts`, `src/sessions/pibo-data-store.ts`, `src/data/cli.ts`, and `src/apps/chat/data/*.ts`, plus behavior asserted in `test/data-v2-store.test.mjs`, `test/data-v2-ingest-service.test.mjs`, `test/chat-v2-native-services.test.mjs`, `test/data-cli.test.mjs`, `test/pibo-data-session-store.test.mjs`, and `test/telemetry-store.test.mjs`.

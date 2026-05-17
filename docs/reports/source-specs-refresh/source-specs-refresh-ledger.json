@@ -1,0 +1,1264 @@
+{
+  "version": 1,
+  "status": "complete",
+  "baseline": {
+    "baseRef": "upstream/dev",
+    "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
+    "mainRef": "main",
+    "createdAt": "2026-05-17T00:17:50Z",
+    "lastUpdatedAt": "2026-05-17T01:45:00Z",
+    "notes": [
+      "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
+      "Current code in this worktree is the source of truth for source-backed specs.",
+      "Future/target specs must not be rewritten as current-code specs without an explicit decision."
+    ]
+  },
+  "cursor": {
+    "nextQueueId": null,
+    "lastIteration": 7
+  },
+  "decisionRequests": [
+    {
+      "id": "dr-bootstrap-catalog-owner-cache",
+      "createdAt": "2026-05-17T01:15:54Z",
+      "status": "resolved",
+      "question": "Should Chat Web change the bootstrap catalog cache so owner-scoped custom-agent data cannot be reused across owner scopes?",
+      "context": "Source inspection of src/apps/chat/web-app.ts found loadBootstrapCatalog() caches one full catalog promise for 30 seconds. The cached value includes customAgents serialized for the web session that populated the cache. The refreshed bootstrap/navigation spec records this as a current source-observed gap instead of treating owner-safe caching as proven behavior.",
+      "options": [
+        "Owner-key the entire bootstrap catalog cache by owner scope.",
+        "Split static catalog data into a shared cache and build owner-scoped customAgents per request.",
+        "Keep the current global full-catalog cache and accept/document the owner-scope risk."
+      ],
+      "recommendedOption": "Split static catalog data into a shared cache and build owner-scoped customAgents per request.",
+      "blockingQueueIds": [
+        "q-store-data-boundaries"
+      ],
+      "resolvedAt": "2026-05-17T01:45:00Z",
+      "resolution": "Custom agents must remain owner-scoped. Do not reuse owner-scoped customAgents across owner scopes through the bootstrap catalog cache.",
+      "selectedOption": "Split static catalog data into a shared cache and build owner-scoped customAgents per request.",
+      "followUp": "Implement the cache split or equivalent owner-keying in code; the specs now treat owner-scoped customAgents as required behavior, with current source noted as not yet satisfying it."
+    }
+  ],
+  "queue": [
+    {
+      "id": "q-project-workflow",
+      "status": "completed",
+      "priority": 10,
+      "title": "Project and Workflow source-backed specs",
+      "paths": [
+        "docs/specs/capabilities/chat-web-projects-area.md",
+        "docs/specs/capabilities/pibo-workflow-framework-package.md",
+        "docs/specs/capabilities/chat-web-workflow-session-view.md",
+        "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+        "docs/specs/changes/pibo-workflow-system-v1/",
+        "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
+      ],
+      "reason": "High staleness risk: Project and Workflow code changed heavily after the source-spec cron stopped. Preserve intentional future/target workflow specs where applicable.",
+      "startedAt": "2026-05-17T00:35:50Z",
+      "completedAt": "2026-05-17T00:35:50Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/chat-web-projects-area.md",
+          "docs/specs/capabilities/pibo-workflow-framework-package.md",
+          "docs/specs/capabilities/chat-web-workflow-session-view.md",
+          "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+          "docs/specs/changes/pibo-workflow-system-v1/",
+          "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-signals-telemetry"
+      }
+    },
+    {
+      "id": "q-signals-telemetry",
+      "status": "completed",
+      "priority": 9,
+      "title": "Signals, debug, and runtime observability telemetry specs",
+      "paths": [
+        "docs/specs/capabilities/pibo-session-signals.md",
+        "docs/specs/capabilities/debug-cli.md",
+        "docs/specs/capabilities/runtime-observability-telemetry.md",
+        "docs/specs/changes/pibo-observability-debug-telemetry/"
+      ],
+      "reason": "Telemetry and staleness-signal implementation landed after many source-backed specs were generated.",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/pibo-session-signals.md",
+          "docs/specs/capabilities/debug-cli.md",
+          "docs/specs/capabilities/runtime-observability-telemetry.md",
+          "docs/specs/changes/pibo-observability-debug-telemetry/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-skills-context-runtime"
+      },
+      "startedAt": "2026-05-17T00:42:36Z",
+      "completedAt": "2026-05-17T00:42:36Z"
+    },
+    {
+      "id": "q-skills-context-runtime",
+      "status": "completed",
+      "priority": 8,
+      "title": "Skills, context build, runtime/profile/plugin surfaces",
+      "paths": [
+        "docs/specs/capabilities/user-skills.md",
+        "docs/specs/capabilities/core-plugin-profiles-and-built-in-skill.md",
+        "docs/specs/capabilities/plugin-registry-and-capability-catalog.md",
+        "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
+        "docs/specs/changes/context-build-inspector/"
+      ],
+      "reason": "Built-in skill creator, context inspector, native debug tooling, and plugin/profile changes may have moved source behavior.",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/user-skills.md",
+          "docs/specs/capabilities/core-plugin-profiles-and-built-in-skill.md",
+          "docs/specs/capabilities/plugin-registry-and-capability-catalog.md",
+          "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
+          "docs/specs/capabilities/chat-web-context-area.md",
+          "docs/specs/changes/context-build-inspector/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-gateway-channel-cli"
+      },
+      "startedAt": "2026-05-17T00:46:29Z",
+      "completedAt": "2026-05-17T00:46:29Z"
+    },
+    {
+      "id": "q-gateway-channel-cli",
+      "status": "completed",
+      "priority": 7,
+      "title": "Gateway, channel, CLI, PTY, and operator specs",
+      "paths": [
+        "docs/specs/capabilities/channel-runtime-context.md",
+        "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+        "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+        "docs/specs/capabilities/cli-session-ui.md",
+        "docs/specs/capabilities/cli-pty-validation.md",
+        "docs/specs/changes/pty-debug-e2e-tooling/"
+      ],
+      "reason": "upstream/dev contains recent PTY/debug tooling work and gateway/channel code changed after the cron run.",
+      "startedAt": "2026-05-17T01:04:03Z",
+      "completedAt": "2026-05-17T01:04:03Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/channel-runtime-context.md",
+          "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+          "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+          "docs/specs/capabilities/cli-session-ui.md",
+          "docs/specs/capabilities/cli-pty-validation.md",
+          "docs/specs/changes/pty-debug-e2e-tooling/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-store-data-boundaries"
+      }
+    },
+    {
+      "id": "q-store-data-boundaries",
+      "status": "completed",
+      "priority": 6,
+      "title": "Store, data, session, and ownership-boundary specs",
+      "paths": [
+        "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md",
+        "docs/specs/capabilities/pibo-data-store-and-ingestion.md",
+        "docs/specs/capabilities/pibo-session-store.md",
+        "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md"
+      ],
+      "reason": "Data, telemetry, and project/workflow changes can shift canonical ownership boundaries.",
+      "startedAt": "2026-05-17T01:15:54Z",
+      "blockedAt": "2026-05-17T01:15:54Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md",
+          "docs/specs/capabilities/pibo-data-store-and-ingestion.md",
+          "docs/specs/capabilities/pibo-session-store.md",
+          "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md"
+        ],
+        "result": "completed_with_spec_updates_and_resolved_decision",
+        "next": "q-web-annotations-uncommitted",
+        "resolvedDecisionRequestIds": [
+          "dr-bootstrap-catalog-owner-cache"
+        ]
+      },
+      "decisionResolvedAt": "2026-05-17T01:45:00Z"
+    },
+    {
+      "id": "q-web-annotations-uncommitted",
+      "status": "completed",
+      "priority": 5,
+      "title": "Web Annotations spec/PRD branch and uncommitted docs triage",
+      "paths": [
+        "docs/specs/changes/web-annotations-plugin/"
+      ],
+      "reason": "Separate Web Annotations work exists on another Ralph branch/worktree. Do not merge it blindly; document whether this loop should ignore, reference, or wait.",
+      "startedAt": "2026-05-17T01:19:27Z",
+      "completedAt": "2026-05-17T01:19:27Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/changes/web-annotations-plugin/",
+          "docs/specs/coverage/web-annotations-branch-triage-2026-05-17.md"
+        ],
+        "result": "completed_with_coverage_note",
+        "next": "q-global-source-marked-inventory"
+      }
+    },
+    {
+      "id": "q-global-source-marked-inventory",
+      "status": "completed",
+      "priority": 4,
+      "title": "Full source-marked spec inventory and final stale sweep",
+      "paths": [
+        "docs/specs/capabilities/",
+        "docs/specs/coverage/"
+      ],
+      "reason": "After high-risk areas, perform a broad inventory to catch remaining source-backed specs that changed since 2026-05-11.",
+      "startedAt": "2026-05-17T01:30:23Z",
+      "completedAt": "2026-05-17T01:30:23Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/",
+          "docs/specs/coverage/",
+          "docs/specs/capabilities/continuous-ralph-jobs.md",
+          "docs/specs/capabilities/shared-terminal-view-model.md",
+          "docs/specs/capabilities/chat-web-persistence-diagnostics-api.md",
+          "docs/specs/capabilities/local-config-cli.md",
+          "docs/specs/capabilities/chat-web-static-shell-and-pwa-assets.md",
+          "docs/specs/capabilities/mcp-registry-python-runtimes.md",
+          "docs/specs/coverage/source-specs-refresh-final-sweep-2026-05-17.md"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "blocked-on-decision-requests",
+        "remainingOpenDecisionRequestIds": [
+          "dr-bootstrap-catalog-owner-cache"
+        ]
+      }
+    }
+  ],
+  "completed": [
+    {
+      "id": "q-project-workflow",
+      "completedAt": "2026-05-17T00:35:50Z",
+      "title": "Project and Workflow source-backed specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/chat-web-projects-area.md",
+        "docs/specs/capabilities/pibo-workflow-framework-package.md",
+        "docs/specs/capabilities/chat-web-workflow-session-view.md",
+        "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+        "docs/specs/changes/pibo-workflow-system-v1/",
+        "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
+      ],
+      "evidence": [
+        "src/apps/chat/data/project-service.ts",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx",
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "packages/workflows/src/index.ts",
+        "packages/workflows/src/store/index.ts",
+        "packages/workflows/src/registry/index.ts",
+        "packages/workflows/src/testing/"
+      ],
+      "notes": [
+        "Source-backed capability specs were refreshed for configured workflow Project Sessions, explicit workflow start, workflow snapshots/runs/waits/human actions, richer Workflow/XState session view panels, workflow package definition-hash export, schema version 3, and catalog/editor store entities.",
+        "Workflow System V1 and Workflow UI Authoring V2 change specs were classified as mixed current/future and preserved as target/change specs rather than rewritten to current implementation."
+      ]
+    },
+    {
+      "id": "q-signals-telemetry",
+      "completedAt": "2026-05-17T00:42:36Z",
+      "title": "Signals, debug, and runtime observability telemetry specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/pibo-session-signals.md",
+        "docs/specs/capabilities/debug-cli.md",
+        "docs/specs/capabilities/runtime-observability-telemetry.md",
+        "docs/specs/changes/pibo-observability-debug-telemetry/"
+      ],
+      "evidence": [
+        "src/signals/types.ts",
+        "src/signals/registry.ts",
+        "src/signals/projector.ts",
+        "src/debug/index.ts",
+        "src/debug/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts",
+        "src/core/telemetry-staleness.ts",
+        "src/data/telemetry.ts",
+        "test/signal-registry.test.mjs",
+        "test/chat-signals-api.test.mjs",
+        "test/debug-cli.test.mjs",
+        "test/runtime-telemetry.test.mjs",
+        "test/telemetry-store.test.mjs",
+        "test/telemetry-staleness.test.mjs",
+        "test/telemetry-stuck-tool-call-fixture.test.mjs"
+      ],
+      "notes": [
+        "Session Signals spec refreshed for source-backed activeTelemetry hints that are derived from signal nodes and queue depth while omitting payload content.",
+        "Debug CLI spec refreshed from planned telemetry language to current telemetry, web, and PTY debug surfaces, including provider payload-unavailable diagnostics.",
+        "Runtime Observability Telemetry spec refreshed with current implementation sources, CLI payload command, and source-backed traceability/verification basis.",
+        "Observability Debug Telemetry change spec classified as proposal-time baseline plus implemented V1; current-code behavior remains owned by capability specs."
+      ]
+    },
+    {
+      "id": "q-skills-context-runtime",
+      "completedAt": "2026-05-17T00:46:29Z",
+      "title": "Skills, context build, runtime/profile/plugin surfaces",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/user-skills.md",
+        "docs/specs/capabilities/core-plugin-profiles-and-built-in-skill.md",
+        "docs/specs/capabilities/plugin-registry-and-capability-catalog.md",
+        "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
+        "docs/specs/capabilities/chat-web-context-area.md",
+        "docs/specs/changes/context-build-inspector/"
+      ],
+      "evidence": [
+        "src/user-skills/store.ts",
+        "src/user-skills/manager.ts",
+        "src/skills/cli.ts",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat/agent-profiles.ts",
+        "src/plugins/builtin.ts",
+        "src/plugins/native-tooling.ts",
+        "src/plugins/registry.ts",
+        "src/plugins/types.ts",
+        "src/core/runtime.ts",
+        "src/core/context-build.ts",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat-ui/src/context/ContextBuildView.tsx",
+        "src/apps/chat-ui/src/api.ts",
+        "test/plugin-registry.test.mjs",
+        "test/user-skills.test.mjs",
+        "test/skills-cli.test.mjs",
+        "test/agent-profiles.test.mjs",
+        "test/context-build-inspector.test.mjs"
+      ],
+      "notes": [
+        "Core plugin spec refreshed for the expanded built-in skill set and Pibo Native Tooling context registration/selection.",
+        "Plugin registry spec refreshed for Ralph stop-condition registration and catalog metadata.",
+        "Runtime assembly spec refreshed for current Build Context inspection snapshots.",
+        "Chat Web Context Area spec refreshed for the sixth Build Context panel and View Context navigation.",
+        "Context Build Inspector change spec classified as implemented current code; tasks and traceability updated while preserving proposal-time Current sections as historical baseline.",
+        "User Skills spec refreshed for current user-home root behavior and stronger conflict/rollback wording."
+      ]
+    },
+    {
+      "id": "q-gateway-channel-cli",
+      "completedAt": "2026-05-17T01:04:03Z",
+      "title": "Gateway, channel, CLI, PTY, and operator specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/channel-runtime-context.md",
+        "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+        "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+        "docs/specs/capabilities/cli-session-ui.md",
+        "docs/specs/capabilities/cli-pty-validation.md",
+        "docs/specs/changes/pty-debug-e2e-tooling/"
+      ],
+      "evidence": [
+        "src/channels/types.ts",
+        "src/gateway/server.ts",
+        "src/gateway/protocol.ts",
+        "src/gateway/cli.ts",
+        "src/gateway/tool.ts",
+        "src/cli.ts",
+        "src/debug/index.ts",
+        "src/debug/pty.ts",
+        "src/apps/cli-ui/InkSessionApp.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "src/cli-session/localSessionSource.ts",
+        "src/cli-session/fakeSessionSource.ts",
+        "test/channel-runtime.test.mjs",
+        "test/gateway-backpressure-subscriptions.test.mjs",
+        "test/gateway-request.test.mjs",
+        "test/gateway-restart-safety.test.mjs",
+        "test/web-gateway.test.mjs",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs",
+        "test/debug-pty.test.mjs"
+      ],
+      "notes": [
+        "Channel and local gateway specs were refreshed for current PiboChannelContext methods covering yielded-run snapshots, signal trees, profile creation, and Ralph stop-condition discovery.",
+        "Operator CLI spec was refreshed for the current pibo tui:sessions root-owned command and direct help path.",
+        "CLI Session UI spec was refreshed from target-only language to current implemented Ink session UI behavior, local/direct source behavior, slash commands, redaction, non-TTY rejection, and test evidence.",
+        "CLI PTY Validation and PTY Debug change specs were refreshed for implemented pibo debug pty run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and the built-in CLI Session UI mocked scenario.",
+        "PTY PRD files were treated as implementation-planning context; proposal/design/spec/tasks were updated to current implementation while remaining Docker smoke and custom-agent scenario extensions stay as documented follow-up gaps."
+      ]
+    },
+    {
+      "id": "q-web-annotations-uncommitted",
+      "completedAt": "2026-05-17T01:19:27Z",
+      "title": "Web Annotations spec/PRD branch and uncommitted docs triage",
+      "result": "completed_with_coverage_note",
+      "pathsAudited": [
+        "docs/specs/changes/web-annotations-plugin/proposal.md",
+        "docs/specs/changes/web-annotations-plugin/spec.md",
+        "docs/specs/changes/web-annotations-plugin/design.md",
+        "docs/specs/changes/web-annotations-plugin/tasks.md",
+        "docs/specs/coverage/web-annotations-branch-triage-2026-05-17.md"
+      ],
+      "evidence": [
+        "git worktree list --porcelain",
+        "git -C /root/code/pibo/.worktrees/dev/.worktrees/web-annotations-plugin status --short",
+        "git diff --stat HEAD..web-annotations-plugin -- docs/specs/changes/web-annotations-plugin docs/specs/capabilities/web-annotations-plugin.md",
+        "rg web_annotations|web-annotations|WebAnnotation over current src/test/packages/docs/project"
+      ],
+      "notes": [
+        "Classified the current Web Annotations proposal/spec/design/tasks as intentional future/target change documentation, not current source-backed behavior in this worktree.",
+        "Read-only triage found parallel branch web-annotations-plugin with committed PRD01-PRD05 implementation/docs progress and uncommitted Chat Web/CDP changes; this loop must not import or merge that separate in-flight branch.",
+        "Added a coverage note documenting that this refresh should ignore current-worktree absence, reference the parallel branch only as context, and continue without waiting until Web Annotations lands in the audited base."
+      ]
+    },
+    {
+      "id": "q-global-source-marked-inventory",
+      "completedAt": "2026-05-17T01:30:23Z",
+      "title": "Full source-marked spec inventory and final stale sweep",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/",
+        "docs/specs/coverage/",
+        "docs/specs/capabilities/continuous-ralph-jobs.md",
+        "docs/specs/capabilities/shared-terminal-view-model.md",
+        "docs/specs/capabilities/chat-web-persistence-diagnostics-api.md",
+        "docs/specs/capabilities/local-config-cli.md",
+        "docs/specs/capabilities/chat-web-static-shell-and-pwa-assets.md",
+        "docs/specs/capabilities/mcp-registry-python-runtimes.md",
+        "docs/specs/coverage/source-specs-refresh-final-sweep-2026-05-17.md"
+      ],
+      "evidence": [
+        "find docs/specs/capabilities -maxdepth 1 -type f -name *.md",
+        "rg source-backed/current-code markers under docs/specs/capabilities and docs/specs/coverage",
+        "src/ralph/store.ts",
+        "src/ralph/service.ts",
+        "src/ralph/stopping.ts",
+        "src/ralph/templates.ts",
+        "src/ralph/cli.ts",
+        "src/apps/chat/ralph-api.ts",
+        "src/apps/chat-ui/src/RalphArea.tsx",
+        "test/ralph-runtime-overrides.test.mjs",
+        "test/ralph-stop-conditions.test.mjs",
+        "test/ralph-templates.test.mjs",
+        "src/session-ui/",
+        "src/apps/cli-ui/",
+        "test/session-ui-terminal-rows.test.mjs",
+        "test/cli-ui-ink-renderer.test.mjs",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs"
+      ],
+      "notes": [
+        "Final sweep updated Continuous Ralph Jobs for current stop-policy, condition, template, Chat Web, CLI, and test behavior.",
+        "Shared Terminal View Model was reclassified from target/extraction language to implemented source-backed behavior in src/session-ui with Chat Web re-exports and Ink CLI usage.",
+        "Small verification-basis/path hygiene updates were made for local config, static shell/PWA assets, MCP registry Python runtimes, and persistence diagnostics.",
+        "No new capability spec was created; a final coverage note records the inventory outcome. The remaining blocked store/data queue item is covered by the existing open bootstrap catalog owner-cache decision request."
+      ]
+    },
+    {
+      "id": "complete-bootstrap-cache-decision",
+      "queueId": "q-store-data-boundaries",
+      "completedAt": "2026-05-17T01:45:00Z",
+      "summary": "Closed the bootstrap catalog owner-cache decision based on user input. Spec refresh ledger is now complete; code follow-up remains to enforce owner-scoped customAgents in the cache path."
+    }
+  ],
+  "staleFindings": [
+    {
+      "id": "sf-project-workflow-projects-configured-sessions",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-projects-area.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Projects spec still described simple-chat-only Project workflow creation, but current code supports configured workflow-backed Project Sessions from published catalog versions plus explicit run start.",
+      "sourceEvidence": [
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat/data/project-service.ts",
+        "src/apps/chat-ui/src/App.tsx"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-package-exports-store",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/pibo-workflow-framework-package.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Workflow package spec omitted definition-hash exports, UI published-version registry validation, schema version 3, and catalog/editor store entities.",
+      "sourceEvidence": [
+        "packages/workflows/src/index.ts",
+        "packages/workflows/src/store/index.ts",
+        "packages/workflows/src/registry/index.ts",
+        "packages/workflows/src/testing/workflow-published-versions.test.ts",
+        "packages/workflows/src/testing/workflow-catalog-entities.test.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-session-view-rich-projection",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-workflow-session-view.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Workflow session view spec described a minimal read-only projection; current view includes configured-session execution context, run inspection, definition links, nested links, pending human actions, lifecycle-derived histories, attempts, transfers, and runtime errors.",
+      "sourceEvidence": [
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat/web-app.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-xstate-context",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "XState view spec needed current configured-session/run-inspection context and Workflows-tab authoring boundary language.",
+      "sourceEvidence": [
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-change-spec-classification",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/changes/pibo-workflow-system-v1/; docs/specs/changes/pibo-workflow-ui-authoring-v2/",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "classification_only",
+      "summary": "Workflow System V1 and Workflow UI Authoring V2 change specs are mixed current/future target specs. They were not rewritten to current code during this source-backed capability refresh.",
+      "sourceEvidence": [
+        "packages/workflows/src/",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx"
+      ],
+      "resolution": "preserved_future_target_specs"
+    },
+    {
+      "id": "sf-signals-active-telemetry-hints",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/pibo-session-signals.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Session Signals spec omitted current activeTelemetry hints populated from active signal nodes and queue depth.",
+      "sourceEvidence": [
+        "src/signals/types.ts",
+        "src/signals/registry.ts",
+        "test/signal-registry.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-debug-cli-telemetry-current-surface",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/debug-cli.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Debug CLI spec still described telemetry as planned and omitted the current telemetry payload-unavailable command plus root web and PTY debug branches.",
+      "sourceEvidence": [
+        "src/debug/index.ts",
+        "src/debug/telemetry.ts",
+        "src/debug/web.ts",
+        "src/debug/pty.ts",
+        "test/debug-cli.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-runtime-telemetry-source-traceability",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/capabilities/runtime-observability-telemetry.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "stale_current_behavior",
+      "summary": "Runtime Observability Telemetry spec lacked current implementation-source summary, provider payload command coverage, and source-backed traceability/verification rows after V1 landed.",
+      "sourceEvidence": [
+        "src/data/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts",
+        "src/core/telemetry-staleness.ts",
+        "src/debug/telemetry.ts",
+        "test/runtime-telemetry.test.mjs",
+        "test/telemetry-store.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-observability-change-spec-proposal-baseline",
+      "queueId": "q-signals-telemetry",
+      "path": "docs/specs/changes/pibo-observability-debug-telemetry/spec.md",
+      "foundAt": "2026-05-17T00:42:36Z",
+      "severity": "classification_and_stale_traceability",
+      "summary": "Change spec Current sections described the proposal-time baseline, while its traceability table still marked implemented V1 telemetry work as pending.",
+      "sourceEvidence": [
+        "docs/specs/changes/pibo-observability-debug-telemetry/tasks.md",
+        "src/debug/telemetry.ts",
+        "src/data/telemetry.ts",
+        "src/core/runtime-telemetry.ts",
+        "src/core/provider-telemetry.ts"
+      ],
+      "resolution": "updated_spec_preserved_change_spec_baseline"
+    },
+    {
+      "id": "sf-skills-core-builtins-native-tooling",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/capabilities/core-plugin-profiles-and-built-in-skill.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "stale_current_behavior",
+      "summary": "Core plugin spec described only the Pi Agent Harness built-in skill and omitted the current built-in skill set plus Pibo Native Tooling context registration and base-profile selection.",
+      "sourceEvidence": [
+        "src/plugins/builtin.ts",
+        "src/plugins/native-tooling.ts",
+        "test/plugin-registry.test.mjs",
+        "test/context-build-inspector.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-skills-plugin-registry-ralph-stop-conditions",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/capabilities/plugin-registry-and-capability-catalog.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "stale_current_behavior",
+      "summary": "Plugin registry spec omitted current Ralph stop-condition registration, validation, plugin attribution, and capability catalog metadata.",
+      "sourceEvidence": [
+        "src/plugins/registry.ts",
+        "src/plugins/types.ts",
+        "src/ralph/types.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-skills-runtime-context-build-snapshot",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "stale_current_behavior",
+      "summary": "Runtime assembly spec covered profile inspection but omitted the implemented read-only redacted Build Context snapshot inspector and Chat Web endpoint/UI integration.",
+      "sourceEvidence": [
+        "src/core/context-build.ts",
+        "src/core/runtime.ts",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/context/ContextBuildView.tsx",
+        "test/context-build-inspector.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-skills-chat-context-build-panel",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/capabilities/chat-web-context-area.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "stale_current_behavior",
+      "summary": "Chat Web Context Area spec still described five panels and omitted the current Build Context panel, View Context navigation, and selected-session route state.",
+      "sourceEvidence": [
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat-ui/src/context/ContextBuildView.tsx",
+        "src/apps/chat-ui/src/api.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-skills-context-build-change-implemented",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/changes/context-build-inspector/spec.md; docs/specs/changes/context-build-inspector/tasks.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "classification_and_stale_traceability",
+      "summary": "Context Build Inspector change spec and task checklist still marked the work as draft/pending even though current code implements the backend snapshot, authenticated API, UI, and core tests.",
+      "sourceEvidence": [
+        "src/core/context-build.ts",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat-ui/src/context/ContextBuildView.tsx",
+        "test/context-build-inspector.test.mjs"
+      ],
+      "resolution": "updated_spec_preserved_change_spec_baseline"
+    },
+    {
+      "id": "sf-skills-user-skills-home-root-conflict",
+      "queueId": "q-skills-context-runtime",
+      "path": "docs/specs/capabilities/user-skills.md",
+      "foundAt": "2026-05-17T00:46:29Z",
+      "severity": "stale_current_behavior",
+      "summary": "User Skills spec treated local storage root and conflict behavior ambiguously; current CLI and Chat Web both use os.homedir(), and Chat Web rejects or rolls back catalog name conflicts on create/install/enable/rename.",
+      "sourceEvidence": [
+        "src/skills/cli.ts",
+        "src/apps/chat/web-app.ts",
+        "src/user-skills/manager.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-gateway-channel-context-runtime-runs-ralph",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/channel-runtime-context.md; docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "Channel context specs omitted current yielded-run snapshots, signal-tree inspection/subscription, profile creation, and Ralph stop-condition discovery methods exposed by PiboChannelContext and PiboGatewayServer.createChannelContext.",
+      "sourceEvidence": [
+        "src/channels/types.ts",
+        "src/gateway/server.ts",
+        "src/core/session-router.ts",
+        "src/ralph/types.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-operator-cli-tui-sessions",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "Operator CLI spec omitted the current pibo tui:sessions command, direct --help handling, command options, and root discovery coverage.",
+      "sourceEvidence": [
+        "src/cli.ts",
+        "test/cli-ui-session-app.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-cli-session-ui-implemented-current",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/cli-session-ui.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "CLI Session UI spec still described target behavior and unchecked criteria, while current code implements pibo tui:sessions with Ink rendering, local/direct and fake sources, slash commands, redacted recovery messages, bounded rendering, and non-TTY rejection.",
+      "sourceEvidence": [
+        "src/apps/cli-ui/InkSessionApp.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "src/cli-session/localSessionSource.ts",
+        "src/cli-session/fakeSessionSource.ts",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-cli-pty-validation-implemented-current",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/cli-pty-validation.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "CLI PTY Validation spec described desired PTY capability but omitted current pibo debug pty run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and built-in mocked CLI Session UI scenario.",
+      "sourceEvidence": [
+        "src/debug/index.ts",
+        "src/debug/pty.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "test/debug-pty.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-pty-debug-change-spec-implemented",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "classification_and_stale_traceability",
+      "summary": "PTY Debug change proposal/spec/design/tasks were still marked draft/pending after the current implementation landed; Docker smoke coverage and custom-agent scenario checks remain follow-up gaps rather than blockers.",
+      "sourceEvidence": [
+        "src/debug/pty.ts",
+        "src/debug/index.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "test/debug-pty.test.mjs"
+      ],
+      "resolution": "updated_spec_preserved_follow_up_gaps"
+    },
+    {
+      "id": "sf-store-data-v2-default-session-store",
+      "queueId": "q-store-data-boundaries",
+      "path": "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md; docs/specs/capabilities/pibo-data-store-and-ingestion.md; docs/specs/capabilities/pibo-session-store.md",
+      "foundAt": "2026-05-17T01:15:54Z",
+      "severity": "stale_current_behavior",
+      "summary": "Store specs described pibo.sqlite.sessions as a shadow/projection or omitted default routing role, but current gateway startup uses createDefaultPiboDataSessionStore() so pibo.sqlite.sessions is the normal routed Pibo Session Store backing.",
+      "sourceEvidence": [
+        "src/gateway/server.ts",
+        "src/sessions/pibo-data-store.ts",
+        "test/chat-data-v2-legacy-guard.test.mjs",
+        "test/pibo-data-session-store.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-store-data-schema-v2-telemetry",
+      "queueId": "q-store-data-boundaries",
+      "path": "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md; docs/specs/capabilities/pibo-data-store-and-ingestion.md",
+      "foundAt": "2026-05-17T01:15:54Z",
+      "severity": "stale_current_behavior",
+      "summary": "Data store specs still referenced schema version 1 and omitted PiboDataStore telemetry tables/store exposure; current schema version is 2 and includes telemetry tables.",
+      "sourceEvidence": [
+        "src/data/schema.ts",
+        "src/data/pibo-store.ts",
+        "src/data/telemetry.ts",
+        "test/telemetry-store.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-store-boundary-project-workflow-ralph-stores",
+      "queueId": "q-store-data-boundaries",
+      "path": "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md",
+      "foundAt": "2026-05-17T01:15:54Z",
+      "severity": "stale_current_behavior",
+      "summary": "Local store ownership spec omitted current web-projects.sqlite, pibo-ralph.sqlite, and workflow authoring/catalog rows created in pibo.sqlite.",
+      "sourceEvidence": [
+        "src/apps/chat/data/project-service.ts",
+        "src/ralph/store.ts",
+        "src/apps/chat/web-app.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-bootstrap-navigation-catalog-cache-owner-scope",
+      "queueId": "q-store-data-boundaries",
+      "path": "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md",
+      "foundAt": "2026-05-17T01:15:54Z",
+      "severity": "source_observed_gap_requires_decision",
+      "summary": "Bootstrap spec claimed owner-safe catalog cache behavior, but current loadBootstrapCatalog() caches a full catalog promise that includes owner-scoped customAgents from the request that populated the cache.",
+      "sourceEvidence": [
+        "src/apps/chat/web-app.ts"
+      ],
+      "resolution": "decision_requested"
+    },
+    {
+      "id": "sf-bootstrap-navigation-traceability-overstated",
+      "queueId": "q-store-data-boundaries",
+      "path": "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md",
+      "foundAt": "2026-05-17T01:15:54Z",
+      "severity": "traceability_gap",
+      "summary": "Bootstrap/navigation traceability overstated direct test coverage for cross-owner rejection, room/session mismatch rejection, and catalog invalidation; current behavior is partly source-inspected.",
+      "sourceEvidence": [
+        "src/apps/chat/web-app.ts",
+        "test/web-channel.test.mjs",
+        "test/chat-signals-api.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-web-annotations-target-branch-triage",
+      "queueId": "q-web-annotations-uncommitted",
+      "path": "docs/specs/changes/web-annotations-plugin/; docs/specs/coverage/web-annotations-branch-triage-2026-05-17.md",
+      "foundAt": "2026-05-17T01:19:27Z",
+      "severity": "classification_only",
+      "summary": "Web Annotations docs in the audited worktree are target change specs for behavior absent from current source, while a separate web-annotations-plugin worktree contains in-flight committed and uncommitted implementation/docs work that should not be merged by this source refresh loop.",
+      "sourceEvidence": [
+        "docs/specs/changes/web-annotations-plugin/spec.md",
+        "docs/specs/changes/web-annotations-plugin/tasks.md",
+        "/root/code/pibo/.worktrees/dev/.worktrees/web-annotations-plugin"
+      ],
+      "resolution": "coverage_note_added"
+    },
+    {
+      "id": "sf-global-ralph-stop-policy-current",
+      "queueId": "q-global-source-marked-inventory",
+      "path": "docs/specs/capabilities/continuous-ralph-jobs.md",
+      "foundAt": "2026-05-17T01:30:23Z",
+      "severity": "stale_current_behavior",
+      "summary": "Ralph spec omitted current stopPolicy persistence/evaluation, registered stop conditions, built-in templates, policy CLI, Chat Web condition/template endpoints, and focused stop-condition/template tests.",
+      "sourceEvidence": [
+        "src/ralph/stopping.ts",
+        "src/ralph/store.ts",
+        "src/ralph/service.ts",
+        "src/ralph/templates.ts",
+        "src/ralph/cli.ts",
+        "src/apps/chat/ralph-api.ts",
+        "src/apps/chat-ui/src/RalphArea.tsx",
+        "test/ralph-stop-conditions.test.mjs",
+        "test/ralph-templates.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-global-shared-terminal-implemented",
+      "queueId": "q-global-source-marked-inventory",
+      "path": "docs/specs/capabilities/shared-terminal-view-model.md",
+      "foundAt": "2026-05-17T01:30:23Z",
+      "severity": "stale_current_behavior",
+      "summary": "Shared Terminal View Model spec still described extraction as target work, but current source implements the shared src/session-ui model, Web compatibility re-exports, Ink CLI consumers, and focused renderer-neutral tests.",
+      "sourceEvidence": [
+        "src/session-ui/index.ts",
+        "src/session-ui/terminalRows.ts",
+        "src/session-ui/terminalValue.ts",
+        "src/apps/chat-ui/src/session-views/compact-terminal/terminalRows.ts",
+        "src/apps/cli-ui/InkSessionApp.ts",
+        "test/session-ui-terminal-rows.test.mjs",
+        "test/cli-ui-ink-renderer.test.mjs",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-global-verification-basis-path-hygiene",
+      "queueId": "q-global-source-marked-inventory",
+      "path": "docs/specs/capabilities/chat-web-persistence-diagnostics-api.md; docs/specs/capabilities/local-config-cli.md; docs/specs/capabilities/chat-web-static-shell-and-pwa-assets.md; docs/specs/capabilities/mcp-registry-python-runtimes.md",
+      "foundAt": "2026-05-17T01:30:23Z",
+      "severity": "traceability_gap",
+      "summary": "Final sweep found a stale persistence diagnostics source path and several source-backed specs using Source Basis or lacking explicit Verification Basis under current docs conventions.",
+      "sourceEvidence": [
+        "src/data/ingest-service.ts",
+        "src/config/config.ts",
+        "src/apps/chat/web-app.ts",
+        "src/mcp/registry.ts",
+        "src/mcp/python-runtime.ts"
+      ],
+      "resolution": "updated_spec"
+    }
+  ],
+  "updatedSpecs": [
+    {
+      "path": "docs/specs/capabilities/chat-web-projects-area.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Refreshed current Projects workflow behavior for published workflow catalog selection, configured workflow sessions, immutable snapshots, explicit one-run start, bootstrap workflow enrichment, and verification notes."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-workflow-framework-package.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Added definition-hash export, published-version registry validation, schema version 3, catalog/editor store entities, and updated package test inventory."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-workflow-session-view.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Updated high-level Workflow session view contract for richer configured-session context and clarified that detailed component behavior is owned by the XState view spec."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Refreshed XState view behavior for configured/run lifecycle detection, execution shell, run inspection, pending human actions, definition links, and Workflows-tab authoring boundary."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-session-signals.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Added source-backed activeTelemetry hint behavior, acceptance criteria, success criterion, traceability, and verification evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/debug-cli.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Refreshed current Debug CLI behavior for implemented telemetry drill-down, provider payload-unavailable diagnostics, root web/PTY branches, and telemetry source/test traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/runtime-observability-telemetry.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Refreshed current telemetry implementation sources, CLI payload command, source-backed traceability statuses, and verification basis."
+    },
+    {
+      "path": "docs/specs/changes/pibo-observability-debug-telemetry/spec.md",
+      "queueId": "q-signals-telemetry",
+      "updatedAt": "2026-05-17T00:42:36Z",
+      "summary": "Clarified proposal-time baseline versus current code and marked V1 telemetry traceability rows as implemented with source/test evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/core-plugin-profiles-and-built-in-skill.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Refreshed core plugin current behavior for expanded built-in skills, Pibo Native Tooling context registration, base-profile context selection, traceability, and verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/plugin-registry-and-capability-catalog.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Added Ralph stop-condition registration, validation, plugin attribution, and capability catalog behavior."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-runtime-assembly-and-inspection.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Added current Build Context snapshot inspection behavior, Chat Web endpoint/UI integration, redaction, ordering, and verification evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-context-area.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Refreshed Context area current behavior for the Build Context panel, View Context navigation, and selected-session route state."
+    },
+    {
+      "path": "docs/specs/changes/context-build-inspector/spec.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Marked the change spec implemented, updated background and traceability to current source evidence, and preserved historical proposal-time Current sections."
+    },
+    {
+      "path": "docs/specs/changes/context-build-inspector/tasks.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Checked implemented backend, API, UI, acceptance, and covered test tasks while leaving missing focused validation tests open."
+    },
+    {
+      "path": "docs/specs/capabilities/user-skills.md",
+      "queueId": "q-skills-context-runtime",
+      "updatedAt": "2026-05-17T00:46:29Z",
+      "summary": "Clarified current user-home storage root and Chat Web catalog conflict rejection/rollback behavior with updated verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/channel-runtime-context.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed current channel context behavior for yielded-run snapshots, signal-tree inspection/subscription, profile creation, Ralph stop-condition discovery, and source-backed traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed local gateway channel-context language for current runtime status, yielded-run, signal, profile, capability, and Ralph discovery methods."
+    },
+    {
+      "path": "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Added current pibo tui:sessions command/help behavior, options, root discovery coverage, and source/test traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/cli-session-ui.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed target-only CLI Session UI spec to current implemented pibo tui:sessions behavior, local/direct source behavior, slash commands, redaction, non-TTY rejection, and verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/cli-pty-validation.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed current pibo debug pty behavior for run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and built-in mocked CLI Session UI scenario."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/proposal.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Marked PTY debug proposal implemented and added source-backed notes plus remaining Docker smoke gap."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/spec.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Marked PTY debug change spec done with current implementation summary, checked implemented success criteria, and verification basis."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/design.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Updated design from open choices to implemented Python PTY host/Docker backend details and remaining follow-up choices."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/tasks.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Checked implemented PTY debug tasks and recorded remaining Docker smoke and custom-agent scenario follow-ups."
+    },
+    {
+      "path": "docs/specs/capabilities/local-store-ownership-and-canonical-data-boundaries.md",
+      "queueId": "q-store-data-boundaries",
+      "updatedAt": "2026-05-17T01:15:54Z",
+      "summary": "Refreshed store ownership boundaries for default v2 session-store backing, pibo.sqlite telemetry/workflow rows, web-projects.sqlite, pibo-ralph.sqlite, and current focused store evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-data-store-and-ingestion.md",
+      "queueId": "q-store-data-boundaries",
+      "updatedAt": "2026-05-17T01:15:54Z",
+      "summary": "Updated schema version to 2, reframed pibo.sqlite as default session-store backing plus Chat Web ingestion/projection store, and added telemetry evidence while preserving runtime telemetry details in its owning spec."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-session-store.md",
+      "queueId": "q-store-data-boundaries",
+      "updatedAt": "2026-05-17T01:15:54Z",
+      "summary": "Added default gateway v2-backed session-store behavior, telemetry-store exposure, and guard-test traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md",
+      "queueId": "q-store-data-boundaries",
+      "updatedAt": "2026-05-17T01:15:54Z",
+      "summary": "Added /api/chat/catalog and defaultRoomId behavior, downgraded overclaimed traceability, and recorded the owner-scoped bootstrap catalog cache gap."
+    },
+    {
+      "path": "docs/specs/coverage/web-annotations-branch-triage-2026-05-17.md",
+      "queueId": "q-web-annotations-uncommitted",
+      "updatedAt": "2026-05-17T01:19:27Z",
+      "summary": "Added a coverage note classifying the existing Web Annotations change spec as target/future behavior in this worktree and documenting the separate in-flight web-annotations-plugin branch/uncommitted changes as context only."
+    },
+    {
+      "path": "docs/specs/capabilities/continuous-ralph-jobs.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Refreshed current Ralph behavior for stopPolicy persistence/evaluation, built-in and plugin stop conditions, conditions/templates/policy CLI surfaces, Chat Web condition/template endpoints, stop-policy UI, and current focused tests."
+    },
+    {
+      "path": "docs/specs/capabilities/shared-terminal-view-model.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Updated from target extraction language to current source-backed shared src/session-ui behavior, Chat Web re-exports, Ink CLI consumers, checked success criteria, traceability, and verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-persistence-diagnostics-api.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Corrected the ingestion source path in Verification Basis from the old Chat data path to src/data/ingest-service.ts."
+    },
+    {
+      "path": "docs/specs/capabilities/local-config-cli.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Renamed Source Basis to Verification Basis and refreshed wording against current config source/test evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-static-shell-and-pwa-assets.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Renamed Source Basis to Verification Basis and refreshed wording against current static shell/PWA source/test evidence."
+    },
+    {
+      "path": "docs/specs/capabilities/mcp-registry-python-runtimes.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Added explicit Verification Basis for current MCP registry and Python runtime source evidence and empty-registry source-inspected boundary."
+    },
+    {
+      "path": "docs/specs/coverage/source-specs-refresh-final-sweep-2026-05-17.md",
+      "queueId": "q-global-source-marked-inventory",
+      "updatedAt": "2026-05-17T01:30:23Z",
+      "summary": "Added final sweep coverage note documenting the broad source-marked inventory outcome, no-new-capability decision, and remaining open decision boundary."
+    }
+  ],
+  "blockedItems": [
+    {
+      "id": "blocked-q-store-data-bootstrap-cache",
+      "queueId": "q-store-data-boundaries",
+      "blockedAt": "2026-05-17T01:15:54Z",
+      "decisionRequestId": "dr-bootstrap-catalog-owner-cache",
+      "path": "docs/specs/capabilities/chat-web-bootstrap-and-navigation-api.md",
+      "summary": "Spec can document current source behavior, but resolving whether to owner-key/split/change the bootstrap catalog cache requires product/code approval.",
+      "status": "resolved_by_user_decision",
+      "resolvedAt": "2026-05-17T01:45:00Z",
+      "resolution": "Custom agents are owner-scoped; bootstrap catalog caching must not share customAgents across owner scopes. Preferred implementation is shared static catalog cache plus per-request owner-scoped customAgents."
+    }
+  ],
+  "commits": [
+    {
+      "hash": "9df6b85cf080c46c1825d31b498d770e53a60786",
+      "shortHash": "9df6b85",
+      "committedAt": "2026-05-17T00:37:55Z",
+      "queueIds": [
+        "q-project-workflow"
+      ],
+      "message": "docs: refresh project workflow specs"
+    },
+    {
+      "hash": "d0888dcb5f535a36995d54d0f15531f1713df5ae",
+      "shortHash": "d0888dc",
+      "committedAt": "2026-05-17T00:43:43Z",
+      "queueIds": [
+        "q-signals-telemetry"
+      ],
+      "message": "docs: refresh signals telemetry specs"
+    },
+    {
+      "hash": "68f30dcaaa14bfc1d9cc0add932fb2beaed5f5b7",
+      "shortHash": "68f30dc",
+      "committedAt": "2026-05-17T00:54:32Z",
+      "queueIds": [
+        "q-skills-context-runtime"
+      ],
+      "message": "docs: refresh skills context runtime specs"
+    },
+    {
+      "hash": "c5cc832dc7d3d4d1d52c5d61c419d4942ef43e16",
+      "shortHash": "c5cc832",
+      "committedAt": "2026-05-17T01:05:34Z",
+      "queueIds": [
+        "q-gateway-channel-cli"
+      ],
+      "message": "docs: refresh gateway cli pty specs"
+    },
+    {
+      "hash": "27be75b6576ca380c12fc22ce7a21eb451931068",
+      "shortHash": "27be75b",
+      "committedAt": "2026-05-17T01:17:03Z",
+      "queueIds": [
+        "q-store-data-boundaries"
+      ],
+      "message": "docs: refresh store data boundary specs"
+    },
+    {
+      "hash": "efd3e7effee4aede53e9003a438f15fdcccde6e6",
+      "shortHash": "efd3e7e",
+      "committedAt": "2026-05-17T01:20:50Z",
+      "queueIds": [
+        "q-web-annotations-uncommitted"
+      ],
+      "message": "docs: triage web annotations branch specs"
+    },
+    {
+      "hash": "3fa28dd94ff32084931f8eb82664b19b6e939b0b",
+      "shortHash": "3fa28dd",
+      "committedAt": "2026-05-17T01:32:31Z",
+      "queueIds": [
+        "q-global-source-marked-inventory"
+      ],
+      "message": "docs: refresh final source spec sweep"
+    }
+  ],
+  "runNotes": [
+    {
+      "at": "2026-05-17T00:17:50Z",
+      "note": "Initial ledger created before starting Ralph."
+    },
+    {
+      "at": "2026-05-17T00:35:50Z",
+      "note": "Audited q-project-workflow. Updated source-backed capability specs and preserved Workflow System V1 / Workflow UI Authoring V2 change specs as mixed current/future target specs."
+    },
+    {
+      "at": "2026-05-17T00:37:55Z",
+      "note": "Recorded commit 9df6b85 for q-project-workflow source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T00:42:36Z",
+      "note": "Audited q-signals-telemetry. Updated session signals, debug CLI, runtime telemetry capability specs, and clarified the observability telemetry change spec as proposal-time baseline with implemented V1 traceability."
+    },
+    {
+      "at": "2026-05-17T00:43:43Z",
+      "note": "Recorded commit d0888dc for q-signals-telemetry source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T00:46:29Z",
+      "note": "Audited q-skills-context-runtime. Updated user skills, core plugin built-in skills/native tooling, plugin registry Ralph stop conditions, runtime Build Context inspection, Chat Web Context area, and Context Build Inspector change spec/tasks."
+    },
+    {
+      "at": "2026-05-17T00:54:32Z",
+      "note": "Recorded commit 68f30dc for q-skills-context-runtime source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T01:04:03Z",
+      "note": "Audited q-gateway-channel-cli. Updated channel, gateway, operator CLI, CLI Session UI, CLI PTY Validation, and PTY Debug change docs against current source; preserved PTY Docker/custom-agent scenario gaps as follow-up test gaps."
+    },
+    {
+      "at": "2026-05-17T01:05:34Z",
+      "note": "Recorded commit c5cc832 for q-gateway-channel-cli source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T01:15:54Z",
+      "note": "Audited q-store-data-boundaries. Updated local store, data store, session store, and bootstrap/navigation specs for default pibo.sqlite session backing, schema v2 telemetry, focused project/Ralph/workflow stores, /api/chat/catalog, defaultRoomId, and bootstrap catalog cache traceability. Opened a decision request for owner-scoped bootstrap catalog cache behavior."
+    },
+    {
+      "at": "2026-05-17T01:17:03Z",
+      "note": "Recorded commit 27be75b for q-store-data-boundaries source-spec refresh; queue remains blocked on bootstrap catalog owner-cache decision."
+    },
+    {
+      "at": "2026-05-17T01:19:27Z",
+      "note": "Audited q-web-annotations-uncommitted. Classified Web Annotations change docs as intentional target/future specs for behavior absent from this worktree; read-only triaged the separate web-annotations-plugin branch and uncommitted changes; added a coverage note saying this loop should not merge or wait on that branch."
+    },
+    {
+      "at": "2026-05-17T01:20:50Z",
+      "note": "Recorded commit efd3e7e for q-web-annotations-uncommitted Web Annotations branch/spec triage; next queue item is q-global-source-marked-inventory."
+    },
+    {
+      "at": "2026-05-17T01:30:23Z",
+      "note": "Audited q-global-source-marked-inventory. Performed final broad capability/coverage inventory, updated Continuous Ralph Jobs and Shared Terminal View Model for current source-backed behavior, fixed verification-basis/path hygiene in existing owning specs, added final sweep coverage note, and left only the existing bootstrap catalog owner-cache decision request open."
+    },
+    {
+      "at": "2026-05-17T01:32:31Z",
+      "note": "Recorded commit 3fa28dd for q-global-source-marked-inventory final source-spec sweep. Ledger status is blocked_on_decisions because the bootstrap catalog owner-cache decision request remains open."
+    },
+    {
+      "at": "2026-05-17T01:45:00Z",
+      "note": "User resolved dr-bootstrap-catalog-owner-cache: Custom Agents must be owner-scoped. Preferred follow-up is static catalog cache plus per-request owner-scoped customAgents."
+    }
+  ]
+}

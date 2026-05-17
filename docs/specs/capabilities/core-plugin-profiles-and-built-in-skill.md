@@ -1,4 +1,4 @@
-# Spec: Core Plugin Profiles and Built-In Harness Skill
+# Spec: Core Plugin Profiles and Built-In Skills
 
 **Status:** Draft  
 **Created:** 2026-05-11  
@@ -9,24 +9,25 @@
 
 Pibo's plugin registry is assembled from a small set of built-in plugins before any web, gateway, or custom-agent behavior runs. That assembly defines which profiles, skills, gateway actions, and native tools are available by default.
 
-Most surrounding capabilities already specify the large surfaces, such as routed sessions, gateway actions, Codex compatibility, and model selection. This spec captures the remaining core contract: the default registry composition, the built-in Pi Agent Harness skill, the Kimi pinned profile, and the parked gateway-producer profile used only by explicit CLI compatibility paths.
+Most surrounding capabilities already specify the large surfaces, such as routed sessions, gateway actions, Codex compatibility, and model selection. This spec captures the remaining core contract: the default registry composition, built-in skill registration, native Pibo tooling context, the Kimi pinned profile, and the parked gateway-producer profile used only by explicit CLI compatibility paths.
 
 ## Goal
 
-Pibo MUST expose a deterministic core plugin registry whose default profiles and parked compatibility profiles are discoverable, scoped, and assembled only from registered capabilities.
+Pibo MUST expose a deterministic core plugin registry whose built-in skills, context files, default profiles, and parked compatibility profiles are discoverable, scoped, and assembled only from registered capabilities.
 
 ## Background / Current State
 
-`src/plugins/builtin.ts` defines the `pibo.core` plugin. It registers the built-in `pi-agent-harness` skill, the provider-backed `web_search` tool, the persistent `runtime` tool, the pinned `pibo-kimi-coding` profile, and core gateway actions. It then composes the Codex compatibility plugin into the default registry.
+`src/plugins/builtin.ts` defines the `pibo.core` plugin. It registers built-in skills (`pi-agent-harness`, `pibo-spec-writing`, `pibo-docker-system`, `prd`, `skill-creator`, `ralph-loop`, and `ralph-prd-json`), the provider-backed `web_search` tool, the persistent `runtime` tool, the Pibo Native Tooling context file, the pinned `pibo-kimi-coding` profile, and core gateway actions. It then composes the Codex compatibility plugin into the default registry.
 
-The gateway-producer plugin is intentionally not part of the default registry. It is available through `createGatewayProducerPiboPluginRegistry()` and through the CLI compatibility aliases `gateway-producer` and `pibo-gateway-producer`.
+`src/plugins/native-tooling.ts` registers the `Pibo Native Tooling` context file and adds it to core base-profile builders. The gateway-producer plugin is intentionally not part of the default registry. It is available through `createGatewayProducerPiboPluginRegistry()` and through the CLI compatibility aliases `gateway-producer` and `pibo-gateway-producer`.
 
 ## Scope
 
 ### In Scope
 
 - Default plugin-registry composition from `pibo.core` and `pibo.codex-compat`.
-- Built-in `pi-agent-harness` skill registration and resolution.
+- Built-in skill registration and resolution for the core skill set.
+- Pibo Native Tooling context registration and base-profile selection.
 - `pibo-kimi-coding` profile and aliases.
 - Default profile selection for CLI profile/TUI entry points.
 - Parked `pibo-gateway-producer` profile availability through explicit compatibility paths.
@@ -66,55 +67,57 @@ Default profile creation and capability catalog inspection see the same built-in
 - THEN Codex-compatible resources and core resources are present
 - AND gateway-producer resources are absent.
 
-### Requirement: Built-in Pi Agent Harness skill is registered by core
+### Requirement: Built-in skills are registered by core
 
-The core plugin MUST register `pi-agent-harness` as a built-in skill at the repository skill path.
+The core plugin MUST register the Pibo-owned built-in skill set at repository skill paths.
 
 #### Current
 
-`pibo.core` registers skill `pi-agent-harness` with path `skills/builtin/pi-agent-harness/SKILL.md` and kind `builtin`.
+`pibo.core` registers `pi-agent-harness`, `pibo-spec-writing`, `pibo-docker-system`, `prd`, `skill-creator`, `ralph-loop`, and `ralph-prd-json` with `kind: "builtin"` and paths under `skills/builtin/<name>/SKILL.md`.
 
 #### Target
 
-Profiles that explicitly include the skill can rely on a stable skill name and path, and the capability catalog can distinguish it from user skills.
+Profiles that explicitly include a built-in skill can rely on stable names and paths, and the capability catalog can distinguish built-in skills from user skills.
 
 #### Acceptance
 
-- The capability catalog includes skill `pi-agent-harness` with kind `builtin`.
-- The skill path resolves to an existing `SKILL.md` file in the workspace/package.
-- A user skill with another name remains cataloged as kind `user` and does not overwrite the built-in skill.
+- The capability catalog includes each core built-in skill with kind `builtin`.
+- Each skill path resolves to an existing `SKILL.md` file in the workspace/package.
+- A user skill with another name remains cataloged as kind `user` and does not overwrite built-in skills.
 - A duplicate plugin skill name is rejected by the registry's uniqueness rules.
 
-#### Scenario: Inspect built-in skill
+#### Scenario: Inspect built-in skills
 
 - GIVEN the default registry is created
 - WHEN the capability catalog is requested
-- THEN it includes `pi-agent-harness`
-- AND the entry is attributed as a built-in/plugin skill, not as a user-owned skill.
+- THEN it includes the core built-in skills
+- AND those entries are attributed as built-in/plugin skills, not as user-owned skills.
 
-### Requirement: Base core profiles can include the harness skill without implicit tool broadening
+### Requirement: Base core profiles include harness skill and native tooling context without implicit tool broadening
 
-Core profiles that use the core base-profile builder MUST add the harness skill while exposing only their selected tools and model constraints.
+Core profiles that use the core base-profile builder MUST add the harness skill and Pibo Native Tooling context while exposing only their selected tools and model constraints.
 
 #### Current
 
-`createBaseProfileBuilder()` creates an `InitialSessionContextBuilder` and adds `context.getSkill("pi-agent-harness")`. `pibo-kimi-coding` and `pibo-gateway-producer` use this builder. The Codex-compatible profile does not use this builder and owns its own context-file/prompt compatibility layer.
+`createBaseProfileBuilder()` creates an `InitialSessionContextBuilder`, adds `context.getSkill("pi-agent-harness")`, and calls `addPiboNativeToolingContext()`. `pibo-kimi-coding` and `pibo-gateway-producer` use this builder. The Codex-compatible profile does not use this builder and owns its own context-file/prompt compatibility layer.
 
 #### Target
 
-The built-in skill can guide Pi-harness design work without automatically adding file, shell, MCP, or gateway tools.
+The built-in skill and native tooling context can guide Pi-harness and Pibo-operator work without automatically adding file, shell, MCP, or gateway tools.
 
 #### Acceptance
 
 - A base-built core profile includes `pi-agent-harness` in its profile skills.
-- Adding the harness skill does not add native tools, built-in tool names, subagents, or Pi packages by itself.
+- A base-built core profile includes the `Pibo Native Tooling` context file.
+- Adding the harness skill or native tooling context does not add native tools, built-in tool names, subagents, or Pi packages by itself.
 - Codex-compatible profile behavior remains governed by its own spec and does not implicitly gain this skill unless its plugin selects it in future code.
 
-#### Scenario: Inspect Kimi profile skills
+#### Scenario: Inspect Kimi profile skills and context
 
 - GIVEN the default registry resolves `pibo-kimi-coding`
 - WHEN the profile is inspected
 - THEN `pi-agent-harness` appears in the skill list
+- AND the Pibo Native Tooling context file appears in the context-file list
 - AND no gateway-producer tool appears in that profile.
 
 ### Requirement: Kimi coding profile is pinned and aliasable
@@ -211,7 +214,7 @@ Normal default registries do not expose a gateway-send capable profile, but lega
 ## Success Criteria
 
 - [ ] SC-001: Default registry inspection shows core and Codex resources but no default gateway-producer profile.
-- [ ] SC-002: Capability catalog inspection shows `pi-agent-harness` as a built-in/plugin skill with an existing skill file.
+- [ ] SC-002: Capability catalog inspection shows the core built-in skill set as built-in/plugin skills with existing skill files.
 - [ ] SC-003: `pibo-kimi-coding`, `kimi`, and `kimi-coding` resolve to the same pinned profile.
 - [ ] SC-004: CLI profile/TUI defaults select `codex-compat-openai-web` when no profile is supplied.
 - [ ] SC-005: Explicit gateway-producer CLI aliases expose `pibo_gateway_send` only through the parked registry path.
@@ -221,22 +224,22 @@ Normal default registries do not expose a gateway-send capable profile, but lega
 ### Assumptions
 
 - The default coding-agent experience remains the Codex-compatible profile, not the Kimi pinned profile.
-- The harness skill is guidance content, not a security or tool-enablement mechanism.
+- Built-in skills and native tooling context are guidance content, not security or tool-enablement mechanisms.
 - Gateway-producer remains a compatibility profile rather than a normal selectable default profile.
 
 ### Open Questions
 
 - Should the built-in harness skill be selected by the Codex-compatible profile, or is the Codex base prompt intentionally sufficient for that profile?
 - Should `pibo profile` expose a command to list parked profiles separately from default registry profiles?
-- Should packaged-install tests assert that every built-in skill path exists after `npm run build` and install?
+- Should packaged-install tests assert that every built-in skill and plugin context-file path exists after `npm run build` and install?
 
 ## Traceability
 
 | Requirement | Scenario / Story | Code Basis | Status |
 |---|---|---|---|
 | REQ-001 Default registry composition is deterministic | Default profile catalog | `src/plugins/builtin.ts`, `test/plugin-registry.test.mjs` | Source-backed |
-| REQ-002 Built-in Pi Agent Harness skill is registered by core | Inspect built-in skill | `src/plugins/builtin.ts`, `skills/builtin/pi-agent-harness/SKILL.md` | Source-backed |
-| REQ-003 Base core profiles can include the harness skill without implicit tool broadening | Inspect Kimi profile skills | `src/plugins/builtin.ts`, `src/core/profiles.ts` | Source-backed |
+| REQ-002 Built-in skills are registered by core | Inspect built-in skills | `src/plugins/builtin.ts`, `skills/builtin/*/SKILL.md`, `test/plugin-registry.test.mjs` | Source-backed |
+| REQ-003 Base core profiles include harness skill and native tooling context without implicit tool broadening | Inspect Kimi profile skills and context | `src/plugins/builtin.ts`, `src/plugins/native-tooling.ts`, `src/core/profiles.ts`, `test/context-build-inspector.test.mjs` | Source-backed |
 | REQ-004 Kimi coding profile is pinned and aliasable | Select Kimi alias | `src/plugins/builtin.ts`, `src/plugins/registry.ts` | Source-backed |
 | REQ-005 CLI default profile uses Codex compatibility | Inspect default CLI profile | `src/cli.ts`, `src/plugins/builtin.ts` | Source-backed |
 | REQ-006 Gateway producer profile is parked behind explicit compatibility aliases | Explicit gateway producer selection | `src/cli.ts`, `src/plugins/builtin.ts`, `test/plugin-registry.test.mjs` | Partially tested |
@@ -250,6 +253,8 @@ This spec is based on current workspace code in:
 - `src/core/profiles.ts`
 - `src/core/runtime.ts`
 - `src/cli.ts`
-- `skills/builtin/pi-agent-harness/SKILL.md`
+- `src/plugins/native-tooling.ts`
+- `skills/builtin/*/SKILL.md`
 - `test/plugin-registry.test.mjs`
+- `test/context-build-inspector.test.mjs`
 - `test/codex-compat.test.mjs`

@@ -268,3 +268,7 @@ Agents can discover that no preset exists today without treating it as a broken 
 | REQ-005 Registry install adds config after optional setup | Config-only install | `src/mcp/registry.ts`, `src/mcp/config-command.ts` | Draft |
 | REQ-006 Removal deletes config and runtime files | Remove missing runtime | `src/mcp/registry.ts`, `src/mcp/python-runtime.ts` | Draft |
 | REQ-007 Empty or unknown registry states are explicit | Empty registry list | `src/mcp/registry.ts`, `src/mcp/errors.ts` | Draft |
+
+## Verification Basis
+
+This spec was refreshed against current source code in `src/mcp/registry.ts`, `src/mcp/python-runtime.ts`, `src/mcp/config-command.ts`, `src/mcp/config.ts`, and `src/mcp/errors.ts`. The current registry is still empty, so Python-backed preset behavior remains source-inspected until a bundled preset or focused registry runtime tests land.

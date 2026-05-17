@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Updated:** 2026-05-11  
+**Updated:** 2026-05-17  
 **Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code  
 **Related docs:** [Pibo Session Routing](./pibo-session-routing.md), [Web Auth and Same-Origin Host](./web-auth-and-same-origin-host.md), [Yielded Run Control](./yielded-run-control.md)
 
@@ -18,7 +18,7 @@ Specify the local gateway's observable TCP frame protocol, routing behavior, cha
 
 ## Background / Current State
 
-The current code defines a newline-delimited JSON gateway protocol in `src/gateway/protocol.ts`. `PiboGatewayServer` accepts TCP sockets, validates request and subscription frames, forwards input events to `PiboSessionRouter`, and broadcasts router output events to subscribed clients. Gateway channels receive a `PiboChannelContext` for session store access, route emission, capability discovery, auth, web app registration, and product events.
+The current code defines a newline-delimited JSON gateway protocol in `src/gateway/protocol.ts`. `PiboGatewayServer` accepts TCP sockets, validates request and subscription frames, forwards input events to `PiboSessionRouter`, and broadcasts router output events to subscribed clients. Gateway channels receive a `PiboChannelContext` for session store access, route emission, runtime status, yielded-run and signal inspection, capability and Ralph stop-condition discovery, auth, web app registration, and product events.
 
 The CLI exposes local gateway commands plus managed production and dev gateway commands. Managed production restarts are blocked when the status endpoint reports processing or streaming sessions, queued messages, active yielded runs, unavailable status, an unexpected mode, or ambiguous state. Dev gateway restart is less restrictive.
 
@@ -206,7 +206,7 @@ The gateway MUST provide channels with product-level operations instead of direc
 
 #### Current
 
-`createChannelContext` exposes event emission, router subscription, session CRUD, runtime status, signal snapshots and subscriptions, gateway actions, profile and capability catalog discovery, dynamic profile and context-file updates, skill registration, product events, auth service access, and registered web apps.
+`createChannelContext` exposes event emission, router subscription, session CRUD, runtime status lists, yielded-run snapshots, signal snapshots and subscriptions, gateway actions, profile creation and discovery, capability catalog discovery, Ralph stop-condition discovery, dynamic profile and context-file updates, skill registration, product events, auth service access, and registered web apps.
 
 #### Target
 
@@ -214,7 +214,7 @@ Channels implement transports and web apps through the context contract while th
 
 #### Acceptance
 
-A channel can create a session, emit a message, list runtime statuses, inspect capability catalog entries, and subscribe to output through context methods without importing `PiboSessionRouter`.
+A channel can create a session, emit a message, list runtime statuses and yielded runs, inspect capability catalog and Ralph stop-condition entries, read signal snapshots, and subscribe to output through context methods without importing `PiboSessionRouter`.
 
 #### Scenario: Channel creates routed session
 
@@ -447,4 +447,4 @@ This section maps current gateway tests to the lifecycle contract so future sour
 
 ## Verification Basis
 
-This spec is based on current workspace code in `src/gateway/protocol.ts`, `src/gateway/server.ts`, `src/gateway/client.ts`, `src/gateway/request.ts`, `src/gateway/tool.ts`, `src/gateway/cli.ts`, `src/gateway/backup.ts`, `src/gateway/fallback.ts`, `src/gateway/pidfile.ts`, `src/gateway/web.ts`, plugin registry/channel contracts, and gateway-related tests under `test/`, especially `test/gateway-backpressure-subscriptions.test.mjs`, `test/gateway-request.test.mjs`, `test/gateway-restart-safety.test.mjs`, `test/channel-runtime.test.mjs`, and `test/web-gateway.test.mjs`.
+This spec is based on current workspace code in `src/gateway/protocol.ts`, `src/gateway/server.ts`, `src/gateway/client.ts`, `src/gateway/request.ts`, `src/gateway/tool.ts`, `src/gateway/cli.ts`, `src/gateway/backup.ts`, `src/gateway/fallback.ts`, `src/gateway/pidfile.ts`, `src/gateway/web.ts`, `src/channels/types.ts`, plugin registry/channel contracts, and gateway-related tests under `test/`, especially `test/gateway-backpressure-subscriptions.test.mjs`, `test/gateway-request.test.mjs`, `test/gateway-restart-safety.test.mjs`, `test/channel-runtime.test.mjs`, and `test/web-gateway.test.mjs`.

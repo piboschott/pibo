@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Created:** 2026-05-11
-**Updated:** 2026-05-11
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage; current workspace code
 **Related docs:** [Pibo Workflow System V1](../changes/pibo-workflow-system-v1/spec.md), [Workflow Runtime Kernel Design](../changes/pibo-workflow-system-v1/design-runtime-kernel.md), [Workflow Structured Outputs JSON Schema Subset](../changes/pibo-workflow-system-v1/structured-outputs-json-schema-subset.md), [Chat Web Workflow Session View](./chat-web-workflow-session-view.md)
 
@@ -18,7 +18,7 @@ Pibo MUST expose a workflow framework package whose public helpers create valida
 
 ## Background / Current State
 
-`packages/workflows/src/index.ts` re-exports the package submodules: `types`, `api`, `validation`, `runtime`, `store`, `registry`, `fixtures`, `xstate`, and `inspection`. The package is TypeScript-first and keeps executable handlers behind registry ids so persisted workflow definitions and run records can remain serializable.
+`packages/workflows/src/index.ts` re-exports the package submodules and helpers: `types`, `api`, `definition-hash`, `validation`, `runtime`, `store`, `registry`, `fixtures`, `xstate`, and `inspection`. The package is TypeScript-first and keeps executable handlers behind registry ids so persisted workflow definitions and run records can remain serializable.
 
 The current runtime code supports dispatch helpers for Pibo agent nodes, TypeScript code nodes, nested workflow nodes, human wait nodes, adapter nodes, edge transfers, retry decisions, and one-node agent workflow execution. The store code owns `pibo-workflows.sqlite` with workflow-specific tables. Inspection and XState modules derive bounded views from workflow records and definitions.
 
@@ -26,9 +26,9 @@ The current runtime code supports dispatch helpers for Pibo agent nodes, TypeScr
 
 ### In Scope
 
-- Public package exports from `packages/workflows/src/index.ts`.
+- Public package exports from `packages/workflows/src/index.ts`, including definition hashing.
 - Authoring helper behavior for ports, adapter refs, prompt-builder refs, profile selection, and selection policies.
-- Workflow registry semantics for definitions, profiles, handlers, adapters, guards, prompt builders, and human actions.
+- Workflow registry semantics for definitions, UI published-version records, profiles, handlers, adapters, guards, prompt builders, and human actions.
 - Validation behavior for ports, JSON Schema subset, registry refs, graph shape, state access, loops, and runtime values.
 - Runtime helper behavior for agent, code, nested workflow, human wait, adapter, retry, and edge-transfer paths.
 - Workflow-owned SQLite persistence and list/filter behavior.
@@ -50,7 +50,7 @@ The package MUST expose workflow framework capabilities through the package root
 
 #### Current
 
-`packages/workflows/src/index.ts` exports the public submodules and `packages/workflows/README.md` documents each submodule boundary.
+`packages/workflows/src/index.ts` exports the public submodules, including `definition-hash`, and `packages/workflows/README.md` documents each submodule boundary.
 
 #### Target
 
@@ -58,7 +58,7 @@ Consumers can depend on stable package-level modules while implementation detail
 
 #### Acceptance
 
-- Importing from the package root exposes types, authoring helpers, validation helpers, runtime helpers, store APIs, registry APIs, fixtures, XState projection helpers, and inspection helpers.
+- Importing from the package root exposes types, authoring helpers, definition-hash helpers, validation helpers, runtime helpers, store APIs, registry APIs, fixtures, XState projection helpers, and inspection helpers.
 - Private implementation files are not required by tests or package consumers.
 - New public workflow capability areas are added through a deliberate root export.
 
@@ -100,7 +100,7 @@ The workflow registry MUST store executable references and workflow definitions 
 
 #### Current
 
-`createWorkflowRegistry` initializes maps for workflows, profiles, handlers, adapters, guards, prompt builders, and human actions. Register helpers throw on duplicates unless `override` is supplied. Definition resolution chooses an exact requested version or the highest lexicographic version when no version is supplied.
+`createWorkflowRegistry` initializes maps for workflows, profiles, handlers, adapters, guards, prompt builders, and human actions. Register helpers throw on duplicates unless `override` is supplied. Definition resolution chooses an exact requested version or the highest lexicographic version when no version is supplied. Published-version registration validates UI source/status, matching id/version, and definition hash before registering the definition.
 
 #### Target
 
@@ -113,6 +113,7 @@ Workflow validation and runtime dispatch can resolve stable ids predictably.
 - Resolving a workflow with an explicit version returns only that version.
 - Resolving a workflow without a version returns the latest version according to the implemented version ordering.
 - Registry entries may carry plugin id, title, description, and tags metadata without changing the registered value.
+- Registering a UI published-version record fails unless source/status, id/version, and definition hash are consistent.
 
 #### Scenario: Duplicate handler is rejected
 
@@ -210,17 +211,17 @@ Workflow persistence MUST use the workflow package's SQLite schema and MUST keep
 
 #### Current
 
-The store module defines `pibo-workflows.sqlite`, schema version `1`, workflow-specific tables, list filters, `SqliteWorkflowRunStore`, and `isNormalSessionFactStorageName` to identify names that belong to normal session storage instead of workflow storage.
+The store module defines `pibo-workflows.sqlite`, schema version `3`, workflow-specific tables for definition snapshots, workflow identities, drafts, published versions, archive states, delete tombstones, runs, events, attempts, transfers, checkpoints, wakeups, wait tokens, and human actions, list filters, `SqliteWorkflowRunStore`, and `isNormalSessionFactStorageName` to identify names that belong to normal session storage instead of workflow storage.
 
 #### Target
 
-Workflow definitions, runs, events, attempts, transfers, checkpoints, wakeups, wait tokens, and human actions persist in a focused store that can link to Pibo Sessions without replacing the Pibo Session Store.
+Workflow definitions, catalog/editor records, runs, events, attempts, transfers, checkpoints, wakeups, wait tokens, and human actions persist in a focused store that can link to Pibo Sessions without replacing the Pibo Session Store.
 
 #### Acceptance
 
 - `createWorkflowSqlitePath(baseDirectory)` resolves to `<baseDirectory>/pibo-workflows.sqlite`.
-- Store initialization creates the documented workflow tables.
-- Save/get methods round-trip workflow runs and related facts through JSON columns where needed.
+- Store initialization creates the documented workflow tables, including workflow catalog/editor lifecycle tables and runtime fact tables.
+- Save/get methods round-trip workflow catalog records, definitions, runs, and related facts through JSON columns where needed.
 - List methods honor supported filters and limits.
 - Storage names containing normal session fact keywords are identified as non-workflow fact storage names.
 
@@ -302,10 +303,10 @@ Future changes can validate core workflow behavior without inventing ad hoc defi
 
 - [x] SC-001: Package root imports cover all documented public submodules in current package tests.
 - [x] SC-002: Authoring helper outputs serialize as workflow IR fragments with stable refs.
-- [x] SC-003: Registry tests cover duplicate rejection, override, ref validation, and workflow/profile resolution behavior.
+- [x] SC-003: Registry tests cover duplicate rejection, override, ref validation, published-version validation, and workflow/profile resolution behavior.
 - [x] SC-004: Validation tests cover schema subset, graph links, registry refs, loops, state access, and runtime value validation.
 - [x] SC-005: Runtime tests cover agent, code, adapter, human wait, nested workflow, retry, edge transfer, and one-node workflow behavior.
-- [x] SC-006: SQLite store tests round-trip workflow fact tables and prove normal session facts remain out of workflow tables.
+- [x] SC-006: SQLite store tests round-trip workflow catalog/runtime fact tables and prove normal session facts remain out of workflow tables.
 - [x] SC-007: Inspection and XState tests prove bounded derived views and `durableTruth: "kernel"` projection semantics.
 - [x] SC-008: Fixture tests validate all required fixtures against fixture providers.
 
@@ -317,10 +318,10 @@ This section maps the package contract to current package-level tests so future 
 
 - Root exports are exercised by tests that import authoring, runtime, store, inspection, and XState helpers from `packages/workflows/src/index.ts` through `../index.js`.
 - Authoring helpers are covered by `packages/workflows/src/testing/ports.test.ts`.
-- Registry registration, duplicate rejection, override, refs, and profile/workflow resolution are covered by `packages/workflows/src/testing/registry.test.ts`.
+- Registry registration, duplicate rejection, override, refs, published-version registration, and profile/workflow resolution are covered by `packages/workflows/src/testing/registry.test.ts` and `packages/workflows/src/testing/workflow-published-versions.test.ts`.
 - Interface and definition validation are covered by `packages/workflows/src/testing/interface-values.test.ts` and `packages/workflows/src/testing/validation.test.ts`.
 - Runtime dispatch is covered by `runtime-agent-node.test.ts`, `runtime-code-node.test.ts`, `runtime-human-node.test.ts`, `runtime-nested-workflow-node.test.ts`, `runtime-edge-transfer.test.ts`, `runtime-retry-policy.test.ts`, `runtime-one-node-agent.test.ts`, `runtime-mixed-node-workflow.test.ts`, `runtime-prompt-workflows.test.ts`, and `runtime-state-loop-integration.test.ts`.
-- Workflow persistence is covered by `workflow-sqlite-schema.test.ts`, `workflow-store-facts.test.ts`, `node-attempt-persistence.test.ts`, and `workflow-persistence-validation.test.ts`.
+- Workflow persistence is covered by `workflow-sqlite-schema.test.ts`, `workflow-store-facts.test.ts`, `node-attempt-persistence.test.ts`, `workflow-persistence-validation.test.ts`, `workflow-published-versions.test.ts`, and `workflow-catalog-entities.test.ts`.
 - Inspection and XState projection are covered by `workflow-run-inspection.test.ts`, `xstate-shape.test.ts`, `xstate-ui-model.test.ts`, and `xstate-projection-snapshots.test.ts`.
 - Fixture validation is covered by `validation.test.ts` through the required workflow fixtures.
 
@@ -342,8 +343,10 @@ The following package-local test files are part of this spec's direct verificati
 | `packages/workflows/src/testing/runtime-state-loop-integration.test.ts` | State updates, bounded loop behavior, and repeated node execution safeguards. |
 | `packages/workflows/src/testing/node-attempt-persistence.test.ts` | Node-attempt persistence and retrieval semantics. |
 | `packages/workflows/src/testing/workflow-persistence-validation.test.ts` | Persisted workflow fact validation across run-related tables. |
+| `packages/workflows/src/testing/workflow-published-versions.test.ts` | UI published-version registration, definition hash checks, and immutable published record behavior. |
+| `packages/workflows/src/testing/workflow-catalog-entities.test.ts` | Workflow catalog entity shapes shared with Chat Web workflow catalog surfaces. |
 | `packages/workflows/src/testing/workflow-run-inspection.test.ts` | Inspection summaries, bounded fact inclusion, and failure explanation output. |
-| `packages/workflows/src/testing/workflow-sqlite-schema.test.ts` | SQLite schema initialization and workflow table ownership. |
+| `packages/workflows/src/testing/workflow-sqlite-schema.test.ts` | SQLite schema initialization, schema version, catalog/runtime tables, and workflow table ownership. |
 | `packages/workflows/src/testing/workflow-store-facts.test.ts` | Workflow run, event, attempt, transfer, checkpoint, wakeup, wait-token, and human-action fact round trips. |
 | `packages/workflows/src/testing/xstate-projection-snapshots.test.ts` | XState projection snapshot stability, backed by `packages/workflows/src/testing/__snapshots__/xstate-projection.snap.json`. |
 | `packages/workflows/src/testing/xstate-shape.test.ts` | XState-compatible machine shape and kernel-durable-truth metadata. |
@@ -379,7 +382,7 @@ The following package-local test files are part of this spec's direct verificati
 |---|---|---|---|---|
 | REQ-001 Package exports remain explicit and module-bounded | Consumer imports authoring and validation helpers | `packages/workflows/src/index.ts`, `packages/workflows/README.md` | Imports from `../index.js` across `packages/workflows/src/testing/*.test.ts` | Package-tested |
 | REQ-002 Authoring helpers create serializable workflow IR fragments | Adapter edge remains serializable | `packages/workflows/src/api/index.ts`, `packages/workflows/src/types/index.ts` | `packages/workflows/src/testing/ports.test.ts` | Package-tested |
-| REQ-003 Registry resolution is deterministic and guarded against accidental overwrite | Duplicate handler is rejected | `packages/workflows/src/registry/index.ts` | `packages/workflows/src/testing/registry.test.ts` | Package-tested |
+| REQ-003 Registry resolution is deterministic and guarded against accidental overwrite | Duplicate handler is rejected | `packages/workflows/src/registry/index.ts`, `packages/workflows/src/definition-hash.ts` | `packages/workflows/src/testing/registry.test.ts`, `packages/workflows/src/testing/workflow-published-versions.test.ts` | Package-tested |
 | REQ-004 Validation reports structured diagnostics instead of throwing for invalid definitions | Missing code handler is diagnosable | `packages/workflows/src/validation/index.ts` | `packages/workflows/src/testing/interface-values.test.ts`, `packages/workflows/src/testing/validation.test.ts` | Package-tested |
 | REQ-005 Runtime dispatch separates workflow nodes from Pibo Session ownership | Agent node uses routing adapter | `packages/workflows/src/runtime/index.ts` | `runtime-agent-node.test.ts`, `runtime-one-node-agent.test.ts`, `runtime-mixed-node-workflow.test.ts` | Package-tested |
 | REQ-006 Retry and edge transfer behavior is explicit and recordable | Adapter output is rejected | `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/store/index.ts` | `runtime-edge-transfer.test.ts`, `runtime-retry-policy.test.ts`, `runtime-state-loop-integration.test.ts` | Package-tested |
@@ -389,4 +392,4 @@ The following package-local test files are part of this spec's direct verificati
 
 ## Verification Basis
 
-This spec was derived from current source code in `packages/workflows/README.md`, `packages/workflows/src/index.ts`, `packages/workflows/src/types/index.ts`, `packages/workflows/src/api/index.ts`, `packages/workflows/src/registry/index.ts`, `packages/workflows/src/validation/index.ts`, `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/store/index.ts`, `packages/workflows/src/inspection/index.ts`, `packages/workflows/src/xstate/index.ts`, `packages/workflows/src/fixtures/index.ts`, and `packages/workflows/src/testing/*`. Existing specs under `docs/specs/` were inspected first; this file avoids replacing the Workflow System V1 change specs and instead records the source-backed package capability contract now present in the workspace.
+This spec was derived from current source code in `packages/workflows/README.md`, `packages/workflows/src/index.ts`, `packages/workflows/src/types/index.ts`, `packages/workflows/src/api/index.ts`, `packages/workflows/src/definition-hash.ts`, `packages/workflows/src/registry/index.ts`, `packages/workflows/src/validation/index.ts`, `packages/workflows/src/runtime/index.ts`, `packages/workflows/src/store/index.ts`, `packages/workflows/src/inspection/index.ts`, `packages/workflows/src/xstate/index.ts`, `packages/workflows/src/fixtures/index.ts`, and `packages/workflows/src/testing/*`. Existing specs under `docs/specs/` were inspected first; this file avoids replacing the Workflow System V1 change specs and instead records the source-backed package capability contract now present in the workspace.

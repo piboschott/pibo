@@ -251,6 +251,6 @@ Deleting a supported key MUST remove that value. If the `auth` section becomes e
 | REQ-007 Display output redacts secrets | Redacted full config display | `src/config/config.ts`, `test/config.test.mjs` | Implemented |
 | REQ-008 Delete removes empty auth sections | Delete last auth key | `src/config/config.ts`, `test/config.test.mjs` | Implemented |
 
-## Source Basis
+## Verification Basis
 
-This spec was derived from the current implementation in `src/config/config.ts`, `src/core/pibo-home.ts`, `src/cli.ts`, and behavioral tests in `test/config.test.mjs` and `test/mcp-cli.test.mjs`.
+This spec was refreshed against the current implementation in `src/config/config.ts`, `src/core/pibo-home.ts`, `src/cli.ts`, and behavioral tests in `test/config.test.mjs` and `test/mcp-cli.test.mjs`.
