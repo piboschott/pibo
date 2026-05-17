@@ -163,9 +163,14 @@ function buildToolCard(row: CompactTerminalRow): TerminalCardDescriptor {
 
 function baseCard(row: CompactTerminalRow, kind: TerminalCardKind, title: string, tone: TerminalCardTone): TerminalCardDescriptor {
 	const rows = row.lines.flatMap((line) => {
-		const text = line.tokens.map((token) => token.text).join("").trim();
+		const tokenText = line.tokens.map((token) => token.text).join("");
+		const functionText = line.functionCall ? `${line.functionCall.name}${line.functionCall.input !== undefined ? ` ${safeInlineJson(line.functionCall.input)}` : ""}` : "";
+		const text = `${tokenText}${functionText}`.trim();
 		return text ? [{ value: redactTerminalSecret(text) }] : [];
 	});
+	const output = row.lines.length === 0 && typeof row.output === "string" && row.output.trim()
+		? [{ value: redactTerminalSecret(row.output.trim()) }]
+		: [];
 	const extraRows = [row.error ? { label: "Error", value: redactTerminalSecret(row.error), tone: "red" as const } : undefined]
 		.filter((item): item is { label: string; value: string; tone: "red" } => Boolean(item));
 	return {
@@ -174,9 +179,17 @@ function baseCard(row: CompactTerminalRow, kind: TerminalCardKind, title: string
 		title,
 		status: row.status,
 		tone,
-		rows: [...rows, ...extraRows],
+		rows: [...rows, ...output, ...extraRows],
 		sourceRowKind: row.kind,
 	};
+}
+
+function safeInlineJson(value: unknown): string {
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return String(value);
+	}
 }
 
 function parseRecord(value: unknown): Record<string, unknown> | undefined {

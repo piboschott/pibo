@@ -55,6 +55,21 @@ export type CliRuntimeStatus = {
 	activeSessionId?: string;
 	activeAgentId?: string;
 	activeModel?: ModelProfile;
+	queuedMessages?: number;
+	processing?: boolean;
+	streaming?: boolean;
+	cwd?: string;
+	thinkingLevel?: string;
+	fastMode?: boolean;
+	contextUsage?: { tokens?: number; contextWindow?: number; percent?: number } | null;
+	providerUsage?: {
+		provider?: string;
+		planType?: string;
+		limits?: readonly { label?: string; usedPercent?: number; remainingPercent?: number; resetsAt?: string }[];
+		credits?: { unlimited?: boolean; balance?: string };
+	} | null;
+	warnings?: readonly string[];
+	errors?: readonly string[];
 	message?: string;
 	updatedAt: string;
 };

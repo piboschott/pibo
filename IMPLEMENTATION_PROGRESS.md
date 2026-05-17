@@ -454,3 +454,19 @@ Validation and results for login and terminal file/fork command equivalents batc
 - Completed stories marked `passes: true`: PRD 06 `US-004`, `US-005`.
 - Implementation commit: `33ea4db` (`Add Ink login and fork file command flows`).
 - Next recommended group: PRD 07 `US-001` and `US-002` for rich Ink descriptor/status rendering, with PTY `/status` bar validation.
+
+## 2026-05-17 run: rich Ink descriptor and status card rendering batch
+
+Selected story group:
+
+- `prd_07_web_parity_rendering_and_pty_validation.json` / `US-001` — Render rich shared descriptors in Ink.
+- `prd_07_web_parity_rendering_and_pty_validation.json` / `US-002` — Render shared rich status card with bars.
+
+Intended validation plan:
+
+- Wire Ink transcript rendering through the shared `src/session-ui` terminal card/status descriptors for representative rich rows: user, assistant, reasoning, tool call/status, thinking, login, model, yielded-run, compaction, command, and error.
+- Add terminal bar/status rendering for shared status descriptors, including unavailable-vs-zero progress semantics and redacted warnings/errors.
+- Add snapshot-like Ink renderer tests for rich descriptor output and `/status` card output.
+- Run focused tests after build inside `pibo-dev-ink-cli-v2-web-parity`.
+- Run `pibo debug pty` for `/status` with raw/clean artifacts and assertions for owner, session, model/runtime, context/provider bars, and redacted sensitive text when available through deterministic local fixtures.
+- Run `npm run typecheck` before committing; run broader tests if shared/renderer changes affect more than the focused paths.

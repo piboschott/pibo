@@ -16,6 +16,7 @@ import {
 	handleCliSessionSubmittedInput,
 	InkSessionAppView,
 	activeInkSessionOverlay,
+	renderCliStatusCardText,
 	parseCliSessionInput,
 	popInkSessionOverlay,
 	pushInkSessionOverlay,
@@ -245,6 +246,40 @@ test("generic Ink overlay stack supports nested picker back and active overlay",
 	assert.equal(activeInkSessionOverlay(escaped.overlayStack).picker.title, "Owner");
 });
 
+test("renderCliStatusCardText renders shared status bars and redacts secrets", () => {
+	const text = renderCliStatusCardText({
+		source: "fake",
+		mode: "fake",
+		connected: true,
+		rooms: "supported",
+		sessions: "supported",
+		agents: "supported",
+		activeOwnerLabel: "Web user alpha",
+		activeOwnerScope: "user:alpha",
+		activeSessionId: "ps_status",
+		activeModel: { provider: "openai", id: "gpt-status" },
+		queuedMessages: 2,
+		processing: true,
+		streaming: false,
+		cwd: "/workspace",
+		contextUsage: { tokens: 500, contextWindow: 1000, percent: 50 },
+		providerUsage: { provider: "openai", limits: [{ label: "requests", usedPercent: 80 }] },
+		warnings: ["TOKEN=secret-value"],
+		updatedAt: "2026-05-17T00:00:00.000Z",
+	}, { id: "ps_status", title: "Status Session", profile: "pibo-agent", status: "running" });
+
+	assert.match(text, /Status: source=fake/);
+	assert.match(text, /Owner: Web user alpha \(user:alpha\)/);
+	assert.match(text, /Session: Status Session \| ps_status/);
+	assert.match(text, /Model: openai\/gpt-status/);
+	assert.match(text, /Runtime: processing/);
+	assert.match(text, /Queue: 2/);
+	assert.match(text, /Context: .*50\.0%/);
+	assert.match(text, /openai requests: .*80\.0%/);
+	assert.match(text, /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(text, /secret-value/);
+});
+
 test("Slash parser distinguishes messages, commands, and empty input", () => {
 	assert.deepEqual(parseCliSessionInput("  hello agent  "), { type: "message", text: "hello agent" });
 	assert.deepEqual(parseCliSessionInput(" /STATUS now "), { type: "command", command: { name: "status", args: "now", raw: "/STATUS now" } });
@@ -400,7 +435,19 @@ test("Slash /repair-user-unknown runs source repair for the active owner and roo
 
 test("Slash commands handle help status clear pickers unknown exit and normal sends", async () => {
 	const source = createDefaultFakeCliSessionSource();
-	source.setStatus({ message: "TOKEN=secret-value" });
+	source.setStatus({
+		message: "TOKEN=secret-value",
+		queuedMessages: 0,
+		processing: false,
+		streaming: false,
+		cwd: "/workspace",
+		thinkingLevel: "high",
+		fastMode: true,
+		contextUsage: { tokens: 0, contextWindow: 1000, percent: 0 },
+		providerUsage: { provider: "openai", planType: "pro", limits: [{ label: "requests", usedPercent: 25 }] },
+		warnings: ["API_KEY=secret-value warning"],
+		errors: ["token:secret-value error"],
+	});
 	const harness = stateHarness({ ...baseState(), session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", status: "idle" } });
 	let exited = false;
 	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
@@ -413,7 +460,17 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 
 	await submit("/status");
 	assert.match(harness.state.message, /source=fake/);
+	assert.match(harness.state.message, /Owner:/);
+	assert.match(harness.state.message, /Session: Existing fake session \| ps_fake_existing/);
+	assert.match(harness.state.message, /Model: unknown/);
+	assert.match(harness.state.message, /Runtime: fake/);
+	assert.match(harness.state.message, /Context: .*0\.0%/);
+	assert.match(harness.state.message, /openai requests: .*25\.0%/);
+	assert.match(harness.state.message, /Thinking: high/);
+	assert.match(harness.state.message, /Fast mode: on/);
 	assert.match(harness.state.message, /TOKEN=\[redacted\]/);
+	assert.match(harness.state.message, /API_KEY=\[redacted\]/);
+	assert.match(harness.state.message, /token=\[redacted\]/);
 	assert.doesNotMatch(harness.state.message, /secret-value/);
 	assert.match(formatCliSessionStatus(harness.state.status, harness.state.session), /connected=yes/);
 

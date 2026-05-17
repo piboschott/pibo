@@ -4,10 +4,13 @@ import { isCliSourceError } from "../../cli-session/index.js";
 import {
 	buildCompactTerminalRows,
 	buildSlashCommandCatalog,
+	buildTerminalStatusViewModel,
 	commandSupportLabel,
 	filterSlashCommands,
 	formatSlashCommand,
 	groupSlashCommandsForHelp,
+	progressBarText,
+	type BuildTerminalStatusInput,
 	type CommandResultDescriptor,
 	type CommandResultMenuItem,
 	type CompactTerminalRow,
@@ -1080,9 +1083,38 @@ export function renderCommandResultDescriptorText(descriptor: CommandResultDescr
 	if (descriptor.kind === "unsupported") return `${descriptor.command}: ${descriptor.reason}`;
 	if (descriptor.kind === "error") return `${descriptor.title ?? "Error"}: ${descriptor.message}`;
 	if (descriptor.kind === "session-link") return `${descriptor.title}: ${descriptor.label ?? "session"} ${descriptor.sessionId}${descriptor.roomId ? ` in ${descriptor.roomId}` : ""}`;
-	if (descriptor.kind === "status") return `${descriptor.title}: ${formatCliSessionStatus(descriptor.status as CliRuntimeStatus, session)}`;
+	if (descriptor.kind === "status") return renderCliStatusCardText(descriptor.status as CliRuntimeStatus, session, descriptor.title);
 	if (descriptor.kind === "menu") return [descriptor.title, ...descriptor.items.map((item) => `  ${item.disabled ? "-" : "•"} ${item.label}${item.description ? ` — ${item.description}` : ""}`)].join("\n");
 	return `${descriptor.title ?? "Result"}: ${redactCliSessionStatusText(JSON.stringify(descriptor.value, null, 2))}`;
+}
+
+export function renderCliStatusCardText(status: CliRuntimeStatus | undefined, session?: CliSessionSummary, title = "Status"): string {
+	const summary = formatCliSessionStatus(status, session);
+	const viewModel = buildTerminalStatusViewModel(statusViewModelInput(status, session));
+	const lines = [`${title}: ${summary}`];
+	for (const field of viewModel.fields) lines.push(`  ${field.label}: ${field.value}`);
+	for (const progress of viewModel.progress) lines.push(`  ${progress.label}: ${progressBarText(progress, progress.state === "available" ? 18 : 12)} — ${progress.text}`);
+	for (const warning of viewModel.warnings) lines.push(`  Warning: ${warning}`);
+	for (const error of viewModel.errors) lines.push(`  Error: ${error}`);
+	return lines.join("\n");
+}
+
+function statusViewModelInput(status: CliRuntimeStatus | undefined, session?: CliSessionSummary): BuildTerminalStatusInput {
+	const runtimeState = status?.connected === false ? "disconnected" : status?.processing ? "processing" : status?.streaming ? "streaming" : status?.mode ?? "unknown";
+	return {
+		owner: { label: status?.activeOwnerLabel, scope: status?.activeOwnerScope ?? session?.ownerScope },
+		session: { id: session?.id ?? status?.activeSessionId, title: session?.title, profile: session?.profile ?? session?.agentId ?? status?.activeAgentId, status: session?.status },
+		model: status?.activeModel ?? session?.model ?? { provider: "unknown", id: "unknown", label: "unknown" },
+		runtime: { state: runtimeState, connected: status?.connected, queuedMessages: status?.queuedMessages, processing: status?.processing, streaming: status?.streaming },
+		cwd: status?.cwd,
+		contextUsage: status?.contextUsage,
+		providerUsage: status?.providerUsage,
+		thinking: status?.thinkingLevel ? { level: status.thinkingLevel } : undefined,
+		fastMode: status?.fastMode,
+		warnings: status?.warnings,
+		errors: status?.errors,
+		message: status?.message,
+	};
 }
 
 function ownerPickerItem(owner: CliOwnerSummary): InkSessionPickerItem {

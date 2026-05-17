@@ -224,6 +224,11 @@ class DebugMockCliSessionRouter implements LocalCliSessionRouter {
 			enabledTools: [],
 			cwd: process.cwd(),
 			disposed: false,
+			thinkingLevel: "high",
+			fastMode: false,
+			contextUsage: { tokens: 128, contextWindow: 1024, percent: 12.5 },
+			providerUsage: { provider: "openai", planType: "debug", limits: [{ label: "requests", usedPercent: 25 }] },
+			warnings: ["Debug PTY status fixture redacts TOKEN=secret-value"],
 			...overrides,
 		};
 	}

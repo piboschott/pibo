@@ -60,10 +60,51 @@ test("InkTerminalView renders representative compact rows to terminal text", () 
 	assert.match(output, /› Investigate issue/);
 	assert.match(output, /I will check\./);
 	assert.match(output, /- first/);
-	assert.match(output, /✓ • Called read/);
+	assert.match(output, /▣ Tool — tool · done/);
+	assert.match(output, /Called read/);
 	assert.match(output, /src\/index\.ts/);
-	assert.match(output, /… • Waiting on runs typecheck/);
-	assert.match(output, /✕ • Error boom/);
+	assert.match(output, /▣ Yielded run — yielded-run · running/);
+	assert.match(output, /Waiting on runs typecheck/);
+	assert.match(output, /✕ ▣ Error — error · error/);
+	assert.match(output, /Error: boom/);
+});
+
+test("InkTerminalView renders rich shared card descriptors with Web-parity labels", () => {
+	const rows = [
+		{ id: "user", kind: "message.user", status: "done", lines: [{ prefix: "prompt", tokens: [{ text: "User prompt" }] }], sourceNodeIds: ["user"] },
+		{ id: "assistant", kind: "message.assistant", status: "done", lines: [], output: "Assistant reply", sourceNodeIds: ["assistant"] },
+		{ id: "reason", kind: "reasoning", status: "done", markdown: "Reasoned safely", lines: [{ prefix: "bullet", tokens: [{ text: "Thought", tone: "amber", weight: "semibold" }] }], sourceNodeIds: ["reason"] },
+		{ id: "tool", kind: "tool.call", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Called ", tone: "green", weight: "semibold" }], functionCall: { name: "read", input: { path: "src/index.ts" } } }], sourceNodeIds: ["tool"] },
+		{ id: "status", kind: "tool.status", status: "done", lines: [], output: { piboSessionId: "ps_rich", queuedMessages: 0, processing: false, streaming: false, cwd: "/workspace", contextUsage: { tokens: 125, contextWindow: 1000, percent: 12.5 }, providerUsage: { provider: "openai", limits: [{ label: "requests", usedPercent: 25 }] } }, sourceNodeIds: ["status"] },
+		{ id: "thinking", kind: "tool.thinking", status: "done", lines: [], output: { level: "high", availableLevels: ["low", "high"] }, sourceNodeIds: ["thinking"] },
+		{ id: "model", kind: "tool.model", status: "done", lines: [], output: { providers: [{ id: "openai", label: "OpenAI", models: [{ id: "gpt-test", label: "GPT Test" }] }] }, sourceNodeIds: ["model"] },
+		{ id: "login", kind: "tool.login", status: "done", lines: [], output: { providers: [{ id: "openai", name: "OpenAI", authMethods: ["api_key"] }] }, sourceNodeIds: ["login"] },
+		{ id: "run", kind: "yielded.run", status: "running", lines: [{ prefix: "bullet", tokens: [{ text: "Waiting on runs typecheck" }] }], sourceNodeIds: ["run"] },
+		{ id: "compact", kind: "execution.compaction", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Compacted transcript" }] }], sourceNodeIds: ["compact"] },
+		{ id: "command", kind: "execution.command", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Ran /status" }] }], sourceNodeIds: ["command"] },
+		{ id: "error", kind: "error", status: "error", lines: [], error: "TOKEN=secret-value failed", sourceNodeIds: ["error"] },
+	];
+	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 20, maxLineChars: 160 }));
+
+	assert.match(output, /› User prompt/);
+	assert.match(output, /Assistant reply/);
+	assert.match(output, /Thought/);
+	assert.match(output, /▣ Tool — tool · done/);
+	assert.match(output, /Called read/);
+	assert.match(output, /▣ Status — status · done/);
+	assert.match(output, /Context: █/);
+	assert.match(output, /openai requests:/);
+	assert.match(output, /▣ Thinking — thinking · done/);
+	assert.match(output, /Actions: .*low.*high/);
+	assert.match(output, /▣ Model — model · done/);
+	assert.match(output, /OpenAI \/ GPT Test/);
+	assert.match(output, /▣ Login — login · done/);
+	assert.match(output, /▣ Yielded run — yielded-run · running/);
+	assert.match(output, /▣ Compaction — compaction · done/);
+	assert.match(output, /▣ Command — command · done/);
+	assert.match(output, /✕ ▣ Error — error · error/);
+	assert.match(output, /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(output, /secret-value/);
 });
 
 test("InkTerminalView bounds large row lists to a tail window", () => {
