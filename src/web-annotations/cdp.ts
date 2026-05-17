@@ -10,6 +10,7 @@ import {
 } from "../tools/cdp-client.js";
 import type { WebAnnotationBinding } from "./types.js";
 import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "./store.js";
+import { requireWebAnnotationText, sanitizeWebAnnotationText, WEB_ANNOTATION_LIMITS } from "./validation.js";
 
 export type WebAnnotationCdpServiceOptions = {
 	store?: WebAnnotationStore;
@@ -47,8 +48,8 @@ export type BindingOperationResult = {
 	stopped?: boolean;
 };
 
-const MAX_TITLE_LENGTH = 200;
-const MAX_URL_LENGTH = 2_000;
+const MAX_TITLE_LENGTH = WEB_ANNOTATION_LIMITS.title;
+const MAX_URL_LENGTH = WEB_ANNOTATION_LIMITS.url;
 
 let defaultStore: WebAnnotationStore | undefined;
 
@@ -202,7 +203,7 @@ export function createWebAnnotationCdpService(options: WebAnnotationCdpServiceOp
 }
 
 function normalizeUserUrl(value: string): string {
-	const raw = requireNonEmpty(value, "url");
+	const raw = requireWebAnnotationText(value, { max: WEB_ANNOTATION_LIMITS.url, field: "url", redactSecrets: false });
 	let parsed: URL;
 	try {
 		parsed = new URL(raw);
@@ -220,8 +221,7 @@ function requireNonEmpty(value: string | undefined, field: string): string {
 }
 
 function trim(value: string | undefined, max: number): string | undefined {
-	if (value === undefined) return undefined;
-	return value.length > max ? value.slice(0, max) : value;
+	return sanitizeWebAnnotationText(value, { max, field: "web annotation cdp", redactSecrets: false });
 }
 
 function targetSummary(target: CdpTarget): WebAnnotationTargetSummary {

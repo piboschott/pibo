@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { WebAnnotationStore } from "../dist/web-annotations/store.js";
+import { renderAttachedWebAnnotations, WEB_ANNOTATION_LIMITS, WebAnnotationStore } from "../dist/web-annotations/index.js";
 
 function createAnnotationInput(overrides = {}) {
 	return {
@@ -87,6 +87,54 @@ test("web annotation lifecycle and thread operations validate payloads", () => {
 
 		assert.throws(() => store.patchAnnotation("user:a", "ps_a", "ann-life", { status: "not-a-status" }), /Invalid annotation status/);
 		assert.throws(() => store.addThreadMessage({ annotationId: "ann-life", ownerScope: "user:a", piboSessionId: "ps_a", role: "agent", content: "" }), /content is required/);
+	} finally {
+		store.close();
+	}
+});
+
+test("web annotations normalize oversized and secret-like payloads", () => {
+	const store = new WebAnnotationStore({ path: ":memory:" });
+	try {
+		const rawSecret = "sk-abcdefghijklmnopqrstuvwxyz123456";
+		const annotation = store.createAnnotation(createAnnotationInput({
+			id: "ann-limits",
+			note: `Please check token=${rawSecret}`,
+			url: `http://localhost:3000/${"x".repeat(3_000)}`,
+			target: {
+				kind: "element",
+				label: "Save button",
+				selector: `[data-secret="${rawSecret}"]`,
+				text: `visible ${rawSecret} ${"t".repeat(2_000)}`,
+				htmlHint: `<button data-token="${rawSecret}">${"H".repeat(3_000)}</button>`,
+				classSummary: "c".repeat(2_000),
+				sourceHints: Array.from({ length: 20 }, (_, index) => ({
+					kind: "test-id",
+					confidence: "high",
+					id: `hint-${index}`,
+					raw: { token: rawSecret, long: "r".repeat(2_000), nested: { value: rawSecret } },
+				})),
+			},
+			screenshotRef: { path: `/tmp/${"screen".repeat(200)}.png`, artifactId: "artifact-1", mimeType: "image/png", width: 100, height: 100 },
+		}), new Date("2026-05-16T10:00:00.000Z"));
+
+		assert.equal(annotation.url.length, WEB_ANNOTATION_LIMITS.url);
+		assert.equal(annotation.target.text.length, WEB_ANNOTATION_LIMITS.text);
+		assert.equal(annotation.target.htmlHint.length, WEB_ANNOTATION_LIMITS.htmlHint);
+		assert.equal(annotation.target.classSummary.length, WEB_ANNOTATION_LIMITS.classSummary);
+		assert.equal(annotation.target.sourceHints.length, WEB_ANNOTATION_LIMITS.sourceHints);
+		assert.equal(annotation.screenshotRef.path.length, WEB_ANNOTATION_LIMITS.screenshotRefText);
+		assert.doesNotMatch(annotation.note, /sk-abcdefghijklmnopqrstuvwxyz/);
+		assert.match(annotation.note, /\[REDACTED_SECRET\]/);
+		assert.doesNotMatch(annotation.target.text, /sk-abcdefghijklmnopqrstuvwxyz/);
+		assert.match(annotation.target.sourceHints[0].raw.token, /\[REDACTED_SECRET\]/);
+
+		const threaded = store.addThreadMessage({ annotationId: "ann-limits", ownerScope: "user:a", piboSessionId: "ps_a", role: "human", content: `${rawSecret} ${"m".repeat(3_000)}` });
+		assert.equal(threaded.thread[0].content.length, WEB_ANNOTATION_LIMITS.threadMessage);
+		assert.doesNotMatch(threaded.thread[0].content, /sk-abcdefghijklmnopqrstuvwxyz/);
+
+		const promptBlock = renderAttachedWebAnnotations([annotation]);
+		assert.doesNotMatch(promptBlock, /sk-abcdefghijklmnopqrstuvwxyz/);
+		assert.doesNotMatch(promptBlock, /screen/);
 	} finally {
 		store.close();
 	}

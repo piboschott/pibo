@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in this run: added shared Web Annotation validation/redaction utilities and wired them into store/API/CDP/tool/attachment paths; added focused tests for oversized fields, secret-like redaction, long HTML/source raw metadata, thread limits, and screenshot reference omission from prompt context. Docker worker typecheck and focused build/tests passed."
     },
     {
       "id": "US-002",

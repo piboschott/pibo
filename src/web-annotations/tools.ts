@@ -8,6 +8,7 @@ import {
 	type WebAnnotationStatus,
 } from "./types.js";
 import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "./store.js";
+import { sanitizeWebAnnotationText, WEB_ANNOTATION_LIMITS } from "./validation.js";
 
 export const WEB_ANNOTATION_TOOL_NAMES = [
 	"web_annotations_list",
@@ -47,7 +48,7 @@ const DEFAULT_WATCH_TIMEOUT_MS = 5_000;
 const MAX_WATCH_TIMEOUT_MS = 30_000;
 const WATCH_POLL_MS = 250;
 const TEXT_LIMIT = 280;
-const DETAIL_TEXT_LIMIT = 1_000;
+const DETAIL_TEXT_LIMIT = WEB_ANNOTATION_LIMITS.text;
 const SOURCE_HINT_LIMIT = 5;
 
 let defaultStore: WebAnnotationStore | undefined;
@@ -68,8 +69,7 @@ function normalizeTimeout(timeoutMs: number | undefined): number {
 }
 
 function truncate(value: string | undefined, max = TEXT_LIMIT): string | undefined {
-	if (value === undefined) return undefined;
-	return value.length > max ? `${value.slice(0, max)}…` : value;
+	return sanitizeWebAnnotationText(value, { max, field: "web annotation tool output" });
 }
 
 function requireContext(context: ToolDefinitionContext, params: ToolParams): RequiredToolContext {

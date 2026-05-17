@@ -3,7 +3,16 @@ import type { PiboWebApp, PiboWebAppContext, PiboWebSession } from "../web/types
 import { createWebAnnotationCdpService, type WebAnnotationCdpService, type WebAnnotationBindingContext } from "./cdp.js";
 import { serializeWebAnnotationAttachment } from "./attachments.js";
 import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "./store.js";
-import { isWebAnnotationStatus, isWebAnnotationTargetKind, type WebAnnotationTarget, type WebAnnotationViewport } from "./types.js";
+import { isWebAnnotationStatus, isWebAnnotationTargetKind, type WebAnnotationScreenshotRef, type WebAnnotationTarget, type WebAnnotationViewport } from "./types.js";
+import {
+	normalizeWebAnnotationLimit,
+	normalizeWebAnnotationScreenshotRef,
+	normalizeWebAnnotationTarget,
+	normalizeWebAnnotationViewport,
+	requireWebAnnotationText,
+	sanitizeWebAnnotationText,
+	WEB_ANNOTATION_LIMITS,
+} from "./validation.js";
 
 export const WEB_ANNOTATIONS_API_PREFIX = "/api/web-annotations";
 export const WEB_ANNOTATIONS_APP_MOUNT = "/apps/web-annotations";
@@ -36,7 +45,7 @@ type OverlaySubmissionBody = {
 	targetKind?: string;
 	viewport?: WebAnnotationViewport;
 	target?: WebAnnotationTarget;
-	screenshotRef?: object;
+	screenshotRef?: WebAnnotationScreenshotRef;
 };
 
 type AnnotationPatchBody = {
@@ -178,13 +187,13 @@ async function handleOverlaySubmission(store: WebAnnotationStore, request: Reque
 	const contentType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
 	if (contentType !== "application/json") throw new PiboWebHttpError("Content-Type must be application/json", 415);
 	const body = await readJsonBody<OverlaySubmissionBody>(request);
-	const bindingId = requireBodyString(body.bindingId, "bindingId", 120);
-	const bindingToken = requireBodyString(body.bindingToken, "bindingToken", 200);
+	const bindingId = requireBodyString(body.bindingId, "bindingId", WEB_ANNOTATION_LIMITS.id, false);
+	const bindingToken = requireBodyString(body.bindingToken, "bindingToken", WEB_ANNOTATION_LIMITS.bindingToken, false);
 	const binding = store.getBindingById(bindingId);
 	if (!binding) throw new PiboWebHttpError("Web Annotation binding was not found", 404);
 	if (binding.state === "removed") throw new PiboWebHttpError("Web Annotation binding was removed", 404);
 	if (binding.metadata?.overlaySubmissionToken !== bindingToken) throw new PiboWebHttpError("Invalid Web Annotation binding token", 403);
-	const note = requireBodyString(body.note, "note", 2_000);
+	const note = requireBodyString(body.note, "note", WEB_ANNOTATION_LIMITS.note);
 	const targetKind = requireTargetKind(body.targetKind);
 	const viewport = normalizeViewport(body.viewport);
 	return store.createAnnotation({
@@ -193,27 +202,30 @@ async function handleOverlaySubmission(store: WebAnnotationStore, request: Reque
 		piboRoomId: binding.piboRoomId,
 		bindingId: binding.id,
 		note,
-		url: optionalBodyString(body.url, 2_000) ?? binding.url,
-		title: optionalBodyString(body.title, 200) ?? binding.title,
+		url: optionalBodyString(body.url, WEB_ANNOTATION_LIMITS.url, false) ?? binding.url,
+		title: optionalBodyString(body.title, WEB_ANNOTATION_LIMITS.title) ?? binding.title,
 		targetId: binding.targetId,
 		targetKind,
 		viewport,
 		target: normalizeTarget(body.target, targetKind),
-		screenshotRef: normalizeJsonObject(body.screenshotRef),
+		screenshotRef: normalizeWebAnnotationScreenshotRef(body.screenshotRef),
 	});
 }
 
-function requireBodyString(value: string | undefined, field: string, max: number): string {
-	const text = optionalBodyString(value, max)?.trim() ?? "";
-	if (!text) throw new PiboWebHttpError(`${field} is required`, 400);
-	return text;
+function requireBodyString(value: string | undefined, field: string, max: number, redactSecrets = true): string {
+	try {
+		return requireWebAnnotationText(value, { field, max, redactSecrets });
+	} catch (error) {
+		throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+	}
 }
 
-function optionalBodyString(value: string | undefined, max: number): string | undefined {
-	if (value === undefined) return undefined;
-	if (typeof value !== "string") throw new PiboWebHttpError("Invalid string field", 400);
-	const sanitized = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
-	return sanitized.length > max ? sanitized.slice(0, max) : sanitized;
+function optionalBodyString(value: string | undefined, max: number, redactSecrets = true): string | undefined {
+	try {
+		return sanitizeWebAnnotationText(value, { field: "field", max, redactSecrets });
+	} catch (error) {
+		throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+	}
 }
 
 function requireTargetKind(value: string | undefined) {
@@ -223,28 +235,21 @@ function requireTargetKind(value: string | undefined) {
 
 function normalizeViewport(value: WebAnnotationViewport | undefined): WebAnnotationViewport {
 	if (!value || typeof value.width !== "number" || typeof value.height !== "number") throw new PiboWebHttpError("viewport width and height are required", 400);
-	return {
-		width: boundedNumber(value.width, 0, 20_000),
-		height: boundedNumber(value.height, 0, 20_000),
-		devicePixelRatio: value.devicePixelRatio === undefined ? undefined : boundedNumber(value.devicePixelRatio, 0.1, 10),
-	};
+	try {
+		return normalizeWebAnnotationViewport(value);
+	} catch (error) {
+		throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+	}
 }
 
 function normalizeTarget(value: WebAnnotationTarget | undefined, targetKind: ReturnType<typeof requireTargetKind>): WebAnnotationTarget | undefined {
 	if (value === undefined) return { kind: targetKind };
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new PiboWebHttpError("target must be an object", 400);
-	return normalizeJsonObject({ ...value, kind: targetKind }) as WebAnnotationTarget;
-}
-
-function normalizeJsonObject<T extends object>(value: T | undefined): T | undefined {
-	if (value === undefined) return undefined;
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw new PiboWebHttpError("Invalid object field", 400);
-	return value;
-}
-
-function boundedNumber(value: number, min: number, max: number): number {
-	if (!Number.isFinite(value)) throw new PiboWebHttpError("Invalid numeric field", 400);
-	return Math.max(min, Math.min(max, value));
+	try {
+		return normalizeWebAnnotationTarget({ ...value, kind: targetKind }, targetKind) as WebAnnotationTarget;
+	} catch (error) {
+		throw new PiboWebHttpError(error instanceof Error ? error.message : String(error), 400);
+	}
 }
 
 function corsJson(payload: unknown, init: ResponseInit = {}): Response {
@@ -309,7 +314,7 @@ function optionalStatus(value: string | null | undefined) {
 function parseLimit(value: string | null): number | undefined {
 	if (!value) return undefined;
 	const parsed = Number.parseInt(value, 10);
-	return Number.isFinite(parsed) ? parsed : undefined;
+	return Number.isFinite(parsed) ? normalizeWebAnnotationLimit(parsed, 100, 500) : undefined;
 }
 
 function matchBindingResource(pathname: string): { id: string; action?: string } | undefined {

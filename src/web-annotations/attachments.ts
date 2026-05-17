@@ -1,6 +1,7 @@
 import type { WebAnnotation, WebAnnotationSourceHint } from "./types.js";
+import { sanitizeWebAnnotationText, WEB_ANNOTATION_LIMITS } from "./validation.js";
 
-export const WEB_ANNOTATION_MESSAGE_ATTACHMENT_LIMIT = 5;
+export const WEB_ANNOTATION_MESSAGE_ATTACHMENT_LIMIT = WEB_ANNOTATION_LIMITS.attachments;
 
 export type WebAnnotationMessageAttachment = {
 	id: string;
@@ -102,10 +103,7 @@ function formatNumber(value: number): string {
 }
 
 function truncateInline(value: string | undefined, max: number): string | undefined {
-	if (value === undefined) return undefined;
-	const normalized = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
-	if (normalized.length <= max) return normalized;
-	return `${normalized.slice(0, Math.max(0, max - 1))}…`;
+	return sanitizeWebAnnotationText(value, { max, field: "web annotation attachment" });
 }
 
 function escapeBlockValue(value: string): string {

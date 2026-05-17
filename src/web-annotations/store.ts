@@ -21,6 +21,15 @@ import {
 	type WebAnnotationStatus,
 	type WebAnnotationThreadMessage,
 } from "./types.js";
+import {
+	normalizeWebAnnotationBindingInput,
+	normalizeWebAnnotationBindingPatch,
+	normalizeWebAnnotationCreateInput,
+	normalizeWebAnnotationLimit,
+	normalizeWebAnnotationPatchInput,
+	normalizeWebAnnotationThreadMessageInput,
+	WEB_ANNOTATION_LIMITS,
+} from "./validation.js";
 
 export type WebAnnotationStoreOptions = {
 	path?: string;
@@ -86,9 +95,7 @@ function stringifyJson(value: unknown): string | null {
 }
 
 function normalizeLimit(limit: number | undefined, defaultLimit: number, maxLimit: number): number {
-	if (limit === undefined) return defaultLimit;
-	if (!Number.isFinite(limit)) return defaultLimit;
-	return Math.max(1, Math.min(Math.floor(limit), maxLimit));
+	return normalizeWebAnnotationLimit(limit, defaultLimit, maxLimit);
 }
 
 function requireNonEmpty(value: string | undefined, field: string): string {
@@ -201,18 +208,18 @@ export class WebAnnotationStore {
 	}
 
 	createBinding(input: CreateWebAnnotationBindingInput, now = new Date()): WebAnnotationBinding {
-		validateBindingInput(input);
+		const normalized = normalizeWebAnnotationBindingInput(input);
 		const timestamp = nowIso(now);
 		const binding: WebAnnotationBinding = {
-			id: input.id ?? `wab_${randomUUID()}`,
-			ownerScope: input.ownerScope,
-			piboSessionId: input.piboSessionId,
-			piboRoomId: input.piboRoomId,
-			state: input.state ?? "active",
-			url: input.url,
-			title: input.title,
-			targetId: input.targetId,
-			metadata: input.metadata,
+			id: normalized.id ?? `wab_${randomUUID()}`,
+			ownerScope: normalized.ownerScope,
+			piboSessionId: normalized.piboSessionId,
+			piboRoomId: normalized.piboRoomId,
+			state: normalized.state ?? "active",
+			url: normalized.url,
+			title: normalized.title,
+			targetId: normalized.targetId,
+			metadata: normalized.metadata,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -269,10 +276,10 @@ export class WebAnnotationStore {
 	}
 
 	patchBinding(ownerScope: string, piboSessionId: string, id: string, patch: PatchWebAnnotationBindingInput, now = new Date()): WebAnnotationBinding | undefined {
-		validateBindingPatch(patch);
+		const normalized = normalizeWebAnnotationBindingPatch(patch);
 		const existing = this.getBinding(ownerScope, piboSessionId, id);
 		if (!existing) return undefined;
-		const state = patch.state ?? existing.state;
+		const state = normalized.state ?? existing.state;
 		const timestamp = nowIso(now);
 		this.db.prepare(`
 			UPDATE web_annotation_bindings
@@ -280,13 +287,13 @@ export class WebAnnotationStore {
 			WHERE id = ? AND owner_scope = ? AND pibo_session_id = ?
 		`).run(
 			state,
-			patch.title !== undefined ? patch.title : existing.title ?? null,
-			patch.targetId !== undefined ? patch.targetId : existing.targetId ?? null,
+			normalized.title !== undefined ? normalized.title : existing.title ?? null,
+			normalized.targetId !== undefined ? normalized.targetId : existing.targetId ?? null,
 			timestamp,
-			patch.lastInjectedAt !== undefined ? patch.lastInjectedAt : existing.lastInjectedAt ?? null,
-			patch.closedAt !== undefined ? patch.closedAt : existing.closedAt ?? null,
-			patch.error !== undefined ? patch.error : existing.error ?? null,
-			patch.metadata !== undefined ? stringifyJson(patch.metadata) : stringifyJson(existing.metadata),
+			normalized.lastInjectedAt !== undefined ? normalized.lastInjectedAt : existing.lastInjectedAt ?? null,
+			normalized.closedAt !== undefined ? normalized.closedAt : existing.closedAt ?? null,
+			normalized.error !== undefined ? normalized.error : existing.error ?? null,
+			normalized.metadata !== undefined ? stringifyJson(normalized.metadata) : stringifyJson(existing.metadata),
 			id,
 			ownerScope,
 			piboSessionId,
@@ -304,24 +311,24 @@ export class WebAnnotationStore {
 	}
 
 	createAnnotation(input: CreateWebAnnotationInput, now = new Date()): WebAnnotation {
-		validateAnnotationInput(input);
+		const normalized = normalizeWebAnnotationCreateInput(input);
 		const timestamp = nowIso(now);
 		const annotation: WebAnnotation = {
-			id: input.id ?? `ann_${randomUUID()}`,
-			ownerScope: input.ownerScope,
-			piboSessionId: input.piboSessionId,
-			piboRoomId: input.piboRoomId,
-			bindingId: input.bindingId,
-			status: input.status ?? "open",
-			note: input.note,
-			url: input.url,
-			title: input.title,
-			targetId: input.targetId,
-			targetKind: input.targetKind,
-			viewport: input.viewport,
-			target: input.target,
-			screenshotRef: input.screenshotRef,
-			metadata: input.metadata,
+			id: normalized.id ?? `ann_${randomUUID()}`,
+			ownerScope: normalized.ownerScope,
+			piboSessionId: normalized.piboSessionId,
+			piboRoomId: normalized.piboRoomId,
+			bindingId: normalized.bindingId,
+			status: normalized.status ?? "open",
+			note: normalized.note,
+			url: normalized.url,
+			title: normalized.title,
+			targetId: normalized.targetId,
+			targetKind: normalized.targetKind,
+			viewport: normalized.viewport,
+			target: normalized.target,
+			screenshotRef: normalized.screenshotRef,
+			metadata: normalized.metadata,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -385,11 +392,11 @@ export class WebAnnotationStore {
 	}
 
 	patchAnnotation(ownerScope: string, piboSessionId: string, id: string, patch: PatchWebAnnotationInput, now = new Date()): WebAnnotation | undefined {
-		validateAnnotationPatch(patch);
+		const normalized = normalizeWebAnnotationPatchInput(patch);
 		const existing = this.getAnnotation(ownerScope, piboSessionId, id);
 		if (!existing) return undefined;
 		const timestamp = nowIso(now);
-		const status = patch.status ?? existing.status;
+		const status = normalized.status ?? existing.status;
 		const resolvedAt = status === "resolved" && !existing.resolvedAt ? timestamp : existing.resolvedAt ?? null;
 		this.db.prepare(`
 			UPDATE web_annotations
@@ -399,9 +406,9 @@ export class WebAnnotationStore {
 			status,
 			timestamp,
 			resolvedAt,
-			patch.resolvedBy !== undefined ? patch.resolvedBy : existing.resolvedBy ?? null,
-			patch.summary !== undefined ? patch.summary : existing.summary ?? null,
-			patch.metadata !== undefined ? stringifyJson(patch.metadata) : stringifyJson(existing.metadata),
+			normalized.resolvedBy !== undefined ? normalized.resolvedBy : existing.resolvedBy ?? null,
+			normalized.summary !== undefined ? normalized.summary : existing.summary ?? null,
+			normalized.metadata !== undefined ? stringifyJson(normalized.metadata) : stringifyJson(existing.metadata),
 			id,
 			ownerScope,
 			piboSessionId,
@@ -422,23 +429,22 @@ export class WebAnnotationStore {
 	}
 
 	addThreadMessage(input: AddWebAnnotationThreadMessageInput, now = new Date()): WebAnnotation | undefined {
-		const content = requireNonEmpty(input.content, "content");
-		if (input.role !== "human" && input.role !== "agent") throw new Error("role must be human or agent");
-		const existing = this.getAnnotation(input.ownerScope, input.piboSessionId, input.annotationId);
+		const normalized = normalizeWebAnnotationThreadMessageInput(input);
+		const existing = this.getAnnotation(normalized.ownerScope, normalized.piboSessionId, normalized.annotationId);
 		if (!existing) return undefined;
 		const thread = existing.thread ?? [];
-		if (thread.length >= 100) throw new Error("annotation thread message limit reached");
+		if (thread.length >= WEB_ANNOTATION_LIMITS.threadMessages) throw new Error("annotation thread message limit reached");
 		const timestamp = nowIso(now);
 		const nextThread: WebAnnotationThreadMessage[] = [
 			...thread,
-			{ id: input.id ?? `wat_${randomUUID()}`, role: input.role, content, createdAt: timestamp },
+			{ id: normalized.id ?? `wat_${randomUUID()}`, role: normalized.role, content: normalized.content, createdAt: timestamp },
 		];
 		this.db.prepare(`
 			UPDATE web_annotations
 			SET thread_json = ?, updated_at = ?
 			WHERE id = ? AND owner_scope = ? AND pibo_session_id = ?
-		`).run(stringifyJson(nextThread), timestamp, input.annotationId, input.ownerScope, input.piboSessionId);
-		return this.getAnnotation(input.ownerScope, input.piboSessionId, input.annotationId);
+		`).run(stringifyJson(nextThread), timestamp, normalized.annotationId, normalized.ownerScope, normalized.piboSessionId);
+		return this.getAnnotation(normalized.ownerScope, normalized.piboSessionId, normalized.annotationId);
 	}
 
 	private applySchema(): void {
