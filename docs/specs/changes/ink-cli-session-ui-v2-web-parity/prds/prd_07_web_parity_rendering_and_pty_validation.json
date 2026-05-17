@@ -1,0 +1,88 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-rendering-pty-validation",
+  "description": "Implement Web-parity Ink rendering for shared descriptors and final real PTY-backed end-to-end validation.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Render rich shared descriptors in Ink",
+      "description": "As a CLI user, I want the terminal transcript and cards to match Web Compact Terminal semantics.",
+      "acceptanceCriteria": [
+        "Ink renders user, assistant, reasoning, tool call, tool status, thinking, login, model, yielded-run, compaction, and error descriptors",
+        "Markers, labels, ordering, tones, and status meanings align with Web Compact Terminal View within terminal limits",
+        "Snapshot-like clean-output tests cover representative descriptors",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Render shared rich status card with bars",
+      "description": "As a CLI user, I want /status to show owner, runtime, context, and quota information with terminal bars.",
+      "acceptanceCriteria": [
+        "Status card shows effective owner, session id/title/profile, model, runtime state, queue/stream state, cwd, thinking, fast mode, and warnings/errors",
+        "Context and provider usage render as readable terminal bars when available",
+        "Missing data displays as unavailable and secrets are redacted",
+        "pibo debug pty runs /status and asserts owner, session, model/runtime, and bar labels in clean output",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add narrow terminal and no-color fallbacks",
+      "description": "As an SSH user, I want the TUI to remain readable in small or limited terminals.",
+      "acceptanceCriteria": [
+        "Narrow terminals wrap or truncate without hiding owner, session, errors, or active command state",
+        "No-color mode remains readable with text markers",
+        "Large transcripts remain bounded and performant",
+        "pibo debug pty runs with constrained columns and asserts clean readable output",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Create reusable pibo debug pty smoke scripts",
+      "description": "As a reviewer, I want repeatable PTY scripts and artifacts for user-facing TUI behavior.",
+      "acceptanceCriteria": [
+        "Add documented pibo debug pty scenarios for owner picker, room picker, session creation, message send, slash suggestions, /status, /thinking or equivalent interactive command, and --session transcript hydration",
+        "Scenarios assert clean output and retain raw ANSI artifacts for debugging",
+        "Scripts have bounded timeouts and clear failure diagnostics",
+        "Documentation explains how Ralph agents must record artifact paths in story notes",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Final Web parity and installed CLI validation",
+      "description": "As a release reviewer, I want full test and installed CLI evidence before deployment.",
+      "acceptanceCriteria": [
+        "npm test passes",
+        "npm run typecheck passes",
+        "Chat Web regression/typecheck/build checks pass for Web-impacting changes",
+        "Global or built package install is tested, then pibo debug pty runs installed pibo tui:sessions through owner/room/session/message flow",
+        "Web/API/store check confirms the installed CLI-created session appears in the selected user's Web room",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

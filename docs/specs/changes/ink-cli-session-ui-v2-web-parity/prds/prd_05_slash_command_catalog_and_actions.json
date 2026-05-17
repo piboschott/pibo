@@ -1,0 +1,92 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-slash-command-catalog-actions",
+  "description": "Share Slash Command catalog with Web, add Ink suggestions, and execute supported routed actions under the selected owner/session.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Build shared slash command catalog for CLI and Web",
+      "description": "As a user, I want command names and descriptions to match between Web and CLI.",
+      "acceptanceCriteria": [
+        "Derive command descriptors from gateway capabilities and Web-added commands where applicable",
+        "Include CLI-only commands /help, /new, /room, /agent, /owner or /profile, /exit, /quit",
+        "Catalog marks browser-only or product-area commands with explicit unsupported reasons",
+        "Tests cover catalog generation and filtering",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement slash suggestions in Ink input",
+      "description": "As a CLI user, I want command suggestions while typing slash commands.",
+      "acceptanceCriteria": [
+        "Typing / shows available commands with descriptions",
+        "Typing a prefix such as /th filters matching commands",
+        "Arrow keys move selection, Enter accepts or runs, Escape closes suggestions without corrupting input",
+        "pibo debug pty asserts suggestion list, filtering, selection, and escape behavior",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Execute basic routed slash actions",
+      "description": "As a CLI user, I want Web session actions such as status, compact, clear, abort, kill, and fast to run from terminal.",
+      "acceptanceCriteria": [
+        "CLI source executes routed actions for /status, /compact, /clear, /abort, /kill, /kill-all, and /fast under selected owner/session",
+        "Action results render through shared command result descriptors",
+        "Errors are redacted and bounded",
+        "Focused tests cover success, unsupported, and runtime-error cases",
+        "pibo debug pty runs /status and at least one runtime-affecting action against a real session when feasible",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Execute session metadata and clone actions",
+      "description": "As a CLI user, I want session inspection and clone commands to match Web behavior.",
+      "acceptanceCriteria": [
+        "Support /session-current and /sessions through routed actions or source equivalents",
+        "Support /clone and open/select derived session when returned",
+        "Results include session ids and links/labels suitable for terminal",
+        "pibo debug pty runs /session-current and /clone or records explicit reason clone cannot run in fixture",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Replace hard-coded help with catalog help",
+      "description": "As a CLI user, I want /help to show accurate commands, descriptions, and unsupported reasons.",
+      "acceptanceCriteria": [
+        "/help renders commands from the shared catalog grouped by available, CLI navigation, and unsupported/deferred",
+        "Help includes owner/room/session keyboard controls",
+        "Tests cover help output and redaction/bounding",
+        "pibo debug pty runs /help and asserts catalog-derived entries",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

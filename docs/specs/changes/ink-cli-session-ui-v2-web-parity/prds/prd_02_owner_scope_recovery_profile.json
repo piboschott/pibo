@@ -1,0 +1,90 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-owner-scope-recovery",
+  "description": "Resolve an effective owner scope for host-root CLI recovery, add owner switching, Root recovery profile, and prevent user:unknown sessions.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add owner discovery and Root recovery owner",
+      "description": "As a host-root CLI operator, I want the CLI to discover Web users or fall back to Root recovery so sessions always have a real owner scope.",
+      "acceptanceCriteria": [
+        "Implement owner discovery from rooms, sessions, session_navigation, custom agents, and Better Auth data where available",
+        "Define a stable Root recovery owner scope that is not user:unknown and has no email requirement",
+        "Ensure the selected or fallback owner has a Personal Chat/default room available",
+        "Focused tests cover no owners, one owner, and multiple owners",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement owner picker and active owner state",
+      "description": "As a recovery operator, I want to choose the effective user/profile before rooms and sessions are shown.",
+      "acceptanceCriteria": [
+        "Startup uses --owner-scope when provided and otherwise resolves or prompts for an owner before room navigation",
+        "Multiple owners show an Ink owner picker with keyboard navigation",
+        "Header and /status include active owner label and scope",
+        "pibo debug pty scenario asserts owner picker appears with multiple owners",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add /owner or /profile switch flow",
+      "description": "As a CLI operator, I want to switch the effective owner during a recovery session so I can inspect another user's rooms and sessions.",
+      "acceptanceCriteria": [
+        "Add /owner or /profile command to open the owner picker",
+        "Switching owners closes or clears the active session unless it belongs to the new owner",
+        "Rooms, sessions, agents, and slash actions reload for the selected owner",
+        "Sending to a session owned by another owner is rejected with a clear error",
+        "pibo debug pty scenario switches owner and asserts room list changes",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Prevent and repair user:unknown CLI sessions",
+      "description": "As an admin, I want diagnostics and repair for legacy user:unknown sessions so they can be reassigned safely and no new ones are created accidentally.",
+      "acceptanceCriteria": [
+        "New CLI session creation, user message ingest, assistant event ingest, and navigation writes never silently use user:unknown",
+        "Legacy user:unknown sessions are excluded from default new-write flows unless explicitly selected or repaired",
+        "Provide a CLI diagnostic or repair path to reassign legacy CLI sessions to a selected owner",
+        "Tests cover sessions.owner_scope and session_navigation.owner_scope updates",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Verify selected Web owner sessions appear in Web UI",
+      "description": "As a Web user, I want sessions created through host-root CLI impersonation to appear in my Web Personal Chat or selected room.",
+      "acceptanceCriteria": [
+        "pibo debug pty creates a session as a selected Web owner in Personal Chat and sends a message through the real router/source path",
+        "Store/API/Web navigation check confirms the created session is visible for that owner and room",
+        "The session URL /rooms/<roomId>/sessions/<sessionId> opens or is returned for manual verification",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

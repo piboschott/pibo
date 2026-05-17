@@ -1,0 +1,92 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-room-session-navigation",
+  "description": "Implement owner-scoped room-first startup, /session, /room, and /new flows with Web-visible persistence.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Expand CLI source owner and room contracts",
+      "description": "As an Ink app implementer, I need source methods that expose selected-owner rooms and room-scoped sessions.",
+      "acceptanceCriteria": [
+        "CliSessionSource supports active owner, list owners where available, list rooms for owner, active room, list sessions by room, and create session in room",
+        "Local source maps Personal Chat/default room for selected owner",
+        "Existing --session direct-open behavior remains compatible with owner validation",
+        "Focused source tests cover owner/room/session filtering",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement startup owner room session flow",
+      "description": "As a CLI user, I want startup to guide me through owner, room, and session selection before opening a transcript.",
+      "acceptanceCriteria": [
+        "Startup without --session resolves owner then shows room picker when appropriate",
+        "Selecting a room shows room-scoped sessions and a create-new-session option",
+        "Escape backs out one overlay level and Ctrl+C exits cleanly",
+        "pibo debug pty asserts owner/room/session picker sequence in a real TUI run",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Make /session and /room room-first",
+      "description": "As a CLI user, I want /session to choose a room first and /room to change the active room.",
+      "acceptanceCriteria": [
+        "/session opens room picker, then session picker filtered to the selected room",
+        "/room changes active room and reloads room-scoped sessions",
+        "Empty rooms show clear empty state and create-new action",
+        "pibo debug pty covers /session room selection and /room switching",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Make /new owner-scoped room-scoped and Web-visible",
+      "description": "As a Web and CLI user, I want /new to create sessions in the active owner's selected room so organization matches Web.",
+      "acceptanceCriteria": [
+        "/new with active room creates the session in that room without another prompt",
+        "/new without active room opens room picker with Personal Chat selected by default",
+        "Created session writes sessions, session_navigation, event_log, and messages with selected owner and room metadata",
+        "pibo debug pty creates a session, sends a message, and asserts assistant output through real router/source path",
+        "Web/API/store check confirms created session appears in selected owner's room navigation",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Hydrate existing room sessions and transcript by owner",
+      "description": "As a CLI user, I want existing Web sessions in a room to open with transcript history in the terminal.",
+      "acceptanceCriteria": [
+        "Room-scoped session picker lists existing sessions for the selected owner and room only",
+        "Opening an existing session hydrates persisted trace/history from event log",
+        "Sessions from other owners are not listed or opened unless owner is switched",
+        "pibo debug pty opens an existing session by picker and by --session <id> and asserts transcript content",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

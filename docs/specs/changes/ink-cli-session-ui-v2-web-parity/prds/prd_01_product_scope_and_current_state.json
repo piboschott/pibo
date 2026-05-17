@@ -1,0 +1,51 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-product-scope-current-state",
+  "description": "Audit the current Ink/Web terminal implementation, document Web-parity gaps, and establish PTY-backed validation guardrails.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Audit current Web and Ink terminal sharing",
+      "description": "As an implementer, I need a current-state map so I can reuse existing shared code and avoid duplicating Web terminal logic.",
+      "acceptanceCriteria": [
+        "Document shared modules under src/session-ui and their current Web/Ink consumers",
+        "Document DOM-only Web Compact Terminal components and current Ink renderer components",
+        "Document where current CLI source/runtime integration lives",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Document V2 parity scope and command inventory",
+      "description": "As a reviewer, I want a clear V2 scope matrix so the implementation knows what must match Web and what remains Web-only.",
+      "acceptanceCriteria": [
+        "Document Web Slash Commands from gateway capabilities and Web-added commands",
+        "Document CLI-only commands required for owner, room, session, and exit flows",
+        "Document explicit unsupported/product-area boundaries",
+        "Docs include pibo debug pty as the required CLI/TUI E2E validation tool",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Reproduce and document owner-scope visibility bug",
+      "description": "As a host operator, I need the known CLI owner-scope bug captured so the V2 implementation fixes Web invisibility for CLI-created sessions.",
+      "acceptanceCriteria": [
+        "Reproduce or document from local data that CLI-created sessions can use user:unknown and be hidden by Web owner filtering",
+        "Add an implementation note explaining sessions.owner_scope and session_navigation.owner_scope requirements",
+        "Add a focused regression test or pending test fixture that fails for user:unknown fallback if feasible",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

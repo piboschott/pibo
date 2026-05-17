@@ -1,0 +1,91 @@
+{
+  "project": "Ink CLI Session UI V2 Web Parity",
+  "branchName": "ralph/ink-cli-v2-interactive-keyboard-flows",
+  "description": "Adapt Web interactive Slash Command flows to keyboard-native Ink pickers and terminal-safe prompts.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implement generic overlay stack for command menus",
+      "description": "As an Ink UI implementer, I need a reusable overlay stack for nested pickers, confirmations, and details.",
+      "acceptanceCriteria": [
+        "Overlay stack supports suggestions, owner picker, room picker, session picker, command menus, confirmations, and detail views",
+        "Up/Down, Enter, Escape, and Ctrl+C behavior is consistent",
+        "State reducer tests cover nested back/cancel/confirm behavior",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement /thinking direct and picker flows",
+      "description": "As a CLI user, I want to set thinking level by argument or arrow-key picker.",
+      "acceptanceCriteria": [
+        "/thinking <level> validates and applies supported levels",
+        "/thinking opens picker with current/default/off/minimal/low/medium/high/xhigh options when supported",
+        "Picker result posts the routed thinking action and updates status output",
+        "pibo debug pty runs /thinking, navigates levels with arrows, confirms with Enter, and asserts changed status or supported no-op result",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Implement /model provider and model picker",
+      "description": "As a CLI user, I want to choose model provider and model through terminal menus.",
+      "acceptanceCriteria": [
+        "/model opens provider picker then model picker from the routed model menu result",
+        "Disabled or unavailable providers/models remain visible with reasons where available",
+        "Applying a model uses the supported action flow or returns clear unsupported instructions",
+        "pibo debug pty runs /model and asserts provider/model menu structure; if provider auth is unavailable, notes record the reason",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement /login terminal provider flow",
+      "description": "As a CLI user, I want login providers and auth methods shown in a terminal-safe picker.",
+      "acceptanceCriteria": [
+        "/login opens provider/auth-method picker from routed login menu result",
+        "OAuth flows show URL and completion instructions without requiring mouse interaction",
+        "API-key flows do not echo secrets; if hidden input is not implemented, show safe instructions",
+        "pibo debug pty runs /login and asserts provider/auth options or no-provider state",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Define fork upload download terminal equivalents",
+      "description": "As a CLI user, I want fork/upload/download commands to be usable or clearly marked when terminal support differs from Web.",
+      "acceptanceCriteria": [
+        "/fork-candidates lists candidates and supports keyboard selection if implemented",
+        "/download supports terminal path-based download or returns clear instructions",
+        "/upload supports path-based upload to the existing upload destination or returns clear unsupported reason",
+        "Tests cover supported or explicitly unsupported behavior for each command",
+        "pibo debug pty asserts the visible terminal behavior for at least fork-candidates and one file command",
+        "When marking passes true, notes include pibo debug pty command, scripted input/assertions, and raw/clean artifact paths",
+        "Focused tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
