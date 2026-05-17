@@ -4,10 +4,10 @@
 
 ## 1. Spec and Fixture Foundation
 
-- [ ] 1.1 Mark `TERMINAL_DESIGN.md` as the canonical visual contract in the change docs.
+- [x] 1.1 Mark `TERMINAL_DESIGN.md` as the canonical visual contract in the change docs.
 - [ ] 1.2 Add or extract a shared terminal fixture that includes user, assistant, reasoning, tool, status, thinking, model, login, yielded-run, compaction, command, and error rows.
 - [ ] 1.3 Add shared-model tests for row order, card descriptors, progress descriptors, labels, tones, unavailable states, and secret redaction.
-- [ ] 1.4 Keep static boundary tests for `src/session-ui` renderer neutrality and CLI/Web renderer separation.
+- [x] 1.4 Keep static boundary tests for `src/session-ui` renderer neutrality and CLI/Web renderer separation.
 
 ## 2. Command Result Flow
 
@@ -35,18 +35,18 @@
 ## 5. Visual Debugging
 
 - [ ] 5.1 Extend the PTY smoke script or add a new script for rendering-parity flows.
-- [ ] 5.2 Ensure PTY artifacts include raw ANSI, clean text, final screen text, event stream, metadata, and assertions.
+- [x] 5.2 Ensure PTY artifacts include raw ANSI, clean text, final screen text, event stream, metadata, and assertions.
 - [ ] 5.3 Investigate ANSI-to-HTML/SVG/PNG generation for artifact review.
-- [ ] 5.4 If visual conversion is unavailable, document the fallback and keep screen/ANSI artifacts in a report.
-- [ ] 5.5 Add a report under `docs/reports/` with exact PTY commands and artifact paths.
+- [x] 5.4 If visual conversion is unavailable, document the fallback and keep screen/ANSI artifacts in a report.
+- [x] 5.5 Add a report under `docs/reports/` with exact PTY commands and artifact paths.
 
 ## 6. Validation Gates
 
-- [ ] 6.1 Run focused shared-model and Ink renderer tests.
+- [x] 6.1 Run focused shared-model and Ink renderer tests.
 - [ ] 6.2 Run CLI app/controller tests.
-- [ ] 6.3 Run PTY visual smoke tests.
-- [ ] 6.4 Run `npm run typecheck`.
-- [ ] 6.5 Run `npm test`.
+- [x] 6.3 Run PTY visual smoke tests.
+- [x] 6.4 Run `npm run typecheck`.
+- [x] 6.5 Run `npm test`.
 - [ ] 6.6 Run `npm run chat-ui:typecheck`.
 - [ ] 6.7 Run `npm run chat-ui:build`.
 - [ ] 6.8 Install globally and manually test `pibo tui:sessions` over SSH.

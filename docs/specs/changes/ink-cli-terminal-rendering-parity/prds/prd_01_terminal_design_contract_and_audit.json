@@ -18,8 +18,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified 2026-05-17. Commands: docker exec ... npm run build; node scripts/ink-cli-v2-pty-smoke.mjs --artifact-root .tmp/ink-cli-terminal-rendering-parity/audit-2026-05-17; node scripts/ink-cli-v2-pty-smoke.mjs --scenario existing-session-hydration --artifact-root .tmp/ink-cli-terminal-rendering-parity/audit-2026-05-17; pibo debug pty running-row-demo command documented in docs/reports/ink-cli-terminal-rendering-parity-audit-2026-05-17.md. Evidence: mocked default TUI PTY for startup/owner/room/session/message, slash suggestions, /status, thinking picker, existing transcript; demo PTY for running rows. Artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/audit-2026-05-17/{owner-room-session-message,slash-suggestions-status-thinking,existing-session-hydration,running-row-demo} with raw.ansi.log, clean.txt, screen.txt, metadata.json, input/assertions/events. Report compares TERMINAL_DESIGN.md sections and classifies rows/overlays/chrome. Focused PTY/audit script checks and npm test passed. Typecheck passed."
     },
     {
       "id": "US-002",
@@ -36,8 +36,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified 2026-05-17. Added docs/specs/changes/ink-cli-terminal-rendering-parity/terminal-design-contract.md with non-negotiable rules, allowed renderer differences, forbidden outcomes, state.message policy, review checklist, and traceability table. Validation: node --test test/ink-cli-terminal-design-contract.test.mjs; npm run typecheck; npm test. Evidence tier: docs/static contract; no PTY artifact required beyond US-001 audit paths."
     },
     {
       "id": "US-003",
@@ -53,8 +53,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified 2026-05-17. Strengthened test/session-ui-view-models.test.mjs to scan all src/session-ui modules for renderer/browser/style dependencies, scan src/apps/cli-ui for Web/Tailwind/lucide/browser imports, assert Ink rich rows route through buildTerminalCardDescriptor, and assert secret-bearing shared card descriptors are redacted before renderer output. Validation: node --test test/session-ui-view-models.test.mjs test/session-ui-terminal-rows.test.mjs test/cli-ui-ink-renderer.test.mjs; npm run typecheck; npm test. Evidence tier: static/source and shared descriptor fixtures; no PTY required."
     },
     {
       "id": "US-004",
@@ -71,8 +71,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified 2026-05-17. Added reusable visual evidence checklist in terminal-design-contract.md requiring design-rule status, PTY command, artifact directory, evidence tier, observed result, limitations, Web impact, redaction check, and gates. PRD README points Ralph agents to the gate before PRDs 02-07 and requires installed/global pibo tui:sessions validation before final parity. Validation: node --test test/ink-cli-terminal-design-contract.test.mjs; npm run typecheck; npm test. Evidence tier: docs/static checklist plus US-001 PTY audit artifacts."
     }
   ]
 }

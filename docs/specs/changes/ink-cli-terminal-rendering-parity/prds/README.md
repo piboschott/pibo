@@ -40,6 +40,8 @@ This catalog converts the Ink CLI Terminal Rendering Parity change spec into imp
 
 ## Mandatory Ralph Validation Rules
 
+Before implementing PRDs 02-07, apply the reusable gate in `../terminal-design-contract.md#visual-evidence-checklist`. Record the story id, design rules checked, exact PTY command, artifact directory, evidence tier, observed screen result, limitations, Web impact, redaction check, and gate commands.
+
 - Every TUI story that changes user-visible rendering must include a `pibo debug pty ...` validation scenario when feasible.
 - Fake/demo/mocked tests may support a story, but default-path behavior must be validated with a real installed `pibo tui:sessions` path before final completion.
 - Web-impacting stories must include Web Compact Terminal regression checks.

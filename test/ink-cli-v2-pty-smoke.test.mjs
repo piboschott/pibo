@@ -22,7 +22,7 @@ test("Ink CLI V2 PTY smoke runner dry-run emits bounded pibo debug pty commands"
 	assert.match(result.stdout, /--timeout-ms 80000/);
 	assert.match(result.stdout, /--idle-timeout-ms 15000/);
 	assert.match(result.stdout, /--wait-for Slash commands/);
-	assert.match(result.stdout, /--wait-for Status: source=local\/direct/);
+	assert.match(result.stdout, /--wait-for ▣ Status — status · done/);
 	assert.match(result.stdout, /--wait-for Select thinking level/);
 });
 
