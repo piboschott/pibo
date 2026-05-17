@@ -571,4 +571,5 @@ Validation and results for Web compact terminal descriptor consumption and final
   - Web URL for manual/API verification: `http://127.0.0.1:4822/apps/chat/rooms/room_0cdb603e-c6fc-4ae7-8ae9-d01e671aa1db/sessions/ps_81d9f8a4-20c7-43bd-9e70-ed91e0c76d22`.
 - Path classification: Web DOM renderer path consuming shared renderer-neutral descriptors; shared/unit/static tests; installed global CLI real PTY path with deterministic mocked local router/source and real local persistence.
 - Completed stories marked `passes: true`: PRD 03 `US-005`; PRD 07 `US-005`.
-- Implementation commit: `d6b68449aca7f67c6c49f73a510348cfe57504e7`.
+- Implementation commit: `0370e039a1de7782b863858927af73fe4eceafd6`.
+- Evidence/PRD hash update commit: `COMMIT_PENDING_EVIDENCE_UPDATE`.
