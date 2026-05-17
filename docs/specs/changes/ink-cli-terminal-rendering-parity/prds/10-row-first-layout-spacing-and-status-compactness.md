@@ -75,3 +75,8 @@ These may render as structured terminal-native panels because Web also uses spec
 - Ink snapshots cover adjacent user/assistant/tool/command/status/error rows.
 - Snapshot tests fail on `▣` for normal row kinds.
 - PTY visual artifact demonstrates dense transcript spacing with status and normal rows.
+
+## Web UI Preservation Gate
+
+Web Compact Terminal is the reference surface and must not be changed to accommodate Ink. Ink must adapt to Web semantics. Any change under `src/session-ui/**` is Web-impacting and requires Web Compact Terminal regression evidence. Direct changes under `src/apps/chat-ui/src/session-views/compact-terminal/**` are allowed only for tests or stable semantic hooks unless the user explicitly approves a Web behavior change.
+

@@ -95,3 +95,4 @@
 - [ ] 12.3 Run `npm run chat-ui:typecheck` and `npm run chat-ui:build` when Web fixture/hooks change.
 - [ ] 12.4 Run PTY visual smoke tests for `/status`, long output preview/details, JSON function-call rendering, and spacing rhythm.
 - [ ] 12.5 Update a report under `docs/reports/` with exact commands and artifact paths.
+- [ ] 12.6 Run the Web UI preservation gate: if `src/session-ui/**` or Web Compact Terminal files changed, prove Web collapsed previews, status provider rendering, details, JSON, and row grammar still match Web reference behavior; direct Web UI behavior changes require explicit user approval.

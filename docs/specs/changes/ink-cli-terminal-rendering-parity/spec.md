@@ -246,6 +246,7 @@ Renderer tests assert row-first density: one compact block per transcript row, 0
 ## Constraints
 
 - **Renderer separation:** Web DOM components cannot be imported into Ink.
+- **Web preservation:** Web Compact Terminal visual and behavioral rendering is the source of truth. Ink/TUI work MUST NOT change Web UI behavior to match Ink. Any change to shared renderer-neutral code that Web consumes is Web-impacting and requires Web regression evidence. Direct Web UI changes are limited to tests/semantic hooks unless the user explicitly approves a Web behavior change.
 - **Design:** `TERMINAL_DESIGN.md` wins over ad hoc CLI formatting unless an explicit terminal limitation applies.
 - **Security:** Secrets must be redacted in shared descriptors and renderer output.
 - **Performance:** Rendering must remain bounded for large traces.

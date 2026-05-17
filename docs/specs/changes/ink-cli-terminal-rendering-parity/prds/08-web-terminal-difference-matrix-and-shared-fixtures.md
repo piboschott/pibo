@@ -74,6 +74,10 @@ Fixtures MUST be renderer-neutral under `test/fixtures/` or equivalent and cover
 - Ink tests assert equivalent text/ANSI semantics without importing Web components.
 - PTY evidence is not required for every fixture in this PRD, but the matrix must mark which later PRD provides PTY evidence.
 
+## Web UI Preservation Gate
+
+Web Compact Terminal is the reference surface and must not be changed to accommodate Ink. Ink must adapt to Web semantics. Any change under `src/session-ui/**` is Web-impacting and requires Web Compact Terminal regression evidence. Direct changes under `src/apps/chat-ui/src/session-views/compact-terminal/**` are allowed only for tests or stable semantic hooks unless the user explicitly approves a Web behavior change.
+
 ## 6. Non-Goals
 
 - Implementing all renderer changes in this PRD.

@@ -63,3 +63,8 @@ For each command define:
 - Shared room/session view model tests for label resolution.
 - PTY smoke for `/room`, `/session`, `/sessions`, `/session-current`, `/status`, and at least one runtime command.
 - Real/default local source path validates a renamed Web room when feasible; otherwise test fixture documents why real store setup is deferred.
+
+## Web UI Preservation Gate
+
+Web Compact Terminal is the reference surface and must not be changed to accommodate Ink. Ink must adapt to Web semantics. Any change under `src/session-ui/**` is Web-impacting and requires Web Compact Terminal regression evidence. Direct changes under `src/apps/chat-ui/src/session-views/compact-terminal/**` are allowed only for tests or stable semantic hooks unless the user explicitly approves a Web behavior change.
+

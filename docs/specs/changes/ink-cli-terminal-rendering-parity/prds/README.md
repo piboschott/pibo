@@ -71,6 +71,7 @@ Final PRD 07 evidence is summarized in `../../../../reports/ink-cli-terminal-ren
 - Every TUI story that changes user-visible rendering must include a `pibo debug pty ...` validation scenario when feasible.
 - Fake/demo/mocked tests may support a story, but default-path behavior must be validated with a real installed `pibo tui:sessions` path before final completion.
 - Web-impacting stories must include Web Compact Terminal regression checks.
+- Web UI preservation is mandatory: Ralph must not change Web Compact Terminal visual/behavioral render logic to satisfy Ink parity. Ink adapts to Web. Shared `src/session-ui/**` changes are Web-impacting and require Web regression evidence; direct Web changes are limited to tests/semantic hooks unless explicitly approved by the user.
 - Shared-model stories must include tests that prove Web and Ink consume the same row/card descriptors.
 - Every story must include `Typecheck passes`.
 - Renderer stories must include focused snapshot/semantic render tests and no-color/narrow-width coverage where relevant.

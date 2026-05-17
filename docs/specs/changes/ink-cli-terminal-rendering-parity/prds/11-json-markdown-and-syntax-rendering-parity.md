@@ -64,3 +64,8 @@ Add terminal-native renderers for JSON, markdown, and code/shell syntax. The ren
 - Ink snapshots cover color and `NO_COLOR=1`.
 - Web tests assert existing semantic hooks still reflect the same fixture.
 - PTY artifact includes JSON function call, JSON detail, markdown answer, and bash/code rendering.
+
+## Web UI Preservation Gate
+
+Web Compact Terminal is the reference surface and must not be changed to accommodate Ink. Ink must adapt to Web semantics. Any change under `src/session-ui/**` is Web-impacting and requires Web Compact Terminal regression evidence. Direct changes under `src/apps/chat-ui/src/session-views/compact-terminal/**` are allowed only for tests or stable semantic hooks unless the user explicitly approves a Web behavior change.
+

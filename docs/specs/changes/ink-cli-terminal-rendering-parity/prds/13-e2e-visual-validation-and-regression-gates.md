@@ -79,6 +79,10 @@ Create or update `docs/reports/ink-cli-terminal-web-derived-parity-final-YYYY-MM
 - known limitations and follow-ups
 - production/deployment state
 
+## Web UI Preservation Gate
+
+Web Compact Terminal is the reference surface and must not be changed to accommodate Ink. Ink must adapt to Web semantics. Any change under `src/session-ui/**` is Web-impacting and requires Web Compact Terminal regression evidence. Direct changes under `src/apps/chat-ui/src/session-views/compact-terminal/**` are allowed only for tests or stable semantic hooks unless the user explicitly approves a Web behavior change.
+
 ## 5. Non-Goals
 
 - Production deployment.
