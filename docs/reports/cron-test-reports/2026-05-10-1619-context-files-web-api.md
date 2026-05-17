@@ -93,3 +93,11 @@ npm test
 - `context-files-web.test.mjs` um einen Versionskonflikt-Test erweitern; das ist der wichtigste fehlende API-Regressionsschutz, weil der Editor in der UI mit `expectedVersion` speichert.
 - Danach Lifecycle-Abdeckung für `POST`/`PATCH`/`DELETE` hinzufügen, aber als separaten Testfall, damit der bestehende Plugin-Link-Test lesbar bleibt.
 - Event-/Watcher-Abdeckung erst angehen, wenn eine deterministische Strategie vorliegt; Polling-Tests dürfen nicht zu einem fragilen Standard-Subset werden.
+
+## Umgesetzt am 2026-05-11 14:59 Europe/Berlin
+
+- Bereich: API-Fehlerpfad für Optimistic-Concurrency beim Speichern verwalteter Context Files.
+- Geänderte Dateien: `test/context-files-web.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1619-context-files-web-api.md`.
+- Ausgeführte Kommandos: `npm run build && node --test test/context-files-web.test.mjs` (zunächst wegen zu strenger Fehlermeldungs-Erwartung fehlgeschlagen); danach `node --test test/context-files-web.test.mjs`.
+- Ergebnis: Der neue `PUT`-Konfliktfall erwartet `409`, die aktuelle Datei im Response-Body und keine Überschreibung der bestehenden Arbeitskopie; final 2/2 Tests bestanden.
+- Verbleibende offene Punkte: Store-/Diff-Unit-Test, Agent-Scope-Validierungsfehler, unauthentifizierte Requests, Managed-Datei-Lifecycle und Event-/Watcher-Subset bleiben offen.

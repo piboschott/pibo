@@ -127,3 +127,11 @@ npm run build && node --test test/web-http.test.mjs test/web-gateway.test.mjs te
 ## Bewertung
 
 Die Cron-Tests haben eine gute Basis, aber die Granularität ist noch nicht dort, wo Entwickler sie für sichere kleine Änderungen brauchen. Der nächste sinnvolle Schritt ist keine breite End-to-End-Suite, sondern zwei klare Subsets: pure Schedule-Unit-Tests und Store-Lifecycle-Tests. Danach kann eine kleine Service-Suite die Event-Korrelation und Zielauflösung absichern.
+
+## Umgesetzt am 2026-05-11 15:18 Europe/Berlin
+
+- Bereich: Neue Store-Lifecycle-Suite für Cron-Jobs mit wiederkehrender Neuplanung, Fehlerzähler-Reset, `deleteAfterRun`-Semantik und Recovery unterbrochener Läufe.
+- Geänderte Dateien: `test/cron-store-lifecycle.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1718-cron-scheduler-core.md`
+- Ausgeführte Kommandos: `npm run build && node --test test/cron-store-lifecycle.test.mjs`
+- Ergebnis: Build erfolgreich; 4/4 Tests bestanden.
+- Verbleibende offene Punkte: Service-Event-Korrelation und der Randfall `updateJob()` mit vergangenem `at`-Schedule sind weiterhin offen.

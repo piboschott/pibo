@@ -26,6 +26,12 @@ type ModelCatalogRegistry = {
 	getProviderAuthStatus?: (provider: string) => { configured: boolean };
 };
 
+type ModelCatalogServices = {
+	modelRegistry: ModelCatalogRegistry;
+};
+
+type ModelCatalogServicesFactory = (options: { cwd: string }) => Promise<ModelCatalogServices>;
+
 export function buildModelCatalogFromRegistry(registry: ModelCatalogRegistry): ModelCatalog {
 	const providers = new Map<string, ProviderCatalogEntry>();
 
@@ -64,11 +70,18 @@ export function buildModelCatalogFromRegistry(registry: ModelCatalogRegistry): M
 	};
 }
 
-export async function loadModelCatalog(cwd = process.cwd()): Promise<ModelCatalog> {
+export async function loadModelCatalogWithServices(
+	createServices: ModelCatalogServicesFactory,
+	cwd = process.cwd(),
+): Promise<ModelCatalog> {
 	try {
-		const services = await createAgentSessionServices({ cwd });
+		const services = await createServices({ cwd });
 		return buildModelCatalogFromRegistry(services.modelRegistry);
 	} catch {
 		return { providers: [] };
 	}
+}
+
+export async function loadModelCatalog(cwd = process.cwd()): Promise<ModelCatalog> {
+	return loadModelCatalogWithServices(createAgentSessionServices, cwd);
 }

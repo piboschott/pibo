@@ -114,6 +114,70 @@ Der volle `npm test` bleibt sinnvoll für spätere Integrations-/Release-Phasen,
 2. In Entwicklerdokumentation oder Report-Index klar markieren, dass Direktläufe gegen `dist/` vorher `npx tsc -p tsconfig.json` brauchen, wenn Source-Änderungen bewertet werden.
 3. Optional einen separaten Test für `src/gateway/tool.ts` ergänzen, der `sendGatewayMessageAndWaitForReply` mockt oder über einen Mock-Gateway Fehler und Erfolg prüft. Ziel: Tool-Details (`ok`, `error`, `reply`) absichern, ohne Router oder echte Gateway-Prozesse zu starten.
 
+## Umgesetzt am 2026-05-11 11:10 Europe/Berlin
+
+- Bereich: Granularer Gateway-Request-Korrelationstest für `sendGatewayEvent`, der fremde Response-IDs ignoriert und erst die passende Gateway-Response auflöst.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `npm run build`; `node --test test/gateway-request.test.mjs`
+- Ergebnis: Build erfolgreich; Gateway-Request-Subset grün mit 4/4 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Gateway-Reject, Session-Error und fragmentierte Frames.
+
+## Umgesetzt am 2026-05-11 11:13 Europe/Berlin
+
+- Bereich: Negativer Gateway-Request-Pfad für `sendGatewayMessageAndWaitForReply`, wenn der Gateway die Nachricht mit `ok: false` ablehnt.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `npm run build`; `node --test test/gateway-request.test.mjs`
+- Ergebnis: Build erfolgreich; Gateway-Request-Subset grün mit 5/5 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Session-Error, vorhandene Event-ID und fragmentierte Frames.
+
+## Umgesetzt am 2026-05-11 11:58 Europe/Berlin
+
+- Bereich: Vorhandene Caller-Event-ID bleibt im Gateway-Request stabil und wird für die Assistant-Reply-Korrelation verwendet.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `node --test test/gateway-request.test.mjs`
+- Ergebnis: Gateway-Request-Subset grün mit 6/6 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Fehler- und Framing-Fälle aus dem Report, insbesondere Session-Error und fragmentierte Frames.
+
+## Umgesetzt am 2026-05-11 12:04 Europe/Berlin
+
+- Bereich: Negativer Gateway-Request-Pfad für ein korreliertes `session_error`-Router-Event nach erfolgreicher Gateway-Response.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `node --test test/gateway-request.test.mjs`
+- Ergebnis: Gateway-Request-Subset grün mit 7/7 bestandenen Tests.
+- Verbleibende offene Punkte: Weitere kleine Framing-Fälle aus dem Report, insbesondere fragmentierte NDJSON-Frames.
+
+## Umgesetzt am 2026-05-11 12:14 Europe/Berlin
+
+- Bereich: Fragmentierte NDJSON-Gateway-Response wird von `sendGatewayEvent` gepuffert und erst nach vollständiger Zeile verarbeitet.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `npm run build`; `node --test test/gateway-request.test.mjs`
+- Ergebnis: Build erfolgreich; Gateway-Request-Subset grün mit 8/8 bestandenen Tests.
+- Verbleibende offene Punkte: Optional weitere Framing-Varianten für mehrere Frames pro Chunk oder fragmentierte Router-Events; außerdem das separate `src/gateway/tool.ts`-Subset aus dem Report.
+
+## Umgesetzt am 2026-05-11 13:14 Europe/Berlin
+
+- Bereich: Separates Gateway-Tool-Subset für `pibo_gateway_send`, inklusive erfolgreicher Reply-/Details-Rückgabe und Fehlerumwandlung in Tool-Details.
+- Geänderte Dateien: `src/gateway/tool.ts`, `test/gateway-tool.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`
+- Ausgeführte Kommandos: `npm run build`; `node --test test/gateway-tool.test.mjs test/gateway-request.test.mjs`; `npx tsc -p tsconfig.json`; `node --test test/gateway-tool.test.mjs test/gateway-request.test.mjs`
+- Ergebnis: Build und TypeScript-Check erfolgreich; Gateway-Tool-/Request-Subset grün mit 10/10 bestandenen Tests.
+- Verbleibende offene Punkte: Optional weitere Gateway-Tool-Varianten, z. B. erfolgreiche Queue ohne Reply, sowie zusätzliche Tool-Integration über echten Mock-TCP-Gateway.
+
+## Umgesetzt am 2026-05-11 13:19 Europe/Berlin
+
+- Bereich: Gateway-Tool-Variante für erfolgreiche Queue ohne Assistant-Reply.
+- Geänderte Dateien: `src/gateway/tool.ts`, `test/gateway-tool.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`.
+- Ausgeführte Kommandos: `node --test test/gateway-tool.test.mjs` (zunächst rot und reproduzierte den fehlenden Optional-Chain-Pfad); `npm run build`; `node --test test/gateway-tool.test.mjs`.
+- Ergebnis: Build erfolgreich; Gateway-Tool-Subset grün mit 3/3 bestandenen Tests. Abgesichert ist, dass `pibo_gateway_send` bei erfolgreichem Gateway-Queueing ohne Reply einen klaren Queue-Text und Details zurückgibt.
+- Verbleibende offene Punkte: Optional weitere Tool-Integration über echten Mock-TCP-Gateway oder zusätzliche Request-Framing-Varianten.
+
+## Umgesetzt am 2026-05-11 13:33 Europe/Berlin
+
+- Bereich: Zusätzliche Request-Framing-Variante für mehrere NDJSON-Frames in einem TCP-Chunk.
+- Geänderte Dateien: `test/gateway-request.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1408-gateway-request.md`.
+- Ausgeführte Kommandos: `node --test test/gateway-request.test.mjs`.
+- Ergebnis: Gateway-Request-Subset grün mit 9/9 bestandenen Tests. Abgesichert ist, dass `sendGatewayMessageAndWaitForReply` Gateway-Response und korrelierte Assistant-Reply aus demselben Datenchunk verarbeitet.
+- Verbleibende offene Punkte: Optional weitere Gateway-Tool-Integration über echten Mock-TCP-Gateway; keine priorisierte Framing-Lücke aus diesem Report bleibt offen.
+
 ## Kurzfazit
 
 Das bestehende Gateway-Request-Subset ist schnell, sinnvoll granuliert und deckt zwei wichtige Korrelationseigenschaften ab. Die größte Testsystem-Lücke liegt nicht in Breite, sondern in den fehlenden negativen Pfaden und in der `dist/`-Abhängigkeit der Direktläufe. Mit wenigen zusätzlichen Mock-Gateway-Fällen würde dieser Bereich ein sehr gutes frühes Entwickler-Signal liefern.

@@ -22,6 +22,7 @@ test("pibo config stores and reads supported keys", () => {
 		config = setPiboConfigValue(config, "auth.baseURL", "http://localhost:4788");
 		config = setPiboConfigValue(config, "auth.allowedEmails", "you@example.com,friend@example.com");
 		config = setPiboConfigValue(config, "auth.trustedOrigins", "http://4788.192.168.0.204.sslip.io");
+		config = setPiboConfigValue(config, "auth.databasePath", "/tmp/pibo-auth.sqlite");
 		savePiboConfig(config, path);
 
 		const loaded = loadPiboConfig(path);
@@ -30,9 +31,12 @@ test("pibo config stores and reads supported keys", () => {
 		assert.deepEqual(getPiboConfigValue(loaded, "auth.trustedOrigins"), [
 			"http://4788.192.168.0.204.sslip.io",
 		]);
+		assert.equal(getPiboConfigValue(loaded, "auth.databasePath"), "/tmp/pibo-auth.sqlite");
 
-		const deleted = deletePiboConfigValue(loaded, "auth.baseURL");
-		assert.equal(getPiboConfigValue(deleted, "auth.baseURL"), undefined);
+		const withoutBaseURL = deletePiboConfigValue(loaded, "auth.baseURL");
+		assert.equal(getPiboConfigValue(withoutBaseURL, "auth.baseURL"), undefined);
+		const withoutDatabasePath = deletePiboConfigValue(loaded, "auth.databasePath");
+		assert.equal(getPiboConfigValue(withoutDatabasePath, "auth.databasePath"), undefined);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -41,6 +45,18 @@ test("pibo config stores and reads supported keys", () => {
 test("pibo config validates supported keys and auth secret length", () => {
 	assert.throws(() => setPiboConfigValue({}, "unknown.key", "value"), /Unknown config key/);
 	assert.throws(() => setPiboConfigValue({}, "auth.secret", "too-short"), /auth.secret must be at least 32 characters/);
+});
+
+test("pibo config parses JSON string arrays and rejects invalid array values", () => {
+	let config = setPiboConfigValue({}, "auth.allowedEmails", '["you@example.com", " friend@example.com "]');
+	config = setPiboConfigValue(config, "auth.trustedOrigins", '["http://localhost:4788", ""]');
+
+	assert.deepEqual(getPiboConfigValue(config, "auth.allowedEmails"), ["you@example.com", "friend@example.com"]);
+	assert.deepEqual(getPiboConfigValue(config, "auth.trustedOrigins"), ["http://localhost:4788"]);
+	assert.throws(
+		() => setPiboConfigValue({}, "auth.allowedEmails", '["you@example.com", 123]'),
+		/Expected a JSON string array/,
+	);
 });
 
 test("pibo config display masks secret keys", () => {

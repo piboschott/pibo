@@ -122,6 +122,54 @@ npm test
 3. Anschließend einen Cancel-vs-late-complete-Test in `test/runs.test.mjs` hinzufügen.
 4. Die Tool-Oberflächen (`pibo_run_read/wait/ack`) separat testen, aber klein halten; keine Gateway- oder Runtime-Prozesse dafür starten.
 
+## Umgesetzt am 2026-05-11 10:17 Europe/Berlin
+
+- Bereich: Run-Registry-Idempotenz für `cancel` gegen spätes `complete`.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/runs.test.mjs` (zunächst fehlgeschlagen, weil `dist/` fehlte), `npm run build`, `node --test test/runs.test.mjs`.
+- Ergebnis: Nach gezieltem Build grün; 12 Tests bestanden.
+- Verbleibende offene Punkte: Persistenz-/Recovery-Tests für `PiboRunRegistry({ store })` und `recoverInterruptedRuns()` bleiben offen.
+
+## Umgesetzt am 2026-05-11 11:34 Europe/Berlin
+
+- Bereich: `recoverInterruptedRuns()` für nicht retrybare Runs mit abgelaufenem Job-Claim.
+- Geänderte Dateien: `test/reliability-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/reliability-store.test.mjs`.
+- Ergebnis: Grün; 7 Tests bestanden.
+- Verbleibende offene Punkte: Retryable-Recovery (`queued`/reclaimbar), Store-gebundener Registry-Roundtrip und Tool-Oberflächen-Tests bleiben offen.
+
+## Umgesetzt am 2026-05-11 11:40 Europe/Berlin
+
+- Bereich: `recoverInterruptedRuns()` für retrybare Runs mit abgelaufenem Job-Claim.
+- Geänderte Dateien: `test/reliability-store.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/reliability-store.test.mjs`.
+- Ergebnis: Grün; 8 Tests bestanden.
+- Verbleibende offene Punkte: Store-gebundener Registry-Roundtrip und Tool-Oberflächen-Tests bleiben offen.
+
+## Umgesetzt am 2026-05-11 12:19 Europe/Berlin
+
+- Bereich: Store-gebundener Registry-Roundtrip für konsumierte terminale Runs.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/runs.test.mjs`.
+- Ergebnis: Grün; 13 Tests bestanden. Abgedeckt ist, dass `PiboRunRegistry({ store })` einen completed+read Run inklusive `consumed: true`, Resultat und unterdrückter Notification wiederherstellt.
+- Verbleibende offene Punkte: Tool-Oberflächen-Tests für `pibo_run_read`/`wait`/`ack` bleiben offen.
+
+## Umgesetzt am 2026-05-11 12:23 Europe/Berlin
+
+- Bereich: Tool-Oberflächen für `pibo_run_read`, `pibo_run_wait` und `pibo_run_ack`.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/runs.test.mjs`.
+- Ergebnis: Grün; 16 Tests bestanden. Abgedeckt sind terminaler Read-Text mit Details, Wait-Timeout als normaler Zustand und Ack-Snapshot-Details.
+- Verbleibende offene Punkte: Weitere Tool-Oberflächen wie `pibo_run_list`/`status`/`cancel` können bei Bedarf noch separat abgesichert werden.
+
+## Umgesetzt am 2026-05-11 12:38 Europe/Berlin
+
+- Bereich: Weitere Tool-Oberflächen für `pibo_run_list`, `pibo_run_status` und `pibo_run_cancel`.
+- Geänderte Dateien: `test/runs.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1729-run-control-reliability.md`.
+- Ausgeführte Kommandos: `node --test test/runs.test.mjs`.
+- Ergebnis: Grün; 17 Tests bestanden. Abgedeckt sind Listenoptionen für konsumierte/detached Runs, Status-Text und Details sowie Cancel-Text mit konsumiertem Snapshot.
+- Verbleibende offene Punkte: Keine priorisierten kleinen Tool-Oberflächen aus diesem Report bleiben offen; weitere Persistenz- oder Router-Szenarien wären separate neue Verbesserungsbereiche.
+
 ## Fazit
 
 Das Run-Control-Testsubset ist aktuell eines der besseren granularen Subsets im Projekt: schnell, fokussiert und nah am Verhalten. Das größte Risiko liegt nicht in den In-Memory-Run-Zuständen, sondern an der Grenze zur Persistenz und Recovery. Genau dort sollten die nächsten Tests ergänzt werden, bevor größere Integrations- oder Deployment-Suites erweitert werden.

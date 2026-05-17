@@ -24,7 +24,8 @@ function createFakeAuthService() {
 	};
 }
 
-async function startSignalWebHost() {
+async function startSignalWebHost(options = {}) {
+	const { exposeSignalRegistry = true } = options;
 	const sessions = new InMemoryPiboSessionStore();
 	const signals = createPiboSignalRegistry();
 	const storageDir = mkdtempSync(join(tmpdir(), "pibo-chat-signals-"));
@@ -48,9 +49,11 @@ async function startSignalWebHost() {
 		getGatewayActions: () => [],
 		getProfiles: () => [{ name: "test-profile", description: "Test", aliases: [] }],
 		getCapabilityCatalog: () => ({ nativeTools: [], skills: [], subagents: [], contextFiles: [], packages: [], piboTools: [], mcpServers: [] }),
-		snapshotSignalSession: (id) => signals.snapshotSession(id),
-		snapshotSignalTree: (id) => signals.snapshotTree(id),
-		subscribeSignalTree: (id, listener) => signals.subscribe(id, listener),
+		...(exposeSignalRegistry ? {
+			snapshotSignalSession: (id) => signals.snapshotSession(id),
+			snapshotSignalTree: (id) => signals.snapshotTree(id),
+			subscribeSignalTree: (id, listener) => signals.subscribe(id, listener),
+		} : {}),
 		getWebApps() {
 			return [createChatWebApp({ dataStorePath, agentStorePath })];
 		},
@@ -153,6 +156,46 @@ test("chat signal SSE sends snapshot then monotonic patches", async () => {
 		assert.equal(events[0].event, "signal_snapshot");
 		assert.equal(events[1].event, "signal_patch");
 		assert.equal(events[1].data.fromVersion + 1, events[1].data.toVersion);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
+test("chat signal SSE rejects missing root session id", async () => {
+	const { channel, baseURL } = await startSignalWebHost();
+	try {
+		const response = await fetch(`${baseURL}/api/chat/signals/events`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(response.status, 400);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
+test("chat signal SSE enforces root ownership", async () => {
+	const { channel, baseURL, sessions, signals } = await startSignalWebHost();
+	try {
+		const session = createSession(sessions, "ps_signal_sse_owner");
+		signals.project({ type: "session_created", session });
+		const response = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-2" } });
+		assert.equal(response.status, 404);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+
+test("chat signal routes return 503 when registry functions are unavailable", async () => {
+	const { channel, baseURL, sessions } = await startSignalWebHost({ exposeSignalRegistry: false });
+	try {
+		const session = createSession(sessions, "ps_signal_registry_unavailable");
+
+		const snapshot = await fetch(`${baseURL}/api/chat/signals/tree/${session.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(snapshot.status, 503);
+
+		const sse = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-1" } });
+		assert.equal(sse.status, 503);
 	} finally {
 		await channel.stop?.();
 	}

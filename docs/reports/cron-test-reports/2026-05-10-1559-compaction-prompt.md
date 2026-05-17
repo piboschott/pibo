@@ -109,3 +109,27 @@ npm test
 ## Gesamtbewertung
 
 Die vorhandenen Tests sind sinnvoll, schnell und gut isoliert, decken aber nur den Persistenz-/Parser-Rand ab. Für langfristige Sicherheit fehlt vor allem ein zweites granuläres Subset für die eigentliche Compaction-Zusammenstellung. Dieses Subset sollte kleiner bleiben als ein Gateway- oder Browser-Test und keine echten Modellaufrufe benötigen.
+
+## Umgesetzt am 2026-05-11 11:24 Europe/Berlin
+
+- Bereich: Granularer Core-Test für `mode: custom` ohne vorhandene `.pibo/compaction-prompt.md`.
+- Geänderte Dateien: `test/compaction-prompt.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1559-compaction-prompt.md`.
+- Ausgeführte Kommandos: `npm run build -- --pretty false`; `node --test test/compaction-prompt.test.mjs`.
+- Ergebnis: Build erfolgreich; Compaction-Prompt-Subset erfolgreich mit 3/3 Tests.
+- Verbleibende offene Punkte: Preservation-Test für ungültigen Custom-Save, Test für Custom-Mode-Dateierzeugung, Builder-/API-Subsets aus diesem Report.
+
+## Umgesetzt am 2026-05-11 15:14 Europe/Berlin
+
+- Bereich: Preservation-Test für ungültigen Custom-Save.
+- Geänderte Dateien: `test/compaction-prompt.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1559-compaction-prompt.md`.
+- Ausgeführte Kommandos: `npm run build -- --pretty false`; `node --test test/compaction-prompt.test.mjs`.
+- Ergebnis: Build erfolgreich; Compaction-Prompt-Subset grün mit 4/4 Tests. Abgesichert ist, dass ein invalides Custom-Prompt-Save den bestehenden gültigen Custom-Prompt, `updatedAt` und aktiven Custom-Pfad nicht überschreibt.
+- Verbleibende offene Punkte: Test für Custom-Mode-Dateierzeugung, Builder-/API-Subsets aus diesem Report.
+
+## Umgesetzt am 2026-05-11 15:33 Europe/Berlin
+
+- Bereich: Custom-Mode-Dateierzeugung für Compaction-Prompts.
+- Geänderte Dateien: `test/compaction-prompt.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1559-compaction-prompt.md`.
+- Ausgeführte Kommandos: `node --test test/compaction-prompt.test.mjs`.
+- Ergebnis: Grün; Compaction-Prompt-Subset mit 5/5 Tests bestanden. Abgesichert ist, dass `setPiboCompactionPromptMode("custom")` ohne vorhandene Custom-Datei eine Library-Kopie anlegt und als aktiven Custom-Pfad nutzt.
+- Verbleibende offene Punkte: Builder-/API-Subsets aus diesem Report bleiben offen.

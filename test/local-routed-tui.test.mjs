@@ -235,6 +235,104 @@ test("local routed TUI forwards compact instructions additively", async () => {
 	});
 });
 
+test("local routed TUI reports rejected routed requests and keeps input handled", async () => {
+	const client = createFakeClient();
+	const statuses = new Map();
+	const fake = createFakeExtensionApi();
+	const ctx = createFakeExtensionContext(statuses);
+
+	client.sendMessage = (text) => {
+		client.sentMessages.push(text);
+		return Promise.reject(new Error("message transport down"));
+	};
+	client.sendExecution = (action, params) => {
+		client.sentExecutions.push({ action, params });
+		return Promise.reject(new Error("execution transport down"));
+	};
+
+	createLocalRoutedTuiExtension(client)(fake.api);
+	await fake.handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+
+	const messageResult = await fake.handlers.get("input")(
+		{ type: "input", text: "Bitte sende trotz Fehler", source: "interactive" },
+		ctx,
+	);
+	assert.deepEqual(messageResult, { action: "handled" });
+	assert.deepEqual(client.sentMessages, ["Bitte sende trotz Fehler"]);
+	assert.match(fake.messages.at(-1).content, /Local routed request failed: message transport down/);
+	assert.equal(fake.messages.at(-1).details.role, "error");
+
+	const commandResult = await fake.handlers.get("input")(
+		{ type: "input", text: "/status", source: "interactive" },
+		ctx,
+	);
+	assert.deepEqual(commandResult, { action: "handled" });
+	assert.deepEqual(client.sentExecutions, [{ action: "status", params: undefined }]);
+	assert.match(fake.messages.at(-1).content, /Local routed request failed: execution transport down/);
+	assert.equal(fake.messages.at(-1).details.role, "error");
+});
+
+test("local routed TUI renders execution results for routed control actions", async () => {
+	const client = createFakeClient();
+	const statuses = new Map();
+	const fake = createFakeExtensionApi();
+	const ctx = createFakeExtensionContext(statuses);
+
+	createLocalRoutedTuiExtension(client)(fake.api);
+	await fake.handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+
+	const initialMessageCount = fake.messages.length;
+	for (const listener of client.eventListeners) {
+		listener({
+			type: "execution_result",
+			piboSessionId: "ps_local_tui",
+			eventId: "exec-1",
+			action: "status",
+			result: {
+				piboSessionId: "ps_local_tui",
+				queuedMessages: 2,
+				processing: true,
+				streaming: false,
+			},
+		});
+		listener({
+			type: "execution_result",
+			piboSessionId: "ps_local_tui",
+			eventId: "exec-2",
+			action: "thinking",
+			result: { level: "low", supported: false },
+		});
+		listener({
+			type: "execution_result",
+			piboSessionId: "ps_local_tui",
+			eventId: "exec-3",
+			action: "clear_queue",
+			result: { cleared: 3 },
+		});
+		listener({
+			type: "execution_result",
+			piboSessionId: "ps_local_tui",
+			eventId: "exec-4",
+			action: "custom.action",
+			result: { ok: true },
+		});
+	}
+
+	const executionMessages = fake.messages.slice(initialMessageCount);
+	assert.deepEqual(
+		executionMessages.map((message) => message.details.role),
+		["execution", "execution", "execution", "execution"],
+	);
+	assert.equal(
+		executionMessages[0].content,
+		"status: session=ps_local_tui queued=2 processing=true streaming=false",
+	);
+	assert.equal(executionMessages[1].content, "thinking: low (current model does not support thinking)");
+	assert.equal(executionMessages[2].content, "clear: removed 3 queued message(s)");
+	assert.equal(executionMessages[3].content, 'custom.action: {"ok":true}');
+	assert.equal(statuses.get("pibo.local"), "local connected");
+});
+
 test("local routed TUI streams assistant deltas into a live widget", async () => {
 	const client = createFakeClient();
 	const statuses = new Map();

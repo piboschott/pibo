@@ -39,11 +39,24 @@ describe('gateway restart safety', () => {
   });
 });
 
+function executableDeployLines(script) {
+  return script
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .filter((line) => !/^(echo|printf)\b/.test(line));
+}
+
 describe('deploy scripts', () => {
-  it('do not call direct restart operations', () => {
+  it('do not call direct restart, stop, or kill operations', () => {
     for (const path of ['scripts/deploy-web.sh', 'scripts/deploy-web-dev.sh']) {
-      const script = readFileSync(path, 'utf8');
-      assert.doesNotMatch(script, /systemctl|restart pibo|stop pibo/);
+      const executable = executableDeployLines(readFileSync(path, 'utf8')).join('\n');
+      assert.doesNotMatch(executable, /\bsystemctl\b/);
+      assert.doesNotMatch(executable, /\bservice\b.*\brestart\b/);
+      assert.doesNotMatch(executable, /\bpkill\b|\bkill\b/);
+      assert.doesNotMatch(executable, /\bpibo\s+gateway\s+(?:web\s+|dev\s+)?restart\b/);
+      assert.doesNotMatch(executable, /\bdist\/bin\/pibo\.js\s+gateway\s+(?:web\s+|dev\s+)?restart\b/);
+      assert.doesNotMatch(executable, /\brestart\s+pibo\b|\bstop\s+pibo\b/);
     }
   });
   it('print CLI restart instructions', () => {

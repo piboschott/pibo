@@ -217,3 +217,19 @@ node --test test/web-gateway.test.mjs test/better-auth-config.test.mjs
 ## Kurzfazit
 
 Die vorhandenen Tests sichern die wichtigsten produktnahen Web-Host-Pfade ab und laufen aktuell grün. Die Granularität ist jedoch unausgewogen: `sendWebResponse` hat gute kleine Tests, während Request-Konvertierung, JSON-Body-Parsing und Host-Routing überwiegend indirekt über eine breite Chat-Web-Integrationsdatei geprüft werden. Kleine zusätzliche Helper- und Host-Routing-Tests würden Entwicklungsfeedback schneller machen und Fehler präziser lokalisieren.
+
+## Umgesetzt am 2026-05-11 15:04 Europe/Berlin
+
+- Bereich: Granulare HTTP-Helper-Tests für `readJsonBody` und `nodeRequestToWebRequest`.
+- Geänderte Dateien: `test/web-http.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1449-web-http-channel.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/web-http.test.mjs`.
+- Ergebnis: Build erfolgreich; `test/web-http.test.mjs` mit 9/9 Tests bestanden.
+- Verbleibende offene Punkte: Zusätzliche `sendWebResponse`-Randfälle und kleine Host-Channel-Basissuite bleiben offen.
+
+## Umgesetzt am 2026-05-11 15:08 Europe/Berlin
+
+- Bereich: Granulare `sendWebResponse`-Randfälle für 204, bestehendes `content-encoding`, `Vary`-Deduplizierung sowie `Accept-Encoding`-Wildcard/ungültige q-Werte.
+- Geänderte Dateien: `test/web-http.test.mjs`, `docs/reports/cron-test-reports/2026-05-10-1449-web-http-channel.md`.
+- Ausgeführte Kommandos: `npm run build`; `node --test test/web-http.test.mjs`.
+- Ergebnis: Build erfolgreich; `test/web-http.test.mjs` mit 13/13 Tests bestanden.
+- Verbleibende offene Punkte: Weitere optionale `sendWebResponse`-Randfälle wie `304`, `Set-Cookie`-Mehrfachheader und Streaming-Responses sowie die kleine Host-Channel-Basissuite bleiben offen.

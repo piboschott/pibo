@@ -62,6 +62,44 @@ test("gateway starts plugin channels with router and session session context", a
 	assert.equal(stopped, true);
 });
 
+test("gateway stops plugin channels in reverse start order", async () => {
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const events = [];
+
+	registry.registerPlugin(
+		definePiboPlugin({
+			id: "test.channel-stop-order",
+			register(api) {
+				for (const name of ["a", "b"]) {
+					api.registerChannel({
+						name: `ordered-channel-${name}`,
+						kind: "local",
+						auth: { mode: "trusted-local" },
+						start() {
+							events.push(`start:${name}`);
+						},
+						stop() {
+							events.push(`stop:${name}`);
+						},
+					});
+				}
+			},
+		}),
+	);
+
+	const server = new PiboGatewayServer({
+		port: 0,
+		persistSession: false,
+		pluginRegistry: registry,
+		sessionStore: new InMemoryPiboSessionStore(),
+	});
+
+	await server.start();
+	await server.stop();
+
+	assert.deepEqual(events, ["start:a", "start:b", "stop:b", "stop:a"]);
+});
+
 test("gateway rejects required-auth channels without an auth service", async () => {
 	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
 
