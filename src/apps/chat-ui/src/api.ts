@@ -15,6 +15,35 @@ export type ChatUploadResult = {
 	files: ChatUploadedFile[];
 };
 
+export type WebAnnotationTargetSummary = {
+	id: string;
+	type: string;
+	title: string;
+	url: string;
+	attachable: boolean;
+};
+
+export type WebAnnotationBindingSummary = {
+	id: string;
+	piboSessionId: string;
+	piboRoomId?: string;
+	state: string;
+	url: string;
+	title?: string;
+	targetId?: string;
+	createdAt: string;
+	lastInjectedAt?: string;
+	error?: string;
+};
+
+export type WebAnnotationBindingResponse = {
+	ok: true;
+	binding: WebAnnotationBindingSummary;
+	target?: WebAnnotationTargetSummary;
+	injected?: boolean;
+	stopped?: boolean;
+};
+
 export type ContextFileInfo = {
 	key: string;
 	label?: string;
@@ -1358,6 +1387,39 @@ export async function postMessage(piboSessionId: string, text: string, clientTxn
 	});
 }
 
+export async function listWebAnnotationTargets(cdpUrl?: string): Promise<{ ok: true; targets: WebAnnotationTargetSummary[] }> {
+	const params = new URLSearchParams();
+	if (cdpUrl?.trim()) params.set("cdpUrl", cdpUrl.trim());
+	const suffix = params.size ? `?${params.toString()}` : "";
+	return requestJson<{ ok: true; targets: WebAnnotationTargetSummary[] }>(`/api/web-annotations/targets${suffix}`);
+}
+
+export async function createWebAnnotationBinding(input: {
+	piboSessionId: string;
+	piboRoomId?: string;
+	url?: string;
+	targetId?: string;
+	cdpUrl?: string;
+}): Promise<WebAnnotationBindingResponse> {
+	return requestJson<WebAnnotationBindingResponse>("/api/web-annotations/bindings", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(compactObject(input)),
+	});
+}
+
+export async function injectWebAnnotationBinding(bindingId: string, input: {
+	piboSessionId: string;
+	piboRoomId?: string;
+	cdpUrl?: string;
+}): Promise<WebAnnotationBindingResponse> {
+	return requestJson<WebAnnotationBindingResponse>(`/api/web-annotations/bindings/${encodeURIComponent(bindingId)}/inject`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(compactObject(input)),
+	});
+}
+
 export async function postAction(piboSessionId: string, action: string, params?: unknown): Promise<unknown> {
 	return requestJson("/api/chat/action", {
 		method: "POST",
@@ -1432,6 +1494,10 @@ export async function signInWithGoogle(): Promise<void> {
 	const data = (await response.json()) as { url?: string; error?: string; message?: string };
 	if (!response.ok || !data.url) throw new Error(data.message || data.error || "Could not start Google sign in.");
 	location.href = data.url;
+}
+
+function compactObject<T extends Record<string, unknown>>(input: T): Partial<T> {
+	return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined && value !== "")) as Partial<T>;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

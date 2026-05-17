@@ -43,7 +43,7 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, getWorkflowVersionPicker, installUserSkill, listUserSkills, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postProjectWorkflowSession, postProjectWorkflowSessionStart, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, uploadChatFiles, type SaveCustomAgentInput, type UserSettings, type WorkflowVersionPickerOption } from "./api";
+import { createUserSkill, createWebAnnotationBinding, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, getWorkflowVersionPicker, injectWebAnnotationBinding, installUserSkill, listUserSkills, listWebAnnotationTargets, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postProjectWorkflowSession, postProjectWorkflowSessionStart, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, uploadChatFiles, type SaveCustomAgentInput, type UserSettings, type WebAnnotationBindingResponse, type WebAnnotationTargetSummary, type WorkflowVersionPickerOption } from "./api";
 import { THINKING_LEVELS } from "./types";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill, WorkflowLifecycleEventRecord } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
@@ -120,6 +120,7 @@ const LAST_SELECTION_STORAGE_KEY = "pibo.chat.lastSelection";
 const SESSION_VIEW_STORAGE_KEY = "pibo.chat.sessionView";
 const COMPOSER_DRAFT_STORAGE_PREFIX = "pibo.chat.composerDraft.";
 const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
+const WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY = "pibo.chat.webAnnotations.cdpUrl";
 const COMPOSER_HISTORY_LIMIT = 100;
 const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
@@ -3464,6 +3465,12 @@ function SessionTracePane({
 						</div>
 					</div>
 					<div className="flex items-center gap-2">
+						<WebAnnotationsEntryPoints
+							piboSessionId={selectedPiboSessionId}
+							piboRoomId={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+							disabled={!selectedPiboSessionId || selectedRoomArchived}
+							onError={onError}
+						/>
 						<div className="flex items-center rounded-sm border border-slate-700 bg-[#0e1116] p-0.5">
 							{sessionViews.map((view) => {
 								const disabledByRouting = Boolean(allowedSessionViewIdSet && !allowedSessionViewIdSet.has(view.id));
@@ -5190,6 +5197,219 @@ function formatRoomSummary(room: PiboRoom): string {
 	if (room.topic) return room.topic;
 	if (room.workspace) return room.workspace;
 	return room.type;
+}
+
+function WebAnnotationsEntryPoints({
+	piboSessionId,
+	piboRoomId,
+	disabled,
+	onError,
+}: {
+	piboSessionId: string | null;
+	piboRoomId?: string;
+	disabled: boolean;
+	onError: (message: string | null) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const [url, setUrl] = useState("");
+	const [cdpUrl, setCdpUrl] = useState(() => readStoredWebAnnotationsCdpUrl());
+	const [targets, setTargets] = useState<WebAnnotationTargetSummary[]>([]);
+	const [targetsState, setTargetsState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+	const [busy, setBusy] = useState(false);
+	const [status, setStatus] = useState<{ kind: "info" | "success" | "error"; message: string } | null>(null);
+
+	useEffect(() => {
+		if (disabled) setOpen(false);
+	}, [disabled]);
+
+	useEffect(() => {
+		writeStoredWebAnnotationsCdpUrl(cdpUrl);
+	}, [cdpUrl]);
+
+	const loadTargets = async () => {
+		if (!piboSessionId) return;
+		setTargetsState("loading");
+		setStatus(null);
+		try {
+			const result = await listWebAnnotationTargets(cdpUrl);
+			setTargets(result.targets.filter((target) => target.type === "page" || target.attachable));
+			setTargetsState("loaded");
+		} catch (caught) {
+			const message = compactWebAnnotationError(caught, "CDP unavailable");
+			setTargets([]);
+			setTargetsState("error");
+			setStatus({ kind: "error", message });
+			onError(message);
+		}
+	};
+
+	const injectCreatedBinding = async (result: WebAnnotationBindingResponse) => {
+		if (!piboSessionId) throw new Error("No active session context");
+		return injectWebAnnotationBinding(result.binding.id, compactWebAnnotationRequest({ piboSessionId, piboRoomId, cdpUrl }));
+	};
+
+	const startUrlAnnotation = async () => {
+		if (!piboSessionId || busy) return;
+		const targetUrl = url.trim();
+		if (!targetUrl) {
+			setStatus({ kind: "error", message: "URL is required" });
+			return;
+		}
+		setBusy(true);
+		setStatus({ kind: "info", message: "Opening target and injecting overlay…" });
+		try {
+			const binding = await createWebAnnotationBinding(compactWebAnnotationRequest({ piboSessionId, piboRoomId, url: targetUrl, cdpUrl }));
+			const injected = await injectCreatedBinding(binding);
+			setStatus({ kind: "success", message: `Annotation overlay injected for ${webAnnotationTargetLabel(injected.target ?? binding.target, injected.binding.url)}` });
+			setUrl("");
+			onError(null);
+		} catch (caught) {
+			const message = compactWebAnnotationError(caught, "Annotation failed");
+			setStatus({ kind: "error", message });
+			onError(message);
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const attachTarget = async (target: WebAnnotationTargetSummary) => {
+		if (!piboSessionId || busy) return;
+		setBusy(true);
+		setStatus({ kind: "info", message: "Binding selected target and injecting overlay…" });
+		try {
+			const binding = await createWebAnnotationBinding(compactWebAnnotationRequest({ piboSessionId, piboRoomId, targetId: target.id, cdpUrl }));
+			const injected = await injectCreatedBinding(binding);
+			setStatus({ kind: "success", message: `Annotation overlay injected for ${webAnnotationTargetLabel(injected.target ?? target, injected.binding.url)}` });
+			onError(null);
+		} catch (caught) {
+			const message = compactWebAnnotationError(caught, target.attachable ? "Target annotation failed" : "Target not attachable");
+			setStatus({ kind: "error", message });
+			onError(message);
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	return (
+		<div className="relative" data-pibo-debug="web-annotations-entry" data-pibo-session-id={piboSessionId ?? undefined}>
+			<HeaderIconButton
+				onClick={() => { if (!disabled) setOpen((current) => !current); }}
+				title={disabled ? "Select an active session to annotate a web page" : "Web Annotations"}
+				ariaLabel="Web Annotations"
+				active={open}
+			>
+				<Bug size={14} />
+			</HeaderIconButton>
+			{open && !disabled ? (
+				<div className="absolute right-0 top-full z-40 mt-2 w-[min(420px,calc(100vw-24px))] rounded-sm border border-slate-700 bg-[#0e1116] p-3 text-sm shadow-xl" role="dialog" aria-label="Web Annotations">
+					<div className="mb-2 flex items-start justify-between gap-3">
+						<div>
+							<div className="text-xs font-bold uppercase tracking-wider text-[#11a4d4]">Web Annotations</div>
+							<div className="mt-1 text-xs text-slate-500">Bind an explicit URL or selected CDP target to this session.</div>
+						</div>
+						<button type="button" onClick={() => setOpen(false)} className="rounded-sm p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200" aria-label="Close Web Annotations panel">
+							<X size={14} />
+						</button>
+					</div>
+					<label className="mb-2 block text-[11px] font-bold uppercase tracking-wider text-slate-500" htmlFor="web-annotation-url">Annotate URL</label>
+					<div className="grid grid-cols-[1fr_auto] gap-2">
+						<input
+							id="web-annotation-url"
+							value={url}
+							onChange={(event) => setUrl(event.target.value)}
+							onKeyDown={(event) => { if (event.key === "Enter") void startUrlAnnotation(); }}
+							placeholder="http://localhost:5173"
+							disabled={busy}
+							className="h-9 min-w-0 rounded-sm border border-slate-700 bg-[#151f24] px-2 text-xs text-slate-100 outline-none focus:border-[#11a4d4] disabled:opacity-60"
+						/>
+						<button type="button" onClick={() => void startUrlAnnotation()} disabled={busy || !url.trim()} className="h-9 rounded-sm bg-[#11a4d4] px-3 text-xs font-medium text-white disabled:opacity-50">
+							Annotate
+						</button>
+					</div>
+					<label className="mt-3 mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500" htmlFor="web-annotation-cdp-url">CDP URL (optional)</label>
+					<input
+						id="web-annotation-cdp-url"
+						value={cdpUrl}
+						onChange={(event) => setCdpUrl(event.target.value)}
+						placeholder="Use gateway default"
+						disabled={busy}
+						className="h-8 w-full rounded-sm border border-slate-800 bg-[#151f24] px-2 font-mono text-[11px] text-slate-300 outline-none focus:border-[#11a4d4] disabled:opacity-60"
+					/>
+					<div className="mt-3 flex items-center justify-between gap-2">
+						<div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Existing targets</div>
+						<button type="button" onClick={() => void loadTargets()} disabled={busy || targetsState === "loading"} className="inline-flex h-7 items-center gap-1 rounded-sm border border-slate-700 px-2 text-[11px] text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50">
+							<RefreshCw size={12} className={targetsState === "loading" ? "animate-spin" : undefined} /> Refresh
+						</button>
+					</div>
+					<div className="mt-2 max-h-56 overflow-auto rounded-sm border border-slate-800">
+						{targetsState === "idle" ? <div className="px-3 py-3 text-xs text-slate-500">Refresh to list reachable browser targets.</div> : null}
+						{targetsState === "loading" ? <div className="px-3 py-3 text-xs text-slate-400">Loading targets…</div> : null}
+						{targetsState === "loaded" && !targets.length ? <div className="px-3 py-3 text-xs text-slate-500">No attachable browser targets found.</div> : null}
+						{targets.map((target) => (
+							<div key={target.id} className="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-800 px-3 py-2 last:border-b-0">
+								<div className="min-w-0">
+									<div className="truncate text-xs text-slate-200" title={target.title || target.url}>{boundedUiText(target.title || "Untitled target", 120)}</div>
+									<div className="truncate font-mono text-[11px] text-slate-500" title={target.url}>{boundedUiText(target.url || target.id, 160)}</div>
+								</div>
+								<button type="button" onClick={() => void attachTarget(target)} disabled={busy || !target.attachable} title={target.attachable ? "Attach selected target" : "Target is not attachable"} className="h-8 rounded-sm border border-slate-700 px-2 text-[11px] text-slate-300 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-40">
+									Attach
+								</button>
+							</div>
+						))}
+					</div>
+					{status ? (
+						<div className={`mt-2 rounded-sm border px-2 py-2 text-xs ${status.kind === "error" ? "border-red-900 bg-red-950/40 text-red-200" : status.kind === "success" ? "border-emerald-900/60 bg-emerald-950/30 text-emerald-300" : "border-slate-700 bg-[#151f24] text-slate-300"}`}>
+							{status.message}
+						</div>
+					) : null}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+function compactWebAnnotationRequest<T extends Record<string, string | undefined>>(input: T): T {
+	return Object.fromEntries(Object.entries(input).filter(([, value]) => value && value.trim())) as T;
+}
+
+function readStoredWebAnnotationsCdpUrl(): string {
+	try {
+		return localStorage.getItem(WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
+
+function writeStoredWebAnnotationsCdpUrl(value: string): void {
+	try {
+		if (value.trim()) localStorage.setItem(WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY, value.trim());
+		else localStorage.removeItem(WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY);
+	} catch {
+		// Ignore storage errors in private windows or locked-down browser contexts.
+	}
+}
+
+function compactWebAnnotationError(caught: unknown, fallback: string): string {
+	const message = errorMessage(caught);
+	if (!message || message === "undefined") return fallback;
+	if (/target.*not found|selected cdp target/i.test(message)) return `Target not found: ${message}`;
+	if (/inject|overlay|evaluation/i.test(message)) return `Injection failed: ${message}`;
+	if (/chrome target discovery|failed to fetch|cdp|econnrefused|connect/i.test(message)) return `CDP unavailable: ${message}`;
+	return `${fallback}: ${message}`;
+}
+
+function webAnnotationTargetLabel(target: WebAnnotationTargetSummary | undefined, fallbackUrl?: string): string {
+	const value = target?.url || fallbackUrl || target?.title || "target";
+	try {
+		const parsed = new URL(value);
+		return `${parsed.host}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+	} catch {
+		return boundedUiText(target?.title || value, 80);
+	}
+}
+
+function boundedUiText(value: string, max: number): string {
+	return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
 }
 
 function Composer({

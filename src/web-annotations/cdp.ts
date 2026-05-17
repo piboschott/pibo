@@ -119,6 +119,7 @@ export class WebAnnotationCdpService {
 		const target = await this.resolveBindingTarget(binding);
 		const client = await connectCdpTarget(target, this.timeoutMs);
 		try {
+			await client.evaluate<boolean>(buildDocumentReadyExpression(), this.timeoutMs);
 			const result = await client.evaluate<{ ok?: boolean; url?: string; title?: string }>(buildInjectExpression({
 				bindingId: binding.id,
 				bindingToken: String(binding.metadata?.overlaySubmissionToken ?? ""),
@@ -246,6 +247,18 @@ function mergeMetadata(existing: PiboJsonObject | undefined, next: PiboJsonObjec
 
 function createOverlaySubmissionToken(): string {
 	return randomBytes(24).toString("base64url");
+}
+
+function buildDocumentReadyExpression(): string {
+	return String.raw`new Promise((resolve) => {
+  if (document.documentElement) {
+    resolve(true);
+    return;
+  }
+  const done = () => resolve(Boolean(document.documentElement));
+  document.addEventListener("DOMContentLoaded", done, { once: true });
+  setTimeout(done, 2000);
+})`;
 }
 
 function buildInjectExpression(config: { bindingId: string; bindingToken: string; apiBaseUrl?: string }): string {

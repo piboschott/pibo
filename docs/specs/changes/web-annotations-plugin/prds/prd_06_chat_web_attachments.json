@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed by Chat Web Web Annotations header entry point with URL annotation, optional CDP URL, target refresh/list, explicit attach actions, disabled active-session gating, concise error status, and DOM-ready injection guard for newly opened targets. Docker worker typecheck, build, focused web-annotation tests, and browser verification passed."
     },
     {
       "id": "US-002",
