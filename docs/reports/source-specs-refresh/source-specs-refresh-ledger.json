@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:17:50Z",
+    "lastUpdatedAt": "2026-05-17T00:35:50Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -14,14 +14,14 @@
     ]
   },
   "cursor": {
-    "nextQueueId": "q-project-workflow",
-    "lastIteration": 0
+    "nextQueueId": "q-signals-telemetry",
+    "lastIteration": 1
   },
   "decisionRequests": [],
   "queue": [
     {
       "id": "q-project-workflow",
-      "status": "pending",
+      "status": "completed",
       "priority": 10,
       "title": "Project and Workflow source-backed specs",
       "paths": [
@@ -32,7 +32,21 @@
         "docs/specs/changes/pibo-workflow-system-v1/",
         "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
       ],
-      "reason": "High staleness risk: Project and Workflow code changed heavily after the source-spec cron stopped. Preserve intentional future/target workflow specs where applicable."
+      "reason": "High staleness risk: Project and Workflow code changed heavily after the source-spec cron stopped. Preserve intentional future/target workflow specs where applicable.",
+      "startedAt": "2026-05-17T00:35:50Z",
+      "completedAt": "2026-05-17T00:35:50Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/chat-web-projects-area.md",
+          "docs/specs/capabilities/pibo-workflow-framework-package.md",
+          "docs/specs/capabilities/chat-web-workflow-session-view.md",
+          "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+          "docs/specs/changes/pibo-workflow-system-v1/",
+          "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-signals-telemetry"
+      }
     },
     {
       "id": "q-signals-telemetry",
@@ -45,7 +59,10 @@
         "docs/specs/capabilities/runtime-observability-telemetry.md",
         "docs/specs/changes/pibo-observability-debug-telemetry/"
       ],
-      "reason": "Telemetry and staleness-signal implementation landed after many source-backed specs were generated."
+      "reason": "Telemetry and staleness-signal implementation landed after many source-backed specs were generated.",
+      "cursor": {
+        "next": true
+      }
     },
     {
       "id": "q-skills-context-runtime",
@@ -111,15 +128,146 @@
       "reason": "After high-risk areas, perform a broad inventory to catch remaining source-backed specs that changed since 2026-05-11."
     }
   ],
-  "completed": [],
-  "staleFindings": [],
-  "updatedSpecs": [],
+  "completed": [
+    {
+      "id": "q-project-workflow",
+      "completedAt": "2026-05-17T00:35:50Z",
+      "title": "Project and Workflow source-backed specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/chat-web-projects-area.md",
+        "docs/specs/capabilities/pibo-workflow-framework-package.md",
+        "docs/specs/capabilities/chat-web-workflow-session-view.md",
+        "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+        "docs/specs/changes/pibo-workflow-system-v1/",
+        "docs/specs/changes/pibo-workflow-ui-authoring-v2/"
+      ],
+      "evidence": [
+        "src/apps/chat/data/project-service.ts",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx",
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "packages/workflows/src/index.ts",
+        "packages/workflows/src/store/index.ts",
+        "packages/workflows/src/registry/index.ts",
+        "packages/workflows/src/testing/"
+      ],
+      "notes": [
+        "Source-backed capability specs were refreshed for configured workflow Project Sessions, explicit workflow start, workflow snapshots/runs/waits/human actions, richer Workflow/XState session view panels, workflow package definition-hash export, schema version 3, and catalog/editor store entities.",
+        "Workflow System V1 and Workflow UI Authoring V2 change specs were classified as mixed current/future and preserved as target/change specs rather than rewritten to current implementation."
+      ]
+    }
+  ],
+  "staleFindings": [
+    {
+      "id": "sf-project-workflow-projects-configured-sessions",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-projects-area.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Projects spec still described simple-chat-only Project workflow creation, but current code supports configured workflow-backed Project Sessions from published catalog versions plus explicit run start.",
+      "sourceEvidence": [
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat/data/project-service.ts",
+        "src/apps/chat-ui/src/App.tsx"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-package-exports-store",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/pibo-workflow-framework-package.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Workflow package spec omitted definition-hash exports, UI published-version registry validation, schema version 3, and catalog/editor store entities.",
+      "sourceEvidence": [
+        "packages/workflows/src/index.ts",
+        "packages/workflows/src/store/index.ts",
+        "packages/workflows/src/registry/index.ts",
+        "packages/workflows/src/testing/workflow-published-versions.test.ts",
+        "packages/workflows/src/testing/workflow-catalog-entities.test.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-session-view-rich-projection",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-workflow-session-view.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "Workflow session view spec described a minimal read-only projection; current view includes configured-session execution context, run inspection, definition links, nested links, pending human actions, lifecycle-derived histories, attempts, transfers, and runtime errors.",
+      "sourceEvidence": [
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "src/apps/chat-ui/src/App.tsx",
+        "src/apps/chat/web-app.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-xstate-context",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "stale_current_behavior",
+      "summary": "XState view spec needed current configured-session/run-inspection context and Workflows-tab authoring boundary language.",
+      "sourceEvidence": [
+        "src/apps/chat-ui/src/session-views/WorkflowXStateSessionView.tsx",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-project-workflow-change-spec-classification",
+      "queueId": "q-project-workflow",
+      "path": "docs/specs/changes/pibo-workflow-system-v1/; docs/specs/changes/pibo-workflow-ui-authoring-v2/",
+      "foundAt": "2026-05-17T00:35:50Z",
+      "severity": "classification_only",
+      "summary": "Workflow System V1 and Workflow UI Authoring V2 change specs are mixed current/future target specs. They were not rewritten to current code during this source-backed capability refresh.",
+      "sourceEvidence": [
+        "packages/workflows/src/",
+        "src/apps/chat/web-app.ts",
+        "src/apps/chat-ui/src/WorkflowsArea.tsx"
+      ],
+      "resolution": "preserved_future_target_specs"
+    }
+  ],
+  "updatedSpecs": [
+    {
+      "path": "docs/specs/capabilities/chat-web-projects-area.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Refreshed current Projects workflow behavior for published workflow catalog selection, configured workflow sessions, immutable snapshots, explicit one-run start, bootstrap workflow enrichment, and verification notes."
+    },
+    {
+      "path": "docs/specs/capabilities/pibo-workflow-framework-package.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Added definition-hash export, published-version registry validation, schema version 3, catalog/editor store entities, and updated package test inventory."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-workflow-session-view.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Updated high-level Workflow session view contract for richer configured-session context and clarified that detailed component behavior is owned by the XState view spec."
+    },
+    {
+      "path": "docs/specs/capabilities/chat-web-workflow-xstate-session-view.md",
+      "queueId": "q-project-workflow",
+      "updatedAt": "2026-05-17T00:35:50Z",
+      "summary": "Refreshed XState view behavior for configured/run lifecycle detection, execution shell, run inspection, pending human actions, definition links, and Workflows-tab authoring boundary."
+    }
+  ],
   "blockedItems": [],
   "commits": [],
   "runNotes": [
     {
       "at": "2026-05-17T00:17:50Z",
       "note": "Initial ledger created before starting Ralph."
+    },
+    {
+      "at": "2026-05-17T00:35:50Z",
+      "note": "Audited q-project-workflow. Updated source-backed capability specs and preserved Workflow System V1 / Workflow UI Authoring V2 change specs as mixed current/future target specs."
     }
   ]
 }

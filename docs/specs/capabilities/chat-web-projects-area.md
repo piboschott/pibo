@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-05  
-**Updated:** 2026-05-11  
+**Updated:** 2026-05-17
 **Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code  
 **Related docs:** `GLOSSARY.md`, [Chat Web Rooms and Event Streams](./chat-web-rooms-and-event-streams.md), [Chat Web Trace and Terminal View](./chat-web-trace-and-terminal-view.md), [Pibo Session Routing](./pibo-session-routing.md), [Pibo Workflow System V1](../changes/pibo-workflow-system-v1/spec.md)
 
@@ -20,7 +20,7 @@ The system SHALL let an authenticated Chat Web user manage project containers an
 
 Current code defines `ChatProjectService` backed by `.pibo/web-projects.sqlite`. The Projects area uses routes under `/projects`, `/projects/:projectId`, and `/projects/:projectId/sessions/:piboSessionId`. Server APIs live under `/api/chat/projects*` and `/api/chat/project-sessions/*`. Project Sessions are normal Pibo Sessions created through the web channel with their workspace set to the Project folder and metadata that links them back to the Project.
 
-The only user-creatable workflow accepted by the web API is `simple-chat`. The data model can store other workflow ids and workflow run ids for workflow-linked sessions.
+The Projects API now has two creation paths: normal Project chat sessions still use `simple-chat`, while `/api/chat/projects/:projectId/workflow-sessions` creates configured workflow-backed Project Sessions from published workflow catalog versions. Configured workflow sessions store workflow id/version, session-scoped configuration, a workflow definition snapshot, validation results, and lifecycle events; they do not create a workflow run until the user explicitly starts the session.
 
 ## Scope
 
@@ -31,11 +31,11 @@ The only user-creatable workflow accepted by the web API is `simple-chat`. The d
 - Project CRUD API behavior exposed by Chat Web.
 - Project Session creation, rename, archive, and message sending.
 - Project route selection and bootstrap payload behavior.
-- Workflow metadata currently stored on Project Sessions.
+- Workflow metadata, configuration snapshots, run records, wait tokens, human actions, definition links, and lifecycle events currently stored or surfaced for Project Sessions.
 
 ### Out of Scope
 
-- Implementing complex workflow execution — covered by the workflow change specs.
+- Implementing full workflow node execution beyond configured-session records, run-start records, and workflow inspection metadata — covered by the workflow change specs.
 - Docker worker or worktree lifecycle for Project Sessions — not performed by `simple-chat` Projects code.
 - Multi-user project membership beyond current authenticated owner-scope checks.
 - Git, CI, file-browser, and deployment integrations.
@@ -141,24 +141,46 @@ A created Project Session can be retrieved from the session router by its Pibo S
 - AND its metadata contains the Project id and workflow id
 - AND the Projects store records the same Pibo Session ID.
 
-### Requirement: V1 user-created workflow is simple-chat only
+### Requirement: Project workflow sessions use published workflow catalog versions
 
-The system MUST default blank workflow input to `simple-chat` and reject other user-provided workflow ids through the Chat Web Project Session creation API.
+The system MUST keep normal Project chat creation on `simple-chat` while allowing workflow-backed Project Sessions to be created only from explicit published workflow id/version selections.
 
 #### Current
 
-`normalizeProjectWorkflowId` accepts missing, null, empty, or `simple-chat` values and throws `400` for any other value. The store still supports arbitrary workflow ids for internal workflow-run links.
+`POST /api/chat/projects/:projectId/sessions` creates a normal `simple-chat` Project Session. `POST /api/chat/projects/:projectId/workflow-sessions` requires explicit `workflowId` and `workflowVersion`, resolves them through the published workflow version catalog, rejects draft, archived, deleted, unknown, or validation-failing versions, stores the session in `configured` state, and saves an immutable workflow session snapshot with configuration and validation metadata.
 
 #### Acceptance
 
-Posting a Project Session create request with `workflowId: "standard-project"` fails in the current V1 API. Posting no workflow id creates a `simple-chat` Project Session.
+Normal Project session creation without a workflow selection creates `simple-chat`. Workflow-backed creation with `standard-project@1.0.0` succeeds when validation passes and stores the selected workflow version. Workflow-backed creation with a draft, archived, deleted, missing, or validation-failing workflow version fails before inserting a Project Session link.
 
-#### Scenario: Unsupported workflow id
+#### Scenario: Configured workflow Project Session
 
 - GIVEN a Project exists
-- WHEN the user posts `{ workflowId: "standard-project" }` to `/api/chat/projects/:projectId/sessions`
-- THEN the API returns a client error
-- AND no Project Session is created for that request.
+- AND `standard-project@1.0.0` is a published workflow catalog version
+- WHEN the user posts that workflow id/version to `/api/chat/projects/:projectId/workflow-sessions`
+- THEN the response status is `201`
+- AND the Project Session state is `configured`
+- AND a workflow session snapshot stores the selected definition, configuration, hashes, and validation summary.
+
+### Requirement: Workflow runs start explicitly and remain one-per-session
+
+The system MUST NOT start a workflow run when a configured Project Session is created, and MUST create at most one workflow run for that Project Session when start succeeds.
+
+#### Current
+
+`POST /api/chat/projects/:projectId/workflow-sessions/:piboSessionId/start` requires same-origin JSON, resolves the owned Project Session, loads its snapshot, revalidates the effective definition, records validation and start lifecycle events, then calls `startWorkflowSessionRun`. The store rejects changing the selected workflow id/version and enforces one `project_workflow_runs` row per Pibo Session.
+
+#### Acceptance
+
+Creating a workflow Project Session leaves `workflowRunId` empty. Starting it after validation creates a `wfr_` run, changes the Project Session state to `running`, updates session metadata with the run id, and returns the existing run on repeat start calls.
+
+#### Scenario: Explicit workflow start
+
+- GIVEN a configured workflow Project Session with no run
+- WHEN the user starts it
+- THEN validation runs against the saved snapshot
+- AND a workflow run is stored only if validation passes
+- AND starting the same session again returns the existing run instead of creating a second run.
 
 ### Requirement: Workflow-run links preserve main/sub distinction
 
@@ -186,11 +208,11 @@ The system MUST return a bootstrap payload that includes project identity, selec
 
 #### Current
 
-`GET /api/chat/projects/bootstrap` ensures the Personal Project, selects the requested Project or Personal Project, creates a Personal Project `simple-chat` session if none exists, selects the requested session/current main/first available session, builds session nodes for the Project folder, applies Project Session archive state, and appends catalog data.
+`GET /api/chat/projects/bootstrap` ensures the Personal Project, selects the requested Project or Personal Project, creates a Personal Project `simple-chat` session if none exists, selects the requested session/current main/first available session, builds session nodes for the Project folder, applies Project Session archive state, enriches workflow-backed sessions with definition links and pending human actions, includes recent workflow lifecycle events, and appends catalog data.
 
 #### Acceptance
 
-A bootstrap response always includes `personalProject`, `selectedProjectId`, `projectSessions`, `sessions`, and catalog fields. When a selected Pibo Session exists, the response includes `session` and `selectedPiboSessionId` matching that session.
+A bootstrap response always includes `personalProject`, `selectedProjectId`, `projectSessions`, `workflowLifecycleEvents`, `sessions`, and catalog fields. When a selected Pibo Session exists, the response includes `session` and `selectedPiboSessionId` matching that session.
 
 #### Scenario: Personal Project empty state
 
@@ -269,7 +291,7 @@ Navigating to a Project Session changes the browser route to `/projects/<project
 - **Compatibility:** Project Sessions must remain valid Pibo Sessions and use Pibo Session IDs as the routing identity.
 - **Security / Privacy:** Mutating Project routes must require same-origin JSON and authenticated web sessions. Project message sends must reject sessions outside the caller's owner scope.
 - **Data:** The Projects store is local SQLite and is not the source of truth for Pi transcripts or Pibo Session records.
-- **Workflow:** The web API exposes only `simple-chat` creation in V1 even though the store can record workflow-run metadata.
+- **Workflow:** Normal Project chat creation remains `simple-chat`; workflow-backed Project Session creation must use explicit published catalog versions, immutable snapshots, validation, and explicit run start.
 
 ## Success Criteria
 
@@ -279,6 +301,7 @@ Navigating to a Project Session changes the browser route to `/projects/<project
 - [ ] SC-004: Project messages append accepted chat events with Project id and route through the selected Pibo Session.
 - [ ] SC-005: Projects UI routes never collapse into Rooms/Sessions routes during bootstrap, selection, or message send.
 - [x] SC-006: Workflow-run Project Session links preserve child-session metadata without replacing the current main Project Session, as covered by `test/project-service-workflow-link.test.mjs`.
+- [ ] SC-007: Workflow-backed Project Session creation accepts only published catalog versions, saves a configuration snapshot, and starts at most one run after explicit validation.
 
 ## Verification Coverage
 
@@ -291,13 +314,13 @@ This section separates behavior with direct tests from behavior that is currentl
 ### Source-Inspected Only
 
 - Store initialization, uniqueness indexes, Personal Project creation, Project CRUD, archive/delete, and Project Session archive behavior are defined in `src/apps/chat/data/project-service.ts` but do not have focused direct tests in the current test inventory.
-- Authenticated Projects bootstrap, `simple-chat` workflow validation, Project Session creation through `channelContext.createSession`, Project message ingestion, and Project Session update APIs are defined in `src/apps/chat/web-app.ts` but do not have focused direct tests in the current test inventory.
+- Authenticated Projects bootstrap, published workflow catalog selection, configured workflow session creation/start, workflow snapshots, lifecycle events, Project Session creation through `channelContext.createSession`, Project message ingestion, and Project Session update APIs are defined in `src/apps/chat/web-app.ts` but do not have focused direct tests in the current test inventory.
 - Projects route parsing, route-specific selection, and reuse of the shared session surface are defined in `src/apps/chat-ui/src/main.tsx` and `src/apps/chat-ui/src/App.tsx` but do not have focused direct tests in the current test inventory.
 
 ### Test Gaps
 
 - Add store tests for Personal Project idempotency, duplicate project names/folders, archive-before-delete, and Project Session archive filtering.
-- Add API tests for Projects bootstrap empty state, unsupported workflow id rejection, Project Session creation metadata/workspace, and Project message idempotency.
+- Add API tests for Projects bootstrap empty state, published/draft/archived workflow version handling, configured workflow session snapshot creation, explicit start idempotency, Project Session creation metadata/workspace, and Project message idempotency.
 - Add UI or route-parser tests that prove `/projects`, `/projects/:projectId`, and `/projects/:projectId/sessions/:piboSessionId` remain distinct from Room routes.
 
 ### Recommended Test Matrix
@@ -308,7 +331,7 @@ This section separates behavior with direct tests from behavior that is currentl
 | Project archive and delete | Default `listProjects` excludes archived Projects; `includeArchived` includes them; delete fails before archive; delete fails with a wrong confirmation name; delete removes Project Session links; `deleteFiles: true` removes the Project folder while `false` keeps it. | Project archive and delete are explicit | `test/project-service-store.test.mjs` |
 | Project Session store behavior | `addProjectSession` defaults to main `simple-chat`; main sessions update `currentMainSessionId`; sub-sessions do not replace it; `setProjectSessionArchived` hides sessions from default lists and returns them when archived state changes. | Project Sessions are normal routed Pibo Sessions with project metadata; Workflow-run links preserve main/sub distinction; Project Session updates are scoped to existing sessions | `test/project-service-store.test.mjs` |
 | Projects bootstrap API | First bootstrap for a new owner creates the Personal Project and one selected `simple-chat` session; a requested Project selects its current main session; missing Pibo Session links are filtered from session nodes; archived session flags are projected onto returned nodes; catalog/profile fields remain present. | Personal Project is created on bootstrap; Projects bootstrap resolves selection and session tree | `test/chat-projects-api.test.mjs` |
-| Project creation and workflow API | `POST /api/chat/projects` requires same-origin JSON; create returns `201` with an absolute unique folder; Project Session creation stores channel `pibo.chat-web`, kind `chat`, workspace equal to the Project folder, and metadata `{ projectId, projectSessionKind: "main", projectWorkflowId }`; missing workflow id defaults to `simple-chat`; unsupported workflow id returns a client error and creates no session link. | Project creation validates name and folder; Project Sessions are normal routed Pibo Sessions with project metadata; V1 user-created workflow is simple-chat only | `test/chat-projects-api.test.mjs` |
+| Project creation and workflow API | `POST /api/chat/projects` requires same-origin JSON; create returns `201` with an absolute unique folder; normal Project Session creation stores channel `pibo.chat-web`, kind `chat`, workspace equal to the Project folder, and `simple-chat` metadata; workflow-backed creation requires an explicit published workflow id/version, stores a configured Project Session, saves a snapshot, and rejects draft/archived/deleted/unknown/invalid versions. | Project creation validates name and folder; Project Sessions are normal routed Pibo Sessions with project metadata; Project workflow sessions use published workflow catalog versions | `test/chat-projects-api.test.mjs` |
 | Project message API | Message sends require same-origin JSON; unknown sessions fail; another owner's session fails; non-Project sessions fail; a new `clientTxnId` appends one `user.message.accepted` event with `projectId` before `channelContext.emit`; reusing the same transaction id returns the existing accepted event and does not emit a second runtime message. | Project messages are owner-scoped and logged as chat events | `test/chat-projects-api.test.mjs` |
 | Project Session patch API | Title updates require `channelContext.updateSession`; missing update support returns not implemented; owned Project Sessions can update title and archive state; unowned sessions are rejected; archive state appears in later bootstrap data. | Project Session updates are scoped to existing sessions | `test/chat-projects-api.test.mjs` |
 | Projects route parsing and navigation | `/projects`, `/projects/:projectId`, and `/projects/:projectId/sessions/:piboSessionId` parse to the Projects area; selecting a Project Session navigates to the Projects session route; the same Pibo Session id is not rewritten to `/rooms/...` or `/sessions/...`; local archived toggles keep their `pibo.chat.projects.*` keys. | Projects routes remain separate from room routes | route-parser/component test or browser check |
@@ -317,7 +340,7 @@ This section separates behavior with direct tests from behavior that is currentl
 
 ### Assumptions
 
-- `simple-chat` remains the only user-creatable Project workflow until the workflow runner is implemented.
+- `simple-chat` remains the normal Project chat workflow; configured workflow-backed Project Sessions are created through the explicit workflow-session endpoint from published catalog versions.
 - Project folders are trusted local paths selected by the authenticated operator.
 - Current owner-scope enforcement for Projects is split between web-session checks, Pibo Session ownership checks, and future project-list filtering work.
 
@@ -325,7 +348,7 @@ This section separates behavior with direct tests from behavior that is currentl
 
 - Should `ChatProjectService.listProjects` filter by owner scope before any multi-user deployment?
 - Should the Personal Project folder be configurable per user in the UI?
-- Should unsupported workflow ids remain hard-rejected by the web API once workflow definitions are registered dynamically?
+- Should configured workflow Project Sessions move from start-record creation to actual asynchronous workflow node execution in the Projects API, or remain a separate workflow-kernel concern?
 
 ## Traceability
 
@@ -336,7 +359,8 @@ This section separates behavior with direct tests from behavior that is currentl
 | Project creation validates name and folder | Create project with folder | `src/apps/chat/web-app.ts`, `src/apps/chat/data/project-service.ts` | Source-inspected |
 | Project archive and delete are explicit | Delete archived project | `src/apps/chat/data/project-service.ts`, `src/apps/chat/web-app.ts` | Source-inspected |
 | Project Sessions are normal routed Pibo Sessions with project metadata | Create Project Session | `src/apps/chat/web-app.ts` | Source-inspected |
-| V1 user-created workflow is simple-chat only | Unsupported workflow id | `src/apps/chat/web-app.ts` | Source-inspected |
+| Project workflow sessions use published workflow catalog versions | Configured workflow Project Session | `src/apps/chat/web-app.ts`, `src/apps/chat/data/project-service.ts`, `src/apps/chat-ui/src/App.tsx` | Source-inspected |
+| Workflow runs start explicitly and remain one-per-session | Explicit workflow start | `src/apps/chat/web-app.ts`, `src/apps/chat/data/project-service.ts`, `src/apps/chat-ui/src/App.tsx` | Source-inspected |
 | Workflow-run links preserve main/sub distinction | Link child workflow run | `src/apps/chat/data/project-service.ts`, `test/project-service-workflow-link.test.mjs` | Store-tested |
 | Projects bootstrap resolves selection and session tree | Personal Project empty state | `src/apps/chat/web-app.ts` | Source-inspected |
 | Project messages are owner-scoped and logged as chat events | Send Project message | `src/apps/chat/web-app.ts` | Source-inspected |
