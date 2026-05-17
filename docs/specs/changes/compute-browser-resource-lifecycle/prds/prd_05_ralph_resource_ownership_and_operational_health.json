@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Ralph job/run resource metadata persistence with resource_json migrations for jobs and runs, resource normalization, owner-scoped update helpers, CLI JSON visibility through existing list/runs JSON, older-row compatibility tests, and Docker-worker validation. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph tests and full npm run typecheck passed."
     },
     {
       "id": "US-002",
