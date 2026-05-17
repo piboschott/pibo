@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { buildTerminalCardDescriptor, progressBarText, type CompactTerminalLine, type CompactTerminalRow, type TerminalCardDescriptor, type TerminalCardTone } from "../../session-ui/index.js";
+import { buildTerminalCardDescriptor, progressBarText, redactTerminalSecret, type CompactTerminalDetailItem, type CompactTerminalLine, type CompactTerminalRow, type TerminalCardDescriptor, type TerminalCardTone } from "../../session-ui/index.js";
 import { colorForRowKind, colorForStatus, colorForTone, markerForStatus, type InkTerminalColor } from "./inkColors.js";
 import { formatInkJson } from "./inkJson.js";
 import { renderInkMarkdownLines } from "./inkMarkdown.js";
@@ -14,7 +14,8 @@ export type InkTerminalRowProps = {
 
 export function InkTerminalRow({ row, maxLineChars = 220, maxMarkdownLines = 80 }: InkTerminalRowProps): React.ReactElement {
 	const card = buildTerminalCardDescriptor(row);
-	if (card) return React.createElement(InkTerminalCard, { card, maxLineChars });
+	const detailLines = rowDetailLines(row, maxLineChars);
+	if (card) return React.createElement(Box, { flexDirection: "column" }, React.createElement(InkTerminalCard, { card, maxLineChars }), ...detailLines);
 	const lines = rowLines(row, maxMarkdownLines);
 	const statusColor = colorForStatus(row.status);
 	return React.createElement(
@@ -27,6 +28,7 @@ export function InkTerminalRow({ row, maxLineChars = 220, maxMarkdownLines = 80 
 			line,
 			maxChars: maxLineChars,
 		})),
+		...detailLines,
 	);
 }
 
@@ -42,7 +44,7 @@ export function InkTerminalCard({ card, maxLineChars = 220 }: { card: TerminalCa
 		lines.push(React.createElement(Text, { color: colorForCardTone(row.tone) ?? "white", key: `row-${index}` }, truncateCardLine(text, maxLineChars)));
 	}
 	for (const progress of card.statusView?.progress ?? []) {
-		const bar = progressBarText(progress, progress.state === "available" ? 18 : 12);
+		const bar = inkProgressBarText(progress, progress.state === "available" ? 18 : 12);
 		lines.push(React.createElement(Text, { color: progress.tone === "neutral" ? "gray" : colorForTone(progress.tone), key: `progress-${progress.id}` }, truncateCardLine(`  ↳ ${progress.label}: ${bar} — ${progress.text}`, maxLineChars)));
 	}
 	for (const [index, warning] of (card.statusView?.warnings ?? []).entries()) {
@@ -78,6 +80,50 @@ function colorForCardTone(tone: TerminalCardTone | undefined): InkTerminalColor 
 function truncateCardLine(value: string, maxChars: number): string {
 	const normalized = value.replace(/\s+/g, " ");
 	return normalized.length <= maxChars ? normalized : `${normalized.slice(0, Math.max(0, maxChars - 12))}… truncated`;
+}
+
+function inkProgressBarText(progress: Parameters<typeof progressBarText>[0], width: number): string {
+	const text = progressBarText(progress, width);
+	if (progress.state !== "available" || progress.percent === undefined) return text;
+	if (!shouldUseAsciiProgress()) return text;
+	const boundedWidth = Math.max(4, Math.min(80, Math.floor(width)));
+	const filled = Math.round((Math.max(0, Math.min(100, progress.percent)) / 100) * boundedWidth);
+	return `${"#".repeat(filled)}${"-".repeat(boundedWidth - filled)} ${progress.percent.toFixed(1)}%`;
+}
+
+function shouldUseAsciiProgress(): boolean {
+	return Boolean(process.env.NO_COLOR) || process.env.TERM === "dumb" || process.env.PIBO_ASCII_PROGRESS === "1";
+}
+
+function rowDetailLines(row: CompactTerminalRow, maxLineChars: number): React.ReactElement[] {
+	const details: CompactTerminalDetailItem[] = [...(row.detailItems ?? [])];
+	if (row.linkedPiboSessionId && !details.some((item) => item.linkedPiboSessionId === row.linkedPiboSessionId)) {
+		details.push({ id: `${row.id}:linked-session`, label: "Linked session", status: "done", linkedPiboSessionId: row.linkedPiboSessionId });
+	}
+	if (!details.length) return [];
+	return details.flatMap((detail, index) => detailTextLines(detail, maxLineChars).map((text, lineIndex) => React.createElement(Text, {
+		color: detail.status === "error" ? "red" : "gray",
+		key: `${row.id}:detail:${detail.id}:${index}:${lineIndex}`,
+	}, truncateCardLine(lineIndex === 0 ? `  ↳ ${text}` : `    ${text}`, maxLineChars))));
+}
+
+function detailTextLines(detail: CompactTerminalDetailItem, maxLineChars: number): string[] {
+	const label = detail.status === "error" && !/error/i.test(detail.label) ? `${detail.label} error` : detail.label;
+	const parts: string[] = [];
+	if (detail.linkedPiboSessionId) parts.push(redactTerminalSecret(detail.linkedPiboSessionId));
+	if (detail.input !== undefined) parts.push(`Input ${detailValueText(detail.input, maxLineChars)}`);
+	if (detail.output !== undefined) parts.push(`Output ${detailValueText(detail.output, maxLineChars)}`);
+	if (detail.error) parts.push(`Error ${redactTerminalSecret(detail.error)}`);
+	if (parts.length === 0) parts.push(detail.status);
+	return [`${label}: ${parts.join(" · ")}`];
+}
+
+function detailValueText(value: unknown, maxLineChars: number): string {
+	const text = typeof value === "string"
+		? value
+		: formatInkJson(value, { maxChars: Math.min(420, Math.max(120, maxLineChars * 3)), maxDepth: 3, maxArrayItems: 4, maxObjectKeys: 8 });
+	const redacted = redactTerminalSecret(text).replace(/\s+/g, " ").trim();
+	return truncateCardLine(redacted, Math.min(220, Math.max(80, maxLineChars - 12)));
 }
 
 function rowLines(row: CompactTerminalRow, maxMarkdownLines: number): CompactTerminalLine[] {

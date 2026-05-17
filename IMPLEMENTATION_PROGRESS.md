@@ -215,3 +215,58 @@ Remaining limitations / next stories:
 Commit:
 
 - `78db622` feat: route CLI command results into transcript
+
+## 2026-05-17 Ralph run: PRD 04 Ink compact terminal renderer
+
+### Selected coherent story group
+
+- PRD 04 `US-001` Build compact Ink terminal row primitives.
+- PRD 04 `US-002` Render every required row kind with distinct semantics.
+- PRD 04 `US-003` Render inline details, JSON, markdown, and long output safely.
+- PRD 04 `US-004` Support narrow terminals and NO_COLOR readability.
+- PRD 04 `US-005` only if mixed-transcript PTY artifacts and full `npm test` complete in this run; otherwise leave false with remaining evidence recorded.
+
+### Plan and validation approach
+
+1. Refine CLI-only Ink row/card primitives so shared rows render through a stable prefix/content layout, dense semantic markers, bounded card/detail lines, and no Web renderer imports.
+2. Add inline detail rendering for `detailItems`, linked sessions, input/output/error sections, redaction, long JSON/markdown bounds, and long unbroken token handling without unbounded dumps.
+3. Add no-color/limited-glyph progress-bar fallback and semantic renderer tests covering all PRD 04 row kinds, user/assistant marker distinction, details, narrow output, and bounded large transcripts.
+4. Run focused Docker checks after build: `npm run build`, `node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/ink-cli-terminal-design-contract.test.mjs`, then `npm run typecheck` and `npm test`.
+5. If feasible, run a mixed-transcript `pibo debug pty` scenario with artifacts under `.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17`, record artifact paths/evidence tier, then mark fully verified PRD 04 stories and commit from the host worktree.
+
+### Result
+
+Completed PRD 04 `US-001` through `US-005`.
+
+Changes:
+
+- Refined `InkTerminalRow`/`InkTerminalCard` rendering with compact descriptor-driven row/card output, stable prefix/content semantics, and no Web renderer dependencies.
+- Added inline detail rendering for shared `detailItems`, linked session rows, Input/Output/Error/command/tool labels, bounded JSON/markdown/string previews, and redacted detail text.
+- Added ASCII progress fallback for `NO_COLOR=1`, `TERM=dumb`, or `PIBO_ASCII_PROGRESS=1` while preserving Unicode bars in normal output.
+- Extended `test/cli-ui-ink-renderer.test.mjs` for every required row kind, user/assistant marker distinction, inline detail bounds/redaction, narrow readability, no-color readability, ASCII progress fallback, and large transcript tail windows.
+- Marked PRD 04 stories `passes: true` with evidence notes and updated renderer task checkboxes.
+
+Validation run in Docker worker:
+
+- `npm run build` — passed; includes `chat-ui:build` and `context-files-ui:build`.
+- `node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/ink-cli-terminal-design-contract.test.mjs` — passed, 20 tests.
+- `node dist/bin/pibo.js debug pty run --artifact ... mixed-transcript ...` — passed.
+- `node dist/bin/pibo.js debug pty run --artifact ... narrow-no-color ...` — passed.
+- `npm run typecheck` — passed; includes `chat-ui:typecheck` and `context-files-ui:typecheck`.
+- `npm test` — passed, 672 tests.
+
+Evidence/artifacts:
+
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/mixed-transcript`
+- `/workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/narrow-no-color`
+
+Each artifact directory contains `raw.ansi.log`, `clean.txt`, `screen.txt`, `metadata.json`, `input.json`, `assertions.json`, and `events.jsonl`. Evidence classification is deterministic fixture/demo renderer PTY, not live provider/default installed `pibo tui:sessions`. The final real/default installed CLI smoke remains for PRD 07.
+
+Remaining limitations / next stories:
+
+- PRD 05 remains incomplete for richer shared status fixture coverage, compact status-card parity details, Web status hooks, and live/default `/status` PTY evidence.
+- PRDs 06-07 remain incomplete for polished overlays, standardized visual artifact generation, installed CLI smoke, and final evidence report.
+
+Commit:
+
+- `036aaea` feat: refine Ink compact terminal renderer

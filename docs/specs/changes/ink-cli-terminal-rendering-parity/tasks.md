@@ -19,18 +19,18 @@
 
 ## 3. Ink Renderer Quality
 
-- [ ] 3.1 Refine `InkTerminalCard` to match `TERMINAL_DESIGN.md`: dense text, semantic markers, compact rows, no decorative chrome, clear unavailable states.
-- [ ] 3.2 Add/extend Ink card renderers for status, thinking, model, login, tool, yielded-run, compaction, command, and error descriptors.
-- [ ] 3.3 Add text progress bars, badge-like markers, warning/error lines, and detail sections that remain readable with `NO_COLOR=1`.
-- [ ] 3.4 Add narrow-terminal render tests for owner/session/model/status/error visibility.
-- [ ] 3.5 Add bounded-output tests for large JSON, long markdown, and long tool output.
+- [x] 3.1 Refine `InkTerminalCard` to match `TERMINAL_DESIGN.md`: dense text, semantic markers, compact rows, no decorative chrome, clear unavailable states.
+- [x] 3.2 Add/extend Ink card renderers for status, thinking, model, login, tool, yielded-run, compaction, command, and error descriptors.
+- [x] 3.3 Add text progress bars, badge-like markers, warning/error lines, and detail sections that remain readable with `NO_COLOR=1`.
+- [x] 3.4 Add narrow-terminal render tests for owner/session/model/status/error visibility.
+- [x] 3.5 Add bounded-output tests for large JSON, long markdown, and long tool output.
 
 ## 4. Web Regression and Synchronization
 
 - [x] 4.1 Add Web Compact Terminal tests or source-level checks for shared descriptor consumption across status/model/login/thinking/tool cards.
 - [ ] 4.2 Add stable semantic hooks where missing, without changing Web visuals.
 - [x] 4.3 Use the shared fixture to verify Web and Ink agree on row/card kinds, progress ids, labels, and redaction.
-- [ ] 4.4 Run `npm run chat-ui:typecheck` and `npm run chat-ui:build` after renderer changes.
+- [x] 4.4 Run `npm run chat-ui:typecheck` and `npm run chat-ui:build` after renderer changes.
 
 ## 5. Visual Debugging
 
