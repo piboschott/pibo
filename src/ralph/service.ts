@@ -77,12 +77,40 @@ export class PiboRalphService {
 		return this.store.reserveRun(fresh.ownerScope, fresh.id);
 	}
 	private async abortCancelRequestedJobs(): Promise<void> { for (const job of this.store.listJobs({ includeDisabled: true })) { if (job.state.cancelRequestedAt) await this.abortJobIfRunning(job); } }
-	private async abortJobIfRunning(job: PiboRalphJob): Promise<void> { const sessionId = job.state.lastPiboSessionId; if (sessionId && job.state.runningAt && job.state.lastRunId) { this.cancelledRuns.add(job.state.lastRunId); await this.options.context.emit({ type: 'execution', piboSessionId: sessionId, action: 'abort', id: `ralph_cancel_${randomUUID()}` }); } }
+	private async abortJobIfRunning(job: PiboRalphJob): Promise<void> {
+		if (!job.state.runningAt || !job.state.lastRunId) return;
+		const sessionId = job.state.lastPiboSessionId;
+		if (!sessionId) {
+			this.markRunResourcesDirty(job, 'Cancel requested but active session is unavailable; browser lease may still exist');
+			return;
+		}
+		this.cancelledRuns.add(job.state.lastRunId);
+		try {
+			await this.options.context.emit({ type: 'execution', piboSessionId: sessionId, action: 'abort', id: `ralph_cancel_${randomUUID()}` });
+		} catch (error) {
+			this.cancelledRuns.delete(job.state.lastRunId);
+			this.markRunResourcesDirty(job, `Cancel requested but abort failed: ${errorMessage(error)}`);
+		}
+	}
 	private async executeReserved(job: PiboRalphJob, run: PiboRalphRun): Promise<void> {
 		this.activeRuns += 1;
 		try { const result = await this.executeJob(job, run); const cancelled = this.cancelledRuns.delete(run.id); const outcome: PiboRalphRunOutcome = { status: cancelled ? 'cancelled' : 'ok', piboSessionId: result.piboSessionId, finalAnswer: result.finalAnswer }; const { evaluation, conditionStates } = await this.evaluateStopPolicy(this.store.getJob(job.id) ?? job, 'after-run', run, outcome); this.store.completeRun({ jobId: job.id, runId: run.id, status: outcome.status, piboSessionId: result.piboSessionId, reason: cancelled ? 'cancelled' : evaluation.reason, stopAfterRun: evaluation.finalAction !== 'continue', stopEvaluation: evaluation, conditionStates }); await this.cleanupRunResources(job, run); }
 		catch (error) { const cancelled = this.cancelledRuns.delete(run.id); const outcome: PiboRalphRunOutcome = { status: cancelled ? 'cancelled' : 'error', error: cancelled ? undefined : errorMessage(error) }; const { evaluation, conditionStates } = await this.evaluateStopPolicy(this.store.getJob(job.id) ?? job, 'after-run', run, outcome); this.store.completeRun({ jobId: job.id, runId: run.id, status: outcome.status, error: outcome.error, reason: cancelled ? 'cancelled' : evaluation.reason, stopAfterRun: evaluation.finalAction !== 'continue', stopEvaluation: evaluation, conditionStates }); await this.cleanupRunResources(job, run); if (!cancelled) console.error(`[ralph] job ${job.id} failed`, error); }
 		finally { this.activeRuns -= 1; }
+	}
+	private markRunResourcesDirty(job: PiboRalphJob, dirtyReason: string): void {
+		const latestJob = this.store.getJob(job.id) ?? job;
+		const runId = latestJob.state.lastRunId ?? job.state.lastRunId;
+		const latestRun = runId ? this.store.listRuns({ ownerScope: latestJob.ownerScope, jobId: latestJob.id, limit: 100 }).find((candidate) => candidate.id === runId) : undefined;
+		const resources = mergeRunResources(latestJob.resources, latestRun?.resources);
+		if (!resources || (!resources.workerId && (resources.browserLeaseIds ?? []).length === 0)) return;
+		const nextResources: PiboRalphResourceMetadata = { ...resources, cleanupState: 'dirty', dirtyReason, updatedAt: new Date().toISOString() };
+		try {
+			if (latestRun) this.store.updateRunResources({ ownerScope: latestJob.ownerScope, jobId: latestJob.id, runId: latestRun.id, resources: nextResources });
+			this.store.updateJobResources(latestJob.ownerScope, latestJob.id, nextResources);
+		} catch (error) {
+			console.error(`[ralph] failed to mark resource cleanup dirty for job ${latestJob.id}`, error);
+		}
 	}
 	private async cleanupRunResources(job: PiboRalphJob, run: PiboRalphRun): Promise<void> {
 		const latestJob = this.store.getJob(job.id) ?? job;

@@ -72,6 +72,11 @@ function runFromRow(row: RalphRunRow): PiboRalphRun {
 	const resources = parseResourceMetadata(row.resource_json);
 	return { id: row.id, jobId: row.job_id, ownerScope: row.owner_scope, piboSessionId: row.pibo_session_id ?? undefined, status: row.status, reason: row.reason ?? undefined, error: row.error ?? undefined, startedAt: row.started_at ?? undefined, completedAt: row.completed_at ?? undefined, ...(resources ? { resources } : {}), createdAt: row.created_at, updatedAt: row.updated_at };
 }
+function mergeResourceMetadata(jobResources: PiboRalphResourceMetadata | undefined, runResources: PiboRalphResourceMetadata | undefined): PiboRalphResourceMetadata | undefined {
+	if (!jobResources && !runResources) return undefined;
+	const browserLeaseIds = [...new Set([...(jobResources?.browserLeaseIds ?? []), ...(runResources?.browserLeaseIds ?? [])])];
+	return { ...(jobResources ?? {}), ...(runResources ?? {}), ...(browserLeaseIds.length ? { browserLeaseIds } : {}) };
+}
 function factFromRow(row: RalphRunFactRow): PiboRalphRunFact {
 	return { id: row.id, ownerScope: row.owner_scope, jobId: row.job_id, runId: row.run_id ?? undefined, piboSessionId: row.pibo_session_id ?? undefined, type: row.type, source: row.source, payload: parseJson(row.payload_json), createdAt: row.created_at };
 }
@@ -277,8 +282,16 @@ export class PiboRalphStore {
 	createFactReader(job: PiboRalphJob): PiboRalphFactReader {
 		return { list: (input = {}) => this.listRunFacts({ ownerScope: job.ownerScope, jobId: job.id, type: input.type, runId: input.runId, limit: input.limit }), count: (input = {}) => this.listRunFacts({ ownerScope: job.ownerScope, jobId: job.id, type: input.type, runId: input.runId, limit: 500 }).length };
 	}
-	recoverInterruptedRuns(cutoff = new Date(Date.now() - 5 * 60_000)): number { const cutoffIso = nowIso(cutoff); const rows = this.db.prepare("SELECT * FROM pibo_ralph_jobs WHERE json_extract(state_json, '$.runningAt') IS NOT NULL").all() as RalphJobRow[]; let recovered = 0; for (const row of rows) { const job = jobFromRow(row); if (!job.state.runningAt || job.state.runningAt > cutoffIso) continue; if (job.state.lastRunId) this.completeRun({ jobId: job.id, runId: job.state.lastRunId, status: 'error', error: 'Ralph run was interrupted by gateway restart', reason: 'interrupted' }); recovered += 1; } return recovered; }
+	recoverInterruptedRuns(cutoff = new Date(Date.now() - 5 * 60_000)): number { const cutoffIso = nowIso(cutoff); const rows = this.db.prepare("SELECT * FROM pibo_ralph_jobs WHERE json_extract(state_json, '$.runningAt') IS NOT NULL").all() as RalphJobRow[]; let recovered = 0; for (const row of rows) { const job = jobFromRow(row); if (!job.state.runningAt || job.state.runningAt > cutoffIso) continue; if (job.state.lastRunId) { this.completeRun({ jobId: job.id, runId: job.state.lastRunId, status: 'error', error: 'Ralph run was interrupted by gateway restart', reason: 'interrupted' }); this.markInterruptedRunResourcesDirty(job, job.state.lastRunId); } recovered += 1; } return recovered; }
 	status(): { jobs: number; running: number } { const jobs = this.listJobs({ includeDisabled: false }); return { jobs: jobs.length, running: jobs.filter((job) => job.state.runningAt).length }; }
+	private markInterruptedRunResourcesDirty(job: PiboRalphJob, runId: string): void {
+		const runRow = this.db.prepare('SELECT * FROM pibo_ralph_runs WHERE id = ? AND job_id = ?').get(runId, job.id) as RalphRunRow | undefined;
+		const resources = mergeResourceMetadata(job.resources, runRow ? runFromRow(runRow).resources : undefined);
+		if (!resources || (!resources.workerId && (resources.browserLeaseIds ?? []).length === 0)) return;
+		const nextResources: PiboRalphResourceMetadata = { ...resources, cleanupState: 'dirty', dirtyReason: 'Ralph run was interrupted before browser resource cleanup could be confirmed', updatedAt: nowIso() };
+		this.updateRunResources({ ownerScope: job.ownerScope, jobId: job.id, runId, resources: nextResources });
+		this.updateJobResources(job.ownerScope, job.id, nextResources);
+	}
 	private reserveJob(id: string, now = new Date()): { job: PiboRalphJob; run: PiboRalphRun } | undefined {
 		const timestamp = nowIso(now); this.db.exec('BEGIN IMMEDIATE');
 		try { const job = this.getJob(id); if (!job || !job.enabled || job.state.runningAt) { this.db.exec('COMMIT'); return undefined; } const run = this.createRunLocked(job, timestamp); const state = { ...job.state, runningAt: timestamp, lastRunAt: timestamp, lastRunId: run.id }; this.updateJobStateLocked(job.id, state, timestamp); this.db.exec('COMMIT'); return { job: { ...job, state, updatedAt: timestamp }, run }; } catch (error) { this.db.exec('ROLLBACK'); throw error; }

@@ -65,8 +65,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented Ralph cancel/interrupted cleanup policy: cancel emits abort for active sessions and marks resource metadata dirty if abort cannot be sent, timeout/error paths still run browser-pool lease cleanup, interrupted-run recovery marks possible worker/browser resources dirty with an auditable reason, and prompt text cannot bypass service-owned cleanup policy. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph tests, real local browser-pool release fixture, and full npm run typecheck passed."
     },
     {
       "id": "US-005",
