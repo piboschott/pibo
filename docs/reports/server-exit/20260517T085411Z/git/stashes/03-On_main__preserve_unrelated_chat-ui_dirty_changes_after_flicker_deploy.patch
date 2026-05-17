@@ -1,0 +1,136 @@
+diff --git a/src/apps/chat-ui/src/App.tsx b/src/apps/chat-ui/src/App.tsx
+index b9ca9ae..b199ae4 100644
+--- a/src/apps/chat-ui/src/App.tsx
++++ b/src/apps/chat-ui/src/App.tsx
+@@ -2109,6 +2109,12 @@ function SessionTracePane({
+ 	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, tracePageQueryKey]);
+ 
+ 	const selectedTrace = null;
++	const traceThinkingState = resolveTraceThinkingState(currentTraceView);
++	const sessionActiveModelBadge = formatSessionModelBadge(
++		selectedSessionActiveModel,
++		traceThinkingState.level ?? resolveSessionThinkingLevel(bootstrap, selectedSessionProfile),
++		traceThinkingState.fast,
++	);
+ 	const sessionBreadcrumbs = useMemo(
+ 		() => selectedPiboSessionId ? createSessionBreadcrumbs(bootstrap.sessions, selectedPiboSessionId) : [],
+ 		[bootstrap.sessions, selectedPiboSessionId],
+@@ -2228,7 +2234,7 @@ function SessionTracePane({
+ 						showThinking,
+ 						expandThinking,
+ 						sessionAgentProfile: selectedSessionProfile,
+-						sessionActiveModel: selectedSessionActiveModel,
++						sessionActiveModel: sessionActiveModelBadge,
+ 						selectedSessionStatus,
+ 						selectedSessionSignal,
+ 						sessionBreadcrumbs,
+@@ -3532,6 +3538,40 @@ function resolveSessionActiveModelLabel(
+ 	return model ? formatModelProfile(model) : undefined;
+ }
+ 
++function resolveSessionThinkingLevel(bootstrap: BootstrapData, profileName: string): ThinkingLevel | undefined {
++	const staticAgent = bootstrap.agents.find((agent) => agent.name === profileName);
++	const customAgent = bootstrap.customAgents.find((agent) => agent.profileName === profileName);
++	return staticAgent?.thinkingLevel ?? customAgent?.thinkingLevel ?? bootstrap.modelDefaults?.thinking;
++}
++
++function formatSessionModelBadge(modelLabel: string | undefined, thinkingLevel: ThinkingLevel | undefined, fast: boolean): string | undefined {
++	if (!modelLabel) return undefined;
++	return [modelLabel, thinkingLevel, fast ? "fast" : undefined].filter(Boolean).join(" ");
++}
++
++function resolveTraceThinkingState(traceView: PiboSessionTraceView | null): { level?: ThinkingLevel; fast: boolean } {
++	let state: { level?: ThinkingLevel; fast: boolean } = { fast: false };
++	if (!traceView) return state;
++	for (const node of flattenTraceNodes(traceView.nodes)) {
++		if (node.type !== "execution.command" || (node.title !== "thinking" && node.title !== "fast_mode")) continue;
++		const output = node.output && typeof node.output === "object" ? node.output as Record<string, unknown> : undefined;
++		const level = typeof output?.level === "string" && isThinkingLevel(output.level) ? output.level : undefined;
++		state = {
++			level: level ?? state.level,
++			fast: node.title === "fast_mode" ? output?.mode === "fast" : false,
++		};
++	}
++	return state;
++}
++
++function flattenTraceNodes(nodes: readonly PiboTraceNode[]): PiboTraceNode[] {
++	return nodes.flatMap((node) => [node, ...flattenTraceNodes(node.children)]);
++}
++
++function isThinkingLevel(value: string): value is ThinkingLevel {
++	return THINKING_LEVELS.includes(value as ThinkingLevel);
++}
++
+ function resolveSessionActiveModel(
+ 	bootstrap: BootstrapData,
+ 	session: Pick<PiboWebSessionNode, "profile" | "parentId" | "activeModel">,
+diff --git a/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx b/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
+index f69d4c4..c80d99d 100644
+--- a/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
++++ b/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
+@@ -46,8 +46,6 @@ export function CompactTerminalSessionView({
+ 	);
+ 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+ 	const runningCount = rows.filter((row) => row.status === "running").length;
+-	const signalActiveDescendantCount = (selectedSessionSignal?.activeChildren.length ?? 0) + (selectedSessionSignal?.activeRuns.length ?? 0);
+-	const workingPhase = selectedSessionSignal?.phase;
+ 	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
+ 	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
+ 	const signalWorking = selectedSessionSignal?.isTreeActive ?? false;
+@@ -96,12 +94,8 @@ export function CompactTerminalSessionView({
+ 	return (
+ 		<section className="relative min-w-0 flex-1 flex flex-col overflow-hidden bg-[#0b0b0b] text-[#d4d4d4]">
+ 			<TerminalHeader
+-				isLoading={isLoading}
+-				runningCount={runningCount}
+ 				errorCount={errorCount}
+ 				toolErrorCount={toolErrorCount}
+-				workingPhase={workingPhase}
+-				activeDescendantCount={signalActiveDescendantCount}
+ 				sessionAgentProfile={sessionAgentProfile}
+ 				sessionActiveModel={sessionActiveModel}
+ 				sessionBreadcrumbs={sessionBreadcrumbs}
+@@ -164,12 +158,8 @@ export function CompactTerminalSessionView({
+ }
+ 
+ function TerminalHeader({
+-	isLoading,
+-	runningCount,
+ 	errorCount,
+ 	toolErrorCount,
+-	workingPhase,
+-	activeDescendantCount,
+ 	sessionAgentProfile,
+ 	sessionActiveModel,
+ 	sessionBreadcrumbs,
+@@ -177,12 +167,8 @@ function TerminalHeader({
+ 	derivedSessions,
+ 	onOpenSession,
+ }: {
+-	isLoading: boolean;
+-	runningCount: number;
+ 	errorCount: number;
+ 	toolErrorCount: number;
+-	workingPhase?: string;
+-	activeDescendantCount: number;
+ 	sessionAgentProfile?: string;
+ 	sessionActiveModel?: string;
+ 	sessionBreadcrumbs: ChatSessionViewProps["sessionBreadcrumbs"];
+@@ -193,14 +179,10 @@ function TerminalHeader({
+ 	return (
+ 		<div className="border-b border-[#2a2a2a] bg-[#111111] px-4 py-2 text-[11px]">
+ 			<div className="flex flex-wrap items-center gap-2">
+-				{isLoading ? <TerminalBadge tone="cyan">Loading</TerminalBadge> : null}
+-				{workingPhase ? <TerminalBadge tone="cyan">{workingPhase}</TerminalBadge> : null}
+-				{runningCount > 0 ? <TerminalBadge tone="cyan">{runningCount} running</TerminalBadge> : null}
+-				{activeDescendantCount > 0 ? <TerminalBadge tone="cyan">{activeDescendantCount} active descendants/runs</TerminalBadge> : null}
+-				{errorCount > 0 ? <TerminalBadge tone="red">{errorCount} errors</TerminalBadge> : null}
+-				{toolErrorCount > 0 ? <TerminalBadge tone="amber">{toolErrorCount} tool errors</TerminalBadge> : null}
+ 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
+ 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
++				{errorCount > 0 ? <TerminalBadge tone="red">{errorCount} errors</TerminalBadge> : null}
++				{toolErrorCount > 0 ? <TerminalBadge tone="amber">{toolErrorCount} tool call errors</TerminalBadge> : null}
+ 				{originSession ? (
+ 					<SessionLinkButton onClick={() => onOpenSession(originSession.piboSessionId)}>
+ 						Origin {originSession.label}

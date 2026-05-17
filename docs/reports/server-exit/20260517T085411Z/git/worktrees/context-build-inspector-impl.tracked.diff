@@ -1,0 +1,308 @@
+diff --git a/src/apps/chat-ui/src/App.tsx b/src/apps/chat-ui/src/App.tsx
+index 1ba3131..599e619 100644
+--- a/src/apps/chat-ui/src/App.tsx
++++ b/src/apps/chat-ui/src/App.tsx
+@@ -59,6 +59,7 @@ import { BasePromptView } from "./context/BasePromptView";
+ import { CompactionPromptView } from "./context/CompactionPromptView";
+ import { PiboToolsView } from "./context/PiboToolsView";
+ import { McpToolsView } from "./context/McpToolsView";
++import { ContextBuildView } from "./context/ContextBuildView";
+ import { CronArea } from "./CronArea";
+ import { RalphArea } from "./RalphArea";
+ import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
+@@ -78,7 +79,7 @@ import {
+ } from "./cache";
+ 
+ type Area = "sessions" | "projects" | "cron" | "ralph" | "agents" | "context" | "settings";
+-type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
++type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
+ type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
+ 
+ export type ChatAppRoute =
+@@ -1815,6 +1816,11 @@ export function App({ route }: { route: ChatAppRoute }) {
+ 										selectedServerName={selectedMcpServerName}
+ 										onServerSaved={updateMcpServerInBootstrap}
+ 									/>
++								) : contextPanel === "build-context" ? (
++									<ContextBuildView
++										piboSessionId={selectedPiboSessionId}
++										profile={selectedSessionNode?.profile ?? defaultProfileFromBootstrap(bootstrap)}
++									/>
+ 								) : contextPanel === "base-prompt" ? (
+ 									<BasePromptView />
+ 								) : contextPanel === "compaction-prompt" ? (
+@@ -5840,7 +5846,7 @@ function ContextSidebar({
+ 				<button
+ 					type="button"
+ 					onClick={() => onSelect("mcp-tools")}
+-					className={`flex w-full items-center gap-2 border p-2 text-left ${
++					className={`mb-1 flex w-full items-center gap-2 border p-2 text-left ${
+ 						activePanel === "mcp-tools"
+ 							? "border-[#11a4d4] bg-[#11a4d4]/10"
+ 							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+@@ -5855,6 +5861,21 @@ function ContextSidebar({
+ 						{mcpServerCount}
+ 					</span>
+ 				</button>
++				<button
++					type="button"
++					onClick={() => onSelect("build-context")}
++					className={`flex w-full items-center gap-2 border p-2 text-left ${
++						activePanel === "build-context"
++							? "border-[#11a4d4] bg-[#11a4d4]/10"
++							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
++					}`}
++				>
++					<Bug size={13} className="text-[#11a4d4]" />
++					<div className="min-w-0">
++						<span className="block truncate text-sm text-slate-200">Build Context</span>
++						<span className="block truncate font-mono text-[10px] text-slate-500">runtime-snapshot</span>
++					</div>
++				</button>
+ 			</div>
+ 		</div>
+ 	);
+diff --git a/src/apps/chat-ui/src/api.ts b/src/apps/chat-ui/src/api.ts
+index e5403f1..065d191 100644
+--- a/src/apps/chat-ui/src/api.ts
++++ b/src/apps/chat-ui/src/api.ts
+@@ -102,6 +102,53 @@ export type CompactionPromptSnapshot = {
+ 	};
+ };
+ 
++export type ContextBuildDiagnostic = {
++	type: "info" | "warning" | "error";
++	message: string;
++	nodeId?: string;
++};
++
++export type ContextBuildNode = {
++	id: string;
++	parentId?: string;
++	order: number;
++	kind: string;
++	title: string;
++	source: string;
++	state?: "active" | "disabled" | "skipped" | "warning" | "error";
++	badges?: string[];
++	metadata?: Record<string, unknown>;
++	path?: string;
++	key?: string;
++	provider?: string;
++	bytes?: number;
++	children?: ContextBuildNode[];
++	hydratedText?: string;
++	schemaJson?: unknown;
++	payloadJson?: unknown;
++	notes?: string[];
++	redacted?: boolean;
++	approximate?: boolean;
++};
++
++export type ContextBuildSnapshot = {
++	version: 1;
++	generatedAt: string;
++	profileName: string;
++	piboSessionId?: string;
++	piboRoomId?: string;
++	cwd: string;
++	activeModel?: ModelProfile;
++	summary: {
++		topLevelNodes: number;
++		totalNodes: number;
++		warnings: number;
++		errors: number;
++	};
++	nodes: ContextBuildNode[];
++	diagnostics: ContextBuildDiagnostic[];
++};
++
+ export async function getBootstrap(
+ 	piboSessionId?: string,
+ 	includeArchived = false,
+@@ -385,6 +432,14 @@ export async function getCustomAgents(): Promise<{ agents: CustomAgent[] }> {
+ 	return requestJson("/api/chat/agents");
+ }
+ 
++export async function getContextBuild(input: { profile?: string; piboSessionId?: string } = {}): Promise<ContextBuildSnapshot> {
++	const params = new URLSearchParams();
++	if (input.profile) params.set("profile", input.profile);
++	if (input.piboSessionId) params.set("piboSessionId", input.piboSessionId);
++	const suffix = params.size ? `?${params.toString()}` : "";
++	return (await requestJson<{ snapshot: ContextBuildSnapshot }>(`/api/chat/context-build${suffix}`)).snapshot;
++}
++
+ export async function getBasePrompt(): Promise<BasePromptSnapshot> {
+ 	return (await requestJson<{ basePrompt: BasePromptSnapshot }>("/api/chat/base-prompt")).basePrompt;
+ }
+diff --git a/src/apps/chat/web-app.ts b/src/apps/chat/web-app.ts
+index df14435..6595abc 100644
+--- a/src/apps/chat/web-app.ts
++++ b/src/apps/chat/web-app.ts
+@@ -45,6 +45,7 @@ import {
+ 	savePiboModelDefaults,
+ 	type PiboModelDefaults,
+ } from "../../core/model-defaults.js";
++import { inspectPiboContextBuild } from "../../core/context-build.js";
+ import { loadPiboUserSettings, sanitizeTimezone, updatePiboUserSettings } from "../../core/user-settings.js";
+ import { loadModelCatalog } from "./model-catalog.js";
+ import type { ModelProfile } from "../../core/profiles.js";
+@@ -1864,6 +1865,38 @@ function resolveCreateSessionProfile(
+ 	return matched.name;
+ }
+ 
++async function buildContextBuildSnapshotForRequest(input: {
++	context: PiboWebAppContext;
++	webSession: PiboWebSession;
++	defaultProfile: string;
++	piboSessionId?: string;
++	profile?: string;
++}) {
++	const createProfile = input.context.channelContext.createProfile;
++	if (!createProfile) throw new PiboWebHttpError("Profile inspection is not available", 503);
++
++	const selectedSession = input.piboSessionId
++		? requireOwnedSession(input.context, input.webSession, input.piboSessionId)
++		: undefined;
++	const profileName = selectedSession?.profile ?? resolveCreateSessionProfile(input.context, input.defaultProfile, input.profile);
++	const profile = createProfile(profileName);
++	const userSettings = loadPiboUserSettings(input.webSession.ownerScope);
++	const cwd = selectedSession?.workspace ?? getDefaultPiboWorkspace();
++	return inspectPiboContextBuild({
++		cwd,
++		profile,
++		activeModel: selectedSession?.activeModel,
++		persistSession: false,
++		sessionContext: {
++			userId: input.webSession.authSession.identity.userId,
++			ownerScope: input.webSession.ownerScope,
++			piboSessionId: selectedSession?.id,
++			piboRoomId: selectedSession ? chatRoomIdFromMetadata(selectedSession.metadata) : undefined,
++			timezone: userSettings.timezone,
++		},
++	});
++}
++
+ function indexOwnedSessions(sessionQuery: ChatSessionQuery, sessions: PiboSession[]): void {
+ 	sessionQuery.upsertSessionsIfChanged(sessions);
+ }
+@@ -3416,6 +3449,18 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
+ 				});
+ 			}
+ 
++			if (url.pathname === `${CHAT_WEB_API_PREFIX}/context-build` && request.method === "GET") {
++				const webSession = await requireSession(request, context);
++				const snapshot = await buildContextBuildSnapshotForRequest({
++					context,
++					webSession,
++					defaultProfile,
++					piboSessionId: url.searchParams.get("piboSessionId") || undefined,
++					profile: url.searchParams.get("profile") || undefined,
++				});
++				return responseJson({ snapshot });
++			}
++
+ 			if (url.pathname.startsWith(`${CHAT_WEB_API_PREFIX}/cron`)) {
+ 				const webSession = await requireSession(request, context);
+ 				const response = await handleChatCronApiRequest({
+diff --git a/src/channels/types.ts b/src/channels/types.ts
+index 4cbe5b4..fca9eff 100644
+--- a/src/channels/types.ts
++++ b/src/channels/types.ts
+@@ -11,7 +11,7 @@ import type {
+ } from "../plugins/types.js";
+ import type { PiboAuthService } from "../auth/types.js";
+ import type { PiboWebApp } from "../web/types.js";
+-import type { ContextFileProfile, SkillProfile } from "../core/profiles.js";
++import type { ContextFileProfile, InitialSessionContext, SkillProfile } from "../core/profiles.js";
+ import type {
+ 	CreatePiboSessionInput,
+ 	FindPiboSessionsInput,
+@@ -43,6 +43,7 @@ export type PiboChannelContext = {
+ 	subscribeSignalTree?(rootPiboSessionId: string, listener: (patch: PiboSignalPatch) => void): () => void;
+ 	getGatewayActions(): PiboGatewayActionInfo[];
+ 	getProfiles?(): PiboProfileInfo[];
++	createProfile?(name: string): InitialSessionContext;
+ 	getCapabilityCatalog?(): PiboCapabilityCatalog;
+ 	upsertProfile?(profile: PiboProfileDefinition): void;
+ 	removeProfile?(name: string): void;
+diff --git a/src/core/system-prompt-template.ts b/src/core/system-prompt-template.ts
+index 4a39615..af55d34 100644
+--- a/src/core/system-prompt-template.ts
++++ b/src/core/system-prompt-template.ts
+@@ -6,21 +6,21 @@ type PiboSystemPromptTemplateOptions = {
+ 	promptGuidelines?: string[];
+ };
+ 
+-const AVAILABLE_TOOLS_MARKER = "{{availableTools}}";
+-const GUIDELINES_MARKER = "{{guidelines}}";
++export const PIBO_AVAILABLE_TOOLS_MARKER = "{{availableTools}}";
++export const PIBO_GUIDELINES_MARKER = "{{guidelines}}";
+ 
+-function hasTemplateMarkers(systemPrompt: string): boolean {
+-	return systemPrompt.includes(AVAILABLE_TOOLS_MARKER) || systemPrompt.includes(GUIDELINES_MARKER);
++export function hasPiboSystemPromptTemplateMarkers(systemPrompt: string): boolean {
++	return systemPrompt.includes(PIBO_AVAILABLE_TOOLS_MARKER) || systemPrompt.includes(PIBO_GUIDELINES_MARKER);
+ }
+ 
+-function buildAvailableTools(options: PiboSystemPromptTemplateOptions): string {
++export function buildPiboAvailableTools(options: PiboSystemPromptTemplateOptions): string {
+ 	const tools = options.selectedTools || ["read", "bash", "edit", "write"];
+ 	const visibleTools = tools.filter((name) => !!options.toolSnippets?.[name]);
+ 	if (visibleTools.length === 0) return "(none)";
+ 	return visibleTools.map((name) => `- ${name}: ${options.toolSnippets![name]}`).join("\n");
+ }
+ 
+-function buildGuidelines(options: PiboSystemPromptTemplateOptions): string {
++export function buildPiboGuidelines(options: PiboSystemPromptTemplateOptions): string {
+ 	const tools = options.selectedTools || ["read", "bash", "edit", "write"];
+ 	const guidelinesList: string[] = [];
+ 	const guidelinesSet = new Set<string>();
+@@ -56,10 +56,10 @@ export function renderPiboSystemPromptTemplate(
+ 	systemPrompt: string,
+ 	options: PiboSystemPromptTemplateOptions,
+ ): string {
+-	if (!hasTemplateMarkers(systemPrompt)) return systemPrompt;
++	if (!hasPiboSystemPromptTemplateMarkers(systemPrompt)) return systemPrompt;
+ 	return systemPrompt
+-		.replaceAll(AVAILABLE_TOOLS_MARKER, buildAvailableTools(options))
+-		.replaceAll(GUIDELINES_MARKER, buildGuidelines(options));
++		.replaceAll(PIBO_AVAILABLE_TOOLS_MARKER, buildPiboAvailableTools(options))
++		.replaceAll(PIBO_GUIDELINES_MARKER, buildPiboGuidelines(options));
+ }
+ 
+ export function createPiboSystemPromptTemplateExtension(): ExtensionFactory {
+diff --git a/src/gateway/server.ts b/src/gateway/server.ts
+index a010ece..8f67f52 100644
+--- a/src/gateway/server.ts
++++ b/src/gateway/server.ts
+@@ -404,6 +404,7 @@ export class PiboGatewayServer {
+ 			subscribeSignalTree: (rootPiboSessionId, listener) => this.requireRouter().subscribeSignalTree(rootPiboSessionId, listener),
+ 			getGatewayActions: () => this.pluginRegistry.getGatewayActionInfos(),
+ 			getProfiles: () => this.pluginRegistry.getProfileInfos(),
++			createProfile: (name) => this.pluginRegistry.createProfile(name),
+ 			getCapabilityCatalog: () => this.pluginRegistry.getCapabilityCatalog(),
+ 			upsertProfile: (profile) => this.pluginRegistry.upsertProfile(profile),
+ 			removeProfile: (name) => this.pluginRegistry.removeProfile(name),
+diff --git a/src/tools/web-search.ts b/src/tools/web-search.ts
+index b73cc8d..ce4cf34 100644
+--- a/src/tools/web-search.ts
++++ b/src/tools/web-search.ts
+@@ -30,6 +30,8 @@ export type WebSearchProviderAdapter = {
+ 	createExtension(options: WebSearchProviderOptions | undefined): ExtensionFactory;
+ };
+ 
++export const WEB_SEARCH_PROMPT_CONTRIBUTION = "web_search is available as a Pibo native tool through the OpenAI provider adapter. Use it when current or externally sourced information is needed.";
++
+ const WEB_SEARCH_SOURCES_INCLUDE = "web_search_call.action.sources";
+ 
+ function hasProviderResponsesShape(payload: unknown): payload is ProviderPayload {
+@@ -143,7 +145,7 @@ const openAiWebSearchAdapter: WebSearchProviderAdapter = {
+ 				systemPrompt: [
+ 					event.systemPrompt,
+ 					"# Native Web Search",
+-					"web_search is available as a Pibo native tool through the OpenAI provider adapter. Use it when current or externally sourced information is needed.",
++					WEB_SEARCH_PROMPT_CONTRIBUTION,
+ 				].join("\n\n"),
+ 			}));
+ 			pi.on("before_provider_request", (event) => addOpenAiWebSearchProviderTool(event.payload, config));

@@ -1,0 +1,13 @@
+M	AGENTS.md
+M	docs/README.md
+A	docs/specs/README.md
+M	src/apps/chat-ui/src/App.tsx
+M	src/apps/chat-ui/src/api.ts
+M	src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
+M	src/apps/chat-ui/src/types.ts
+M	src/apps/chat/web-app.ts
+M	src/core/events.ts
+M	src/core/routed-session.ts
+M	src/plugins/builtin.ts
+M	src/plugins/types.ts
+M	test/session-actions.test.mjs

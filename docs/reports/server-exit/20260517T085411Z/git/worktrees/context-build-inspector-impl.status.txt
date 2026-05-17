@@ -1,0 +1,15 @@
+worktree=/root/code/pibo/.worktrees/context-build-inspector-impl
+branch=context-build-inspector-impl
+dirty_count=11
+## context-build-inspector-impl
+ M src/apps/chat-ui/src/App.tsx
+ M src/apps/chat-ui/src/api.ts
+ M src/apps/chat/web-app.ts
+ M src/channels/types.ts
+ M src/core/system-prompt-template.ts
+ M src/gateway/server.ts
+ M src/tools/web-search.ts
+?? docs/specs/changes/context-build-inspector/
+?? src/apps/chat-ui/src/context/ContextBuildView.tsx
+?? src/core/context-build.ts
+?? test/context-build-inspector.test.mjs

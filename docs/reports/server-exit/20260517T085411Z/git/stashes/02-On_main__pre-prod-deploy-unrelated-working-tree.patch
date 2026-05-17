@@ -1,0 +1,540 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 31bcf14..157f27c 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -61,6 +61,29 @@ Server access details are configured in the operator environment. Do not hard-co
+ ## Frontend Design
+ If you are doing any frontend design for the Web Chat App, be sure to read `DESIGN.md`.
+ 
++## Documentation Structure
++All project documentation belongs under `docs/`.
++
++Use this structure:
++
++```text
++docs/
++  project/  Current canonical project documentation
++  specs/    Product, technical, and implementation specifications
++  plans/    Implementation plans and design plans
++  reports/  Investigation reports, validation reports, and generated report artifacts
++  legacy/   Previous documentation kept for reference
++```
++
++Rules:
++
++- Put normal/current project docs and other canonical documentation in `docs/project/`.
++- Put specifications in `docs/specs/`.
++- Put implementation plans in `docs/plans/`.
++- Put investigation, validation, incident, and generated reports in `docs/reports/`.
++- Keep old documentation in `docs/legacy/` unless there is an explicit cleanup decision.
++- Do not create new root-level `plans/`, `reports/`, or `specs/` directories.
++
+ # Pibo Rules
+ 
+ This file captures fundamental project truths. These rules should guide design decisions, reviews, and future implementation work.
+diff --git a/docs/README.md b/docs/README.md
+index 661e7df..a8ab326 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -1,12 +1,13 @@
+ # Pibo Documentation
+ 
+-This directory is the single home for project documentation, plans, and reports.
++This directory is the single home for project documentation, specs, plans, and reports.
+ 
+ ## Structure
+ 
+ ```text
+ docs/
+   project/  Current canonical project documentation
++  specs/    Product, technical, and implementation specifications
+   plans/    Implementation plans and design plans
+   reports/  Investigation reports, validation reports, and generated report artifacts
+   legacy/   Previous documentation set kept for reference
+@@ -14,8 +15,9 @@ docs/
+ 
+ ## Rules
+ 
+-- Put new canonical documentation in `docs/project/`.
++- Put normal/current project docs and other canonical documentation in `docs/project/`.
++- Put specifications in `docs/specs/`.
+ - Put implementation plans in `docs/plans/`.
+ - Put investigation, validation, and incident reports in `docs/reports/`.
+-- Do not create new root-level `plans/` or `reports/` directories.
++- Do not create new root-level `plans/`, `reports/`, or `specs/` directories.
+ - Do not delete legacy docs unless there is a separate cleanup decision.
+diff --git a/docs/specs/README.md b/docs/specs/README.md
+new file mode 100644
+index 0000000..03e2290
+--- /dev/null
++++ b/docs/specs/README.md
+@@ -0,0 +1,5 @@
++# Specifications
++
++Use this directory for product, technical, and implementation specifications.
++
++Specs should describe intended behavior, interfaces, invariants, and acceptance criteria. Put execution plans in `docs/plans/` and validation or investigation results in `docs/reports/`.
+diff --git a/src/apps/chat-ui/src/App.tsx b/src/apps/chat-ui/src/App.tsx
+index fa11552..e53b04b 100644
+--- a/src/apps/chat-ui/src/App.tsx
++++ b/src/apps/chat-ui/src/App.tsx
+@@ -2109,6 +2109,12 @@ function SessionTracePane({
+ 	}, [currentTraceView?.latestStreamId, currentTraceView?.piboSessionId, enqueueStreamEvent, onError, onRefreshBootstrap, onRefreshTrace, selectedPiboSessionId, tracePageQueryKey]);
+ 
+ 	const selectedTrace = null;
++	const traceThinkingState = resolveTraceThinkingState(currentTraceView);
++	const sessionActiveModelBadge = formatSessionModelBadge(
++		selectedSessionActiveModel,
++		bootstrap.runtimeStatus?.thinkingLevel ?? traceThinkingState.level ?? resolveSessionThinkingLevel(bootstrap, selectedSessionProfile),
++		bootstrap.runtimeStatus?.fastMode ?? traceThinkingState.fast,
++	);
+ 	const sessionBreadcrumbs = useMemo(
+ 		() => selectedPiboSessionId ? createSessionBreadcrumbs(bootstrap.sessions, selectedPiboSessionId) : [],
+ 		[bootstrap.sessions, selectedPiboSessionId],
+@@ -2146,6 +2152,8 @@ function SessionTracePane({
+ 		return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+ 	}, [currentTraceView]);
+ 
++	const headerPiboSessionId = currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? "";
++
+ 	return (
+ 		<>
+ 			<main className="min-h-0 flex flex-col">
+@@ -2155,8 +2163,17 @@ function SessionTracePane({
+ 							{currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
+ 						</h1>
+ 						<div className="font-mono text-[11px] text-slate-500 truncate">
+-							{bootstrap.room?.name ?? selectedRoomId ?? "Room"} · {currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? ""}{" "}
+-							{currentTraceView ? `· ${currentTraceView.piSessionId}` : ""}
++							{bootstrap.room?.name ?? selectedRoomId ?? "Room"} · {headerPiboSessionId ? (
++								<button
++									type="button"
++									onClick={() => void copyTextToClipboard(headerPiboSessionId)}
++									title="Copy Pibo session ID"
++									aria-label="Copy Pibo session ID"
++									className="font-mono text-slate-400 underline-offset-2 hover:text-[#11a4d4] hover:underline focus:outline-none focus:ring-1 focus:ring-[#11a4d4]"
++								>
++									{headerPiboSessionId}
++								</button>
++							) : ""}
+ 						</div>
+ 					</div>
+ 					<div className="flex items-center gap-2">
+@@ -2228,7 +2245,7 @@ function SessionTracePane({
+ 						showThinking,
+ 						expandThinking,
+ 						sessionAgentProfile: selectedSessionProfile,
+-						sessionActiveModel: selectedSessionActiveModel,
++						sessionActiveModel: sessionActiveModelBadge,
+ 						selectedSessionStatus,
+ 						selectedSessionSignal,
+ 						sessionBreadcrumbs,
+@@ -3546,6 +3563,56 @@ function resolveSessionActiveModel(
+ 	return profileModel?.mainModel ?? bootstrap.modelDefaults?.main;
+ }
+ 
++function resolveSessionThinkingLevel(bootstrap: BootstrapData, profileName: string): ThinkingLevel | undefined {
++	const staticAgent = bootstrap.agents.find((agent) => agent.name === profileName);
++	const customAgent = bootstrap.customAgents.find((agent) => agent.profileName === profileName);
++	return staticAgent?.thinkingLevel ?? customAgent?.thinkingLevel ?? bootstrap.modelDefaults?.thinking;
++}
++
++function formatSessionModelBadge(modelLabel: string | undefined, thinkingLevel: ThinkingLevel | undefined, fast: boolean): string | undefined {
++	if (!modelLabel) return undefined;
++	return [modelLabel, thinkingLevel, fast ? "fast" : undefined].filter(Boolean).join(" ");
++}
++
++function resolveTraceThinkingState(traceView: PiboSessionTraceView | null): { level?: ThinkingLevel; fast: boolean } {
++	let state: { level?: ThinkingLevel; fast: boolean } = { fast: false };
++	if (!traceView) return state;
++	for (const node of flattenTraceNodes(traceView.nodes)) {
++		if (node.type !== "execution.command" || (node.title !== "thinking" && node.title !== "fast_mode")) continue;
++		const output = node.output && typeof node.output === "object" ? node.output as Record<string, unknown> : undefined;
++		const level = typeof output?.level === "string" && isThinkingLevel(output.level) ? output.level : undefined;
++		state = {
++			level: level ?? state.level,
++			fast: node.title === "fast_mode" ? output?.mode === "fast" : state.fast,
++		};
++	}
++	return state;
++}
++
++function flattenTraceNodes(nodes: readonly PiboTraceNode[]): PiboTraceNode[] {
++	return nodes.flatMap((node) => [node, ...flattenTraceNodes(node.children)]);
++}
++
++function isThinkingLevel(value: string): value is ThinkingLevel {
++	return THINKING_LEVELS.includes(value as ThinkingLevel);
++}
++
++function copyTextToClipboard(text: string): Promise<void> {
++	if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
++	const textarea = document.createElement("textarea");
++	textarea.value = text;
++	textarea.style.position = "fixed";
++	textarea.style.opacity = "0";
++	document.body.appendChild(textarea);
++	textarea.select();
++	try {
++		document.execCommand("copy");
++		return Promise.resolve();
++	} finally {
++		document.body.removeChild(textarea);
++	}
++}
++
+ function findSessionNode(nodes: PiboWebSessionNode[], piboSessionId: string): PiboWebSessionNode | undefined {
+ 	for (const node of nodes) {
+ 		if (node.piboSessionId === piboSessionId) return node;
+diff --git a/src/apps/chat-ui/src/api.ts b/src/apps/chat-ui/src/api.ts
+index 2764c02..e9308ee 100644
+--- a/src/apps/chat-ui/src/api.ts
++++ b/src/apps/chat-ui/src/api.ts
+@@ -674,6 +674,7 @@ function normalizeNavigation(payload: Partial<NavigationData>): NavigationData {
+ 	return {
+ 		identity: payload.identity ?? { userId: "" },
+ 		session: payload.session,
++		runtimeStatus: payload.runtimeStatus,
+ 		room: payload.room,
+ 		selectedRoomId: payload.selectedRoomId ?? "",
+ 		selectedPiboSessionId,
+diff --git a/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx b/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
+index f69d4c4..d8ba9af 100644
+--- a/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
++++ b/src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx
+@@ -1,6 +1,6 @@
+ import { useCallback, useEffect, useMemo, useState } from "react";
+ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+-import { ChevronDown, ChevronRight, GitBranch } from "lucide-react";
++import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer } from "lucide-react";
+ import { Virtuoso } from "react-virtuoso";
+ import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
+ import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
+@@ -46,8 +46,6 @@ export function CompactTerminalSessionView({
+ 	);
+ 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+ 	const runningCount = rows.filter((row) => row.status === "running").length;
+-	const signalActiveDescendantCount = (selectedSessionSignal?.activeChildren.length ?? 0) + (selectedSessionSignal?.activeRuns.length ?? 0);
+-	const workingPhase = selectedSessionSignal?.phase;
+ 	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
+ 	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
+ 	const signalWorking = selectedSessionSignal?.isTreeActive ?? false;
+@@ -96,12 +94,8 @@ export function CompactTerminalSessionView({
+ 	return (
+ 		<section className="relative min-w-0 flex-1 flex flex-col overflow-hidden bg-[#0b0b0b] text-[#d4d4d4]">
+ 			<TerminalHeader
+-				isLoading={isLoading}
+-				runningCount={runningCount}
+ 				errorCount={errorCount}
+ 				toolErrorCount={toolErrorCount}
+-				workingPhase={workingPhase}
+-				activeDescendantCount={signalActiveDescendantCount}
+ 				sessionAgentProfile={sessionAgentProfile}
+ 				sessionActiveModel={sessionActiveModel}
+ 				sessionBreadcrumbs={sessionBreadcrumbs}
+@@ -164,12 +158,8 @@ export function CompactTerminalSessionView({
+ }
+ 
+ function TerminalHeader({
+-	isLoading,
+-	runningCount,
+ 	errorCount,
+ 	toolErrorCount,
+-	workingPhase,
+-	activeDescendantCount,
+ 	sessionAgentProfile,
+ 	sessionActiveModel,
+ 	sessionBreadcrumbs,
+@@ -177,12 +167,8 @@ function TerminalHeader({
+ 	derivedSessions,
+ 	onOpenSession,
+ }: {
+-	isLoading: boolean;
+-	runningCount: number;
+ 	errorCount: number;
+ 	toolErrorCount: number;
+-	workingPhase?: string;
+-	activeDescendantCount: number;
+ 	sessionAgentProfile?: string;
+ 	sessionActiveModel?: string;
+ 	sessionBreadcrumbs: ChatSessionViewProps["sessionBreadcrumbs"];
+@@ -193,14 +179,10 @@ function TerminalHeader({
+ 	return (
+ 		<div className="border-b border-[#2a2a2a] bg-[#111111] px-4 py-2 text-[11px]">
+ 			<div className="flex flex-wrap items-center gap-2">
+-				{isLoading ? <TerminalBadge tone="cyan">Loading</TerminalBadge> : null}
+-				{workingPhase ? <TerminalBadge tone="cyan">{workingPhase}</TerminalBadge> : null}
+-				{runningCount > 0 ? <TerminalBadge tone="cyan">{runningCount} running</TerminalBadge> : null}
+-				{activeDescendantCount > 0 ? <TerminalBadge tone="cyan">{activeDescendantCount} active descendants/runs</TerminalBadge> : null}
+-				{errorCount > 0 ? <TerminalBadge tone="red">{errorCount} errors</TerminalBadge> : null}
+-				{toolErrorCount > 0 ? <TerminalBadge tone="amber">{toolErrorCount} tool errors</TerminalBadge> : null}
+ 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
+ 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
++				{errorCount > 0 ? <TerminalBadge tone="red" label={`${errorCount} errors`}>{errorCount}<CircleX size={12} /></TerminalBadge> : null}
++				{toolErrorCount > 0 ? <TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors`}>{toolErrorCount}<Hammer size={12} /></TerminalBadge> : null}
+ 				{originSession ? (
+ 					<SessionLinkButton onClick={() => onOpenSession(originSession.piboSessionId)}>
+ 						Origin {originSession.label}
+@@ -563,9 +545,11 @@ function useAnimatedDots() {
+ 
+ function TerminalBadge({
+ 	tone,
++	label,
+ 	children,
+ }: {
+ 	tone: "cyan" | "red" | "amber" | "purple" | "neutral";
++	label?: string;
+ 	children: ReactNode;
+ }) {
+ 	const className =
+@@ -578,7 +562,7 @@ function TerminalBadge({
+ 					: tone === "purple"
+ 						? "border-purple-500/40 text-purple-300"
+ 						: "border-[#3a3a3a] text-[#d4d4d4]";
+-	return <span className={`border px-2 py-0.5 ${className}`}>{children}</span>;
++	return <span className={`inline-flex items-center border px-2 py-0.5 ${className}`} title={label} aria-label={label}>{children}</span>;
+ }
+ 
+ function RowAction({
+diff --git a/src/apps/chat-ui/src/types.ts b/src/apps/chat-ui/src/types.ts
+index 1cfdd17..7f09f42 100644
+--- a/src/apps/chat-ui/src/types.ts
++++ b/src/apps/chat-ui/src/types.ts
+@@ -152,9 +152,16 @@ export type ChatSessionPage = {
+ 	version?: string;
+ };
+ 
++export type PiboRuntimeStatus = {
++	piboSessionId: string;
++	thinkingLevel?: ThinkingLevel;
++	fastMode?: boolean;
++};
++
+ export type NavigationData = {
+ 	identity: { userId: string; email?: string; name?: string };
+ 	session: PiboSession;
++	runtimeStatus?: PiboRuntimeStatus;
+ 	room?: PiboRoom;
+ 	selectedRoomId: string;
+ 	selectedPiboSessionId: string;
+diff --git a/src/apps/chat/web-app.ts b/src/apps/chat/web-app.ts
+index 9d5c7ed..07f62d9 100644
+--- a/src/apps/chat/web-app.ts
++++ b/src/apps/chat/web-app.ts
+@@ -3063,6 +3063,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
+ 				return responseJson({
+ 					identity: webSession.authSession.identity,
+ 					session: selectedSession,
++					runtimeStatus: context.channelContext.getSessionRuntimeStatus?.(selectedSession.id),
+ 					room: state.roomService.getRoom(selectedRoomId),
+ 					defaultRoomId: defaultRoom.id,
+ 					selectedRoomId,
+@@ -3122,6 +3123,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
+ 				return responseJson({
+ 					identity: webSession.authSession.identity,
+ 					session: selectedSession,
++					runtimeStatus: context.channelContext.getSessionRuntimeStatus?.(selectedSession.id),
+ 					room: state.roomService.getRoom(selectedRoomId),
+ 					selectedRoomId,
+ 					selectedPiboSessionId: selectedSession.id,
+diff --git a/src/core/events.ts b/src/core/events.ts
+index 66bdce2..7da0197 100644
+--- a/src/core/events.ts
++++ b/src/core/events.ts
+@@ -124,6 +124,8 @@ export type PiboSessionStatus = {
+ 	enabledTools: string[];
+ 	cwd: string;
+ 	disposed: boolean;
++	thinkingLevel?: PiboThinkingLevel;
++	fastMode?: boolean;
+ };
+ 
+ export type PiboPiSessionSnapshot = {
+diff --git a/src/core/routed-session.ts b/src/core/routed-session.ts
+index 982d45c..021d6f5 100644
+--- a/src/core/routed-session.ts
++++ b/src/core/routed-session.ts
+@@ -311,6 +311,7 @@ export class RoutedSession {
+ 	private readonly queue: RoutedQueueItem[] = [];
+ 	private processing = false;
+ 	private disposed = false;
++	private fastMode = false;
+ 	private activeMessage?: PiboMessageEvent;
+ 	private activeAssistantIndex?: number;
+ 	private nextAssistantIndex = 0;
+@@ -458,6 +459,7 @@ export class RoutedSession {
+ 
+ 	getStatus(): PiboSessionStatus {
+ 		const enabledTools = this.runtime.session.getActiveToolNames();
++		const thinkingLevel = this.runtime.session.thinkingLevel as PiboThinkingLevel;
+ 		return {
+ 			piboSessionId: this.piboSessionId,
+ 			queuedMessages: this.queue.length,
+@@ -467,6 +469,8 @@ export class RoutedSession {
+ 			enabledTools,
+ 			cwd: this.runtime.cwd,
+ 			disposed: this.disposed,
++			thinkingLevel,
++			fastMode: this.getFastModeResult().mode === "fast",
+ 		};
+ 	}
+ 
+@@ -612,6 +616,19 @@ export class RoutedSession {
+ 		return this.getThinkingResult();
+ 	}
+ 
++	getFastMode(): { mode: "fast" | "normal"; supported: boolean } {
++		this.assertActive();
++		return this.getFastModeResult();
++	}
++
++	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean } {
++		this.assertActive();
++		const before = this.getFastModeResult().mode;
++		if (this.runtime.session.supportsThinking()) this.fastMode = enabled;
++		const current = this.getFastModeResult();
++		return { ...current, changed: before !== current.mode };
++	}
++
+ 	async compact(customInstructions?: string): Promise<CompactionResult> {
+ 		this.assertActive();
+ 		return await this.runtime.session.compact(customInstructions);
+@@ -781,6 +798,8 @@ export class RoutedSession {
+ 				getThinkingLevel: () => this.getThinkingResult(),
+ 				setThinkingLevel: (level) => this.setThinkingLevel(level),
+ 				cycleThinkingLevel: () => this.cycleThinkingLevel(),
++				getFastMode: () => this.getFastMode(),
++				setFastMode: (enabled) => this.setFastMode(enabled),
+ 				setModel: (model) => this.setModel(model),
+ 				compact: (customInstructions) => this.compact(customInstructions),
+ 				kill: async () => {
+@@ -822,6 +841,11 @@ export class RoutedSession {
+ 		};
+ 	}
+ 
++	private getFastModeResult(): { mode: "fast" | "normal"; supported: boolean } {
++		const supported = this.runtime.session.supportsThinking();
++		return { mode: supported && this.fastMode ? "fast" : "normal", supported };
++	}
++
+ 	private clearQueue(): number {
+ 		const cleared = this.queue.length;
+ 		this.queue.length = 0;
+diff --git a/src/plugins/builtin.ts b/src/plugins/builtin.ts
+index 23b77a5..99a5170 100644
+--- a/src/plugins/builtin.ts
++++ b/src/plugins/builtin.ts
+@@ -75,13 +75,6 @@ function getThinkingParams(event: PiboExecutionEvent): PiboThinkingParams {
+ 	return { level: parsePiboThinkingLevel(raw.level) };
+ }
+ 
+-function selectNormalThinkingLevel(availableLevels: readonly string[]): PiboThinkingParams["level"] {
+-	for (const level of ["medium", "low", "minimal", "high", "xhigh"] as const) {
+-		if (availableLevels.includes(level)) return level;
+-	}
+-	return undefined;
+-}
+-
+ function requireLoginStartParams(event: PiboExecutionEvent): { provider: string } {
+ 	const params = getObjectParams(event);
+ 	if (!params || typeof params.provider !== "string" || params.provider.length === 0) {
+@@ -240,16 +233,9 @@ export const piboCorePlugin = definePiboPlugin({
+ 			description: "Toggle between Fast mode and Normal mode for models with thinking support.",
+ 			slashCommands: ["fast"],
+ 			execute(context) {
+-				const current = context.getThinkingLevel();
+-				if (!current.supported) return { ...current, mode: "normal", changed: false };
+-
+-				if (current.level !== "off" && current.availableLevels.includes("off")) {
+-					return { ...context.setThinkingLevel("off"), mode: "fast", changed: true };
+-				}
+-
+-				const normalLevel = selectNormalThinkingLevel(current.availableLevels);
+-				if (!normalLevel) return { ...current, mode: "fast", changed: false };
+-				return { ...context.setThinkingLevel(normalLevel), mode: "normal", changed: true };
++				const current = context.getFastMode();
++				if (!current.supported) return { ...current, changed: false };
++				return context.setFastMode(current.mode !== "fast");
+ 			},
+ 		});
+ 		api.registerGatewayAction({
+diff --git a/src/plugins/types.ts b/src/plugins/types.ts
+index 8771f9a..3c279d2 100644
+--- a/src/plugins/types.ts
++++ b/src/plugins/types.ts
+@@ -172,6 +172,8 @@ export type PiboGatewayActionContext = {
+ 	getThinkingLevel(): PiboThinkingResult;
+ 	setThinkingLevel(level: PiboThinkingLevel): PiboThinkingResult;
+ 	cycleThinkingLevel(): PiboThinkingResult;
++	getFastMode(): { mode: "fast" | "normal"; supported: boolean };
++	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean };
+ 	setModel(model: ModelProfile): Promise<ModelProfile>;
+ 	compact(customInstructions?: string): Promise<CompactionResult>;
+ 	kill(): Promise<{ killed: string[]; cancelledRuns: string[] }>;
+diff --git a/test/session-actions.test.mjs b/test/session-actions.test.mjs
+index a7d64f7..23a7e91 100644
+--- a/test/session-actions.test.mjs
++++ b/test/session-actions.test.mjs
+@@ -43,6 +43,10 @@ function seedConversation(runtime) {
+ 	return { firstUserId, secondUserId };
+ }
+ 
++function enableThinkingSupport(runtime) {
++	runtime.session.state.model = { provider: "test", id: "reasoning-test-model", reasoning: true };
++}
++
+ async function createSessionHarness() {
+ 	const cwd = await mkdtemp(join(tmpdir(), "pibo-session-actions-"));
+ 	const profile = new InitialSessionContextBuilder("session-actions-test").createSession();
+@@ -69,6 +73,7 @@ async function createSessionHarness() {
+ test("thinking action without level reports current level without cycling", async () => {
+ 	const harness = await createSessionHarness();
+ 	try {
++		enableThinkingSupport(harness.routed.runtime);
+ 		harness.routed.runtime.session.setThinkingLevel("medium");
+ 
+ 		const result = await harness.routed.executeAction({
+@@ -85,9 +90,10 @@ test("thinking action without level reports current level without cycling", asyn
+ 	}
+ });
+ 
+-test("fast action toggles between fast and normal thinking levels", async () => {
++test("fast action toggles independently of thinking level", async () => {
+ 	const harness = await createSessionHarness();
+ 	try {
++		enableThinkingSupport(harness.routed.runtime);
+ 		harness.routed.runtime.session.setThinkingLevel("medium");
+ 
+ 		const fast = await harness.routed.executeAction({
+@@ -97,8 +103,18 @@ test("fast action toggles between fast and normal thinking levels", async () =>
+ 		});
+ 		assert.equal(fast.type, "execution_result");
+ 		assert.equal(fast.result.mode, "fast");
+-		assert.equal(fast.result.level, "off");
+-		assert.equal(harness.routed.runtime.session.thinkingLevel, "off");
++		assert.equal(harness.routed.runtime.session.thinkingLevel, "medium");
++		assert.equal(harness.routed.getStatus().fastMode, true);
++
++		const thinking = await harness.routed.executeAction({
++			type: "execution",
++			piboSessionId: "route:test",
++			action: "thinking",
++			params: { level: "high" },
++		});
++		assert.equal(thinking.type, "execution_result");
++		assert.equal(thinking.result.level, "high");
++		assert.equal(harness.routed.getStatus().fastMode, true);
+ 
+ 		const normal = await harness.routed.executeAction({
+ 			type: "execution",
+@@ -107,8 +123,8 @@ test("fast action toggles between fast and normal thinking levels", async () =>
+ 		});
+ 		assert.equal(normal.type, "execution_result");
+ 		assert.equal(normal.result.mode, "normal");
+-		assert.equal(normal.result.level, "medium");
+-		assert.equal(harness.routed.runtime.session.thinkingLevel, "medium");
++		assert.equal(harness.routed.runtime.session.thinkingLevel, "high");
++		assert.equal(harness.routed.getStatus().fastMode, false);
+ 	} finally {
+ 		await harness.dispose();
+ 	}

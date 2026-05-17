@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/upload-polish
+branch=upload-polish
+dirty_count=0
+## upload-polish

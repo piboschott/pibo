@@ -1,0 +1,262 @@
+diff --git a/src/apps/chat-ui/src/App.tsx b/src/apps/chat-ui/src/App.tsx
+index 244f4df..7f4b8da 100644
+--- a/src/apps/chat-ui/src/App.tsx
++++ b/src/apps/chat-ui/src/App.tsx
+@@ -59,6 +59,7 @@ import { CompactionPromptView } from "./context/CompactionPromptView";
+ import { PiboToolsView } from "./context/PiboToolsView";
+ import { McpToolsView } from "./context/McpToolsView";
+ import { CronArea } from "./CronArea";
++import { RalphArea } from "./RalphArea";
+ import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
+ import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
+ import {
+@@ -75,7 +76,7 @@ import {
+ 	traceSummaryQueriesForSession,
+ } from "./cache";
+ 
+-type Area = "sessions" | "projects" | "cron" | "agents" | "context" | "settings";
++type Area = "sessions" | "projects" | "cron" | "ralph" | "agents" | "context" | "settings";
+ type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools";
+ type SettingsPanel = "general" | "pi-packages" | "skills" | "providers";
+ 
+@@ -84,6 +85,7 @@ export type ChatAppRoute =
+ 	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
+ 	| { area: "agents" }
+ 	| { area: "cron" }
++	| { area: "ralph" }
+ 	| { area: "context" }
+ 	| { area: "settings"; panel?: SettingsPanel };
+ 
+@@ -456,6 +458,10 @@ export function App({ route }: { route: ChatAppRoute }) {
+ 				void navigate({ to: "/cron", replace });
+ 				return;
+ 			}
++			if (target.area === "ralph") {
++				void navigate({ to: "/ralph", replace });
++				return;
++			}
+ 			if (target.area === "context") {
+ 				void navigate({ to: "/context", replace });
+ 				return;
+@@ -1378,7 +1384,7 @@ export function App({ route }: { route: ChatAppRoute }) {
+ 						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
+ 					</div>
+ 					<nav className="flex gap-1 flex-wrap">
+-					{(["sessions", "projects", "cron", "agents", "context", "settings"] as const).map((item) => (
++					{(["sessions", "projects", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
+ 						<button
+ 							key={item}
+ 							type="button"
+@@ -1417,7 +1423,7 @@ export function App({ route }: { route: ChatAppRoute }) {
+ 
+ 			<div
+ 				className={`min-h-0 ${
+-					(area === "agents" || area === "cron") ? "h-full overflow-hidden" : `grid ${
++					(area === "agents" || area === "cron" || area === "ralph") ? "h-full overflow-hidden" : `grid ${
+ 						(area === "sessions" || area === "projects") && showRawEvents
+ 						? "grid-cols-[300px_minmax(0,1fr)_320px] max-[980px]:grid-cols-1"
+ 						: "grid-cols-[300px_minmax(0,1fr)] max-[980px]:grid-cols-1"
+@@ -1426,6 +1432,8 @@ export function App({ route }: { route: ChatAppRoute }) {
+ 			>
+ 				{area === "cron" ? (
+ 					<CronArea bootstrap={bootstrap} mobileSidebarOpen={mobileSidebarOpen} onCloseMobileSidebar={() => setMobileSidebarOpen(false)} />
++				) : area === "ralph" ? (
++					<RalphArea bootstrap={bootstrap} mobileSidebarOpen={mobileSidebarOpen} onCloseMobileSidebar={() => setMobileSidebarOpen(false)} />
+ 				) : area === "agents" ? (
+ 					<AgentsView
+ 						agents={bootstrap.agents}
+diff --git a/src/apps/chat-ui/src/api.ts b/src/apps/chat-ui/src/api.ts
+index 351c826..eb37c05 100644
+--- a/src/apps/chat-ui/src/api.ts
++++ b/src/apps/chat-ui/src/api.ts
+@@ -1,4 +1,4 @@
+-import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboCronJob, PiboCronRun, PiboCronSchedule, PiboCronStatus, PiboCronTarget, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
++import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboCronJob, PiboCronRun, PiboCronSchedule, PiboCronStatus, PiboCronTarget, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot, PiboRalphJob, PiboRalphRun, PiboRalphStatus, PiboRalphTarget } from "./types";
+ 
+ const DOWNLOAD_FILENAME_RE = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i;
+ 
+@@ -873,3 +873,15 @@ function fromEtag(value: string | null): string | undefined {
+ 	if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) return trimmed.slice(1, -1);
+ 	return trimmed;
+ }
++
++
++export type RalphJobInput = { name?: string; description?: string; enabled?: boolean; target: PiboRalphTarget; profile: string; prompt: string; maxIterations?: number; storyStopPaths?: string[] };
++export async function getRalphStatus(): Promise<{ status: PiboRalphStatus }> { return requestJson<{ status: PiboRalphStatus }>("/api/chat/ralph/status"); }
++export async function getRalphJobs(includeDisabled = true): Promise<{ jobs: PiboRalphJob[] }> { const suffix = includeDisabled ? "?includeDisabled=true" : ""; return requestJson<{ jobs: PiboRalphJob[] }>(`/api/chat/ralph/jobs${suffix}`); }
++export async function postRalphJob(input: RalphJobInput): Promise<{ job: PiboRalphJob }> { return requestJson<{ job: PiboRalphJob }>("/api/chat/ralph/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }); }
++export async function patchRalphJob(id: string, input: Partial<RalphJobInput>): Promise<{ job: PiboRalphJob }> { return requestJson<{ job: PiboRalphJob }>(`/api/chat/ralph/jobs/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }); }
++export async function deleteRalphJob(id: string): Promise<{ removed: boolean }> { return requestJson<{ removed: boolean }>(`/api/chat/ralph/jobs/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({}) }); }
++export async function startRalphJob(id: string): Promise<{ run: PiboRalphRun }> { return requestJson<{ run: PiboRalphRun }>(`/api/chat/ralph/jobs/${encodeURIComponent(id)}/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) }); }
++export async function stopRalphJob(id: string): Promise<{ job: PiboRalphJob }> { return requestJson<{ job: PiboRalphJob }>(`/api/chat/ralph/jobs/${encodeURIComponent(id)}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) }); }
++export async function cancelRalphJob(id: string): Promise<{ job: PiboRalphJob }> { return requestJson<{ job: PiboRalphJob }>(`/api/chat/ralph/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) }); }
++export async function getRalphRuns(jobId?: string, limit = 100): Promise<{ runs: PiboRalphRun[] }> { const params = new URLSearchParams(); if (jobId) params.set("jobId", jobId); params.set("limit", String(limit)); return requestJson<{ runs: PiboRalphRun[] }>(`/api/chat/ralph/runs?${params.toString()}`); }
+diff --git a/src/apps/chat-ui/src/main.tsx b/src/apps/chat-ui/src/main.tsx
+index a2dda2f..73f1530 100644
+--- a/src/apps/chat-ui/src/main.tsx
++++ b/src/apps/chat-ui/src/main.tsx
+@@ -35,6 +35,7 @@ function chatRouteFromLocation(pathname: string, search: Record<string, unknown>
+ 	if (parts[0] === "context") return { area: "context" };
+ 	if (parts[0] === "agents") return { area: "agents" };
+ 	if (parts[0] === "cron") return { area: "cron" };
++	if (parts[0] === "ralph") return { area: "ralph" };
+ 	if (parts[0] === "settings") {
+ 		if (parts[1] === "pi-packages") return { area: "settings", panel: "pi-packages" };
+ 		if (parts[1] === "skills") return { area: "settings", panel: "skills" };
+@@ -93,6 +94,10 @@ const cronRoute = createRoute({
+ 	getParentRoute: () => rootRoute,
+ 	path: "cron",
+ });
++const ralphRoute = createRoute({
++	getParentRoute: () => rootRoute,
++	path: "ralph",
++});
+ const contextRoute = createRoute({
+ 	getParentRoute: () => rootRoute,
+ 	path: "context",
+@@ -114,7 +119,7 @@ const settingsProvidersRoute = createRoute({
+ 	path: "settings/providers",
+ });
+ const router = createRouter({
+-	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
++	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, ralphRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
+ 	basepath: "/apps/chat",
+ });
+ 
+diff --git a/src/apps/chat-ui/src/types.ts b/src/apps/chat-ui/src/types.ts
+index dbd1581..4cc058d 100644
+--- a/src/apps/chat-ui/src/types.ts
++++ b/src/apps/chat-ui/src/types.ts
+@@ -511,3 +511,10 @@ export type Trace = {
+ 	completedAt?: Date;
+ 	totalDurationMs: number;
+ };
++
++export type PiboRalphTarget =
++	| { kind: "room"; roomId: string }
++	| { kind: "personal"; principalId: string };
++export type PiboRalphJob = { id: string; ownerScope: string; name: string; description?: string; enabled: boolean; target: PiboRalphTarget; profile: string; prompt: string; maxIterations?: number; storyStopPaths?: string[]; state: { runningAt?: string; lastRunAt?: string; lastStatus?: "ok" | "error" | "cancelled"; lastError?: string; lastRunId?: string; lastPiboSessionId?: string; consecutiveErrors?: number; stopRequestedAt?: string; cancelRequestedAt?: string; completedIterations?: number }; createdAt: string; updatedAt: string };
++export type PiboRalphRun = { id: string; jobId: string; ownerScope: string; piboSessionId?: string; status: "running" | "ok" | "error" | "cancelled"; reason?: string; error?: string; startedAt?: string; completedAt?: string; createdAt: string; updatedAt: string };
++export type PiboRalphStatus = { enabled: boolean; jobs: number; running: number };
+diff --git a/src/apps/chat/web-app.ts b/src/apps/chat/web-app.ts
+index bfbaa6a..d62a1c4 100644
+--- a/src/apps/chat/web-app.ts
++++ b/src/apps/chat/web-app.ts
+@@ -78,7 +78,9 @@ import { ChatTimelineQueryService } from "./data/timeline-query-service.js";
+ import { ChatProjectService, type PiboProject, type PiboProjectSession } from "./data/project-service.js";
+ import { PiboDataStore } from "../../data/pibo-store.js";
+ import { createDefaultPiboCronStore, type PiboCronStore } from "../../cron/store.js";
++import { createDefaultPiboRalphStore, type PiboRalphStore } from "../../ralph/store.js";
+ import { handleChatCronApiRequest } from "./cron-api.js";
++import { handleChatRalphApiRequest } from "./ralph-api.js";
+ 
+ export const CHAT_WEB_APP_NAME = "pibo.chat-web";
+ export const CHAT_WEB_CHANNEL = "pibo.chat-web";
+@@ -93,6 +95,7 @@ export type ChatWebAppOptions = {
+ 	dataPayloadRootDir?: string;
+ 	projectStorePath?: string;
+ 	cronStorePath?: string;
++	ralphStorePath?: string;
+ };
+ 
+ type ChatPersistenceMetrics = {
+@@ -165,6 +168,7 @@ type ChatWebAppState = {
+ 	agentStore: CustomAgentStore;
+ 	reliabilityStore: PiboReliabilityStore;
+ 	cronStore: PiboCronStore;
++	ralphStore: PiboRalphStore;
+ 	dataStore: PiboDataStore;
+ 	ingestService: ChatDataIngestService;
+ 	traceCache: Map<string, PiboSessionTraceView>;
+@@ -3213,6 +3217,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
+ 		agentStore: createAgentStore(options.agentStorePath),
+ 		reliabilityStore: createReliabilityStore(options.reliabilityStorePath),
+ 		cronStore: createDefaultPiboCronStore({ path: options.cronStorePath }),
++		ralphStore: createDefaultPiboRalphStore({ path: options.ralphStorePath }),
+ 		dataStore,
+ 		ingestService: new ChatDataIngestService(dataStore),
+ 		traceCache: new Map(),
+@@ -3407,6 +3412,19 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
+ 				if (response) return response;
+ 			}
+ 
++			if (url.pathname.startsWith(`${CHAT_WEB_API_PREFIX}/ralph`)) {
++				const webSession = await requireSession(request, context);
++				const response = await handleChatRalphApiRequest({
++					request,
++					context,
++					webSession,
++					roomService: state.roomService,
++					ralphStore: state.ralphStore,
++					defaultProfile,
++				});
++				if (response) return response;
++			}
++
+ 
+ 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/projects/bootstrap` && request.method === "GET") {
+ 				const webSession = await requireSession(request, context);
+diff --git a/src/cli.ts b/src/cli.ts
+index 6f63a0b..6355c00 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -107,6 +107,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
+ 		return;
+ 	}
+ 
++	if (argv[2] === "ralph") {
++		const { runRalphCli } = await import("./ralph/cli.js");
++		await runRalphCli([argv[0] ?? "node", "pibo ralph", ...argv.slice(3)]);
++		return;
++	}
++
+ 	if (argv[2] === "config" && (argv[3] === "--help" || argv[3] === "-h" || argv.length === 3)) {
+ 		printConfigDiscovery();
+ 		return;
+@@ -211,6 +217,18 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
+ 			await runCronCli([argv[0] ?? "node", "pibo cron", ...args]);
+ 		});
+ 
++	program
++		.command("ralph")
++		.description("Manage continuous Ralph jobs")
++		.helpOption(false)
++		.allowUnknownOption(true)
++		.allowExcessArguments(true)
++		.argument("[args...]")
++		.action(async (args: string[]) => {
++			const { runRalphCli } = await import("./ralph/cli.js");
++			await runRalphCli([argv[0] ?? "node", "pibo ralph", ...args]);
++		});
++
+ 	const config = program.command("config").description(`Manage pibo config at ${getDefaultPiboConfigPath()}`).helpOption(false);
+ 	config.action(() => {
+ 		printConfigDiscovery();
+@@ -347,6 +365,7 @@ Commands:
+   compute      Manage Pibo Docker compute workers
+   skills       Manage Pibo user skills
+   cron         Manage scheduled Pibo jobs
++  ralph        Manage continuous Ralph jobs
+   profile      Inspect a pibo profile
+   tui          Start the direct Pi TUI
+   tui:routed   Start the local routed Pibo TUI
+diff --git a/src/gateway/web.ts b/src/gateway/web.ts
+index 1086f92..74bd1e6 100644
+--- a/src/gateway/web.ts
++++ b/src/gateway/web.ts
+@@ -5,6 +5,7 @@ import { createPiboBetterAuthPlugin } from "../plugins/better-auth.js";
+ import { createPiboChatWebPlugin, type ChatWebAppOptions } from "../plugins/chat-web.js";
+ import { createPiboContextFilesPlugin, type ContextFilesPluginOptions } from "../plugins/context-files.js";
+ import { createPiboCronPlugin } from "../cron/plugin.js";
++import { createPiboRalphPlugin } from "../ralph/plugin.js";
+ import { createPiboDevAuthPlugin } from "../plugins/dev-auth.js";
+ import { PiboPluginRegistry } from "../plugins/registry.js";
+ import { createPiboWebHostPlugin } from "../plugins/web.js";
+@@ -96,6 +97,7 @@ export function createWebPiboPluginRegistry(options: WebGatewayServerOptions = {
+ 			useDevAuth ? createPiboDevAuthPlugin() : createPiboBetterAuthPlugin(resolvedOptions.auth),
+ 			createPiboWebHostPlugin({ announce: false, canonicalBaseURL: useDevAuth ? undefined : authBaseURL(resolvedOptions), gatewayMode: webGatewayMode(resolvedOptions, useDevAuth), ...resolvedOptions.web }),
+ 			createPiboCronPlugin({ cronStorePath: resolvedOptions.chat?.cronStorePath, dataStorePath: resolvedOptions.chat?.dataStorePath, dataPayloadRootDir: resolvedOptions.chat?.dataPayloadRootDir }),
++			createPiboRalphPlugin({ ralphStorePath: resolvedOptions.chat?.ralphStorePath, dataStorePath: resolvedOptions.chat?.dataStorePath, dataPayloadRootDir: resolvedOptions.chat?.dataPayloadRootDir }),
+ 			createPiboContextFilesPlugin(resolvedOptions.contextFiles),
+ 			createPiboChatWebPlugin(resolvedOptions.chat),
+ 		],

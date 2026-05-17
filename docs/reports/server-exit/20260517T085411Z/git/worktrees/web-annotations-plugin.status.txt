@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/dev/.worktrees/web-annotations-plugin
+branch=web-annotations-plugin
+dirty_count=0
+## web-annotations-plugin

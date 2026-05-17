@@ -1,0 +1,50 @@
+233fa83 (HEAD -> main, upstream/main, upstream/dev, origin/main, origin/dev, origin/HEAD, dev) Merge branch 'main' into dev
+30473c2 Merge pull request #19 from piboschott/main
+125c862 Merge pull request #18 from piboschott/dev
+92cdc11 Merge remote-tracking branch 'upstream/main'
+4632fc5 docs: add web annotations remote architecture assessment
+ef90e99 Merge pull request #17 from piboschott/main
+0552dd6 Merge pull request #16 from piboschott/dev
+db8ff82 test: include web annotations builtin skill
+89abe27 Merge remote-tracking branch 'upstream/dev' into dev
+1712c5e Merge pull request #15 from Pascapone-server/dev
+2fa1f53 Merge remote-tracking branch 'upstream/dev' into dev
+eca9a6e (backup/dev-before-upstream-sync-20260517T061849Z) docs: add web annotations skill guide
+b6e2976 Align Ink status rendering with terminal flow
+ab14bb9 Merge remote-tracking branch 'origin/main' into dev
+c1f1e03 fix: clarify web annotation CDP errors
+f1c1814 Run slash commands while pickers are open
+a79814e Keep root recovery owner selectable in CLI
+564d004 Merge source specs refresh ledger into dev
+69b72bc (origin/source-specs-refresh-ledger, source-specs-refresh-ledger) docs: resolve custom agent bootstrap cache decision
+5822e00 Remove local Ralph progress log
+1ee37dc Merge Ink CLI V2 Web parity
+e79f9e8 (web-annotations-plugin) docs: record PRD07 validation commit
+4652c52 test: PRD07 - Web Annotation validation and rollout
+8bf294f feat: PRD07 US-002 - Harden annotation authorization tests
+321ee0b Record final evidence update commit
+c2c12c9 Record final Ink parity evidence hash
+0370e03 Complete Ink CLI V2 web parity validation
+ba60937 feat: PRD07 US-001 - Payload validation and redaction
+9b09a2c Record Ink PTY fallback evidence
+dd6b704 Add Ink PTY fallback smoke scripts
+cdb8cbb docs: record PRD06 validation progress
+40e5537 test: PRD06 US-006 - Validate Chat Web annotation flow
+fb9ad01 Record rich Ink status rendering evidence
+d77b423 Render rich Ink terminal status cards
+934611d Record login and fork command PRD evidence
+33ea4db Add Ink login and fork file command flows
+59c4eda docs: record PRD06 validation blocker
+e0f478d Record interactive picker evidence commit hash
+c2a853b Record interactive command picker PRD evidence
+f98054b Add Ink thinking and model command pickers
+291c3da Record routed slash action PRD evidence
+9132d08 Execute Ink routed slash actions
+dad333a docs: record PRD06 attachment progress
+2000e11 feat: PRD06 - Chat Web annotation attachments
+22090c5 Record slash catalog PRD evidence
+ddbecd4 Add Ink slash catalog help and suggestions
+57bf531 docs: record final source spec ledger
+3fa28dd docs: refresh final source spec sweep
+0d0e168 feat: PRD06 US-001 - Chat Web annotation entry points
+0752e57 Record shared descriptor PRD evidence

@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/upload-status-actions
+branch=upload-status-actions
+dirty_count=0
+## upload-status-actions

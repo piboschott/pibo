@@ -1,0 +1,16 @@
+archived-sessions-freeze-fix2 8c2eefc Limit archived session sidebar rendering
+broken-context-fix d560028 Show and clean broken context links
+cache-pages dd33428 Cache chat trace pages safely
+compute-dev-cleanup 238ad6c fix: show and reap dev compute workers
+debug-session-transport 30d1bfd fix(chat-ui): isolate live trace events by session
+fast-mode-service-tier-options-v2 afcf93f Pass fast mode through service tier options
+fix-openai-oauth-start-url 07b580e Fix provider OAuth action result handling
+fix-provider-status-id ab9935a Fix provider login status ids
+fix-session-trace-loading 4623756 Fix trace loading after cache bypass
+fix-trace-terminal-rendering 146dfb3 Fix replayed chat trace stream frames
+openai-device-code-login f05beaf Add OpenAI Codex device login
+pibo-native-debug-tooling-context dfce07a Move debug tooling context to Pibo native
+provider-login-success-feedback cd9b783 Add provider login success feedback
+test-improvements eaec782 test: cover trace order sorting
+token-context-counts 91d86f1 Show token estimates in context build inspector
+web-render-debug-tool 12625fe Add web render debug CLI

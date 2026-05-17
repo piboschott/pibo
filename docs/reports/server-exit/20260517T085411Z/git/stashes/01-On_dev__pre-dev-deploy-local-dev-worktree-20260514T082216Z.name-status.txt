@@ -1,0 +1,5 @@
+M	docs/specs/capabilities/continuous-ralph-jobs.md
+A	docs/specs/changes/extensible-ralph-stop-conditions/design.md
+A	docs/specs/changes/extensible-ralph-stop-conditions/proposal.md
+A	docs/specs/changes/extensible-ralph-stop-conditions/spec.md
+A	docs/specs/changes/extensible-ralph-stop-conditions/tasks.md

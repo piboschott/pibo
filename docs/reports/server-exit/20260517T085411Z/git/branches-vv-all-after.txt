@@ -1,0 +1,111 @@
+  Workflows                                                                                   abf041b feat: 14.6 - Run manual bounded review/fix loop
+  WorkflowsV2                                                                                 3271592 feat: US-023 - Add Project and run-view checklist tests
++ WorkflowsV2Resume                                                                           af0baa7 (/root/code/pibo/.worktrees/WorkflowsV2Resume) [origin/feature/workflows-v2-ui-authoring] feat: US-025 - Verify requirement and task traceability remains complete
+  archived-sessions-freeze-fix                                                                9fca829 Scope chat signal streams to sessions view
+  archived-sessions-freeze-fix2                                                               8c2eefc Limit archived session sidebar rendering
+  backup/cron-test-reports-20260510-165751-before-feature-recovery-20260510-193527            0c86718 test: add MCP tool filter coverage
+  backup/dev-before-feature-recovery-20260510-193527                                          9b56370 Add spec coverage reports
+  backup/dev-before-upstream-sync-20260517T061849Z                                            eca9a6e docs: add web annotations skill guide
+  backup/dev-before-workflows-merge-20260511-045758                                           cf8ca8f Add Ralph continuous jobs
+  backup/dev-before-workflows-v2-20260514T081532Z                                             ba5799b Merge main into dev
+  backup/fast-render-before-feature-recovery-20260510-193527                                  fd0821c Render fast mode as status line
+  backup/fast-slash-dev-before-feature-recovery-20260510-193527                               9bd24d8 Add fast mode slash command
+  backup/main-before-dev-merge-20260517T063529Z                                               612f713 test: make telemetry prune test date-independent
+  backup/projects-area-v1-before-feature-recovery-20260510-193527                             d6013d9 Archive historical plans reports and specs
++ backup/server-exit-20260517T085411Z/wip-context-build-inspector-impl                        a8cea12 (/root/code/pibo/.worktrees/context-build-inspector-impl) backup: server exit WIP for context-build-inspector-impl (20260517T085411Z)
++ backup/server-exit-20260517T085411Z/wip-ralph-story-stop                                    5cf2871 (/root/code/pibo/.worktrees/ralph-story-stop) backup: server exit WIP for ralph-story-stop (20260517T085411Z)
+  bootstrap-indexing-dev                                                                      a816c37 [origin/bootstrap-indexing-dev] Optimize chat bootstrap session indexing
+  broken-context-fix                                                                          d560028 Show and clean broken context links
+  cache-pages                                                                                 dd33428 Cache chat trace pages safely
+  chat-composer-history                                                                       4381708 [origin/chat-composer-history] Add client-side composer history and drafts
+  chat-data-v2-followup-navigation-ingest-2026-05-08                                          b50b624 Restore live tool call streaming
+  chat-data-v2-rearchitecture-2026-05-08                                                      2d592ea Document chat data V2 handover
++ compute-dev-cleanup                                                                         238ad6c (/root/code/pibo/.worktrees/compute-dev-cleanup) fix: show and reap dev compute workers
+  compute-help-texts                                                                          8dd99fd Refine thinking slash controls
+  context-build-inspector-impl                                                                5c8f84b Merge dev source specs coverage updates
+  context-build-inspector-session-target                                                      39cebdb [origin/context-build-inspector-session-target] Add session build context inspector
+  debug-session-transport                                                                     30d1bfd fix(chat-ui): isolate live trace events by session
++ dev                                                                                         233fa83 (/root/code/pibo/.worktrees/dev) [origin/dev] Merge branch 'main' into dev
+  docs/web-annotations-plugin                                                                 236db8d [origin/docs/web-annotations-plugin] docs: spec web annotations plugin
+  fast-mode-investigation                                                                     5c8f84b Merge dev source specs coverage updates
+  fast-mode-service-tier-options                                                              da5f609 Merge dev into main
++ fast-mode-service-tier-options-v2                                                           afcf93f (/root/code/pibo/.worktrees/fast-mode-service-tier-options-v2) Pass fast mode through service tier options
+  fast-render                                                                                 fd0821c Render fast mode as status line
+  fast-slash-dev                                                                              9bd24d8 Add fast mode slash command
+  feat/preemptive-compaction                                                                  ec25ba2 [origin/feat/preemptive-compaction] feat(core): make preemptive compaction reliable and emit events to assistant
+  feat/web-annotations-plugin                                                                 0a3ca53 [upstream/dev: behind 189] Merge pull request #12 from piboschott/docs/web-annotations-plugin
+  feature/compute-cli                                                                         1caf27d feat: implement kill and kill_all commands with recursive session and run cancellation
+  feature/skill-trigger                                                                       54f7851 fix(skills-cli): enable -h and --help flags
+  fix-chat-status-lamps                                                                       0179c87 Fix trace view event fallback
+  fix-openai-oauth-start-url                                                                  07b580e Fix provider OAuth action result handling
++ fix-provider-session-refresh                                                                0b1719e (/root/code/pibo/.worktrees/fix-provider-session-refresh) Fix provider auth session refresh
+  fix-provider-status-id                                                                      ab9935a Fix provider login status ids
+  fix-ralph-session-error                                                                     7857883 Add workflow PRD JSON artifacts
+  fix-session-trace-loading                                                                   4623756 Fix trace loading after cache bypass
+  fix-trace-terminal-rendering                                                                146dfb3 Fix replayed chat trace stream frames
+  freeze-debug-fix                                                                            24c8852 Fix chat session switch freezes
+  gateway-backpressure-subscriptions                                                          0f8bdd5 [origin/gateway-backpressure-subscriptions] Harden gateway backpressure and subscriptions
++ integrate-test-improvements                                                                 612f713 (/root/code/pibo/.worktrees/integrate-test-improvements) test: make telemetry prune test date-independent
+* main                                                                                        233fa83 [origin/main] Merge branch 'main' into dev
+  openai-device-code-login                                                                    f05beaf Add OpenAI Codex device login
++ pibo-native-debug-tooling-context                                                           dfce07a (/root/code/pibo/.worktrees/pibo-native-debug-tooling-context) Move debug tooling context to Pibo native
+  project-2af2e7db-2fbf54d5                                                                   3fbd3b3 Remove nested sidebar scroll containers
+  projects-area-v1                                                                            d6013d9 Archive historical plans reports and specs
+  provider-login-success-feedback                                                             cd9b783 Add provider login success feedback
+  ralph-job-overrides                                                                         5c8f84b Merge dev source specs coverage updates
+  ralph-promise-stop                                                                          c170626 Fix recovered feature integration tests
+  ralph-story-stop                                                                            c170626 Fix recovered feature integration tests
+  read-all-room                                                                               0b8d5c6 Merge branch 'dev'
+  recover/features-to-dev-20260510                                                            c170626 Fix recovered feature integration tests
+  remove-model-prefix                                                                         acb1e69 Optimize chat bootstrap session indexing
+  remove-ralph-json-stop                                                                      c170626 Fix recovered feature integration tests
++ source-specs-refresh-ledger                                                                 69b72bc (/root/code/pibo/.worktrees/source-specs-refresh-ledger) [origin/source-specs-refresh-ledger] docs: resolve custom agent bootstrap cache decision
++ test-improvements                                                                           eaec782 (/root/code/pibo/.worktrees/test-improvements) test: cover trace order sorting
++ token-context-counts                                                                        91d86f1 (/root/code/pibo/.worktrees/token-context-counts) Show token estimates in context build inspector
++ upload-feature                                                                              7c823b4 (/root/code/pibo/.worktrees/upload-feature) Add chat upload slash command
++ upload-feedback-fix                                                                         abda3b6 (/root/code/pibo/.worktrees/dev/.worktrees/upload-feedback-fix) Fix upload file selection feedback
++ upload-polish                                                                               5747b31 (/root/code/pibo/.worktrees/upload-polish) Polish upload status and filename conflicts
++ upload-status-actions                                                                       941f4c9 (/root/code/pibo/.worktrees/upload-status-actions) Improve upload status actions
++ upload-success-green                                                                        193047f (/root/code/pibo/.worktrees/upload-success-green) Show upload success in green
++ web-annotations-plugin                                                                      e79f9e8 (/root/code/pibo/.worktrees/dev/.worktrees/web-annotations-plugin) docs: record PRD07 validation commit
++ web-render-debug-tool                                                                       12625fe (/root/code/pibo/.worktrees/web-render-debug-tool) Add web render debug CLI
++ web-render-debug-tool-fixes                                                                 3583415 (/root/code/pibo/.worktrees/web-render-debug-tool-fixes) [origin/web-render-debug-tool-fixes] Harden web render debug watch
+  remotes/origin/HEAD                                                                         -> origin/main
+  remotes/origin/backup/dev-before-upstream-sync-20260516T230308Z                             236db8d docs: spec web annotations plugin
+  remotes/origin/backup/main-before-upstream-sync-20260516T230308Z                            e58bcdf Merge dev into main
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-archived-sessions-freeze-fix2     8c2eefc Limit archived session sidebar rendering
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-broken-context-fix                d560028 Show and clean broken context links
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-cache-pages                       dd33428 Cache chat trace pages safely
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-compute-dev-cleanup               238ad6c fix: show and reap dev compute workers
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-debug-session-transport           30d1bfd fix(chat-ui): isolate live trace events by session
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-fast-mode-service-tier-options-v2 afcf93f Pass fast mode through service tier options
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-fix-openai-oauth-start-url        07b580e Fix provider OAuth action result handling
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-fix-provider-status-id            ab9935a Fix provider login status ids
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-fix-session-trace-loading         4623756 Fix trace loading after cache bypass
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-fix-trace-terminal-rendering      146dfb3 Fix replayed chat trace stream frames
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-openai-device-code-login          f05beaf Add OpenAI Codex device login
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-pibo-native-debug-tooling-context dfce07a Move debug tooling context to Pibo native
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-provider-login-success-feedback   cd9b783 Add provider login success feedback
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-test-improvements                 eaec782 test: cover trace order sorting
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-token-context-counts              91d86f1 Show token estimates in context build inspector
+  remotes/origin/backup/server-exit-20260517T085411Z/branch-web-render-debug-tool             12625fe Add web render debug CLI
+  remotes/origin/backup/server-exit-20260517T085411Z/wip-context-build-inspector-impl         a8cea12 backup: server exit WIP for context-build-inspector-impl (20260517T085411Z)
+  remotes/origin/backup/server-exit-20260517T085411Z/wip-ralph-story-stop                     5cf2871 backup: server exit WIP for ralph-story-stop (20260517T085411Z)
+  remotes/origin/bootstrap-indexing-dev                                                       a816c37 Optimize chat bootstrap session indexing
+  remotes/origin/chat-composer-history                                                        4381708 Add client-side composer history and drafts
+  remotes/origin/context-build-inspector-session-target                                       39cebdb Add session build context inspector
+  remotes/origin/dev                                                                          233fa83 Merge branch 'main' into dev
+  remotes/origin/docs/web-annotations-plugin                                                  236db8d docs: spec web annotations plugin
+  remotes/origin/feat/preemptive-compaction                                                   ec25ba2 feat(core): make preemptive compaction reliable and emit events to assistant
+  remotes/origin/feature/inline-skill-expansion                                               b9149fb feat(skills): add pibo-docker-dev skill for isolated development
+  remotes/origin/feature/workflows-v2-ui-authoring                                            af0baa7 feat: US-025 - Verify requirement and task traceability remains complete
+  remotes/origin/gateway-backpressure-subscriptions                                           0f8bdd5 Harden gateway backpressure and subscriptions
+  remotes/origin/main                                                                         233fa83 Merge branch 'main' into dev
+  remotes/origin/recover/features-to-dev-20260510                                             c170626 Fix recovered feature integration tests
+  remotes/origin/source-specs-refresh-ledger                                                  69b72bc docs: resolve custom agent bootstrap cache decision
+  remotes/origin/web-render-debug-tool-fixes                                                  3583415 Harden web render debug watch
+  remotes/upstream/dev                                                                        233fa83 Merge branch 'main' into dev
+  remotes/upstream/feature/chat-session-agent-picker                                          766c638 Add chat session agent picker
+  remotes/upstream/fix/gateway-failover                                                       7703ddb Add web deploy helper script
+  remotes/upstream/main                                                                       233fa83 Merge branch 'main' into dev
+  remotes/upstream/v1                                                                         ec1d12a Release 1.0.5

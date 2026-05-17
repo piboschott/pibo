@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/WorkflowsV2Resume
+branch=WorkflowsV2Resume
+dirty_count=0
+## WorkflowsV2Resume...origin/feature/workflows-v2-ui-authoring

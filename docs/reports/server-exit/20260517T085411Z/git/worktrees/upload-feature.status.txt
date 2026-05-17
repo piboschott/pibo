@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/upload-feature
+branch=upload-feature
+dirty_count=0
+## upload-feature

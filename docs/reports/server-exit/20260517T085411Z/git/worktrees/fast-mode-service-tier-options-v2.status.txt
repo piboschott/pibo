@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/fast-mode-service-tier-options-v2
+branch=fast-mode-service-tier-options-v2
+dirty_count=0
+## fast-mode-service-tier-options-v2

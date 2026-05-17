@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/token-context-counts
+branch=token-context-counts
+dirty_count=0
+## token-context-counts

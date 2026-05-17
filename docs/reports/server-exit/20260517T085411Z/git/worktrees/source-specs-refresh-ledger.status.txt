@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/source-specs-refresh-ledger
+branch=source-specs-refresh-ledger
+dirty_count=0
+## source-specs-refresh-ledger...origin/source-specs-refresh-ledger

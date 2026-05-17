@@ -1,0 +1,14 @@
+worktree=/root/code/pibo/.worktrees/ralph-story-stop
+branch=ralph-story-stop
+dirty_count=10
+## ralph-story-stop
+ M src/apps/chat-ui/src/App.tsx
+ M src/apps/chat-ui/src/api.ts
+ M src/apps/chat-ui/src/main.tsx
+ M src/apps/chat-ui/src/types.ts
+ M src/apps/chat/web-app.ts
+ M src/cli.ts
+ M src/gateway/web.ts
+?? src/apps/chat-ui/src/RalphArea.tsx
+?? src/apps/chat/ralph-api.ts
+?? src/ralph/

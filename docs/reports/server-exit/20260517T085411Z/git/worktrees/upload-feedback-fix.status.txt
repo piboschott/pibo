@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/dev/.worktrees/upload-feedback-fix
+branch=upload-feedback-fix
+dirty_count=0
+## upload-feedback-fix

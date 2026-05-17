@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/pibo-native-debug-tooling-context
+branch=pibo-native-debug-tooling-context
+dirty_count=0
+## pibo-native-debug-tooling-context

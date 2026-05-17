@@ -1,0 +1,84 @@
+worktree /root/code/pibo
+HEAD 233fa83f7296d53dea736a955bdab56937c83762
+branch refs/heads/main
+
+worktree /root/code/pibo/.worktrees/WorkflowsV2Resume
+HEAD af0baa77ca9b481db72b3a6d4d7f5a0d2b6bf9b3
+branch refs/heads/WorkflowsV2Resume
+
+worktree /root/code/pibo/.worktrees/compute-dev-cleanup
+HEAD 238ad6cdd8c9b0a5e35ee8a3fc5de7f63e87e1c2
+branch refs/heads/compute-dev-cleanup
+
+worktree /root/code/pibo/.worktrees/context-build-inspector-impl
+HEAD 5c8f84baccae38436ded37c39330b899cf4aacda
+branch refs/heads/context-build-inspector-impl
+
+worktree /root/code/pibo/.worktrees/dev
+HEAD 233fa83f7296d53dea736a955bdab56937c83762
+branch refs/heads/dev
+
+worktree /root/code/pibo/.worktrees/dev/.worktrees/upload-feedback-fix
+HEAD abda3b6abcdf73c0ee74dd83913b6c1fb9d077de
+branch refs/heads/upload-feedback-fix
+
+worktree /root/code/pibo/.worktrees/dev/.worktrees/web-annotations-plugin
+HEAD e79f9e8c393e479c68ba03ec0e86c2f2c4c7f66c
+branch refs/heads/web-annotations-plugin
+
+worktree /root/code/pibo/.worktrees/fast-mode-service-tier-options-v2
+HEAD afcf93fe5cc18b849d88464ed41e95e4058a8769
+branch refs/heads/fast-mode-service-tier-options-v2
+
+worktree /root/code/pibo/.worktrees/fix-provider-session-refresh
+HEAD 0b1719e18071bdb381d1cd3a82b1caf0251f8e65
+branch refs/heads/fix-provider-session-refresh
+
+worktree /root/code/pibo/.worktrees/integrate-test-improvements
+HEAD 612f713d958157dc3d9e1f496cce17e2810b2366
+branch refs/heads/integrate-test-improvements
+
+worktree /root/code/pibo/.worktrees/pibo-native-debug-tooling-context
+HEAD dfce07a436353705245d624c6f10ddd8d6ceb2df
+branch refs/heads/pibo-native-debug-tooling-context
+
+worktree /root/code/pibo/.worktrees/ralph-story-stop
+HEAD c1706267886d48b36529ed8a69bd85ac0aee6e44
+branch refs/heads/ralph-story-stop
+
+worktree /root/code/pibo/.worktrees/source-specs-refresh-ledger
+HEAD 69b72bcafa6d56d346699a9b06984b57d43ea903
+branch refs/heads/source-specs-refresh-ledger
+
+worktree /root/code/pibo/.worktrees/test-improvements
+HEAD eaec78276db87bcbe52b56a5040bcaaaaa460444
+branch refs/heads/test-improvements
+
+worktree /root/code/pibo/.worktrees/token-context-counts
+HEAD 91d86f1654c933e192b857f4dd055153411885f4
+branch refs/heads/token-context-counts
+
+worktree /root/code/pibo/.worktrees/upload-feature
+HEAD 7c823b43c04cb774898f161ffe94ccd9c5826442
+branch refs/heads/upload-feature
+
+worktree /root/code/pibo/.worktrees/upload-polish
+HEAD 5747b315225e0fa6f313fbf9a17412a6cf52200f
+branch refs/heads/upload-polish
+
+worktree /root/code/pibo/.worktrees/upload-status-actions
+HEAD 941f4c9d2ba890dc08e2b420dbeffcda7df8fb90
+branch refs/heads/upload-status-actions
+
+worktree /root/code/pibo/.worktrees/upload-success-green
+HEAD 193047fdcdce4a7d8095a485d805a497984eb880
+branch refs/heads/upload-success-green
+
+worktree /root/code/pibo/.worktrees/web-render-debug-tool
+HEAD 12625fe2de59a28cd8d9802fa69848fc2b2d091d
+branch refs/heads/web-render-debug-tool
+
+worktree /root/code/pibo/.worktrees/web-render-debug-tool-fixes
+HEAD 3583415cb7207db661b33386a7739cef448c80fe
+branch refs/heads/web-render-debug-tool-fixes
+

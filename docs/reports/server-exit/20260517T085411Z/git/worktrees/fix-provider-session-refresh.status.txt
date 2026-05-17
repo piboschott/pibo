@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/fix-provider-session-refresh
+branch=fix-provider-session-refresh
+dirty_count=0
+## fix-provider-session-refresh

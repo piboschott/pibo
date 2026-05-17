@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/upload-success-green
+branch=upload-success-green
+dirty_count=0
+## upload-success-green

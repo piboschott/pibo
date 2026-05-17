@@ -1,0 +1,4 @@
+worktree=/root/code/pibo
+branch=main
+dirty_count=0
+## main...origin/main

@@ -1,0 +1,4 @@
+origin	git@github.com:piboschott/pibo.git (fetch)
+origin	git@github.com:piboschott/pibo.git (push)
+upstream	git@github.com:Pascapone/pibo.git (fetch)
+upstream	git@github.com:Pascapone/pibo.git (push)

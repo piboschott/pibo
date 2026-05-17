@@ -1,0 +1,7 @@
+docs/specs/changes/context-build-inspector/design.md
+docs/specs/changes/context-build-inspector/proposal.md
+docs/specs/changes/context-build-inspector/spec.md
+docs/specs/changes/context-build-inspector/tasks.md
+src/apps/chat-ui/src/context/ContextBuildView.tsx
+src/core/context-build.ts
+test/context-build-inspector.test.mjs

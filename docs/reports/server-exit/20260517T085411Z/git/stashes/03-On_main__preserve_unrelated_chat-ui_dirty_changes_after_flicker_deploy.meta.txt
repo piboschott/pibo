@@ -1,0 +1,3 @@
+stash=stash@{2026-05-09 17:43:20 +0000}
+date=2026-05-09 17:43:20 +0000
+subject=On main: preserve unrelated chat-ui dirty changes after flicker deploy

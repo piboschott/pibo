@@ -1,0 +1,3010 @@
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/01-product-overview.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/01-product-overview.md
+new file mode 100644
+index 0000000..735edd1
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/01-product-overview.md
+@@ -0,0 +1,100 @@
++# PRD: Pibo Workflow UI Authoring V2 — Product Overview
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../proposal.md`, `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: Workflow V1 can define, run, persist, and inspect workflows, but normal Pibo users cannot select workflows for Project sessions or author workflow definitions in Chat Web.
++- **Proposed Solution**: Add Workflow UI Authoring V2 with a Workflows main-nav surface for browsing and editing definitions and a Projects execution surface for configuring, starting, and inspecting workflow-backed Project sessions.
++- **Success Criteria**:
++  - SC-01: A user can create a Project session, select a workflow version, configure allowed session values, and save the session without starting a run.
++  - SC-02: A user can explicitly start the configured session and inspect the single workflow run attached to that Project session.
++  - SC-03: A user can duplicate an existing workflow, edit it as a UI draft, validate it, and publish an immutable version.
++  - SC-04: A historical run remains inspectable after the live workflow definition is archived or deleted.
++  - SC-05: No V2 UI path allows inline TypeScript, raw XState authoring, workflow slash commands, workflow tools for agents, templates, TypeScript export, YAML/JSON product import/export, or Zod schema authoring.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Normal Pibo user creating and running Project workflow sessions.
++  - Workflow author composing existing registered capabilities into a reusable workflow.
++  - Reviewer approving or resuming human waits in a Project run.
++  - Developer or implementation agent verifying V2 product behavior against specs.
++
++- **User Stories**:
++  - As a Pibo user, I want to choose a workflow when I create a Project session so that the session starts with the right process.
++  - As a Pibo user, I want session creation and workflow start to be separate so that I can configure before execution.
++  - As a workflow author, I want to duplicate an existing workflow and edit it visually so that I can create variants without writing TypeScript.
++  - As a workflow author, I want published workflow versions to be immutable so that existing runs remain explainable.
++  - As a Project reviewer, I want pending human actions in the run view so that I can approve, reject, resume, or cancel work.
++
++- **Acceptance Criteria**:
++  - Chat Web has a Workflows main-nav tab for global workflow browsing, duplication, editing, validation, publishing, archiving, and deletion.
++  - Projects provide workflow session creation, delayed start, run history, Workflow/XState run view, and human action controls.
++  - Project sessions use per-session workflow selection; a Project can contain sessions using different workflows.
++  - Existing V1 workflow runtime, registry, persistence, and inspection behavior remain valid.
++  - UI-created workflows use Pibo Workflow IR and the existing workflow validator.
++
++- **Non-Goals**:
++  - Workflow templates.
++  - TypeScript export from UI-authored workflows.
++  - YAML/JSON import or export as a user-facing product feature.
++  - Inline TypeScript or arbitrary executable code in the UI.
++  - Workflow slash commands or workflow tools for agents.
++  - Normal Sessions-tab workflow usage.
++  - Project-wide default workflow selection.
++  - Changing a session's workflow after creation.
++  - Raw XState editing.
++  - Marketplace or third-party workflow package discovery.
++  - Zod migration.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Existing Pibo Workflow Registry, validator, runtime kernel, workflow store, and XState projection.
++  - Existing Pibo Project Session, Pibo Session, Agent Designer profile, auth, event, and Chat Web infrastructure.
++  - Registry read APIs for workflows, versions, handlers, adapters, guards, human actions, prompt assets, and non-archived Agent profiles.
++  - Write APIs for drafts, publish, archive, delete, configured Project sessions, run start, and human actions.
++
++- **Evaluation Strategy**:
++  - Product-flow tests cover select-configure-save-start-inspect for a workflow Project session.
++  - Builder tests cover duplicate-edit-validate-publish for a UI draft.
++  - Negative tests cover invalid drafts, missing refs, incompatible edges, invalid raw IR, and attempts to change workflow after session creation.
++  - Boundary tests verify V2 exposes no inline TypeScript, raw XState editing, templates, slash commands, agent workflow tools, or Zod schema path.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - TypeScript-registered workflows and UI drafts both produce Pibo Workflow IR.
++  - The Workflow Registry/store is the catalog boundary for code workflows, UI drafts, and UI-published workflows.
++  - The Workflows tab edits definitions. Projects create configured sessions and start runs.
++  - Runtime executes only valid published workflows or valid effective snapshots.
++  - XState projection renders graph/run state but never becomes durable truth.
++
++- **Integration Points**:
++  - `packages/workflows` for Workflow IR, validation, registry resolution, execution, and XState projection.
++  - Chat Web Workflows tab for catalog and builder surfaces.
++  - Chat Web Projects area for session creation, run view, sidebar, and human actions.
++  - Workflow store for drafts, published UI workflows, snapshots, run facts, wait tokens, and human actions.
++  - Agent Designer for profile selection and prompt behavior.
++
++- **Security & Privacy**:
++  - The UI must not create executable code. It can only reference registered handlers, adapters, guards, workflows, and non-archived profiles.
++  - Workflow inputs, outputs, prompts, state, edge payloads, and human action payloads remain subject to existing session/project visibility rules.
++  - Historical run snapshots must preserve inspectability without exposing more than the original run allowed.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Workflow Library, Project workflow selection, delayed start, snapshot creation, run view links, and duplicate-to-draft.
++  - v1.1: Visual builder, node/edge editing, validation panel, raw IR toggle, and publish/version lifecycle.
++  - v1.2: Human action controls, richer run history, nested workflow sidebar support, archive/delete, and historical deleted-definition states.
++  - v2.0 follow-up: Templates, export, import, marketplace, and richer authoring layers only if later approved.
++
++- **Technical Risks**:
++  - UI authoring diverges from runtime IR; mitigate by making Pibo Workflow IR the only saved definition format.
++  - Users publish invalid or unsafe workflows; mitigate with validation gates and registered-capability-only composition.
++  - Run inspection breaks after deletion; mitigate with immutable configuration/effective-definition snapshots.
++  - V2 scope expands into code generation or marketplace behavior; mitigate with explicit non-goals and review gates.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/02-workflow-registry-catalog-and-draft-store.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/02-workflow-registry-catalog-and-draft-store.md
+new file mode 100644
+index 0000000..f7c9ca4
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/02-workflow-registry-catalog-and-draft-store.md
+@@ -0,0 +1,110 @@
++# PRD: Pibo Workflow UI Authoring V2 — Workflow Registry, Catalog, and Draft Store
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: V1 has a code-oriented Workflow Registry, but V2 needs one catalog that can show code workflows, UI drafts, and UI-published versions with lifecycle actions and diagnostics.
++- **Proposed Solution**: Extend the Workflow Registry/store model with global workflow records, explicit `source` and `status`, invalid draft support, version listing, missing-reference diagnostics, and editor picker metadata.
++- **Success Criteria**:
++  - SC-01: Catalog APIs list code workflows, UI drafts, and UI-published workflows with source/status metadata.
++  - SC-02: A UI draft can be saved while incomplete or invalid, but invalid raw IR text cannot overwrite the last valid draft object.
++  - SC-03: Each workflow/copy has at most one active draft.
++  - SC-04: Missing handler, adapter, guard, profile, prompt asset, or nested workflow refs produce structured diagnostics with ids and locations.
++  - SC-05: Workflow Library actions can be derived from record source/status without special-case UI guesses.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Workflow author browsing available workflows and drafts.
++  - Pibo user selecting a workflow for a Project session.
++  - Developer registering handlers, adapters, guards, workflows, or prompt assets.
++  - Reviewer debugging catalog and missing-reference errors.
++
++- **User Stories**:
++  - As a workflow author, I want one Workflow Library to show code and UI workflows so that I do not search multiple places.
++  - As a workflow author, I want drafts to save before they are runnable so that I can build workflows incrementally.
++  - As a workflow author, I want code workflows to be duplicable but not directly editable so that code-owned definitions stay stable.
++  - As a reviewer, I want missing refs to identify the broken id and location so that I can fix the draft or registry.
++
++- **Acceptance Criteria**:
++  - Workflow records distinguish `source: "code" | "ui"` from `status: "draft" | "published" | "archived"`.
++  - UI drafts live in the Workflow Registry/store, not in Project session state.
++  - Draft definitions may be partial or invalid and include diagnostics.
++  - Invalid raw IR parse results show a warning and preserve the last valid persisted draft object.
++  - Catalog entries show id, title, description, tags, examples where present, source, status, versions, editability, validation state, missing refs, and actions.
++  - Picker APIs expose registered handlers, adapters, guards, human actions, prompt assets, and non-archived Agent profiles.
++
++- **Non-Goals**:
++  - User-private workflow catalogs in V2.
++  - Project-scoped workflow definitions in V2.
++  - Editing code-registered workflow records directly.
++  - Creating new executable handlers, adapters, or guards from UI.
++  - Storing invalid raw text as the canonical workflow definition.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Workflow Registry resolution for definitions, versions, handlers, adapters, guards, human actions, prompt assets, profiles, and nested workflows.
++  - Existing workflow validation functions, including JSON Schema subset validation and graph validation.
++  - Catalog/picker APIs consumable by Chat Web.
++
++- **Evaluation Strategy**:
++  - Catalog tests verify global visibility, source/status derivation, archived filtering, and version ordering.
++  - Draft tests verify incomplete draft save, one-active-draft enforcement, duplicate-to-draft, and raw IR parse protection.
++  - Registry-ref tests remove handlers/adapters/guards/profiles/nested workflows and verify structured missing-reference diagnostics.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Code workflows remain registered by TypeScript/plugin code and are read-only catalog records.
++  - UI drafts and UI-published workflows are persisted in the Workflow Registry/store.
++  - Published UI workflows are registry-resolvable by id/version and executable like code-registered workflows.
++  - Drafts are editor objects until published; runtime never executes invalid drafts.
++
++- **Entity Model Baseline**:
++  - A workflow identity groups versions, draft state, archive state, delete/tombstone state, tags, title, and description.
++  - A draft record is the one mutable UI editing track for a workflow/copy and may contain partial or invalid Workflow IR.
++  - A published version record is immutable, has a version and definition hash, and is runnable when not hidden by archive/delete rules.
++  - Archive state belongs to the workflow identity, not to one published version.
++  - Delete may remove or tombstone the live catalog identity, but it must not remove snapshots needed by historical runs.
++
++- **Permission Baseline**:
++
++  | Action | Source-spec decision | V2 PRD contract |
++  |---|---|---|
++  | View global workflows | UI-authored workflows are global and visible to authenticated users | Require authentication and list visible code/UI records. |
++  | Duplicate workflow | Users can duplicate existing workflows | Require authentication; exact cross-user ownership/edit semantics remain TBD. |
++  | Create/edit/publish UI drafts | Normal users are the UI target, but detailed edit rights are not specified | Resolve and document exact permissions before implementation. |
++  | Archive workflow | Any authenticated user may archive workflows in V2 | Require authentication; no additional V2 role. |
++  | Delete workflow | Any authenticated user may delete workflows in V2 | Require authentication; no additional V2 role; preserve historical snapshots. |
++
++- **Open Decisions**:
++  - Exact Workflow Registry/store database tables and record shapes are TBD.
++  - Exact create/edit/publish permissions are TBD beyond the authenticated-user archive/delete rule.
++
++- **Integration Points**:
++  - Workflow Registry/store for code workflow projection, UI drafts, UI-published versions, archive/delete markers, and metadata.
++  - Chat Web Workflow Library and Builder for list, inspect, duplicate, edit, validate, publish, archive, and delete actions.
++  - Agent Designer profile catalog for non-archived profile picker results.
++  - Prompt asset store/editor where prompt assets are editable.
++
++- **Security & Privacy**:
++  - Catalog APIs require authentication.
++  - UI-authored workflows are global in V2; callers must not imply private ownership.
++  - Diagnostics should reveal missing ids and locations without dumping sensitive prompt/input/output payloads.
++  - Code workflows stay code-owned to avoid UI mutation of plugin-defined behavior.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Catalog list/inspect, source/status metadata, duplicate-to-draft, draft save, and picker APIs.
++  - v1.1: Missing-reference diagnostics, validation summaries, archived filters, and version history.
++  - v1.2: Prompt asset integration, richer catalog search/filtering, and deleted-definition run states.
++
++- **Technical Risks**:
++  - Draft schema becomes a second workflow language; mitigate by wrapping `PartialWorkflowDefinition` and publishing only valid `WorkflowDefinition` IR.
++  - Global workflows create accidental edits by any user; mitigate with immutable published versions, source/status actions, and explicit archive/delete affordances.
++  - Missing refs surface only at runtime; mitigate by validating on draft load, picker render, publish, session creation, and run start.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/03-project-session-selection-and-snapshots.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/03-project-session-selection-and-snapshots.md
+new file mode 100644
+index 0000000..deee0f3
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/03-project-session-selection-and-snapshots.md
+@@ -0,0 +1,102 @@
++# PRD: Pibo Workflow UI Authoring V2 — Project Session Selection and Snapshots
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: Users need to configure a workflow-backed Project session before execution, but V1 links workflow runs to Projects after runtime start and does not define a normal-user creation flow.
++- **Proposed Solution**: Add a Project session creation flow that selects a workflow version, captures allowed session-scoped values, creates an immutable configuration/effective-definition snapshot, and starts the workflow only after explicit user action.
++- **Success Criteria**:
++  - SC-01: Session creation lets the user set a session name, workflow id/version, input values, prompt overrides, model, thinking level, and fast mode.
++  - SC-02: Creating the session persists a configured/not-started Project session and does not create a workflow run.
++  - SC-03: Start creates exactly one workflow run for that Project session.
++  - SC-04: The selected workflow cannot be changed after Project session creation.
++  - SC-05: The run remains inspectable through a snapshot if the workflow definition later changes or is deleted.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Pibo user creating a workflow-backed Project session.
++  - Project collaborator inspecting why a run used specific prompts/model settings.
++  - Runtime developer preserving execution and replay invariants.
++  - QA engineer testing session lifecycle and immutability.
++
++- **User Stories**:
++  - As a Pibo user, I want to configure workflow input before start so that I can review the session setup.
++  - As a Pibo user, I want workflow start to be explicit so that creating a session is safe.
++  - As a collaborator, I want the run to show the workflow version and effective settings so that I can understand historical behavior.
++  - As a runtime developer, I want an immutable snapshot so that deletion or edits do not break run inspection.
++
++- **Acceptance Criteria**:
++  - The Project session creation view appears in the main Project session content area.
++  - The user selects a published workflow version from the global catalog.
++  - The user can configure only allowed V2 session-scoped values: input, prompt overrides, model, thinking level, and fast mode.
++  - Session-scoped configuration does not persist back to the workflow definition.
++  - V2 rejects agent profile overrides, retry limit overrides, and arbitrary option overrides.
++  - The selected workflow is immutable after session creation.
++  - The Project session has states equivalent to configured, running, waiting, completed, failed, and cancelled.
++  - The one-run-per-session rule does not forbid parallel node execution inside that run when the workflow definition allows it.
++  - The runtime executes the effective snapshot, not a mutable live draft.
++  - A configured/not-started Project session shows selected workflow id/version, configuration summary, validation state, explicit Start action, and empty run-history state.
++  - If validation fails before Project session creation or before start, the UI blocks that action and shows diagnostics linked to the invalid input, override, schema, or missing reference.
++
++- **Non-Goals**:
++  - Project-wide workflow defaults.
++  - Relinking an existing Project session to another workflow.
++  - Multiple primary workflow runs per Project session.
++  - Starting workflows from normal Sessions tab.
++  - Workflow slash commands for start/run.
++  - Session-scoped handler, adapter, guard, retry, or profile overrides in V2.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Workflow catalog/version APIs for selectable published workflows.
++  - Input validation against workflow input ports and JSON Schema subset.
++  - Prompt override editor and model/thinking/fast-mode selectors.
++  - Project Session API to create configured workflow sessions.
++  - Workflow runtime API to start a run from a snapshot.
++
++- **Evaluation Strategy**:
++  - Integration tests cover configured-session creation without run creation.
++  - Start tests assert one run per Project session and reject second-start attempts while preserving allowed parallel node execution inside the run.
++  - Immutability tests reject workflow id/version changes after session creation.
++  - Snapshot tests verify base workflow id/version/hash, effective definition hash, inputs, prompt overrides, model, thinking level, fast mode, Project id, Pibo Session id, and timestamp are persisted.
++  - Create/start validation tests verify blocked actions show diagnostics and leave the session in the correct pre-run state.
++  - Deleted-definition tests verify the historical run still renders snapshot data.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Project session creation resolves a published workflow version and prepares a configuration snapshot.
++  - The snapshot records base workflow identity plus allowed session overrides and effective definition hash.
++  - Explicit start validates the snapshot and creates the single workflow run.
++  - Nested workflow runs and agent node sessions are linked below the primary Project session when execution creates them.
++  - Prompt overrides are stored as node-id-keyed session configuration for nodes that are eligible for prompt override.
++  - Exact prompt override eligibility rules are TBD; implementation must not allow arbitrary node prompt mutation without a documented rule.
++  - Whether allowed session fields remain editable between configured-session creation and first start is TBD; implementation must resolve this before coding the pre-run UX.
++
++- **Integration Points**:
++  - Project service/session APIs for session name, Project id, Pibo Session id, workflow metadata, and configured state.
++  - Workflow Registry for version lookup and definition hash.
++  - Workflow runtime/store for start, run id, status, output, errors, events, and snapshots.
++  - Chat Web Projects UI for creation, configuration review, start button, and run view.
++
++- **Security & Privacy**:
++  - Session creation and start require authenticated access to the Project/session context.
++  - Snapshot payloads may include prompts, inputs, model settings, and outputs and must follow existing Project/Pibo Session visibility rules.
++  - Snapshots should preserve inspectability without granting access to deleted live definitions beyond what the run already recorded.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Select published workflow, create configured session, snapshot base/effective data, explicit start.
++  - v1.1: Prompt overrides, model/thinking/fast-mode selectors, richer input validation UI.
++  - v1.2: Deleted-definition display, nested workflow links, and historical snapshot diff/inspection.
++
++- **Technical Risks**:
++  - Snapshot fields are incomplete; mitigate by defining a required snapshot contract and testing deleted-definition inspection.
++  - Start accidentally runs twice; mitigate with unique run-per-session constraints and idempotent start behavior.
++  - Session-scoped overrides mutate shared definitions; mitigate by storing overrides only in configuration snapshots.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/04-workflow-builder-and-ir-editing.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/04-workflow-builder-and-ir-editing.md
+new file mode 100644
+index 0000000..5d09587
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/04-workflow-builder-and-ir-editing.md
+@@ -0,0 +1,99 @@
++# PRD: Pibo Workflow UI Authoring V2 — Workflow Builder and IR Editing
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: Users can inspect workflow graphs in V1, but they cannot create, edit, validate, or publish workflow definitions from Chat Web.
++- **Proposed Solution**: Add a Workflow Builder in the Workflows tab that edits Pibo Workflow IR through a visual graph editor, inspectors, raw Workflow IR toggle, raw JSON schema editors, prompt editors, prompt asset editor, validation panel, and publish/version panel.
++- **Success Criteria**:
++  - SC-01: A user can duplicate an existing workflow into a UI draft and open it in the builder.
++  - SC-02: A user can add, delete, connect, move, inspect, and configure workflow nodes and edges.
++  - SC-03: A user can edit raw Workflow IR; invalid raw text cannot corrupt the last valid draft object.
++  - SC-04: A valid draft with at least one node plus workflow input/output contracts can be published.
++  - SC-05: Layout metadata affects only display and never changes runtime execution.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Workflow author editing definitions visually.
++  - Advanced user editing raw Workflow IR for fields not exposed visually.
++  - Prompt author editing prompt templates and prompt assets.
++  - QA engineer testing graph editing and validation behavior.
++
++- **User Stories**:
++  - As a workflow author, I want a visual canvas so that I can understand and compose workflow structure.
++  - As an advanced user, I want raw Workflow IR behind a toggle so that I can fix advanced fields without a custom form.
++  - As a prompt author, I want prompt assets editable with the Markdown editor pattern so that workflow prompt text can be maintained without leaving the builder.
++  - As a workflow author, I want validation diagnostics linked to graph elements so that I know what blocks publish.
++
++- **Acceptance Criteria**:
++  - The builder lives under the Workflows main-nav tab.
++  - Main panels include graph canvas, node inspector, edge inspector, workflow settings, raw JSON schema editor, prompt editor, prompt asset Markdown editor, state read/write selector, validation panel, raw IR editor toggle, and publish/version panel.
++  - The graph supports drag-and-drop node positions and automatic layout for workflows without saved positions.
++  - The builder edits Pibo Workflow IR fields: workflow metadata, ports, nodes, edges, adapters, guards, state, prompts, prompt assets, and UI metadata.
++  - The raw editor exposes Workflow IR only and never raw XState JSON.
++  - Schema editors are raw JSON only and validate against the existing workflow JSON Schema subset.
++  - Prompt asset editing uses the existing Markdown editor pattern; whether asset edits mutate the current asset or create asset versions is TBD.
++  - Draft save is allowed with validation errors; publish and run are blocked by error diagnostics.
++  - Drafts with zero nodes can be saved, but a published/runnable workflow requires at least one node plus workflow input and output contracts.
++
++- **Non-Goals**:
++  - Form-builder JSON Schema editor.
++  - Raw XState editing.
++  - Inline nested workflow graph expansion.
++  - New executable code authoring.
++  - Templates as a creation path.
++  - TypeScript export from UI-authored workflows.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Workflow validation and serialization APIs.
++  - XState projection for display only.
++  - Graph/canvas library selected by implementation.
++  - Markdown editor pattern from Context Files for prompt assets.
++  - Raw JSON editor for schemas and raw Workflow IR.
++
++- **Evaluation Strategy**:
++  - UI tests cover duplicate, open builder, add node, connect edge, save layout, edit prompt, edit schema, validate, and publish.
++  - Prompt asset tests verify editor wiring without assuming mutation-versus-versioning until that open decision is resolved.
++  - Publish tests reject zero-node drafts and drafts missing workflow input or output contracts.
++  - Raw IR tests cover valid edit sync, invalid JSON warning, invalid workflow diagnostics, and preservation of last valid draft object.
++  - Layout tests verify automatic layout appears for definitions without positions and saved positions persist without changing serialized runtime semantics.
++  - Schema tests verify allowed subset schemas pass and unsupported schemas show diagnostics.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - The builder stores a draft wrapper around partial Pibo Workflow IR.
++  - Visual edits mutate the draft IR object and trigger validation.
++  - Raw IR edits parse into the same draft IR object after successful parse.
++  - XState projection is regenerated from Pibo IR for display and run visualization.
++  - Publish normalizes and validates a full `WorkflowDefinition` before creating an immutable version.
++
++- **Integration Points**:
++  - Workflow Registry/store for draft load/save/publish.
++  - Workflow validation package for structured diagnostics.
++  - Chat Web Workflows tab for navigation and editor panels.
++  - Prompt asset store/editor and Context Files Markdown editor pattern.
++  - Project session creation flow for “create Project session/run” links from published workflow records.
++
++- **Security & Privacy**:
++  - The builder must not provide JavaScript, TypeScript, shell, or eval entry points.
++  - Prompt and schema editing may expose sensitive workflow context and must follow existing authenticated UI visibility rules.
++  - Raw IR editor must not bypass the registered-capability-only execution boundary.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Open/duplicate draft, graph display, basic node/edge editing, validation panel, and publish block.
++  - v1.1: Drag/drop layout persistence, raw IR editor, raw JSON schema editors, and prompt template editor.
++  - v1.2: Prompt asset Markdown editor, state read/write selector, publish/version panel, and richer diagnostics linking.
++
++- **Technical Risks**:
++  - Visual editor and raw editor diverge; mitigate by using one draft IR object and deterministic serialization.
++  - Invalid raw text corrupts drafts; mitigate with parse-before-save and last-valid-object preservation.
++  - Graph library imposes incompatible model assumptions; mitigate by keeping layout metadata separate from workflow execution semantics.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/05-composition-node-and-capability-pickers.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/05-composition-node-and-capability-pickers.md
+new file mode 100644
+index 0000000..e92cc27
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/05-composition-node-and-capability-pickers.md
+@@ -0,0 +1,94 @@
++# PRD: Pibo Workflow UI Authoring V2 — Composition, Nodes, and Capability Pickers
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: Workflow authoring must let users compose useful processes while preventing the UI from becoming an arbitrary code execution surface.
++- **Proposed Solution**: Allow visual composition of existing registered capabilities through Agent, code, workflow, adapter, and human nodes; typed edges; compatible adapter selection; guard selection; simple state mapping controls; and nested workflow references.
++- **Success Criteria**:
++  - SC-01: The builder supports node kinds `agent`, `code`, `workflow`, `adapter`, and `human`.
++  - SC-02: Code, adapter, guard, and nested workflow references can only select registered catalog entries.
++  - SC-03: Incompatible ports require an explicit registered adapter as an edge adapter or inserted adapter node.
++  - SC-04: Guard and adapter parameters are editable only when registry metadata includes `paramsSchema`.
++  - SC-05: Nested workflow nodes reference workflow id/version and open the nested workflow separately; V2 does not inline-expand nested internals.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Workflow author composing registered capabilities.
++  - Agent profile owner controlling profile availability.
++  - Developer registering handlers, adapters, guards, and human actions.
++  - Reviewer verifying no UI path creates executable code.
++
++- **User Stories**:
++  - As a workflow author, I want to choose an Agent profile for an agent node so that it runs with known tools, skills, and context.
++  - As a workflow author, I want to use registered code handlers and adapters so that non-agent work is reusable and inspectable.
++  - As a workflow author, I want a compatible adapter dialog so that I can fix schema mismatches intentionally.
++  - As a workflow author, I want to reference nested workflows and open them separately so that parent graphs stay readable.
++  - As a reviewer, I want the UI to reject inline TypeScript so that users cannot bypass Pibo execution boundaries.
++
++- **Acceptance Criteria**:
++  - Agent nodes select non-archived private, custom, or global Agent Designer profiles and support prompt template editing.
++  - Code nodes select registered handlers only.
++  - Workflow nodes select a workflow id/version and provide “Open workflow” navigation.
++  - Adapter nodes select registered adapters only.
++  - Human nodes edit prompt, raw JSON resume schema, registered human action choices, and timeout.
++  - Missing or invalid human action refs show diagnostics and block publish/run when they affect executable behavior.
++  - Edges support source/target ports, kind, guard refs, adapter refs, and validation diagnostics.
++  - Adapter dialog shows from/to port schema, compatible adapters, adapter details, and actions: use as edge adapter or insert adapter node.
++  - State mappings support simple global/local/edge reads/writes through dropdowns; complex mappings are raw IR only.
++
++- **Non-Goals**:
++  - Creating new handlers, adapters, guards, or arbitrary code from the UI.
++  - Hidden LLM coercion between incompatible schemas.
++  - Inline TypeScript, JavaScript, shell, or eval nodes.
++  - Inline expansion/editing of nested workflow internals in a parent graph.
++  - Visual editor for complex state mapping DSLs in V2.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Agent Designer profile picker excluding archived profiles.
++  - Workflow Registry picker metadata for handlers, adapters, guards, human actions, workflows, prompt assets, and params schemas.
++  - Human action registry metadata for available action kinds, labels, payload requirements, and missing-action diagnostics.
++  - Port compatibility checker and adapter compatibility discovery.
++  - JSON Schema subset validator for node schemas, adapter/guard params, and human resume payloads.
++
++- **Evaluation Strategy**:
++  - Positive tests cover each node kind, profile selection, registered handler/adapter/guard selection, nested workflow selection, and compatible adapter insertion.
++  - Negative tests cover archived profile selection, missing refs, incompatible edge without adapter, invalid adapter params, invalid guard params, and inline code attempts.
++  - State tests cover visual simple read/write mapping and raw-IR-only complex mapping.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Composition UI edits registered refs in Pibo Workflow IR.
++  - Registry metadata drives picker choices, descriptions, schemas, and parameter editors.
++  - Validation checks refs, port compatibility, adapter compatibility, guard params, state mappings, and node-specific required fields.
++  - Runtime behavior remains owned by V1 executors and registered implementation refs.
++
++- **Integration Points**:
++  - Workflow Registry for handler, adapter, guard, human action, prompt asset, and workflow metadata.
++  - Agent Designer/profile service for non-archived profile selection.
++  - Workflow validator for graph, refs, schemas, edges, state, and compatibility diagnostics.
++  - Workflow Builder graph and inspector panels.
++
++- **Security & Privacy**:
++  - UI composition cannot elevate a profile beyond its registered tools, skills, context, auth, or compute-worker policy.
++  - Handler/adapter/guard refs expose names and descriptions but not hidden implementation internals.
++  - Params, prompts, schemas, and state paths may expose sensitive data and must follow authenticated UI visibility rules.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Agent/code/workflow node selection, basic edge drawing, and missing-ref diagnostics.
++  - v1.1: Adapter dialog, guard selection, params schema editing, and human node configuration.
++  - v1.2: Simple state read/write editor, nested workflow navigation, and richer compatibility explanations.
++
++- **Technical Risks**:
++  - Registered capability metadata is incomplete; mitigate by showing selectable refs without params when `paramsSchema` is absent and by blocking publish on missing required metadata.
++  - Users confuse edge adapters with adapter nodes; mitigate with explicit two-action dialog copy and graph visualization.
++  - Nested workflow editing becomes too complex; mitigate by reference-only editing and separate “Open workflow” navigation.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/06-versioning-archive-delete-lifecycle.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/06-versioning-archive-delete-lifecycle.md
+new file mode 100644
+index 0000000..9ed89bc
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/06-versioning-archive-delete-lifecycle.md
+@@ -0,0 +1,96 @@
++# PRD: Pibo Workflow UI Authoring V2 — Versioning, Archive, and Delete Lifecycle
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: UI-authored workflows need a lifecycle that supports iterative editing without making historical runs ambiguous or mutating published behavior.
++- **Proposed Solution**: Add draft/publish/version lifecycle with immutable published versions, automatic patch bumps, user-triggered minor/major bumps, workflow-level archive, authenticated delete, and snapshot-backed historical run inspection.
++- **Success Criteria**:
++  - SC-01: A valid draft can be published as an immutable workflow version.
++  - SC-02: Publish increments patch by default and supports explicit minor or major version bumps.
++  - SC-03: Editing a published workflow creates or reuses the one active draft for the next version path and never mutates the published version.
++  - SC-04: Archive hides the whole workflow from default start/selection lists without deleting historical run data.
++  - SC-05: Authenticated users can delete workflows even with historical runs, and those runs still render from snapshots.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Workflow author iterating on a workflow.
++  - Pibo user choosing a stable published workflow version.
++  - Reviewer inspecting why an old run used a deleted or archived definition.
++  - Operator cleaning the global workflow catalog.
++
++- **User Stories**:
++  - As a workflow author, I want drafts and published versions separated so that edits do not affect active users.
++  - As a workflow author, I want automatic patch versions and manual major/minor choices so that version intent is explicit.
++  - As a Pibo user, I want archived workflows hidden from normal selection so that I do not start deprecated workflows by accident.
++  - As a reviewer, I want old runs to stay inspectable after deletion so that deletion does not erase operational history.
++
++- **Acceptance Criteria**:
++  - Published workflow versions are immutable.
++  - One active draft exists per workflow/copy.
++  - Users may create many copies by duplicating workflows.
++  - Version history is visible and selectable.
++  - Default publish increments patch unless the user chooses minor or major.
++  - Archiving applies to the whole workflow, not a single version.
++  - Archived workflows are hidden from default run/selection lists but visible through archive filters or historical run links.
++  - Delete requires authentication but no additional V2 role.
++  - Create/edit/publish permissions use the shared workflow permission model; exact cross-user edit and publish rights are TBD before implementation.
++  - Historical Project runs show snapshot data and a clear “definition deleted” state when the live definition is gone.
++
++- **Non-Goals**:
++  - Per-version archive in V2.
++  - Role-based workflow lifecycle permissions beyond authentication.
++  - Permanent deletion of run snapshots needed for historical inspection.
++  - Merging multiple active drafts for the same workflow/copy.
++  - Marketplace review or approval flow.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Workflow Registry/store version records and immutable definition hashes.
++  - Draft-to-published validation pipeline.
++  - Archive/delete APIs with authentication.
++  - Historical run snapshot lookup and deleted-definition display state.
++
++- **Evaluation Strategy**:
++  - Publish tests verify immutable stored definitions, definition hashes, and registry visibility.
++  - Version tests verify patch/minor/major behavior and one-active-draft enforcement.
++  - Archive tests verify default list hiding and explicit archive filter visibility.
++  - Delete tests verify catalog removal/deleted marker behavior and historical run inspectability.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Draft records are mutable editor records.
++  - Published records are immutable workflow version records with definition hash.
++  - Archive applies at workflow identity level and changes catalog visibility/action derivation.
++  - Delete removes or tombstones live catalog records while preserving run snapshots and references required for inspection.
++  - Lifecycle actions must use the permission matrix defined for the workflow catalog; archive/delete are explicitly authenticated-user actions in V2, while create/edit/publish rights remain an open decision.
++
++- **Integration Points**:
++  - Workflow Registry/store for draft, published, archived, deleted/tombstoned records, versions, and hashes.
++  - Workflow Library and Builder for actions and version panels.
++  - Project run view for links back to live definitions or snapshot-only deleted-definition state.
++  - Auth layer for archive/delete endpoints.
++
++- **Security & Privacy**:
++  - Archive and delete require authenticated users.
++  - Delete must not remove run snapshots that are required to explain historical execution.
++  - Deleted live definitions must not leak beyond historical run access rules.
++  - Version immutability protects users from silent behavior changes.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Publish immutable version, patch bump, version list, and edit-published-creates-draft.
++  - v1.1: Minor/major bump UI, archive whole workflow, archived filters, and run definition links.
++  - v1.2: Delete with historical snapshot state, tombstone handling, and deleted-definition UI tests.
++
++- **Technical Risks**:
++  - Deletion breaks run links; mitigate with snapshot completeness and explicit deleted-definition UI state.
++  - Version numbers collide under concurrent publish; mitigate with transactional publish/version allocation.
++  - Users overuse delete because permissions are broad; mitigate with confirmation copy and immutable run snapshots.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/07-project-run-inspection-sidebar-and-human-actions.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/07-project-run-inspection-sidebar-and-human-actions.md
+new file mode 100644
+index 0000000..d43e34c
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/07-project-run-inspection-sidebar-and-human-actions.md
+@@ -0,0 +1,92 @@
++# PRD: Pibo Workflow UI Authoring V2 — Project Run Inspection, Sidebar, and Human Actions
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`, `../../pibo-workflow-system-v1/prds/06-human-actions-cli-project-ui.md`, `../../pibo-workflow-system-v1/prds/07-xstate-projection-and-inspection.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: Workflow runs create logical nodes, real Pibo Sessions, nested workflow runs, agent node sessions, and subagent sessions. Without clear Project navigation and run views, users cannot inspect execution or act on waits reliably.
++- **Proposed Solution**: Make Projects the execution surface: the sidebar shows only real Pibo Sessions with visual type markers, selected session context chooses Workflow/XState or Terminal view, run history belongs to Project sessions, and human wait actions appear in workflow run views.
++- **Success Criteria**:
++  - SC-01: Project sidebar shows main workflow, nested workflow, agent node, and subagent sessions as real Pibo Sessions only.
++  - SC-02: Code, human, adapter, edge, guard, and state elements are inspectable inside Workflow/XState views, not as sidebar sessions.
++  - SC-03: Workflow and nested workflow sessions render Workflow/XState + run view; agent node and subagent sessions render Terminal view.
++  - SC-04: Run views show status, current node, node attempts, edge transfers, output, errors, nested workflow links, and available human actions.
++  - SC-05: Approve, reject, resume, and cancel actions validate persisted wait tokens and resume payloads before state changes.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Project user inspecting workflow progress.
++  - Reviewer resolving human approval or resume steps.
++  - Agent-node user inspecting an underlying Terminal session.
++  - Developer debugging nested workflows and subagent session trees.
++
++- **User Stories**:
++  - As a Project user, I want the sidebar to show only real sessions so that navigation matches persisted session identity.
++  - As a Project user, I want workflow sessions to open graph/run views so that I can inspect workflow progress.
++  - As a Project user, I want agent node sessions to open Terminal view so that I can read the agent transcript and tool activity.
++  - As a reviewer, I want human actions in the run view so that I can respond without leaving the Project context.
++  - As a debugger, I want nested workflow sessions visually distinct from agent and subagent sessions so that hierarchy is clear.
++
++- **Acceptance Criteria**:
++  - Projects do not use Room semantics for Workflow UI; Project is the top container.
++  - Sidebar entries use icons or equivalent visual hints for main workflow, nested workflow, agent node, and subagent session types.
++  - Non-session logical workflow elements appear only inside Workflow/XState/run views.
++  - Runs link back to their workflow definition in the Workflows tab when the definition still exists.
++  - Deleted definitions produce a clear snapshot-only/deleted-definition state.
++  - Configured/not-started workflow sessions show a pre-run state with configuration summary, validation state, Start action, and no current run attempts.
++  - Pending human actions list available registered actions and payload requirements.
++  - Invalid, missing, expired, already-resolved, or unauthorized wait-token/action refs are rejected with diagnostics.
++
++- **Non-Goals**:
++  - Showing logical workflow nodes as Project sidebar sessions.
++  - Editing workflow definitions from the Project run view except through links to Workflows tab.
++  - Treating XState snapshots as durable recovery truth.
++  - New human action model separate from V1 wait tokens.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Workflow runtime/store APIs for run status, node attempts, edge transfers, wait tokens, human actions, events, output, and errors.
++  - Pibo Session hierarchy data for parent/child Project session sidebar.
++  - XState projection and run snapshot helpers for workflow display.
++  - Terminal session view for agent node and subagent sessions.
++
++- **Evaluation Strategy**:
++  - UI tests verify sidebar session inclusion/exclusion and visual type markers.
++  - View-routing tests verify workflow/nested workflow sessions open Workflow/XState view and agent/subagent sessions open Terminal view.
++  - Human action tests verify approve, reject, resume, cancel, invalid payload, missing action ref, expired token, already-resolved token, and deleted-definition display.
++  - Nested tests verify nested workflow and subagent session trees remain navigable.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Project sidebar reads real Pibo Session parent/child hierarchy and workflow/session kind metadata.
++  - Workflow views combine V1 XState projection, kernel/run records, snapshots, and human wait state.
++  - Terminal views render normal Pibo Session transcript/tool output for agent node and subagent sessions.
++  - Human actions use the V1 persisted wait-token/action model.
++
++- **Integration Points**:
++  - Project service and Pibo Session Store for sidebar hierarchy and selected context.
++  - Workflow store for run facts, wait tokens, human actions, events, snapshots, and deleted-definition fallback.
++  - Chat Web Workflow/XState session view and Terminal session view.
++  - Workflows tab for definition links.
++
++- **Security & Privacy**:
++  - Run view and Terminal view must enforce existing Project/session access rules.
++  - Human action payloads and actor metadata are sensitive and must be persisted under workflow privacy rules.
++  - UI projections must not reveal hidden prompt/input/output/state payloads beyond authorized debug surfaces.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Sidebar real-session filtering, view routing, run status panel, and definition links.
++  - v1.1: Nested workflow session links, node attempt/edge transfer detail, and deleted-definition state.
++  - v1.2: Human action controls, live refresh, richer error/output inspection, and nested/subagent UI tests.
++
++- **Technical Risks**:
++  - Sidebar shows logical nodes and confuses navigation; mitigate with real-Pibo-Session-only invariant and tests.
++  - Workflow and Terminal view routing diverges; mitigate with explicit session kind mapping.
++  - Human actions race or replay; mitigate with persisted token status validation and idempotent action handling.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/08-validation-security-testing-rollout.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/08-validation-security-testing-rollout.md
+new file mode 100644
+index 0000000..b435dec
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/08-validation-security-testing-rollout.md
+@@ -0,0 +1,96 @@
++# PRD: Pibo Workflow UI Authoring V2 — Validation, Security, Testing, and Rollout
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Related docs:** `../spec.md`, `../design.md`, `../tasks.md`, `README.md`, `../../pibo-workflow-system-v1/prds/08-security-observability-testing-rollout.md`
++
++## 1. Executive Summary
++
++- **Problem Statement**: V2 exposes workflow authoring to normal users, which increases risk around invalid definitions, missing registry refs, unsafe execution paths, confusing diagnostics, and UI/runtime drift.
++- **Proposed Solution**: Define validation gates, structured diagnostics, security boundaries, observability requirements, automated tests, manual validation flows, and rollout phases that keep V2 aligned with V1 runtime contracts.
++- **Success Criteria**:
++  - SC-01: Draft validation runs after load, graph, node, edge, schema, prompt, state, raw IR, publish, session creation, and start events.
++  - SC-02: Publish and run/start are blocked while error diagnostics remain.
++  - SC-03: No UI path creates inline TypeScript, arbitrary executable code, raw XState source, or Zod schema definitions.
++  - SC-04: Missing refs and validation errors appear in the Workflow Library, Builder, and runtime failure state with actionable ids and locations.
++  - SC-05: Typecheck, unit, integration, and UI tests cover registry lifecycle, builder editing, Project session creation, run inspection, human actions, and V2 explicit deferrals.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Workflow author fixing draft diagnostics.
++  - Security reviewer verifying execution boundaries.
++  - QA engineer validating V2 behavior before rollout.
++  - Developer debugging UI/runtime mismatch.
++
++- **User Stories**:
++  - As a workflow author, I want diagnostics grouped by workflow element so that I can fix errors quickly.
++  - As a security reviewer, I want proof that UI workflows can only compose registered capabilities so that V2 does not become a code execution surface.
++  - As a QA engineer, I want automated tests for the main flows and explicit non-goals so that regressions are caught.
++  - As a developer, I want consistent diagnostics from editor, publish, session creation, and runtime start so that bugs are not hidden until execution.
++
++- **Acceptance Criteria**:
++  - Diagnostics include code, message, optional path, nodeId, edgeId, severity, and hint where applicable.
++  - Diagnostics group by workflow, node, edge, schema path, state path, registry ref, and severity.
++  - Draft save allows warnings/errors, but publish and run/start reject error diagnostics.
++  - Raw IR parse errors show warnings and do not persist invalid raw text.
++  - Runtime executes only valid published workflows or valid session snapshots.
++  - Lifecycle and failure signals are visible for draft save, validation, publish, archive, delete, configured-session creation, start blocked, start accepted, run status changes, and human action submission.
++  - V2 explicit deferrals are tested or reviewed: templates, TypeScript export, workflow slash commands, workflow tools for agents, YAML/JSON product import/export, inline TypeScript, Zod schema authoring, and inline nested workflow expansion.
++
++- **Non-Goals**:
++  - New general compliance/audit product beyond workflow events and diagnostics.
++  - New role model beyond authenticated archive/delete rules in V2.
++  - Replacing V1 workflow validation with Zod, AJV, or a new validation stack.
++  - Treating XState projection as the source of truth.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Existing workflow validation functions and JSON Schema subset validator.
++  - Registry-ref validation for handlers, adapters, guards, profiles, prompt assets, human actions, and nested workflows.
++  - Event/run inspection APIs for observability.
++  - Lifecycle event or audit-equivalent records for validation, publish, archive, delete, configured-session creation, run start, run start rejection, and human action submission.
++  - Test harnesses for workflow package, Chat Web UI, Project session APIs, and human actions.
++
++- **Evaluation Strategy**:
++  - Unit tests: Registry draft/publish lifecycle, catalog APIs, source/status action derivation, validation diagnostics, version bumps, archive/delete.
++  - Integration tests: Project session workflow selection, delayed start, snapshot creation, workflow immutability, one-run enforcement, start validation.
++  - UI tests: duplicate/edit/validate/publish, raw IR invalid warning, incompatible edge adapter requirement, missing ref diagnostics, sidebar/view routing, human action submission.
++  - Negative boundary tests: no inline TypeScript, no raw XState editing, no Zod authoring, no templates, no slash commands, no agent workflow tools.
++  - Release gate: `npm run typecheck` plus relevant workflow/package and Chat Web tests pass.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - Validation is event-driven from editor and lifecycle transitions and uses V1 validation logic where possible.
++  - Structured diagnostics are shared by Builder, Workflow Library, Project session creation, run start, and runtime failure state.
++  - Security boundaries are enforced through registered refs, picker constraints, publish validation, start validation, and runtime executor policy.
++  - Observability remains event/run/snapshot based; XState is visual-only.
++  - UI and API failures must surface the same diagnostic families for blocked publish, blocked session creation, blocked run start, missing refs, and invalid human actions.
++
++- **Integration Points**:
++  - `packages/workflows/src/validation` for schema, port, graph, registry, and state checks.
++  - Workflow Registry/store for source/status, drafts, versions, missing refs, and lifecycle events.
++  - Chat Web Workflows and Projects surfaces for diagnostics, links, and run views.
++  - Existing auth, owner scope, Project session, Pibo Session, profile, tool, skill, context, and compute-worker policies.
++
++- **Security & Privacy**:
++  - V2 must not bypass normal session, tool, skill, context, auth, profile, Project, or compute-worker policies.
++  - Code nodes, adapters, and guards must be registered trusted refs only.
++  - Inputs, outputs, prompts, prompt assets, state, edge payloads, and human action payloads are sensitive workflow data.
++  - Diagnostics should reveal enough to fix errors without leaking hidden payloads in normal UI.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP gate: registry/store lifecycle tests, Project selection/delayed-start tests, and no-code-boundary review.
++  - v1.1 gate: builder editing tests, raw IR tests, validation panel tests, and publish/version tests.
++  - v1.2 gate: run inspection, sidebar/view routing, human actions, deleted-definition historical inspection, and archive/delete tests.
++  - Release gate: typecheck and relevant automated/manual V2 flows pass before main deployment.
++
++- **Technical Risks**:
++  - Validation differs between editor and runtime; mitigate by reusing validation functions and testing at edit, publish, session creation, and start.
++  - UI introduces hidden executable paths; mitigate by picker-only registered refs and negative tests.
++  - Diagnostics leak sensitive payloads; mitigate with redaction and existing visibility rules.
++  - Scope creep destabilizes V2; mitigate by explicit non-goals and deferral tests.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/09-implementation-completeness-contract.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/09-implementation-completeness-contract.md
+new file mode 100644
+index 0000000..e3c9029
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/09-implementation-completeness-contract.md
+@@ -0,0 +1,481 @@
++# PRD: Pibo Workflow UI Authoring V2 — Implementation Completeness Contract
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Purpose:** Second-pass completeness PRD for implementation agents.  
++**Related docs:** all source docs in `../`, all PRDs in this directory.
++
++## 1. Executive Summary
++
++- **Problem Statement**: Workflow UI Authoring V2 spans registry storage, catalog APIs, Project session lifecycle, snapshots, visual editing, raw IR editing, capability pickers, versioning, run inspection, human actions, validation, security, and tests. Implementation agents may miss cross-cutting rules if they use only high-level specs.
++- **Proposed Solution**: Treat this PRD as the implementation completeness contract. It consolidates every mandatory V2 requirement into an agent-ready checklist and defines the minimum product, API, persistence, UI, validation, and test surface required for V2.
++- **Success Criteria**:
++  - SC-01: Every requirement in `../spec.md` maps to at least one PRD and at least one checklist item in this file.
++  - SC-02: Every task group in `../tasks.md` maps to an implementation area and validation gate.
++  - SC-03: An implementation agent can identify all required surfaces, records, APIs, UI flows, validation rules, tests, and explicit deferrals without reading the original chat.
++  - SC-04: A reviewer can reject an implementation when any checklist item marked MUST is missing.
++  - SC-05: V2 passes typecheck plus relevant workflow, API, and Chat Web tests for catalog, builder, Project sessions, run inspection, human actions, and security boundaries.
++
++## 2. User Experience & Functionality
++
++- **User Personas**:
++  - Implementation agent building V2 from PRDs.
++  - Reviewer verifying completeness against source specs.
++  - Product engineer validating user-facing scope.
++  - Full-stack engineer implementing Workflows and Projects surfaces.
++  - QA/security reviewer testing validation and capability boundaries.
++
++- **User Stories**:
++  - As an implementation agent, I want one mandatory checklist so that I do not miss requirements spread across source specs.
++  - As a reviewer, I want pass/fail gates so that V2 completeness can be evaluated repeatably.
++  - As a product engineer, I want all non-goals restated so that scope does not expand during implementation.
++  - As a QA engineer, I want tests mapped to task groups so that validation covers the shipped behavior.
++
++- **Acceptance Criteria**:
++  - V2 includes both product surfaces: Workflows main-nav tab and Projects execution surface.
++  - V2 includes global workflow catalog, UI draft store, UI-published workflows, version history, archive, and delete.
++  - V2 includes Project session workflow selection, delayed start, one run per session, workflow immutability, and session snapshots.
++  - V2 includes builder support for visual graph editing, raw Workflow IR editing, raw JSON schema editing, prompt editing, prompt asset editing, validation panel, and publish panel.
++  - V2 includes node, edge, adapter, guard, state, human, profile, and nested workflow editing within the registered-capability-only boundary.
++  - V2 includes Project run inspection, sidebar session routing, human action controls, and deleted-definition historical inspection.
++  - V2 excludes all explicit non-goals unless a later approved change updates scope.
++
++- **Non-Goals**:
++  - Do not implement workflow templates in V2.
++  - Do not implement TypeScript export from UI workflows in V2.
++  - Do not implement YAML/JSON import/export as product features in V2.
++  - Do not implement inline TypeScript, JavaScript, shell, eval, or arbitrary executable code in V2 UI.
++  - Do not implement workflow slash commands in V2.
++  - Do not implement workflow tools for agents in V2.
++  - Do not implement normal Sessions-tab workflow usage in V2.
++  - Do not implement Project-wide default workflow selection in V2.
++  - Do not allow changing a session's workflow after creation.
++  - Do not implement raw XState editing.
++  - Do not introduce Zod or a new schema authoring/validation layer.
++  - Do not inline-expand nested workflow internals in parent graphs.
++
++## 3. AI System Requirements (If Applicable)
++
++- **Tool Requirements**:
++  - Existing Pibo Workflow IR, Registry, validator, runtime kernel, persistence, wait tokens, and XState projection.
++  - Existing Project Session, Pibo Session hierarchy, Agent Designer profiles, prompt assets, auth, event, and Chat Web systems.
++  - Catalog, draft, version, picker, publish, archive, delete, configured-session, start-run, run-inspection, and human-action APIs.
++  - Test harnesses for workflow package logic, backend APIs, Chat Web UI, and Project run behavior.
++
++- **Evaluation Strategy**:
++  - **Definition/catalog evals**: code and UI workflows list correctly; drafts save invalid structures; source/status action derivation is stable.
++  - **Builder evals**: duplicate/edit/validate/publish works; raw IR invalid text is rejected safely; no raw XState or inline code path exists.
++  - **Composition evals**: registered refs resolve; missing refs diagnose; incompatible ports require registered adapters; params validate against `paramsSchema`.
++  - **Project session evals**: selection, delayed start, immutable workflow, snapshot, one-run enforcement, deleted-definition inspection.
++  - **Run/human evals**: sidebar real-session tree, view routing, run status, nested workflow links, approve/reject/resume/cancel.
++  - **Release evals**: `npm run typecheck` and relevant automated/manual V2 flows pass.
++
++## 4. Technical Specifications
++
++- **Architecture Overview**:
++  - V2 adds UI and API layers on top of the V1 Workflow Registry, Workflow IR, validator, runtime kernel, persistence, and XState projection.
++  - The Workflows tab owns definitions, drafts, versions, validation, and lifecycle actions.
++  - Projects own configured sessions, explicit start, workflow runs, run inspection, sidebar navigation, and human actions.
++  - Runtime executes only valid published workflows or valid session snapshots.
++
++- **Integration Points**:
++  - Workflow Registry/store for code workflows, UI drafts, UI-published versions, source/status metadata, archive/delete, and missing refs.
++  - Project service and Pibo Session Store for configured sessions, parent/child session hierarchy, and view routing.
++  - Workflow runtime/store for runs, snapshots, node attempts, edge transfers, wait tokens, events, outputs, and errors.
++  - Chat Web Workflows and Projects surfaces for catalog, builder, session creation, run view, and human actions.
++
++- **Security & Privacy**:
++  - V2 must keep Pibo's existing auth, Project/session visibility, profile/tool/skill/context, and compute-worker boundaries.
++  - The UI can compose only registered handlers, adapters, guards, workflows, human actions, prompt assets, and non-archived Agent profiles.
++  - Workflow inputs, outputs, prompts, prompt assets, state, edge payloads, snapshots, and human action payloads remain sensitive workflow data.
++
++### 4.1 Required Product Surfaces
++
++The implementation MUST include:
++
++| Surface | Required behavior |
++|---|---|
++| Workflows tab | Global workflow library, builder, draft/version lifecycle, validation panel, archive/delete actions. |
++| Projects execution | Project session creation, workflow selection, delayed start, run view, run history, human actions. |
++| Project sidebar | Real Pibo Sessions only; distinct visual markers for workflow, nested workflow, agent node, and subagent sessions. |
++| Workflow view | Workflow/XState + run state for workflow and nested workflow sessions. |
++| Terminal view | Normal Terminal view for agent node and subagent sessions. |
++
++### 4.2 Workflow Record and Store Contract
++
++The implementation MUST model workflow record source and lifecycle separately:
++
++```ts
++type WorkflowRecordSource = "code" | "ui";
++type WorkflowRecordStatus = "draft" | "published" | "archived";
++```
++
++The implementation MUST treat these entities as distinct:
++
++- workflow identity: groups versions, draft state, archive state, delete/tombstone state, title, description, and tags;
++- draft record: the one mutable UI editing track for a workflow/copy;
++- published version record: immutable runnable definition with version and definition hash;
++- archive state: workflow-level state, not per-version state;
++- delete/tombstone state: live catalog state that must not remove historical run snapshots.
++
++The implementation MUST use this baseline permission matrix:
++
++| Action | V2 baseline |
++|---|---|
++| View workflows | Authenticated users can see global UI-authored workflows unless future access rules are introduced. |
++| Duplicate workflow | Authenticated action; exact cross-user ownership/edit semantics are TBD. |
++| Create/edit/publish UI draft | Normal-user UI feature; exact create/edit/publish permissions are TBD. |
++| Archive workflow | Any authenticated user may archive workflows in V2. |
++| Delete workflow | Any authenticated user may delete workflows in V2; historical snapshots must remain inspectable. |
++
++The implementation MUST support:
++
++- global visibility of UI-authored workflows;
++- code workflows as read-only except duplication;
++- UI drafts in the Workflow Registry/store;
++- UI-published workflows in the Workflow Registry/store;
++- one active draft per workflow/copy;
++- incomplete/invalid draft save;
++- invalid raw IR text rejection without overwriting the saved draft object;
++- registry-visible published UI versions;
++- source/status-derived UI actions;
++- missing-reference diagnostics for handlers, adapters, guards, profiles, prompt assets, human actions, and nested workflows.
++
++### 4.3 Catalog and Picker API Contract
++
++The implementation MUST expose APIs or equivalent routes for:
++
++- list workflow definitions, drafts, published versions, and archived workflows when filtered;
++- inspect one workflow version or draft;
++- duplicate workflow to UI draft;
++- save draft;
++- validate draft;
++- publish draft;
++- archive workflow;
++- delete workflow;
++- list registered handlers, adapters, guards, human actions, prompt assets, workflow versions, and non-archived Agent profiles.
++
++### 4.4 Project Session and Snapshot Contract
++
++The implementation MUST support:
++
++- Project session creation with session name and workflow id/version;
++- allowed session overrides: input, prompt overrides, model, thinking level, fast mode;
++- session-scoped overrides that do not persist back to the workflow definition;
++- disallowed V2 overrides: agent profile overrides, retry limit overrides, arbitrary options;
++- configured/not-started state after session creation;
++- explicit start action;
++- one workflow run per Project session;
++- parallel node execution inside that run when the workflow definition allows it;
++- immutable workflow selection after session creation;
++- effective snapshot before run start;
++- configured/not-started Project session view with configuration summary, validation state, Start action, and empty run-history state;
++- blocked create/start UX that shows diagnostics and keeps the session in a safe state;
++- historical run inspectability after workflow edit, archive, or delete.
++
++The snapshot MUST record at minimum:
++
++- snapshot id;
++- Project id;
++- Pibo Session id;
++- workflow id;
++- workflow version;
++- base definition hash;
++- effective definition hash;
++- input values;
++- prompt overrides when present, keyed by node id for nodes eligible for prompt override;
++- model when present;
++- thinking level when present;
++- fast mode when present;
++- creation timestamp.
++
++### 4.5 Builder Contract
++
++The implementation MUST support editing:
++
++- title and description;
++- workflow input and output schemas;
++- nodes;
++- edges;
++- agent profiles;
++- prompt templates;
++- prompt assets with the existing Markdown editor pattern;
++- adapters;
++- guards;
++- simple state reads/writes;
++- human approval prompts, schemas, actions, and timeouts;
++- UI layout metadata.
++
++Drafts with zero nodes MAY be saved. Published/runnable workflows MUST have at least one node plus workflow input and output contracts.
++
++The builder MUST include:
++
++- graph canvas;
++- node inspector;
++- edge inspector;
++- workflow settings;
++- raw JSON schema editors;
++- prompt editor;
++- prompt asset editor;
++- validation panel;
++- raw Workflow IR toggle/editor;
++- publish/version panel.
++
++The builder MUST NOT expose raw XState editing.
++
++### 4.6 Composition Contract
++
++The implementation MUST support node kinds:
++
++```ts
++type EditableNodeKind = "agent" | "code" | "workflow" | "adapter" | "human";
++```
++
++The implementation MUST enforce:
++
++- Agent nodes choose non-archived private, custom, or global Agent Designer profiles.
++- Code nodes choose registered handlers only.
++- Workflow nodes choose workflow id/version and provide “Open workflow”.
++- Adapter nodes choose registered adapters only.
++- Human nodes edit prompt, raw JSON schema, registered human action choices, and timeout.
++- Missing or invalid human action refs show diagnostics and block publish/run when they affect executable behavior.
++- Edges connect typed ports and may carry guards/adapters where valid.
++- Incompatible ports require explicit registered adapters.
++- Adapter dialog offers “Use as edge adapter” and “Insert adapter node”.
++- Guard/adapter params are editable only when Registry metadata provides `paramsSchema`.
++- Simple state mappings are editable through dropdowns; complex mappings remain raw IR only.
++- Schema changes may invalidate connected graphs without blocking draft save.
++
++### 4.7 Version, Archive, and Delete Contract
++
++The implementation MUST support:
++
++- draft save;
++- validation before publish;
++- immutable published versions;
++- patch bump by default;
++- user-triggered minor and major bumps;
++- edit published workflow by creating/reusing next draft path;
++- version history and version selection;
++- archive whole workflow, not one version;
++- authenticated delete even when historical runs exist;
++- historical run inspection through snapshots after delete.
++
++### 4.8 Run Inspection and Human Action Contract
++
++The implementation MUST support:
++
++- run state display for each workflow Project session;
++- current status, current node, node attempts, edge transfers, output, and errors;
++- nested workflow links and session hierarchy;
++- link back to definition when live definition exists;
++- “definition deleted” state when it does not;
++- pending human action display from persisted wait tokens;
++- approve, reject, resume, and cancel actions;
++- resume payload validation before action acceptance;
++- live refresh where existing event streams support it.
++
++### 4.9 Validation and Diagnostic Contract
++
++The implementation MUST run validation after:
++
++- draft load;
++- graph edit;
++- node edit;
++- edge edit;
++- schema edit;
++- prompt edit;
++- state edit;
++- raw IR edit;
++- before publish;
++- before Project session creation;
++- before workflow start.
++
++Diagnostics SHOULD include:
++
++- code;
++- message;
++- optional path;
++- optional nodeId;
++- optional edgeId;
++- severity;
++- hint.
++
++The implementation MUST block publish and run/start while error diagnostics remain.
++
++The implementation MUST expose lifecycle or audit-equivalent signals for draft save, validation, publish, archive, delete, configured-session creation, start blocked, start accepted, run status changes, and human action submission.
++
++### 4.10 Security Boundary Contract
++
++The implementation MUST NOT allow:
++
++- inline TypeScript;
++- JavaScript eval;
++- arbitrary shell/script nodes;
++- creating new handlers/adapters/guards in UI;
++- hidden LLM coercion between incompatible schemas;
++- raw XState source editing;
++- Zod schema layer.
++
++The implementation MUST keep Pibo's existing auth, Project/session visibility, profile/tool/skill/context, and compute-worker boundaries.
++
++### 4.11 Implementation Checklist
++
++### Registry, Catalog, and Store
++
++- [ ] MUST add source/status metadata to workflow catalog records.
++- [ ] MUST store UI drafts in the Workflow Registry/store.
++- [ ] MUST store UI-published workflows in the Workflow Registry/store.
++- [ ] MUST enforce one active draft per workflow/copy.
++- [ ] MUST allow incomplete/invalid draft save.
++- [ ] MUST reject invalid raw IR text without corrupting the last valid draft object.
++- [ ] MUST expose catalog and picker APIs.
++- [ ] MUST expose missing-reference diagnostics.
++
++### Project Session Lifecycle
++
++- [ ] MUST create Project sessions with workflow id/version selection.
++- [ ] MUST keep creation separate from start.
++- [ ] MUST persist configuration/effective-definition snapshots.
++- [ ] MUST reject workflow changes after session creation.
++- [ ] MUST enforce one workflow run per Project session.
++- [ ] MUST keep historical runs inspectable after definition deletion.
++
++### Workflows UI and Builder
++
++- [ ] MUST add Workflows main-nav tab.
++- [ ] MUST add Workflow Library.
++- [ ] MUST add Workflow Builder with graph, inspectors, validation, raw IR, and publish panels.
++- [ ] MUST support drag/drop layout and automatic layout.
++- [ ] MUST support raw JSON schema editing only.
++- [ ] MUST support prompt template and prompt asset editing.
++- [ ] MUST support raw Workflow IR editing and forbid raw XState editing.
++
++### Composition
++
++- [ ] MUST support agent, code, workflow, adapter, and human nodes.
++- [ ] MUST select only registered handlers, adapters, guards, workflows, human actions, prompt assets, and non-archived Agent profiles.
++- [ ] MUST provide compatible adapter selection and insert/use actions.
++- [ ] MUST support guard/adapter params only with `paramsSchema`.
++- [ ] MUST support simple state read/write dropdowns and raw-IR-only complex mappings.
++- [ ] MUST navigate to nested workflow builder/viewer instead of inline expansion.
++
++### Lifecycle
++
++- [ ] MUST publish valid drafts as immutable versions.
++- [ ] MUST support patch/minor/major version behavior.
++- [ ] MUST archive whole workflows.
++- [ ] MUST allow authenticated delete.
++- [ ] MUST preserve historical run snapshots.
++
++### Projects Run View
++
++- [ ] MUST show only real Pibo Sessions in the Project sidebar.
++- [ ] MUST visually distinguish workflow, nested workflow, agent node, and subagent sessions.
++- [ ] MUST route workflow sessions to Workflow/XState + run view.
++- [ ] MUST route agent/subagent sessions to Terminal view.
++- [ ] MUST show run history, state, output/errors, nested links, and human actions.
++
++### Validation, Security, and Tests
++
++- [ ] MUST reuse existing JSON Schema subset validation and avoid Zod.
++- [ ] MUST validate at edit, publish, session creation, and start boundaries.
++- [ ] MUST block publish/run on error diagnostics.
++- [ ] MUST prevent inline TypeScript and arbitrary executable code.
++- [ ] MUST test registry lifecycle, catalog APIs, builder, raw IR, Project session lifecycle, sidebar/view routing, human actions, archive/delete, deleted-definition inspection, and explicit non-goals.
++- [ ] MUST run `npm run typecheck` and relevant workflow/package/Chat Web tests before completion.
++
++### 4.12 Traceability to Task Groups
++
++| Task group | Completeness coverage |
++|---|---|
++| 0. Spec discovery and open questions | Open design questions remain tracked; implementation MUST not assume unstated choices without updating docs. |
++| 1. Workflow Registry Store and Catalog | Sections 4.2, 4.3, 4.11 Registry checklist. |
++| 2. Version, Archive, Delete Lifecycle | Sections 4.7, 4.11 Lifecycle checklist. |
++| 3. Workflows Main-Nav Tab | Sections 4.1, 4.5, 4.11 Workflows UI checklist. |
++| 4. Project Session Creation and Workflow Selection | Sections 4.4, 4.11 Project Session checklist. |
++| 5. Project Sessions Sidebar and Views | Sections 4.1, 4.8, 4.11 Projects Run View checklist. |
++| 6. Workflow Draft Duplication | Sections 4.2, 4.5, 4.11 Registry/Builder checklist. |
++| 7. Visual Workflow Builder | Sections 4.5, 4.11 Workflows UI checklist. |
++| 8. Node Editing | Sections 4.6, 4.11 Composition checklist. |
++| 9. Adapter, Guard, and State Editing | Sections 4.6, 4.11 Composition checklist. |
++| 10. Schema, Prompt, and Prompt Asset Editing | Sections 4.5, 4.9, 4.11 Workflows UI checklist. |
++| 11. Raw Workflow IR Editor | Sections 4.5, 4.9, 4.11 Workflows UI checklist. |
++| 12. Validation Panel | Sections 4.9, 4.10, 4.11 Validation checklist. |
++| 13. Run History and Human Actions in Projects | Sections 4.8, 4.11 Projects Run View checklist. |
++| 14. Testing and Validation | Sections 3, 4.9, 4.10, 4.11 Validation checklist. |
++| 15. Explicit V3 Deferrals | Sections 2 Non-Goals, 4.10, 4.11 Validation checklist. |
++
++### 4.13 Requirement Traceability
++
++| Requirement | Source requirement | PRD coverage | Completeness sections |
++|---|---|---|---|
++| REQ-001 | UI targets normal Pibo users | `01, 09` | 4.1, 4.10, 4.11 |
++| REQ-002 | Workflows are global | `02, 09` | 4.2 |
++| REQ-003 | Workflow record source/status explicit | `02, 09` | 4.2 |
++| REQ-004 | UI drafts live in Workflow Registry/store | `02, 09` | 4.2 |
++| REQ-005 | Drafts may be incomplete/invalid | `02, 04, 09` | 4.2, 4.5, 4.9 |
++| REQ-006 | One draft per workflow/copy | `02, 06, 09` | 4.2, 4.7 |
++| REQ-007 | Workflow selection during Project session creation | `03, 09` | 4.4 |
++| REQ-008 | Workflow start is explicit | `03, 07, 09` | 4.4, 4.8 |
++| REQ-009 | Session workflow selection is immutable | `03, 09` | 4.4 |
++| REQ-010 | One workflow run per Project session | `03, 07, 09` | 4.4, 4.8 |
++| REQ-011 | Workflows selected per session, not Project | `01, 03, 09` | 4.4 |
++| REQ-012 | Session-scoped configuration is snapshotted | `03, 06, 09` | 4.4, 4.7 |
++| REQ-013 | Project sidebar shows only real Pibo Sessions | `07, 09` | 4.1, 4.8 |
++| REQ-014 | Sidebar visually distinguishes session types | `07, 09` | 4.1, 4.8 |
++| REQ-015 | Selected context chooses the view | `07, 09` | 4.1, 4.8 |
++| REQ-016 | Workflow runs link back to definitions | `07, 09` | 4.8 |
++| REQ-017 | UI composes existing capabilities only | `05, 08, 09` | 4.6, 4.10 |
++| REQ-018 | Missing references are visible | `02, 05, 08, 09` | 4.2, 4.6, 4.9 |
++| REQ-019 | Duplicate workflow to draft | `02, 04, 09` | 4.2, 4.3, 4.5 |
++| REQ-020 | Code workflows read-only except duplicate | `02, 09` | 4.2 |
++| REQ-021 | Workflow drafts use Pibo Workflow IR | `01, 04, 09` | 4.5 |
++| REQ-022 | Draft and publish lifecycle | `06, 09` | 4.7 |
++| REQ-023 | Versioning patch/minor/major | `06, 09` | 4.7 |
++| REQ-024 | Archive applies to whole workflow | `06, 09` | 4.7 |
++| REQ-025 | Delete allowed with historical runs | `06, 07, 09` | 4.7, 4.8 |
++| REQ-026 | Authenticated users archive/delete | `06, 09` | 4.2, 4.7 |
++| REQ-027 | Visual editor edits V2 fields | `04, 05, 09` | 4.5, 4.6 |
++| REQ-028 | Smallest valid workflow has one node/input/output | `04, 09` | 4.5 |
++| REQ-029 | Raw IR visible/editable | `04, 09` | 4.5, 4.9 |
++| REQ-030 | JSON Schema editing raw JSON only | `04, 08, 09` | 4.5, 4.9 |
++| REQ-031 | Schema changes may invalidate graphs | `04, 05, 09` | 4.6, 4.9 |
++| REQ-032 | Adapter selection dialog compatible adapters | `05, 09` | 4.6 |
++| REQ-033 | Guards/adapters params only with metadata | `05, 09` | 4.6 |
++| REQ-034 | State mappings simple visual editing | `05, 09` | 4.6 |
++| REQ-035 | Nested workflow nodes open separately | `05, 09` | 4.6 |
++| REQ-036 | Graph layout manual/automatic | `04, 09` | 4.5 |
++| REQ-037 | Workflow Library lists workflows | `02, 09` | 4.1, 4.3 |
++| REQ-038 | Run history and human actions in Projects | `07, 09` | 4.8 |
++| REQ-039 | Prompt assets are editable | `04, 09` | 4.5, 4.14 |
++| REQ-040 | Use existing JSON Schema subset | `04, 08, 09` | 4.9, 4.10 |
++| REQ-041 | XState remains visual only | `01, 04, 07, 08, 09` | 4.5, 4.8, 4.10 |
++
++### 4.14 Open Decisions Gate
++
++The implementation MUST resolve and document these source-spec open questions before coding the affected area:
++
++- exact Workflow Registry/store schema and database records for UI drafts and UI-published workflows;
++- exact configuration/effective-definition snapshot fields beyond the minimum listed in this PRD;
++- deleted-workflow display and link behavior in historical Project run views;
++- exact API route contracts for catalog, drafts, versions, publish, archive, delete, Project session creation, and run start;
++- graph/canvas library for the visual editor;
++- workflow-level versus per-Agent-node behavior for model, thinking level, and fast mode overrides;
++- prompt override eligibility rules for workflow/session nodes;
++- prompt asset mutation versus prompt asset versioning behavior.
++
++## 5. Risks & Roadmap
++
++- **Phased Rollout**:
++  - MVP: Registry/store model, global catalog, duplicate-to-draft, Project session selection, delayed start, snapshot, and run status.
++  - v1.1: Visual builder, raw IR editor, node/edge composition, validation panel, publish/version lifecycle.
++  - v1.2: Archive/delete, deleted-definition historical inspection, human actions, nested session sidebar, and full UI test coverage.
++  - V3 candidates: templates, import/export, TypeScript export, marketplace, workflow tools for agents, slash commands, richer schema authoring.
++
++- **Technical Risks**:
++  - UI drafts diverge from runtime workflows; mitigate by storing Pibo Workflow IR and validating with the existing validator.
++  - Runtime history becomes unreadable after lifecycle actions; mitigate with mandatory snapshots and deleted-definition UI state.
++  - Broad archive/delete permissions cause accidental loss; mitigate with confirmation UI and immutable historical snapshots.
++  - Scope creep introduces unsafe execution paths; mitigate with explicit non-goals and negative tests.
++
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/README.md b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/README.md
+new file mode 100644
+index 0000000..a7171a2
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/README.md
+@@ -0,0 +1,117 @@
++# PRD Catalog: Pibo Workflow UI Authoring V2
++
++**Status:** Draft  
++**Created:** 2026-05-11  
++**Source change:** `docs/specs/changes/pibo-workflow-ui-authoring-v2/`
++
++This directory translates the Pibo Workflow UI Authoring V2 proposal, spec, design, task list, and discovery notes into implementation-grade Markdown PRDs.
++
++## Source Documents
++
++- `../proposal.md`
++- `../spec.md`
++- `../design.md`
++- `../tasks.md`
++- `../discovery-notes.md`
++- `../../pibo-workflow-system-v1/spec.md`
++- `../../pibo-workflow-system-v1/design.md`
++- `../../pibo-workflow-system-v1/design-authoring-api.md`
++- `../../pibo-workflow-system-v1/design-xstate-integration.md`
++- `../../pibo-workflow-system-v1/prds/README.md`
++
++## PRDs
++
++| PRD | Scope | Primary implementers |
++|---|---|---|
++| `01-product-overview.md` | End-to-end V2 product, users, surfaces, success gates, non-goals | Product, engineering leads |
++| `02-workflow-registry-catalog-and-draft-store.md` | Global workflow library, registry/store records, UI drafts, source/status, missing refs | Backend/full-stack engineers |
++| `03-project-session-selection-and-snapshots.md` | Project session creation, workflow selection, delayed start, one run per session, configuration snapshots | Full-stack/runtime engineers |
++| `04-workflow-builder-and-ir-editing.md` | Workflows tab builder, visual graph editing, raw Workflow IR editor, layout, schema/prompt editors | Frontend/full-stack engineers |
++| `05-composition-node-and-capability-pickers.md` | Node kinds, edges, adapters, guards, state mappings, nested workflow references, profile pickers | Full-stack/workflow engineers |
++| `06-versioning-archive-delete-lifecycle.md` | Draft/publish lifecycle, immutable versions, semantic version bumps, archive, delete, historical run inspectability | Backend/product engineers |
++| `07-project-run-inspection-sidebar-and-human-actions.md` | Project run view, sidebar session tree, Workflow/XState view, Terminal view routing, human actions | Frontend/runtime engineers |
++| `08-validation-security-testing-rollout.md` | Cross-cutting validation, diagnostics, security boundaries, observability, test gates, rollout | Engineering leads/QA/security |
++| `09-implementation-completeness-contract.md` | Agent-ready MUST checklist and source/task traceability across all V2 PRDs | All implementation agents/reviewers |
++
++## Global Decisions Inherited by All PRDs
++
++- V2 UI targets normal Pibo users. Agents and operators use CLI or programmatic paths.
++- Workflows are used only inside Projects in V2.
++- Workflow selection happens per Project session, not per Project.
++- Creating a Project session does not start the workflow. Start is explicit.
++- Each Project session has at most one workflow run.
++- The selected workflow for an existing Project session is immutable.
++- Every configured session stores an immutable definition/configuration snapshot.
++- The Workflows main-nav tab owns definition browsing and editing.
++- Projects own execution, run history, human actions, and run inspection.
++- UI drafts live in the Workflow Registry/store.
++- Workflow records use `source: "code" | "ui"` and `status: "draft" | "published" | "archived"`.
++- Code-registered workflows are read-only in UI except for duplication into UI drafts.
++- UI-created workflows use Pibo Workflow IR directly. V2 adds no separate YAML/JSON authoring layer.
++- XState remains a projection/visualization layer, not workflow truth.
++- Raw Workflow IR is viewable and editable. Raw XState editing is not supported.
++- Published workflow versions are immutable.
++- Archive applies to the whole workflow. Delete is allowed even when historical runs exist.
++- Historical runs must remain inspectable through snapshots after workflow deletion.
++- UI-authored workflows are global and visible to authenticated users.
++- All authenticated users may archive or delete workflows in V2.
++- The UI composes existing registered capabilities only. It must not allow inline TypeScript or arbitrary executable code.
++- Schemas use the existing custom JSON Schema subset validator. V2 does not introduce Zod.
++- JSON Schema editing is raw JSON only in V2.
++- Guards and adapters expose parameters only when registry metadata includes `paramsSchema`.
++- Nested workflow nodes are edited as references. “Open workflow” navigates to the nested workflow's own builder/viewer.
++- V2 has no templates, no TypeScript export, no workflow slash commands, and no workflow tools for agents.
++
++## Traceability Matrix
++
++| Source requirement / decision | PRD coverage |
++|---|---|
++| Normal-user UI and Projects-only workflow usage | `01`, `03`, `07`, `09` |
++| Workflows main-nav tab and global library | `01`, `02`, `04`, `09` |
++| Workflow record source/status and draft store | `02`, `06`, `09` |
++| Incomplete drafts and raw IR corruption protection | `02`, `04`, `08`, `09` |
++| Project session workflow selection | `03`, `07`, `09` |
++| Delayed workflow start | `03`, `07`, `09` |
++| One workflow run per Project session | `03`, `07`, `09` |
++| Configuration/effective-definition snapshots | `03`, `06`, `07`, `09` |
++| Real Pibo Sessions only in Project sidebar | `03`, `07`, `09` |
++| Workflow/XState view versus Terminal view routing | `07`, `09` |
++| Duplicate code/UI workflows into drafts | `02`, `04`, `06`, `09` |
++| Visual graph editing and layout | `04`, `05`, `09` |
++| Raw Workflow IR toggle and no raw XState editing | `04`, `08`, `09` |
++| Nodes, edges, adapters, guards, state mappings | `04`, `05`, `08`, `09` |
++| Prompt templates and prompt asset editing | `03`, `04`, `05`, `09` |
++| Raw JSON schema editing and no Zod | `04`, `05`, `08`, `09` |
++| Publish/version/archive/delete lifecycle | `06`, `09` |
++| Historical run inspectability after deletion | `03`, `06`, `07`, `09` |
++| Human action controls and run history | `07`, `08`, `09` |
++| Validation diagnostics and missing refs | `02`, `04`, `05`, `08`, `09` |
++| Security boundary: no inline TypeScript/arbitrary code | `05`, `08`, `09` |
++| Testing and rollout gates | `08`, `09` |
++| Open design questions / TBD gates | `README`, `09` |
++
++## Discovery Notes
++
++The source specs already answer the PRD discovery questions:
++
++- **Core problem:** V1 provides runtime/framework/inspection, but normal users cannot select, configure, create, edit, publish, version, or manage workflows from Chat Web.
++- **Success metrics:** The PRDs use pass/fail product and validation gates from `../spec.md` and `../tasks.md` instead of business KPIs.
++- **Constraints:** V2 must preserve V1 runtime behavior, use Pibo Workflow IR as truth, avoid inline TypeScript, avoid Zod, keep XState visual-only, and keep execution under Projects.
++- **Budget/deadline:** Not specified in source docs. Rollout is therefore phase- and validation-gated rather than calendar-gated.
++
++## Known Open Questions / TBD Before Implementation
++
++The PRDs preserve the source specs' open questions instead of choosing silently. Implementation MUST resolve and document these before coding the affected area:
++
++- exact Workflow Registry/store schema and database records for UI drafts and UI-published workflows;
++- exact configuration/effective-definition snapshot fields beyond the minimum required for deleted-workflow run inspection;
++- deleted-workflow display and link behavior in historical Project run views;
++- exact API route contracts for catalog, drafts, versions, publish, archive, delete, Project session creation, and run start;
++- graph/canvas library for the visual editor;
++- workflow-level versus per-Agent-node behavior for model, thinking level, and fast mode overrides;
++- prompt override eligibility rules for workflow/session nodes;
++- prompt asset mutation versus prompt asset versioning behavior.
++
++## Second-Pass Coverage Rule
++
++For implementation, give agents this whole directory, not a single PRD. `09-implementation-completeness-contract.md` is the mandatory cross-check: any implementation missing a MUST item there is incomplete, even if an earlier PRD describes the area at a higher level.
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json
+new file mode 100644
+index 0000000..7e0e6aa
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_01_product_overview.json
+@@ -0,0 +1,145 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-product-overview",
++  "description": "Product overview for Workflow UI Authoring V2: Workflows authoring surface plus Projects execution surface for normal Pibo users.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Add Workflows main-nav product surface",
++      "description": "As a Pibo user, I need a Workflows navigation surface so that global workflow browsing and authoring have a clear home.",
++      "acceptanceCriteria": [
++        "Chat Web main navigation contains a visible Workflows item and selecting it renders the Workflows surface",
++        "The Workflows surface renders Workflow Library and Workflow Builder entry cards or empty-state panels",
++        "The surface is visible to authenticated users using existing Chat Web auth rules",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Add Project workflow session creation entry point",
++      "description": "As a Pibo user, I need a Project session creation flow that can choose a workflow before execution.",
++      "acceptanceCriteria": [
++        "Project session creation exposes a workflow-backed session option in the main Project content area",
++        "The creation flow selects a workflow version from the global catalog",
++        "The flow does not start a workflow run during initial session creation",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Separate configured session save from workflow start",
++      "description": "As a Pibo user, I want session creation and workflow start to be separate so that I can review configuration first.",
++      "acceptanceCriteria": [
++        "Creating a workflow Project session leaves it in a configured/not-started state",
++        "The configured session shows an explicit Start action",
++        "No workflow run record is created until Start is accepted",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Add duplicate-to-draft authoring path",
++      "description": "As a workflow author, I need to duplicate an existing workflow so that I can create a UI-authored variant without editing code-owned definitions.",
++      "acceptanceCriteria": [
++        "Workflow Library exposes Duplicate for eligible code and UI workflows",
++        "Duplicate creates or opens a UI draft owned by the Workflow Registry/store",
++        "Code-registered workflow definitions remain read-only in the UI",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Show workflow run inspection from Projects",
++      "description": "As a Project reviewer, I need workflow run inspection and human actions in Projects so that I can monitor and control execution.",
++      "acceptanceCriteria": [
++        "Workflow Project sessions route to a Workflow/XState plus run view",
++        "Run view shows separate status, current node, output, error, and pending human action sections with populated values or explicit empty states",
++        "Agent node and subagent sessions continue to route to Terminal view",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Enforce V2 explicit non-goals in visible surfaces",
++      "description": "As a product reviewer, I need V2 scope boundaries enforced so that authoring does not expand into unsupported features.",
++      "acceptanceCriteria": [
++        "No UI path exposes inline TypeScript, JavaScript, shell, eval, or arbitrary executable code",
++        "No UI path exposes raw XState editing, workflow templates, workflow slash commands, workflow tools for agents, or Zod schema authoring",
++        "YAML/JSON import/export and TypeScript export are absent from V2 product surfaces",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Document Project workflow smoke checklist",
++      "description": "As a QA engineer, I need a focused smoke checklist for Project workflow execution so that manual validation is repeatable.",
++      "acceptanceCriteria": [
++        "Add a documented manual smoke checklist for select workflow, configure session, save, start, and inspect run",
++        "The checklist names the expected configured/not-started state before Start",
++        "The checklist names the expected run status and inspection sections after Start",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Document builder authoring smoke checklist",
++      "description": "As a QA engineer, I need a focused smoke checklist for workflow authoring so that manual validation is repeatable.",
++      "acceptanceCriteria": [
++        "Add a documented manual smoke checklist for duplicate workflow, edit draft, validate, and publish",
++        "The checklist names the expected draft validation diagnostics behavior",
++        "The checklist names the expected immutable published version result",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-009",
++      "title": "Document historical lifecycle smoke checklist",
++      "description": "As a QA engineer, I need a focused smoke checklist for lifecycle history so that archive and delete do not break inspection.",
++      "acceptanceCriteria": [
++        "Add a documented manual smoke checklist step for archive/delete historical-run inspection linked to prd_06 lifecycle stories",
++        "The checklist names the expected snapshot-only state after live definition deletion",
++        "The checklist names the expected archived workflow selection behavior",
++        "Typecheck passes"
++      ],
++      "priority": 9,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json
+new file mode 100644
+index 0000000..c2c89ca
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_02_workflow_registry_catalog_and_draft_store.json
+@@ -0,0 +1,159 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-workflow-registry-catalog-draft-store",
++  "description": "Workflow Registry, catalog, and draft store requirements for global UI-authored workflows, source/status records, drafts, versions, and picker metadata.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Document registry store schema and permission decisions",
++      "description": "As an implementation lead, I need schema and permission decisions before storage/API work starts so that implementation does not choose silently.",
++      "acceptanceCriteria": [
++        "Add a documented Workflow Registry/store schema for workflow identity, draft record, published version record, archive state, and delete/tombstone state",
++        "Add a documented permission matrix for view, duplicate, create draft, edit draft, publish, archive, and delete actions",
++        "Catalog, draft, publish, archive, and delete implementation stories reference the documented schema and permission matrix",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Implement workflow catalog entity types",
++      "description": "As a storage developer, I need explicit workflow catalog entities so that drafts, published versions, archive state, and delete state are not conflated.",
++      "acceptanceCriteria": [
++        "Implement separate entities for workflow identity, draft record, published version record, archive state, and delete/tombstone state",
++        "Catalog records expose source code/ui separately from lifecycle status draft/published/archived",
++        "Delete or tombstone state does not remove snapshots required for historical run inspection",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Persist UI drafts in the Workflow Registry store",
++      "description": "As a workflow author, I need UI drafts to persist before they are valid so that I can build incrementally.",
++      "acceptanceCriteria": [
++        "UI drafts are stored in the Workflow Registry/store, not Project session state",
++        "Draft records can contain partial or invalid Workflow IR plus diagnostics",
++        "Each workflow/copy has at most one active draft",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Protect drafts from invalid raw IR text",
++      "description": "As a workflow author, I need invalid raw text to be safe so that raw editing cannot corrupt my last valid draft object.",
++      "acceptanceCriteria": [
++        "Raw IR parse failure returns a warning diagnostic",
++        "Raw IR parse failure does not overwrite the last valid persisted draft object",
++        "Valid raw IR updates the same draft IR object used by visual editing",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Expose workflow catalog list and inspect APIs",
++      "description": "As a UI developer, I need catalog APIs so that the Workflow Library can list and inspect code workflows, UI drafts, and UI-published versions.",
++      "acceptanceCriteria": [
++        "List API returns id, title, description, tags, source, status, versions, editability, validation state, missing refs, and actions",
++        "Inspect API returns one workflow draft or published version with diagnostics",
++        "Archived workflows are hidden by default and visible with an explicit archive filter",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Implement duplicate-to-draft catalog operation",
++      "description": "As a workflow author, I need to duplicate workflows into drafts so that code-owned and published behavior remains stable.",
++      "acceptanceCriteria": [
++        "Duplicate operation works for eligible code and UI workflows",
++        "Duplicate creates a new UI draft or opens the existing active draft for that copy",
++        "The original workflow version remains immutable and read-only",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Expose capability picker APIs",
++      "description": "As a builder developer, I need picker APIs so that UI composition can select only registered capabilities.",
++      "acceptanceCriteria": [
++        "Picker APIs list registered handlers, adapters, guards, human actions, prompt assets, workflow versions, and non-archived Agent profiles",
++        "Picker results include id, displayName, description, and a paramsSchema field whose value is a schema object or null",
++        "Archived profiles and archived workflow records are excluded from default picker results",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Return structured missing-reference diagnostics",
++      "description": "As a reviewer, I need missing refs to identify the broken id and location so that drafts can be fixed before publish or run.",
++      "acceptanceCriteria": [
++        "Validation reports missing handlers, adapters, guards, profiles, prompt assets, human actions, and nested workflows",
++        "Each missing-ref diagnostic includes code, message, severity, missing id, and node/edge/path location when applicable",
++        "Missing-ref diagnostics appear in catalog inspect data and builder validation data",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-009",
++      "title": "Derive Workflow Library actions from source and status",
++      "description": "As a UI developer, I need stable action derivation so that the catalog does not rely on fragile special cases.",
++      "acceptanceCriteria": [
++        "Code workflow records expose view and duplicate actions but not direct edit/publish mutation actions",
++        "UI draft records expose edit, validate, publish, archive, and delete actions according to the documented permission matrix",
++        "A published, unarchived UI workflow fixture exposes duplicate, version history, archive, delete, and create Project session actions",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 9,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-010",
++      "title": "Enforce catalog authentication and permission baseline",
++      "description": "As a product reviewer, I need catalog lifecycle APIs to enforce the V2 permission baseline so that global workflows remain controlled.",
++      "acceptanceCriteria": [
++        "Catalog and picker APIs require authenticated access",
++        "Authenticated users can view global UI-authored workflows and duplicate eligible workflows",
++        "Archive and delete require authentication and preserve historical snapshots",
++        "Create, edit, and publish actions enforce the documented permission matrix",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 10,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_03_project_session_selection_and_snapshots.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_03_project_session_selection_and_snapshots.json
+new file mode 100644
+index 0000000..277db1f
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_03_project_session_selection_and_snapshots.json
+@@ -0,0 +1,129 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-project-session-selection-snapshots",
++  "description": "Project workflow session creation, delayed start, immutable workflow selection, allowed overrides, and configuration/effective-definition snapshots.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Document session override and pre-start edit policies",
++      "description": "As an implementation lead, I need override scope decisions before session APIs are built so that configuration behavior is explicit.",
++      "acceptanceCriteria": [
++        "Document prompt override eligibility rules for workflow/session nodes",
++        "Document whether model, thinking level, and fast mode apply workflow-wide or per eligible Agent node",
++        "Document whether allowed session-scoped fields remain editable between configured-session creation and first start",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Add configured workflow Project session record fields",
++      "description": "As a backend developer, I need Project sessions to record selected workflow metadata so that configured sessions exist before runs start.",
++      "acceptanceCriteria": [
++        "Project workflow session records store Project id, Pibo Session id, session name, workflow id, workflow version, and configured/not-started state",
++        "Session states include configured, running, waiting, completed, failed, and cancelled",
++        "Session creation does not create a workflow run record",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Implement workflow session creation API",
++      "description": "As a Pibo user, I need an API-backed creation flow so that I can choose a published workflow version and configure allowed session values.",
++      "acceptanceCriteria": [
++        "Creation API accepts session name, workflow id/version, input values, prompt overrides, model, thinking level, and fast mode using documented override eligibility and scope rules",
++        "Creation API rejects unpublished, archived-by-default, missing, or invalid workflow versions",
++        "Creation API rejects agent profile overrides, retry limit overrides, handler/adapter/guard overrides, and arbitrary options",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Persist configuration and effective-definition snapshot",
++      "description": "As a runtime developer, I need immutable snapshots so that runs remain inspectable after workflow edits, archive, or delete.",
++      "acceptanceCriteria": [
++        "Snapshot stores snapshot id, Project id, Pibo Session id, workflow id, workflow version, base definition hash, and effective definition hash",
++        "Snapshot stores input values plus prompt overrides keyed by node id when present",
++        "Snapshot stores model, thinking level, fast mode, and creation timestamp when present",
++        "Snapshot persistence records whether model, thinking level, fast mode, and prompt overrides apply workflow-wide or per eligible Agent node",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Implement explicit start API with one-run enforcement",
++      "description": "As a Pibo user, I need Start to create exactly one run so that session lifecycle is predictable.",
++      "acceptanceCriteria": [
++        "Start API validates the session snapshot immediately before run creation",
++        "Start API creates exactly one workflow run for the Project session",
++        "Second-start attempts are rejected or idempotently return the existing run without creating another run",
++        "One-run enforcement does not disable allowed parallel node execution inside the run",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Enforce immutable workflow selection after session creation",
++      "description": "As a collaborator, I need selected workflow identity to remain stable so that historical behavior is explainable.",
++      "acceptanceCriteria": [
++        "Update paths cannot change workflow id or workflow version after session creation",
++        "Pre-run edit policy is documented, and update paths enforce that policy for allowed session-scoped fields before start",
++        "Session-scoped configuration never persists back to the workflow definition",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Build configured-session Project UI state",
++      "description": "As a Pibo user, I need to see a configured workflow session before running it so that I can review and start safely.",
++      "acceptanceCriteria": [
++        "Configured session view shows selected workflow id/version and configuration summary",
++        "Configured session view shows validation state, explicit Start action, and empty run-history state",
++        "Blocked create or start actions show diagnostics linked to invalid input, override, schema, or missing reference",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Add Project session snapshot lifecycle tests",
++      "description": "As a QA engineer, I need tests for session creation, start, immutability, and deleted-definition inspection.",
++      "acceptanceCriteria": [
++        "Tests cover configured-session creation without workflow run creation",
++        "Tests cover one-run enforcement and workflow id/version immutability",
++        "Tests verify historical run views use snapshot data after live workflow definition changes or is deleted",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_04_workflow_builder_and_ir_editing.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_04_workflow_builder_and_ir_editing.json
+new file mode 100644
+index 0000000..110627d
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_04_workflow_builder_and_ir_editing.json
+@@ -0,0 +1,149 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-workflow-builder-ir-editing",
++  "description": "Workflow Builder and IR editing requirements for visual graph authoring, raw Workflow IR, raw JSON schemas, prompts, validation, and publish gating.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Document builder library and prompt asset persistence decisions",
++      "description": "As an implementation lead, I need builder dependency decisions before editor persistence is built so that UI behavior is explicit.",
++      "acceptanceCriteria": [
++        "Document the selected graph/canvas library and layout metadata contract",
++        "Document whether prompt asset edits mutate the current asset or create asset versions",
++        "Builder implementation stories reference these documented decisions before graph layout or prompt asset persistence is enabled",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Add Workflow Builder route and draft loader",
++      "description": "As a workflow author, I need to open a UI draft in the Workflows tab so that I can edit the workflow definition.",
++      "acceptanceCriteria": [
++        "Builder route opens from Workflow Library draft and duplicate actions",
++        "Builder loads the draft wrapper around partial Pibo Workflow IR and diagnostics",
++        "Builder does not open raw XState source as an editable document",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Implement graph canvas layout editing",
++      "description": "As a workflow author, I need a visual canvas so that I can understand and arrange workflow structure.",
++      "acceptanceCriteria": [
++        "Canvas displays workflow nodes and edges from Pibo Workflow IR",
++        "Users can add, delete, connect, move, and select nodes and edges",
++        "Automatic layout appears for workflows without saved positions and saved UI layout does not affect runtime semantics",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Implement workflow, node, and edge inspectors",
++      "description": "As a workflow author, I need inspectors so that visual edits update the same underlying Pibo Workflow IR.",
++      "acceptanceCriteria": [
++        "Workflow settings inspector edits title, description, input/output ports, and metadata fields exposed by V2",
++        "Node inspector edits node-specific fields for supported V2 node kinds",
++        "Edge inspector edits source/target ports, kind, guard refs, adapter refs, and diagnostics display",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Implement raw Workflow IR editor with safe sync",
++      "description": "As an advanced user, I need raw Workflow IR editing so that I can fix advanced fields without corrupting drafts.",
++      "acceptanceCriteria": [
++        "Raw editor exposes Pibo Workflow IR only and never raw XState JSON",
++        "Valid raw IR parses into the same draft IR object as visual editing",
++        "Invalid JSON or invalid raw text shows diagnostics and preserves the last valid draft object",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Implement raw JSON schema editors",
++      "description": "As a workflow author, I need raw JSON schema editors so that workflow and node contracts use the existing schema subset.",
++      "acceptanceCriteria": [
++        "Schema editor fields accept raw JSON only",
++        "Schema validation uses the existing custom workflow JSON Schema subset validator",
++        "Unsupported schemas show diagnostics without introducing Zod, AJV, or a form-builder schema layer",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Implement prompt template and prompt asset editors",
++      "description": "As a prompt author, I need prompt editing in the builder so that workflow prompts can be maintained with existing editor patterns.",
++      "acceptanceCriteria": [
++        "Prompt template editing updates prompt fields in the draft IR",
++        "Prompt asset editing uses the existing Markdown editor pattern",
++        "Prompt asset persistence follows the documented mutation-versus-versioning decision",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Implement publish/version panel gating",
++      "description": "As a workflow author, I need publish gating so that only valid runnable workflow definitions become immutable versions.",
++      "acceptanceCriteria": [
++        "Draft save is allowed while warnings or errors exist",
++        "Publish is blocked while error diagnostics remain",
++        "Publish rejects zero-node drafts and drafts missing workflow input or output contracts",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-009",
++      "title": "Add builder editing and raw IR tests",
++      "description": "As a QA engineer, I need automated coverage for builder editing so that visual and raw editors remain in sync.",
++      "acceptanceCriteria": [
++        "Tests cover duplicate/open builder, add node, connect edge, save layout, edit prompt, edit schema, validate, and publish",
++        "Tests cover raw IR valid sync, invalid JSON warning, invalid workflow diagnostics, and last-valid-object preservation",
++        "Tests verify layout metadata changes do not change serialized runtime semantics",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 9,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json
+new file mode 100644
+index 0000000..38b50d1
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_05_composition_node_and_capability_pickers.json
+@@ -0,0 +1,135 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-composition-node-capability-pickers",
++  "description": "Composition, node editing, and capability picker requirements for registered Agent, code, workflow, adapter, guard, state, and human action refs.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Implement Agent node profile picker",
++      "description": "As a workflow author, I need Agent nodes to select existing profiles so that agent execution uses known tools, skills, and context.",
++      "acceptanceCriteria": [
++        "Agent node editor selects only non-archived private, custom, or global Agent Designer profiles",
++        "Agent node editor supports prompt template editing where allowed by the workflow IR",
++        "Archived profiles cannot be selected and produce diagnostics if already referenced",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Implement code handler node picker",
++      "description": "As a workflow author, I need code nodes to reference registered handlers so that non-agent work is reusable and inspectable.",
++      "acceptanceCriteria": [
++        "Code node editor selects registered handler refs only",
++        "Handler picker displays id, displayName, description, inputSchema, and outputSchema fields; schema fields may be null when registry metadata is absent",
++        "Missing handler refs produce diagnostics and block publish/run when executable behavior depends on them",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Implement nested workflow node picker and navigation",
++      "description": "As a workflow author, I need workflow nodes to reference existing workflow versions so that parent graphs stay readable.",
++      "acceptanceCriteria": [
++        "Workflow node editor selects a workflow id/version from registry metadata",
++        "Workflow node provides Open workflow navigation to a separate workflow builder/viewer",
++        "Parent graph does not inline-expand nested workflow internals in V2",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Implement adapter nodes and compatible edge adapter dialog",
++      "description": "As a workflow author, I need adapter choices for incompatible ports so that transformations are explicit and registered.",
++      "acceptanceCriteria": [
++        "Adapter node editor selects registered adapters only",
++        "Incompatible edge diagnostics offer a dialog showing from/to schemas and compatible adapters",
++        "Adapter dialog supports Use as edge adapter and Insert adapter node actions",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Implement guard selection and params editing",
++      "description": "As a workflow author, I need guard refs and params to be controlled by registry metadata so that routing remains inspectable.",
++      "acceptanceCriteria": [
++        "Edge guard editor selects registered guards only",
++        "Guard and adapter params editors appear only when registry metadata includes paramsSchema",
++        "Invalid guard or adapter params produce diagnostics with path/node/edge location when applicable",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Implement human node action configuration",
++      "description": "As a workflow author, I need human nodes to use registered human actions so that waits and resumes use the V1 wait-token model.",
++      "acceptanceCriteria": [
++        "Human node editor supports prompt, raw JSON resume schema, registered action choices, and timeout",
++        "Human action picker uses registry metadata for action kind, label, and payload requirements",
++        "Missing or invalid human action refs show diagnostics and block publish/run when they affect executable behavior",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Implement simple state mapping controls",
++      "description": "As a workflow author, I need simple state read/write mapping controls so that common state access does not require raw IR editing.",
++      "acceptanceCriteria": [
++        "State mapping UI supports simple global/local/edge reads and writes through dropdowns",
++        "Complex state mapping DSLs remain editable only through raw Workflow IR",
++        "Schema or state changes can invalidate connected graphs without blocking draft save",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Add composition boundary tests",
++      "description": "As a security reviewer, I need tests proving composition only references registered capabilities.",
++      "acceptanceCriteria": [
++        "Positive tests cover each node kind, profile selection, handler/adapter/guard selection, nested workflow selection, and adapter insertion",
++        "Negative tests cover archived profile selection, missing refs, incompatible edge without adapter, invalid params, and inline code attempts",
++        "State mapping tests cover simple visual mapping and raw-IR-only complex mapping",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json
+new file mode 100644
+index 0000000..70f2e2b
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_06_versioning_archive_delete_lifecycle.json
+@@ -0,0 +1,133 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-versioning-archive-delete-lifecycle",
++  "description": "Versioning, archive, and delete lifecycle requirements for UI-authored workflow drafts, immutable published versions, and snapshot-backed history.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Persist immutable published workflow versions",
++      "description": "As a workflow author, I need published versions to be immutable so that active and historical runs remain explainable.",
++      "acceptanceCriteria": [
++        "Publishing creates an immutable workflow version record with version and definition hash",
++        "Published workflow records are registry-resolvable by id/version",
++        "No edit path mutates an existing published definition body",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Implement edit-published creates next draft path",
++      "description": "As a workflow author, I need edits to published workflows to create a draft so that published behavior is not silently changed.",
++      "acceptanceCriteria": [
++        "Edit on a published workflow creates or reuses the one active draft for the workflow/copy",
++        "The draft is associated with the next version path",
++        "Multiple active drafts for the same workflow/copy are rejected",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Implement patch, minor, and major version bumps",
++      "description": "As a workflow author, I need version intent choices so that releases communicate change scope.",
++      "acceptanceCriteria": [
++        "Default publish increments patch version",
++        "Publish UI/API supports explicit minor and major version bumps",
++        "Version allocation is transactional and prevents duplicate version numbers under concurrent publish",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Add version history and version selection",
++      "description": "As a Pibo user, I need version history so that I can choose and inspect stable published workflow versions.",
++      "acceptanceCriteria": [
++        "Workflow Library or detail view shows published version history in deterministic order",
++        "Project session creation can select a published workflow version",
++        "Archived or deleted state is clearly indicated when relevant",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Implement workflow-level archive",
++      "description": "As an operator, I need to archive deprecated workflows so that users do not start them by accident.",
++      "acceptanceCriteria": [
++        "Archive applies to the whole workflow identity, not a single version",
++        "Archived workflows are hidden from default run/selection lists",
++        "Archived workflows remain visible through archive filters and historical run links",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Implement authenticated delete with snapshot preservation",
++      "description": "As an operator, I need to delete workflows without erasing historical run inspection.",
++      "acceptanceCriteria": [
++        "Delete requires authentication and no additional V2 role",
++        "Delete removes or tombstones live catalog records without deleting historical run snapshots",
++        "Historical Project runs show snapshot data and a clear definition-deleted state",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Add lifecycle confirmation and permission safeguards",
++      "description": "As a product reviewer, I need lifecycle actions to be deliberate because V2 archive/delete permissions are broad.",
++      "acceptanceCriteria": [
++        "Archive and delete actions include confirmation copy that explains catalog and historical-run effects",
++        "Create/edit/publish actions enforce the documented workflow permission policy from the catalog permission matrix",
++        "Lifecycle APIs reject unauthenticated archive and delete requests",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Add version, archive, and delete tests",
++      "description": "As a QA engineer, I need lifecycle tests so that published behavior and historical inspection stay stable.",
++      "acceptanceCriteria": [
++        "Tests verify immutable publish records, definition hashes, and registry visibility",
++        "Tests verify patch/minor/major behavior and one-active-draft enforcement",
++        "Tests verify archive filters, delete/tombstone behavior, and historical run inspectability",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_07_project_run_inspection_sidebar_and_human_actions.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_07_project_run_inspection_sidebar_and_human_actions.json
+new file mode 100644
+index 0000000..072115d
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_07_project_run_inspection_sidebar_and_human_actions.json
+@@ -0,0 +1,134 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-project-run-inspection-sidebar-human-actions",
++  "description": "Project run inspection, Project sidebar routing, Workflow/XState views, Terminal routing, nested sessions, and human action controls.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Add session kind metadata for Project sidebar routing",
++      "description": "As a Project user, I need the sidebar to distinguish real session types so that workflow navigation is clear.",
++      "acceptanceCriteria": [
++        "Pibo Session metadata includes a stable session kind enum with values for main workflow, nested workflow, agent node, and subagent sessions",
++        "Sidebar data source returns only real Pibo Sessions and excludes logical workflow nodes, edges, guards, adapters, and state elements",
++        "Session kind metadata is available to Chat Web view routing",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Render real-session-only Project sidebar",
++      "description": "As a Project user, I need sidebar entries to match persisted sessions so that navigation is not confused with logical graph nodes.",
++      "acceptanceCriteria": [
++        "Project sidebar shows main workflow, nested workflow, agent node, and subagent sessions when they exist",
++        "Sidebar uses distinct icons and accessible labels for each session kind",
++        "Logical workflow elements are inspectable only inside Workflow/XState/run views",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Implement workflow versus terminal view routing",
++      "description": "As a Project user, I need selected session context to choose the right view so that workflow and agent sessions are readable.",
++      "acceptanceCriteria": [
++        "Workflow and nested workflow sessions open Workflow/XState plus run view",
++        "Agent node and subagent sessions open Terminal view",
++        "Unknown or unsupported session kinds fall back safely without exposing wrong data",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Build workflow run inspection panel",
++      "description": "As a Project reviewer, I need run details so that I can understand current and historical workflow execution.",
++      "acceptanceCriteria": [
++        "Run view renders status, current node, node attempts, edge transfers, output, and error sections with populated values or explicit empty states",
++        "Run view uses V1 XState projection for visualization only and kernel/run records for truth",
++        "Run view shows run history for the selected workflow Project session",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Add nested workflow and definition links",
++      "description": "As a debugger, I need links between run view, nested sessions, and workflow definitions so that hierarchy is navigable.",
++      "acceptanceCriteria": [
++        "A nested-workflow fixture creates a child session and the run view links to that child session entry",
++        "Run view links back to the Workflows tab definition when the live definition exists",
++        "Deleted definitions show a snapshot-only definition-deleted state instead of a broken link",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Show configured/not-started pre-run state in Projects",
++      "description": "As a Pibo user, I need pre-run sessions to be understandable before the workflow starts.",
++      "acceptanceCriteria": [
++        "Configured workflow sessions show configuration summary and validation state",
++        "Configured workflow sessions show Start action and no current run attempts",
++        "Start-blocking diagnostics are displayed in the Project session context",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Implement human action controls from wait tokens",
++      "description": "As a reviewer, I need to approve, reject, resume, or cancel waits without leaving the Project run view.",
++      "acceptanceCriteria": [
++        "Run view lists pending registered human actions and payload requirements from persisted wait tokens",
++        "Approve, reject, resume, and cancel validate token state and resume payload before state changes",
++        "Invalid, missing, expired, already-resolved, or unauthorized wait-token/action refs are rejected with diagnostics",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Add run inspection and human action tests",
++      "description": "As a QA engineer, I need tests for sidebar routing, run views, nested links, and human actions.",
++      "acceptanceCriteria": [
++        "Tests verify sidebar session inclusion/exclusion and visual type markers",
++        "Tests verify workflow/nested sessions route to Workflow/XState view and agent/subagent sessions route to Terminal view",
++        "Tests verify approve, reject, resume, cancel, invalid payload, missing action ref, expired token, already-resolved token, and deleted-definition display",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json
+new file mode 100644
+index 0000000..f78a515
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_08_validation_security_testing_rollout.json
+@@ -0,0 +1,129 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-validation-security-testing-rollout",
++  "description": "Validation, diagnostics, security boundaries, observability, automated tests, manual checks, and rollout gates for Workflow UI Authoring V2.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Define shared V2 diagnostic shape and grouping",
++      "description": "As a workflow author, I need consistent diagnostics so that errors are actionable across catalog, builder, publish, session creation, and start.",
++      "acceptanceCriteria": [
++        "Diagnostics include code, message, optional path, optional nodeId, optional edgeId, severity, and hint where applicable",
++        "Diagnostics group by workflow, node, edge, schema path, state path, registry ref, and severity",
++        "Diagnostic data can be consumed by Workflow Library, Builder, Project session creation, run start, and runtime failure states",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Implement validation trigger pipeline",
++      "description": "As a developer, I need validation to run at every lifecycle boundary so that invalid definitions do not reach execution.",
++      "acceptanceCriteria": [
++        "Validation runs after draft load, graph edit, node edit, edge edit, schema edit, prompt edit, state edit, and raw IR edit",
++        "Validation runs before publish, before Project session creation, and before workflow start",
++        "Draft save allows diagnostics, but publish and run/start reject error diagnostics",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Enforce registered-capability security boundary",
++      "description": "As a security reviewer, I need UI authoring to compose only registered refs so that users cannot create arbitrary executable code.",
++      "acceptanceCriteria": [
++        "UI workflows can reference only registered handlers, adapters, guards, workflows, human actions, prompt assets, and non-archived Agent profiles",
++        "The UI does not create handlers, adapters, guards, JavaScript, TypeScript, shell, eval, or arbitrary executable nodes",
++        "Hidden LLM coercion between incompatible schemas is not used as a substitute for registered adapters",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Add lifecycle observability signals",
++      "description": "As an operator, I need lifecycle and failure signals so that V2 behavior is inspectable and debuggable.",
++      "acceptanceCriteria": [
++        "Lifecycle event or audit-equivalent records exist for draft save, validation, publish, archive, and delete",
++        "Lifecycle event or audit-equivalent records exist for configured-session creation, run start accepted, run start blocked, run status changes, and human action submission",
++        "Run inspection surfaces start failures and blocked-start diagnostics with the same diagnostic families as API responses",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Apply diagnostic redaction and visibility rules",
++      "description": "As a privacy reviewer, I need diagnostics to be useful without leaking hidden workflow data.",
++      "acceptanceCriteria": [
++        "Diagnostics reveal ids, paths, and locations needed to fix errors",
++        "Diagnostics do not dump sensitive prompt, input, output, state, edge payload, or human action payload data in normal UI",
++        "Run and diagnostic visibility follows existing Project/session access rules",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Add negative tests for explicit V2 deferrals",
++      "description": "As a QA engineer, I need tests for non-goals so that unsupported authoring paths do not appear accidentally.",
++      "acceptanceCriteria": [
++        "Tests assert no inline TypeScript, JavaScript, shell, eval, or arbitrary executable code path exists in V2 UI",
++        "Tests assert no raw XState editing, Zod schema authoring, templates, workflow slash commands, or workflow tools for agents are exposed",
++        "Tests assert YAML/JSON import/export and TypeScript export are absent as V2 product features",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Add V2 automated release test suites",
++      "description": "As a release reviewer, I need test coverage mapped to the main V2 areas before deployment.",
++      "acceptanceCriteria": [
++        "Unit tests cover registry draft/publish lifecycle, catalog APIs, source/status action derivation, validation diagnostics, version bumps, archive, and delete",
++        "Integration tests cover Project session workflow selection, delayed start, snapshot creation, workflow immutability, one-run enforcement, and start validation",
++        "UI tests cover duplicate/edit/validate/publish, raw IR invalid warning, incompatible edge adapter requirement, missing refs, sidebar/view routing, and human action submission",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Document rollout gates and manual validation flow",
++      "description": "As an implementation lead, I need release gates so that V2 ships only after automated and manual checks pass.",
++      "acceptanceCriteria": [
++        "Document MVP, v1.1, v1.2, and release gates for V2 validation",
++        "Document the manual smoke flow for select-configure-save-start-inspect and duplicate-edit-validate-publish",
++        "Release gate requires relevant workflow/package and Chat Web tests plus typecheck",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}
+diff --git a/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json
+new file mode 100644
+index 0000000..f115fb0
+--- /dev/null
++++ b/docs/specs/changes/pibo-workflow-ui-authoring-v2/prds/prd_09_implementation_completeness_contract.json
+@@ -0,0 +1,396 @@
++{
++  "project": "Pibo Workflow UI Authoring V2",
++  "branchName": "ralph/pibo-workflow-ui-authoring-v2-implementation-completeness-contract",
++  "description": "Second-pass implementation completeness contract converted into Ralph-sized implementation and validation stories for every mandatory Workflow UI Authoring V2 area.",
++  "userStories": [
++    {
++      "id": "US-001",
++      "title": "Resolve documented open decisions before affected implementation",
++      "description": "As an implementation lead, I need open decisions resolved before coding affected areas so that agents do not choose silently.",
++      "acceptanceCriteria": [
++        "Document exact Workflow Registry/store schema and database records before implementing store migrations",
++        "Document exact API route contracts, snapshot fields, deleted-workflow display behavior, graph/canvas library, override scope, prompt override eligibility, and prompt asset mutation/versioning before coding affected areas",
++        "Update the relevant PRD/spec files with the chosen decisions before dependent implementation stories are marked complete",
++        "Typecheck passes"
++      ],
++      "priority": 1,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-002",
++      "title": "Create Workflows tab shell",
++      "description": "As an implementation agent, I need the Workflows product shell so that catalog and builder stories have a stable home.",
++      "acceptanceCriteria": [
++        "Add Workflows tab shell reachable from Chat Web main navigation",
++        "Workflows tab shell renders Workflow Library entry area",
++        "Workflows tab shell renders Workflow Builder entry area",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 2,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-003",
++      "title": "Create Projects workflow execution shell",
++      "description": "As an implementation agent, I need the Projects execution shell so that configured sessions and run views have a stable home.",
++      "acceptanceCriteria": [
++        "Projects area renders a workflow configured-session view container",
++        "Projects area renders a workflow run view container",
++        "Projects area renders a human action area inside the workflow run context",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 3,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-004",
++      "title": "Add Project sidebar session kind markers",
++      "description": "As an implementation agent, I need sidebar session markers so that session routing can distinguish workflow and terminal contexts.",
++      "acceptanceCriteria": [
++        "Project sidebar data includes a stable session kind for workflow, nested workflow, agent node, and subagent sessions",
++        "Project sidebar renders distinct icons and accessible labels for each session kind",
++        "Project sidebar excludes logical workflow nodes, edges, guards, adapters, and state elements",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 4,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-005",
++      "title": "Implement workflow record source/status and entity contracts",
++      "description": "As a storage developer, I need the workflow record model complete so that catalog actions and lifecycle state are deterministic.",
++      "acceptanceCriteria": [
++        "Implement WorkflowRecordSource values code and ui",
++        "Implement WorkflowRecordStatus values draft, published, and archived",
++        "Model workflow identity, draft record, published version record, archive state, and delete/tombstone state distinctly",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 5,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-006",
++      "title": "Implement workflow catalog lifecycle APIs",
++      "description": "As a UI developer, I need workflow catalog APIs so that Workflows UI can browse and manage definitions.",
++      "acceptanceCriteria": [
++        "Expose callable API surfaces to list, inspect, duplicate, save draft, validate draft, publish, archive, and delete workflows",
++        "API responses include source/status metadata and missing-reference diagnostics",
++        "Archive and delete APIs require authenticated access",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 6,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-007",
++      "title": "Implement capability picker APIs",
++      "description": "As a UI developer, I need picker APIs so that Workflows UI can compose only registered capabilities.",
++      "acceptanceCriteria": [
++        "Expose callable API surfaces to list handlers, adapters, guards, human actions, prompt assets, workflow versions, and non-archived Agent profiles",
++        "Picker responses include id, displayName, description, and paramsSchema field with schema object or null",
++        "Picker responses exclude archived profiles and archived workflows from default results",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 7,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-008",
++      "title": "Implement Project workflow session creation",
++      "description": "As a runtime developer, I need configured workflow sessions so that execution is explicit and starts only after user action.",
++      "acceptanceCriteria": [
++        "Project workflow session creation supports session name, workflow id/version, input, prompt overrides, model, thinking level, and fast mode",
++        "Session creation persists configured/not-started state without creating a workflow run",
++        "Session creation rejects disallowed overrides for profiles, retry limits, handlers, adapters, guards, and arbitrary options",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 8,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-009",
++      "title": "Implement Project session snapshot and start",
++      "description": "As a runtime developer, I need snapshots and one-run start behavior so that historical inspection and idempotency are reliable.",
++      "acceptanceCriteria": [
++        "Start creates one workflow run per Project session from the effective snapshot",
++        "Snapshot stores required identity, hashes, input, prompt overrides, model settings, fast mode, and timestamp fields",
++        "Second-start attempts do not create a second workflow run",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 9,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-010",
++      "title": "Implement builder graph and inspector panels",
++      "description": "As a workflow author, I need graph and inspector panels so that visual edits update Pibo Workflow IR.",
++      "acceptanceCriteria": [
++        "Builder includes graph canvas, node inspector, edge inspector, and workflow settings panels",
++        "Drafts with zero nodes can be saved",
++        "Graph layout metadata is stored separately from runtime execution semantics",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 10,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-011",
++      "title": "Implement builder raw/schema/prompt panels",
++      "description": "As a workflow author, I need raw IR, schema, and prompt panels so that advanced authoring still uses Pibo Workflow IR.",
++      "acceptanceCriteria": [
++        "Builder includes raw Workflow IR editor and forbids raw XState editing",
++        "Builder includes raw JSON schema editors using the existing JSON Schema subset validator",
++        "Builder includes prompt editor and prompt asset editor using the existing Markdown editor pattern",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 11,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-012",
++      "title": "Implement builder validation and publish panels",
++      "description": "As a workflow author, I need validation and publish panels so that invalid drafts cannot become runnable versions.",
++      "acceptanceCriteria": [
++        "Builder includes validation panel with structured diagnostics",
++        "Builder includes publish/version panel",
++        "Published/runnable workflows require at least one node plus workflow input and output contracts",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 12,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-013",
++      "title": "Implement agent, code, and workflow node refs",
++      "description": "As a workflow author, I need core node refs so that workflows can use existing agents, handlers, and nested workflows.",
++      "acceptanceCriteria": [
++        "Agent nodes select non-archived private, custom, or global Agent Designer profiles",
++        "Code nodes select registered handlers only",
++        "Workflow nodes select workflow id/version and provide Open workflow navigation",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 13,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-014",
++      "title": "Implement adapter and human node refs",
++      "description": "As a workflow author, I need adapter and human node refs so that transforms and waits use registered capabilities.",
++      "acceptanceCriteria": [
++        "Adapter nodes select registered adapters only",
++        "Human nodes edit prompt, raw JSON schema, registered human action choices, and timeout",
++        "Missing or invalid adapter/human action refs show diagnostics and block publish/run when executable behavior depends on them",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 14,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-015",
++      "title": "Implement edge adapter, guard, and state editing",
++      "description": "As a workflow author, I need edges and routing controls so that graph composition is explicit and validated.",
++      "acceptanceCriteria": [
++        "Edges connect typed ports and carry guards or adapters only when compatibility validation allows them",
++        "Incompatible ports require explicit registered adapters with Use as edge adapter and Insert adapter node actions",
++        "Guard and adapter params editors require a paramsSchema field; simple state mappings use dropdowns while complex mappings remain raw IR only",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 15,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-016",
++      "title": "Implement publish and version lifecycle",
++      "description": "As a workflow author, I need immutable versioning so that workflow changes do not mutate published behavior.",
++      "acceptanceCriteria": [
++        "Publish creates immutable versions with patch default and user-triggered minor/major choices",
++        "Editing a published workflow creates or reuses the next draft path",
++        "Version history and version selection are available for published workflow records",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 16,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-017",
++      "title": "Implement archive and delete lifecycle",
++      "description": "As an operator, I need archive and delete lifecycle actions that preserve historical inspection.",
++      "acceptanceCriteria": [
++        "Archive applies to the whole workflow and hides it from default selection lists",
++        "Authenticated delete removes or tombstones live catalog records",
++        "Delete preserves historical run snapshots and renders definition-deleted state for old runs",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 17,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-018",
++      "title": "Implement workflow run inspection view",
++      "description": "As a Project reviewer, I need run details so that workflow execution is inspectable from Projects.",
++      "acceptanceCriteria": [
++        "Run view shows current status, current node, node attempts, edge transfers, output, and errors",
++        "Run view shows nested workflow links and definition links or definition-deleted state",
++        "Run view uses XState projection for visualization only and workflow run records for truth",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 18,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-019",
++      "title": "Implement human action controls",
++      "description": "As a Project reviewer, I need human action controls so that waits can be resolved from the run view.",
++      "acceptanceCriteria": [
++        "Pending human actions display from persisted wait tokens",
++        "Approve, reject, resume, and cancel validate token state before action acceptance",
++        "Resume payload validation runs before action acceptance",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 19,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-020",
++      "title": "Implement validation and diagnostics contract",
++      "description": "As a QA engineer, I need validation and diagnostics at all authoring and execution boundaries so that invalid workflows are blocked before run.",
++      "acceptanceCriteria": [
++        "Validation runs after draft load, graph/node/edge/schema/prompt/state/raw IR edits, before publish, before Project session creation, and before start",
++        "Diagnostics include code, message, optional path, optional nodeId, optional edgeId, severity, and hint where applicable",
++        "Publish and run/start are blocked while error diagnostics remain",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 20,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-021",
++      "title": "Implement security boundary contract",
++      "description": "As a security reviewer, I need V2 to preserve existing Pibo boundaries so that workflow authoring is not an execution escape hatch.",
++      "acceptanceCriteria": [
++        "V2 keeps existing auth, Project/session visibility, profile/tool/skill/context, and compute-worker boundaries",
++        "V2 does not allow inline TypeScript, JavaScript eval, arbitrary shell/script nodes, creating handlers/adapters/guards in UI, raw XState editing, or Zod schema authoring",
++        "Inputs, outputs, prompts, prompt assets, state, edge payloads, snapshots, and human action payloads remain sensitive workflow data",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 21,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-022",
++      "title": "Add catalog and lifecycle checklist tests",
++      "description": "As a reviewer, I need focused tests for catalog and lifecycle completeness so that storage behavior is reviewable.",
++      "acceptanceCriteria": [
++        "Tests cover registry/store source/status metadata and UI draft save",
++        "Tests cover catalog APIs, duplicate, publish, archive, delete, and missing refs",
++        "Tests cover immutable versions, one-active-draft enforcement, and historical snapshot preservation",
++        "Tests pass",
++        "Typecheck passes"
++      ],
++      "priority": 22,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-023",
++      "title": "Add Project and run-view checklist tests",
++      "description": "As a reviewer, I need focused tests for Project execution completeness so that session and run behavior is reviewable.",
++      "acceptanceCriteria": [
++        "Tests cover Project session creation, delayed start, snapshots, immutability, and one-run enforcement",
++        "Tests cover sidebar routing, run inspection, nested workflow links, and deleted-definition inspection",
++        "Tests cover human action approve, reject, resume, cancel, invalid payload, and already-resolved token cases",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 23,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-024",
++      "title": "Add builder and security checklist tests",
++      "description": "As a reviewer, I need focused tests for builder and security completeness so that authoring remains safe.",
++      "acceptanceCriteria": [
++        "Tests cover builder graph editing, raw IR, raw JSON schema editing, prompt editing, composition, and validation diagnostics",
++        "Tests cover adapter compatibility, guard params, state mapping, and missing registered refs",
++        "Tests cover explicit non-goals: no inline code, no raw XState editing, no Zod authoring, no templates, no slash commands, and no workflow tools for agents",
++        "Tests pass",
++        "Verify in browser using dev-browser skill",
++        "Typecheck passes"
++      ],
++      "priority": 24,
++      "passes": false,
++      "notes": ""
++    },
++    {
++      "id": "US-025",
++      "title": "Verify requirement and task traceability remains complete",
++      "description": "As a reviewer, I need traceability so that implementation can be rejected when mandatory V2 requirements are missing.",
++      "acceptanceCriteria": [
++        "Every requirement from spec.md remains mapped to at least one PRD and one completeness section",
++        "Every tasks.md task group remains mapped to an implementation area and validation gate",
++        "Completeness contract checklist items marked MUST can be reviewed as pass/fail items",
++        "Typecheck passes"
++      ],
++      "priority": 25,
++      "passes": false,
++      "notes": ""
++    }
++  ]
++}

@@ -1,0 +1,4 @@
+worktree=/root/code/pibo/.worktrees/web-render-debug-tool
+branch=web-render-debug-tool
+dirty_count=0
+## web-render-debug-tool
