@@ -78,7 +78,9 @@ import { ChatTimelineQueryService } from "./data/timeline-query-service.js";
 import { ChatProjectService, type PiboProject, type PiboProjectSession } from "./data/project-service.js";
 import { PiboDataStore } from "../../data/pibo-store.js";
 import { createDefaultPiboCronStore, type PiboCronStore } from "../../cron/store.js";
+import { createDefaultPiboRalphStore, type PiboRalphStore } from "../../ralph/store.js";
 import { handleChatCronApiRequest } from "./cron-api.js";
+import { handleChatRalphApiRequest } from "./ralph-api.js";
 
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
@@ -93,6 +95,7 @@ export type ChatWebAppOptions = {
 	dataPayloadRootDir?: string;
 	projectStorePath?: string;
 	cronStorePath?: string;
+	ralphStorePath?: string;
 };
 
 type ChatPersistenceMetrics = {
@@ -165,6 +168,7 @@ type ChatWebAppState = {
 	agentStore: CustomAgentStore;
 	reliabilityStore: PiboReliabilityStore;
 	cronStore: PiboCronStore;
+	ralphStore: PiboRalphStore;
 	dataStore: PiboDataStore;
 	ingestService: ChatDataIngestService;
 	traceCache: Map<string, PiboSessionTraceView>;
@@ -3213,6 +3217,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		agentStore: createAgentStore(options.agentStorePath),
 		reliabilityStore: createReliabilityStore(options.reliabilityStorePath),
 		cronStore: createDefaultPiboCronStore({ path: options.cronStorePath }),
+		ralphStore: createDefaultPiboRalphStore({ path: options.ralphStorePath }),
 		dataStore,
 		ingestService: new ChatDataIngestService(dataStore),
 		traceCache: new Map(),
@@ -3402,6 +3407,19 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					webSession,
 					roomService: state.roomService,
 					cronStore: state.cronStore,
+					defaultProfile,
+				});
+				if (response) return response;
+			}
+
+			if (url.pathname.startsWith(`${CHAT_WEB_API_PREFIX}/ralph`)) {
+				const webSession = await requireSession(request, context);
+				const response = await handleChatRalphApiRequest({
+					request,
+					context,
+					webSession,
+					roomService: state.roomService,
+					ralphStore: state.ralphStore,
 					defaultProfile,
 				});
 				if (response) return response;

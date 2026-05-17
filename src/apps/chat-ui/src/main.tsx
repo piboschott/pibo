@@ -35,6 +35,7 @@ function chatRouteFromLocation(pathname: string, search: Record<string, unknown>
 	if (parts[0] === "context") return { area: "context" };
 	if (parts[0] === "agents") return { area: "agents" };
 	if (parts[0] === "cron") return { area: "cron" };
+	if (parts[0] === "ralph") return { area: "ralph" };
 	if (parts[0] === "settings") {
 		if (parts[1] === "pi-packages") return { area: "settings", panel: "pi-packages" };
 		if (parts[1] === "skills") return { area: "settings", panel: "skills" };
@@ -93,6 +94,10 @@ const cronRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "cron",
 });
+const ralphRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "ralph",
+});
 const contextRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "context",
@@ -114,7 +119,7 @@ const settingsProvidersRoute = createRoute({
 	path: "settings/providers",
 });
 const router = createRouter({
-	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
+	routeTree: rootRoute.addChildren([indexRoute, sessionRoute, roomRoute, roomSessionRoute, projectsRoute, projectRoute, projectSessionRoute, agentsRoute, cronRoute, ralphRoute, contextRoute, settingsRoute, settingsPiPackagesRoute, settingsSkillsRoute, settingsProvidersRoute]),
 	basepath: "/apps/chat",
 });
 

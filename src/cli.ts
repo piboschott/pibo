@@ -107,6 +107,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		return;
 	}
 
+	if (argv[2] === "ralph") {
+		const { runRalphCli } = await import("./ralph/cli.js");
+		await runRalphCli([argv[0] ?? "node", "pibo ralph", ...argv.slice(3)]);
+		return;
+	}
+
 	if (argv[2] === "config" && (argv[3] === "--help" || argv[3] === "-h" || argv.length === 3)) {
 		printConfigDiscovery();
 		return;
@@ -209,6 +215,18 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		.action(async (args: string[]) => {
 			const { runCronCli } = await import("./cron/cli.js");
 			await runCronCli([argv[0] ?? "node", "pibo cron", ...args]);
+		});
+
+	program
+		.command("ralph")
+		.description("Manage continuous Ralph jobs")
+		.helpOption(false)
+		.allowUnknownOption(true)
+		.allowExcessArguments(true)
+		.argument("[args...]")
+		.action(async (args: string[]) => {
+			const { runRalphCli } = await import("./ralph/cli.js");
+			await runRalphCli([argv[0] ?? "node", "pibo ralph", ...args]);
 		});
 
 	const config = program.command("config").description(`Manage pibo config at ${getDefaultPiboConfigPath()}`).helpOption(false);
@@ -347,6 +365,7 @@ Commands:
   compute      Manage Pibo Docker compute workers
   skills       Manage Pibo user skills
   cron         Manage scheduled Pibo jobs
+  ralph        Manage continuous Ralph jobs
   profile      Inspect a pibo profile
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI

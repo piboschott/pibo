@@ -511,3 +511,10 @@ export type Trace = {
 	completedAt?: Date;
 	totalDurationMs: number;
 };
+
+export type PiboRalphTarget =
+	| { kind: "room"; roomId: string }
+	| { kind: "personal"; principalId: string };
+export type PiboRalphJob = { id: string; ownerScope: string; name: string; description?: string; enabled: boolean; target: PiboRalphTarget; profile: string; prompt: string; maxIterations?: number; storyStopPaths?: string[]; state: { runningAt?: string; lastRunAt?: string; lastStatus?: "ok" | "error" | "cancelled"; lastError?: string; lastRunId?: string; lastPiboSessionId?: string; consecutiveErrors?: number; stopRequestedAt?: string; cancelRequestedAt?: string; completedIterations?: number }; createdAt: string; updatedAt: string };
+export type PiboRalphRun = { id: string; jobId: string; ownerScope: string; piboSessionId?: string; status: "running" | "ok" | "error" | "cancelled"; reason?: string; error?: string; startedAt?: string; completedAt?: string; createdAt: string; updatedAt: string };
+export type PiboRalphStatus = { enabled: boolean; jobs: number; running: number };
