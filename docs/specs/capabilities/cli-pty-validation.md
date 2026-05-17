@@ -2,6 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-16  
+**Updated:** 2026-05-17  
 **Owner / Source:** User investigation after Ink CLI Session UI validation gap  
 **Related docs:** `docs/specs/changes/pty-debug-e2e-tooling/`, `docs/specs/capabilities/cli-session-ui.md`
 
@@ -14,6 +15,12 @@ Future agents must be able to run deterministic PTY tests, inspect terminal outp
 ## Goal
 
 Provide a standard PTY validation capability, exposed through `pibo debug pty`, that can run on both host and Docker workers, capture terminal artifacts, and verify real CLI behavior with safe bounds.
+
+## Background / Current State
+
+`pibo debug pty` is implemented under `pibo debug` with `run`, `scenario`, and `list-scenarios` subcommands. The command uses a Python PTY driver on the host, can run inside a named Docker container through `docker exec` when `python3` or `python` is available, supports JSON scenario files, and includes a built-in `cli-session-ui-mocked-e2e` scenario. Failed runs always write artifacts; successful runs write artifacts when `--artifact` is set.
+
+The current implementation defaults scenario provider mode to `mocked`. Real-provider scenarios require the `--real-provider` flag, default `maxIterations` to 10, require an iteration-marked step, and require a timeout plus an expected output, stop pattern, or wait condition. The canonical CLI Session UI scenario uses `PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED=1` and a temporary `PIBO_HOME` under the artifact directory to avoid depending on host custom agents or real providers.
 
 ## Scope
 
@@ -43,7 +50,7 @@ Pibo MUST provide a `pibo debug pty` command that can run an interactive CLI pro
 
 #### Acceptance
 
-A maintainer can run a Pibo CLI command through `pibo debug pty` with configured rows, columns, timeout, and scripted input, then inspect captured output artifacts.
+A maintainer can run a Pibo CLI command through `pibo debug pty run -- <command...>` with configured rows, columns, timeout, environment, working directory, scripted input, expectations, rejection patterns, and optional success artifacts.
 
 ### Requirement: Artifacts are captured on every failure
 
@@ -51,7 +58,7 @@ PTY validation MUST write diagnostic artifacts when a run fails and SHOULD suppo
 
 #### Acceptance
 
-A failed run produces at least raw ANSI output, cleaned text output, final visible screen/capture where available, command metadata, input script, exit code, timing, and assertion failure details.
+A failed run produces `metadata.json`, `input.json`, `assertions.json`, `raw.ansi.log`, `clean.txt`, `screen.txt`, and, when available, `events.jsonl` and `driver.stderr.log`.
 
 ### Requirement: Host and Docker execution are supported
 
@@ -59,7 +66,7 @@ PTY validation MUST work on the host and inside a dedicated Docker worker.
 
 #### Acceptance
 
-The same validation scenario can target the installed host `pibo` binary or run inside a named Docker worker with a specified workdir.
+The same validation scenario can target the installed host `pibo` binary or run inside a named Docker worker/container with `--docker-worker` and an optional `--workdir`, failing before execution with actionable diagnostics when the container or Python PTY driver is unavailable.
 
 ### Requirement: Mocked provider mode is deterministic
 
@@ -67,7 +74,7 @@ The default E2E mode SHOULD avoid live model calls by using mocked provider resp
 
 #### Acceptance
 
-A CLI session test can assert assistant output without requiring external network access or real provider credentials.
+The built-in `cli-session-ui-mocked-e2e` scenario starts `pibo tui:sessions` without `--demo`, injects a deterministic debug mocked local source, creates a session, sends `Hi`, waits for a mocked assistant response, runs `/status`, exits with `/quit`, and avoids real provider credentials.
 
 ### Requirement: Real-provider mode is explicit and bounded
 
@@ -75,7 +82,7 @@ Real provider E2E tests MUST require an explicit flag such as `--real-provider` 
 
 #### Acceptance
 
-A real-provider PTY run defaults to at most 10 interaction/agent-turn iterations and fails closed if the bound is exceeded. The limit can be lowered or explicitly raised by a human-provided option.
+A real-provider PTY run requires `--real-provider`, defaults to at most 10 iteration-marked steps, and fails closed if the bound is exceeded or no enforceable iteration step and stop/expectation condition is present. The limit can be lowered or explicitly raised by a human-provided option.
 
 ### Requirement: Agent-to-agent loops are prevented
 
@@ -113,18 +120,22 @@ A scenario can declare command, environment, terminal size, input steps, waits, 
 
 ## Success Criteria
 
-- [ ] SC-001: `pibo debug pty` can run a scripted PTY session and capture artifacts.
-- [ ] SC-002: A deterministic mocked-provider CLI Session UI scenario verifies `/new`, message send, assistant response, `/status`, and `/quit`.
-- [ ] SC-003: A real-provider scenario requires `--real-provider` and enforces `--max-iterations` defaulting to 10.
-- [ ] SC-004: A scenario can run on both host and Docker worker targets.
-- [ ] SC-005: Failed PTY runs produce raw and cleaned artifacts with actionable diagnostics.
+- [x] SC-001: `pibo debug pty` can run a scripted host PTY session and capture artifacts, as covered by `test/debug-pty.test.mjs`.
+- [x] SC-002: A deterministic mocked-provider CLI Session UI scenario verifies `/new`, message send, assistant response, `/status`, and `/quit`, as source-inspected in `src/debug/pty.ts` and the CLI mocked-source seam.
+- [x] SC-003: A real-provider scenario requires `--real-provider` and enforces `--max-iterations` defaulting to 10, as covered by `test/debug-pty.test.mjs`.
+- [ ] SC-004: A scenario can run on both host and Docker worker targets. Host is tested; Docker support is source-inspected from `src/debug/pty.ts` and still needs a worker smoke test.
+- [x] SC-005: Failed PTY runs produce raw and cleaned artifacts with actionable diagnostics, as covered by `test/debug-pty.test.mjs`.
 
 ## Traceability
 
 | Requirement | Consumer | Status |
 |---|---|---|
-| PTY command execution | CLI/TUI validation | Draft |
-| Artifact capture | Debugging/Ralph review | Draft |
-| Host + Docker targets | Local and Ralph workflows | Draft |
-| Mocked provider | Deterministic E2E | Draft |
-| Real provider safety | Human-approved live checks | Draft |
+| PTY command execution | `src/debug/pty.ts`, `test/debug-pty.test.mjs` | Component-tested |
+| Artifact capture | `src/debug/pty.ts`, `test/debug-pty.test.mjs` | Component-tested |
+| Host + Docker targets | `src/debug/pty.ts`, `test/debug-pty.test.mjs` | Host component-tested; Docker source-inspected |
+| Mocked provider | `src/debug/pty.ts`, `src/apps/cli-ui/cliSessionsCommand.ts` | Source-inspected |
+| Real provider safety | `src/debug/pty.ts`, `test/debug-pty.test.mjs` | Component-tested |
+
+## Verification Basis
+
+This spec was refreshed against current code in `src/debug/index.ts`, `src/debug/pty.ts`, `src/cli.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `src/apps/cli-ui/InkSessionApp.ts`, and tests in `test/debug-pty.test.mjs` and `test/cli-ui-session-app.test.mjs`.

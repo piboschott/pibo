@@ -6,7 +6,7 @@
     "baseCommit": "bdf219f906eb331a2f5343dd16e8124c2734878b",
     "mainRef": "main",
     "createdAt": "2026-05-17T00:17:50Z",
-    "lastUpdatedAt": "2026-05-17T00:54:32Z",
+    "lastUpdatedAt": "2026-05-17T01:04:03Z",
     "notes": [
       "This ledger is the durable resume state for the Ralph source-spec refresh loop.",
       "Current code in this worktree is the source of truth for source-backed specs.",
@@ -14,8 +14,8 @@
     ]
   },
   "cursor": {
-    "nextQueueId": "q-gateway-channel-cli",
-    "lastIteration": 3
+    "nextQueueId": "q-store-data-boundaries",
+    "lastIteration": 4
   },
   "decisionRequests": [],
   "queue": [
@@ -103,7 +103,7 @@
     },
     {
       "id": "q-gateway-channel-cli",
-      "status": "pending",
+      "status": "completed",
       "priority": 7,
       "title": "Gateway, channel, CLI, PTY, and operator specs",
       "paths": [
@@ -114,7 +114,21 @@
         "docs/specs/capabilities/cli-pty-validation.md",
         "docs/specs/changes/pty-debug-e2e-tooling/"
       ],
-      "reason": "upstream/dev contains recent PTY/debug tooling work and gateway/channel code changed after the cron run."
+      "reason": "upstream/dev contains recent PTY/debug tooling work and gateway/channel code changed after the cron run.",
+      "startedAt": "2026-05-17T01:04:03Z",
+      "completedAt": "2026-05-17T01:04:03Z",
+      "cursor": {
+        "auditedPaths": [
+          "docs/specs/capabilities/channel-runtime-context.md",
+          "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+          "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+          "docs/specs/capabilities/cli-session-ui.md",
+          "docs/specs/capabilities/cli-pty-validation.md",
+          "docs/specs/changes/pty-debug-e2e-tooling/"
+        ],
+        "result": "completed_with_spec_updates",
+        "next": "q-store-data-boundaries"
+      }
     },
     {
       "id": "q-store-data-boundaries",
@@ -258,6 +272,49 @@
         "Chat Web Context Area spec refreshed for the sixth Build Context panel and View Context navigation.",
         "Context Build Inspector change spec classified as implemented current code; tasks and traceability updated while preserving proposal-time Current sections as historical baseline.",
         "User Skills spec refreshed for current user-home root behavior and stronger conflict/rollback wording."
+      ]
+    },
+    {
+      "id": "q-gateway-channel-cli",
+      "completedAt": "2026-05-17T01:04:03Z",
+      "title": "Gateway, channel, CLI, PTY, and operator specs",
+      "result": "completed_with_spec_updates",
+      "pathsAudited": [
+        "docs/specs/capabilities/channel-runtime-context.md",
+        "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+        "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+        "docs/specs/capabilities/cli-session-ui.md",
+        "docs/specs/capabilities/cli-pty-validation.md",
+        "docs/specs/changes/pty-debug-e2e-tooling/"
+      ],
+      "evidence": [
+        "src/channels/types.ts",
+        "src/gateway/server.ts",
+        "src/gateway/protocol.ts",
+        "src/gateway/cli.ts",
+        "src/gateway/tool.ts",
+        "src/cli.ts",
+        "src/debug/index.ts",
+        "src/debug/pty.ts",
+        "src/apps/cli-ui/InkSessionApp.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "src/cli-session/localSessionSource.ts",
+        "src/cli-session/fakeSessionSource.ts",
+        "test/channel-runtime.test.mjs",
+        "test/gateway-backpressure-subscriptions.test.mjs",
+        "test/gateway-request.test.mjs",
+        "test/gateway-restart-safety.test.mjs",
+        "test/web-gateway.test.mjs",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs",
+        "test/debug-pty.test.mjs"
+      ],
+      "notes": [
+        "Channel and local gateway specs were refreshed for current PiboChannelContext methods covering yielded-run snapshots, signal trees, profile creation, and Ralph stop-condition discovery.",
+        "Operator CLI spec was refreshed for the current pibo tui:sessions root-owned command and direct help path.",
+        "CLI Session UI spec was refreshed from target-only language to current implemented Ink session UI behavior, local/direct source behavior, slash commands, redaction, non-TTY rejection, and test evidence.",
+        "CLI PTY Validation and PTY Debug change specs were refreshed for implemented pibo debug pty run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and the built-in CLI Session UI mocked scenario.",
+        "PTY PRD files were treated as implementation-planning context; proposal/design/spec/tasks were updated to current implementation while remaining Docker smoke and custom-agent scenario extensions stay as documented follow-up gaps."
       ]
     }
   ],
@@ -485,6 +542,81 @@
         "src/user-skills/manager.ts"
       ],
       "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-gateway-channel-context-runtime-runs-ralph",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/channel-runtime-context.md; docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "Channel context specs omitted current yielded-run snapshots, signal-tree inspection/subscription, profile creation, and Ralph stop-condition discovery methods exposed by PiboChannelContext and PiboGatewayServer.createChannelContext.",
+      "sourceEvidence": [
+        "src/channels/types.ts",
+        "src/gateway/server.ts",
+        "src/core/session-router.ts",
+        "src/ralph/types.ts"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-operator-cli-tui-sessions",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "Operator CLI spec omitted the current pibo tui:sessions command, direct --help handling, command options, and root discovery coverage.",
+      "sourceEvidence": [
+        "src/cli.ts",
+        "test/cli-ui-session-app.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-cli-session-ui-implemented-current",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/cli-session-ui.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "CLI Session UI spec still described target behavior and unchecked criteria, while current code implements pibo tui:sessions with Ink rendering, local/direct and fake sources, slash commands, redacted recovery messages, bounded rendering, and non-TTY rejection.",
+      "sourceEvidence": [
+        "src/apps/cli-ui/InkSessionApp.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "src/cli-session/localSessionSource.ts",
+        "src/cli-session/fakeSessionSource.ts",
+        "test/cli-ui-session-app.test.mjs",
+        "test/cli-session-source.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-cli-pty-validation-implemented-current",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/capabilities/cli-pty-validation.md",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "stale_current_behavior",
+      "summary": "CLI PTY Validation spec described desired PTY capability but omitted current pibo debug pty run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and built-in mocked CLI Session UI scenario.",
+      "sourceEvidence": [
+        "src/debug/index.ts",
+        "src/debug/pty.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "test/debug-pty.test.mjs"
+      ],
+      "resolution": "updated_spec"
+    },
+    {
+      "id": "sf-pty-debug-change-spec-implemented",
+      "queueId": "q-gateway-channel-cli",
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/",
+      "foundAt": "2026-05-17T01:04:03Z",
+      "severity": "classification_and_stale_traceability",
+      "summary": "PTY Debug change proposal/spec/design/tasks were still marked draft/pending after the current implementation landed; Docker smoke coverage and custom-agent scenario checks remain follow-up gaps rather than blockers.",
+      "sourceEvidence": [
+        "src/debug/pty.ts",
+        "src/debug/index.ts",
+        "src/apps/cli-ui/cliSessionsCommand.ts",
+        "test/debug-pty.test.mjs"
+      ],
+      "resolution": "updated_spec_preserved_follow_up_gaps"
     }
   ],
   "updatedSpecs": [
@@ -577,6 +709,60 @@
       "queueId": "q-skills-context-runtime",
       "updatedAt": "2026-05-17T00:46:29Z",
       "summary": "Clarified current user-home storage root and Chat Web catalog conflict rejection/rollback behavior with updated verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/channel-runtime-context.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed current channel context behavior for yielded-run snapshots, signal-tree inspection/subscription, profile creation, Ralph stop-condition discovery, and source-backed traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/local-gateway-protocol-and-lifecycle.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed local gateway channel-context language for current runtime status, yielded-run, signal, profile, capability, and Ralph discovery methods."
+    },
+    {
+      "path": "docs/specs/capabilities/operator-cli-discovery-and-dispatch.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Added current pibo tui:sessions command/help behavior, options, root discovery coverage, and source/test traceability."
+    },
+    {
+      "path": "docs/specs/capabilities/cli-session-ui.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed target-only CLI Session UI spec to current implemented pibo tui:sessions behavior, local/direct source behavior, slash commands, redaction, non-TTY rejection, and verification basis."
+    },
+    {
+      "path": "docs/specs/capabilities/cli-pty-validation.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Refreshed current pibo debug pty behavior for run/scenario/list-scenarios, host and Docker Python PTY backends, artifacts, real-provider safety, and built-in mocked CLI Session UI scenario."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/proposal.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Marked PTY debug proposal implemented and added source-backed notes plus remaining Docker smoke gap."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/spec.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Marked PTY debug change spec done with current implementation summary, checked implemented success criteria, and verification basis."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/design.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Updated design from open choices to implemented Python PTY host/Docker backend details and remaining follow-up choices."
+    },
+    {
+      "path": "docs/specs/changes/pty-debug-e2e-tooling/tasks.md",
+      "queueId": "q-gateway-channel-cli",
+      "updatedAt": "2026-05-17T01:04:03Z",
+      "summary": "Checked implemented PTY debug tasks and recorded remaining Docker smoke and custom-agent scenario follow-ups."
     }
   ],
   "blockedItems": [],
@@ -637,6 +823,10 @@
     {
       "at": "2026-05-17T00:54:32Z",
       "note": "Recorded commit 68f30dc for q-skills-context-runtime source-spec refresh."
+    },
+    {
+      "at": "2026-05-17T01:04:03Z",
+      "note": "Audited q-gateway-channel-cli. Updated channel, gateway, operator CLI, CLI Session UI, CLI PTY Validation, and PTY Debug change docs against current source; preserved PTY Docker/custom-agent scenario gaps as follow-up test gaps."
     }
   ]
 }

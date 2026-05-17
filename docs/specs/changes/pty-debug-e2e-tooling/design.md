@@ -1,12 +1,13 @@
 # Design: PTY Debug and E2E Tooling
 
-**Status:** Draft  
+**Status:** Implemented  
 **Created:** 2026-05-16  
+**Updated:** 2026-05-17  
 **Related docs:** `proposal.md`, `spec.md`, `tasks.md`
 
 ## Overview
 
-`pibo debug pty` provides a small PTY runner plus scenario executor. It is intended for debugging and validation, not as a production runtime. The design follows proven patterns from terminal projects: PTY process driver, terminal-size control, output capture, cleaned text assertions, and optional tmux/manual smoke workflows.
+`pibo debug pty` provides a small PTY runner plus scenario executor. It is intended for debugging and validation, not as a production runtime. The implemented design uses a Python PTY driver for host execution and `docker exec` with a Python PTY driver for Docker-worker execution. It supports terminal-size control, output capture, cleaned text assertions, failure artifacts, and optional success artifacts.
 
 ## Command Structure
 
@@ -40,13 +41,7 @@ pibo debug pty scenario scenario.json \
   --workdir /workspace
 ```
 
-Implementation may use one of these approaches:
-
-1. Preferred: run a small PTY driver inside the container.
-2. Fallback: use Python `pty` or `script` in the container when available.
-3. Optional: tmux-based capture if tmux exists.
-
-The tool must report missing container capabilities clearly.
+The implemented Docker backend detects `python3` or `python` inside the named container and runs the same Python PTY driver through `docker exec -i`, passing terminal dimensions and scenario environment values. The tool reports a missing or stopped container and missing Python driver before scenario execution.
 
 ## Scenario Schema
 
@@ -92,13 +87,7 @@ Minimum supported steps:
 
 ## Iteration Counting
 
-For real-provider scenarios, an iteration is one model-backed interaction boundary. Initial implementation may approximate this with one of:
-
-- number of submitted user messages,
-- number of observed assistant-message completions,
-- number of scenario loop steps marked `iteration: true`.
-
-The scenario executor must fail closed if it cannot enforce the configured max iteration bound in real-provider mode.
+For real-provider scenarios, an iteration is one model-backed interaction boundary. The current scenario executor counts steps marked `iteration: true`. Real-provider scenarios fail closed unless at least one iteration-marked step is present and a wait, expected output, or stop pattern provides a stop condition.
 
 Default real-provider limit:
 
@@ -187,8 +176,8 @@ Future Ralph prompts for CLI/TUI changes should require:
 - host or Docker target selected explicitly,
 - artifacts attached or path reported in progress notes.
 
-## Open Implementation Choices
+## Remaining Implementation Choices
 
-- Whether to implement the PTY runner in TypeScript using Node APIs/dependencies or shell out to Python PTY for V1.
-- Whether to add a terminal parser dependency for robust `screen.txt` or use best-effort cleaned captures initially.
-- Exact mocked-provider injection seam for `pibo tui:sessions`.
+- Whether to add a terminal parser dependency for robust `screen.txt` or keep the current best-effort cleaned-tail capture.
+- Whether to add a Docker-worker smoke test fixture for the current Python PTY backend.
+- Whether to extend the built-in CLI Session UI scenario with explicit custom/test agent visibility checks.

@@ -1,7 +1,8 @@
 # Spec: PTY Debug and E2E Tooling
 
-**Status:** Draft  
+**Status:** Done  
 **Created:** 2026-05-16  
+**Updated:** 2026-05-17  
 **Owner / Source:** User request after Ink CLI Session UI validation failure  
 **Related docs:** `proposal.md`, `design.md`, `tasks.md`, `docs/specs/capabilities/cli-pty-validation.md`
 
@@ -12,6 +13,10 @@ Interactive CLIs fail in ways that unit tests and non-TTY process execution do n
 ## Goal
 
 Implement `pibo debug pty` as a standard debugging and validation surface for PTY-backed CLI/TUI scenarios on host and Docker targets, with deterministic mocked-provider support and explicit bounded real-provider mode.
+
+## Current Implementation
+
+The current code implements `pibo debug pty run`, `pibo debug pty scenario`, and `pibo debug pty list-scenarios` in `src/debug/pty.ts`. Host and Docker backends use a Python PTY driver; Docker execution requires a running worker/container with `python3` or `python`. Scenario files and CLI overrides support command, environment, workdir, terminal size, scripted steps, expectations, rejection patterns, timeouts, provider mode, max iterations, artifacts, and a built-in `cli-session-ui-mocked-e2e` scenario. Real-provider mode requires `--real-provider` and iteration-marked steps. Failed runs always write artifacts.
 
 ## Requirements
 
@@ -128,9 +133,13 @@ The canonical scenario covers:
 
 ## Success Criteria
 
-- [ ] SC-001: PTY run command supports host execution and artifacts.
-- [ ] SC-002: PTY scenario command supports declarative scenario files.
-- [ ] SC-003: Docker-worker PTY target works or fails with actionable diagnostics.
-- [ ] SC-004: Canonical CLI Session UI mocked-provider scenario passes deterministically.
-- [ ] SC-005: Real-provider mode requires explicit opt-in and enforces default max iterations of 10.
-- [ ] SC-006: Future Ralph prompts can reference this tool as a mandatory validation gate for CLI/TUI work.
+- [x] SC-001: PTY run command supports host execution and artifacts, as covered by `test/debug-pty.test.mjs`.
+- [x] SC-002: PTY scenario command supports declarative scenario files, as covered by `test/debug-pty.test.mjs`.
+- [x] SC-003: Docker-worker PTY target works or fails with actionable diagnostics, as source-inspected in `src/debug/pty.ts`; direct worker smoke coverage remains a test gap.
+- [x] SC-004: Canonical CLI Session UI mocked-provider scenario is implemented for deterministic execution; it remains source-inspected rather than part of default `npm test`.
+- [x] SC-005: Real-provider mode requires explicit opt-in and enforces default max iterations of 10, as covered by `test/debug-pty.test.mjs`.
+- [x] SC-006: Future Ralph prompts can reference this tool as a validation gate for CLI/TUI work through `pibo debug pty --help`, this change spec, and the CLI PTY Validation capability spec.
+
+## Verification Basis
+
+Implemented behavior was refreshed against `src/debug/index.ts`, `src/debug/pty.ts`, `src/cli.ts`, `src/apps/cli-ui/cliSessionsCommand.ts`, `test/debug-pty.test.mjs`, and `test/cli-ui-session-app.test.mjs`.

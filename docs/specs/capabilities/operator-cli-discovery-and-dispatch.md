@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **Created:** 2026-05-10  
-**Updated:** 2026-05-11  
+**Updated:** 2026-05-17  
 **Owner / Source:** Scheduled Pibo source-spec coverage job  
 **Related docs:** [Local Config CLI](./local-config-cli.md), [MCP Server Integration](./mcp-server-integration.md), [Curated CLI Tools](./curated-cli-tools.md), [Local Gateway Protocol and Lifecycle](./local-gateway-protocol-and-lifecycle.md), [Continuous Ralph Jobs](./continuous-ralph-jobs.md)
 
@@ -18,7 +18,7 @@ The top-level `pibo` command MUST provide compact progressive discovery, delegat
 
 ## Background / Current State
 
-`src/bin/pibo.ts` invokes `runPiboCli`. `src/cli.ts` intercepts several command families before Commander parsing: `mcp`, `tools`, `pi-packages`, `debug`, `data`, `gateway`, `compute`, `skills`, `cron`, `ralph`, and compact `config` help. It prints a custom root discovery text for no arguments and `--help`, then defines direct commands for config, profile inspection, direct Pi TUI, routed TUI, demo router status, web gateway startup, and a console gateway client.
+`src/bin/pibo.ts` invokes `runPiboCli`. `src/cli.ts` intercepts several command families before Commander parsing: `mcp`, `tools`, `pi-packages`, `debug`, `data`, `gateway`, `compute`, `skills`, `cron`, `ralph`, compact `config` help, and `tui:sessions --help`. It prints a custom root discovery text for no arguments and `--help`, then defines direct commands for config, profile inspection, direct Pi TUI, routed TUI, the reduced CLI Session UI, demo router status, web gateway startup, and a console gateway client.
 
 Tests in `test/mcp-cli.test.mjs` already assert that root help is compact and does not fall back to generic Commander `Usage:` output.
 
@@ -29,7 +29,7 @@ Tests in `test/mcp-cli.test.mjs` already assert that root help is compact and do
 - Root `pibo` no-argument and help output.
 - Top-level dispatch to specialized Pibo CLIs.
 - `config` discovery delegation at the root CLI layer.
-- Direct runtime and gateway commands still owned by `src/cli.ts`.
+- Direct runtime, CLI Session UI, and gateway commands still owned by `src/cli.ts`.
 - Profile resolution defaults used by root-owned commands.
 
 ### Out of Scope
@@ -123,13 +123,13 @@ The `profile` and direct `tui` commands MUST create profiles through the default
 - WHEN an operator runs `pibo profile`
 - THEN the CLI prints JSON inspection for the canonical default profile
 
-### Requirement: Direct and routed TUI commands remain distinct
+### Requirement: Direct, routed, and session TUI commands remain distinct
 
-The CLI MUST keep direct Pi TUI execution separate from routed Pibo TUI execution.
+The CLI MUST keep direct Pi TUI execution, routed Pibo TUI execution, and the reduced CLI Session UI as separate entry points.
 
 #### Current
 
-`pibo tui [profile]` calls `runPiboTui` with a CLI-created profile. `pibo tui:routed [profile]` calls `runLocalRoutedTui` and accepts routed thinking options.
+`pibo tui [profile]` calls `runPiboTui` with a CLI-created profile. `pibo tui:routed [profile]` calls `runLocalRoutedTui` and accepts routed thinking options. `pibo tui:sessions` starts the Ink-based reduced Web Chat-derived session UI, and its help is printed directly for `pibo tui:sessions --help` so Commander does not replace the compact command guidance.
 
 #### Acceptance
 
@@ -137,12 +137,20 @@ The CLI MUST keep direct Pi TUI execution separate from routed Pibo TUI executio
 - `pibo tui:routed` starts the local routed runtime path rather than direct Pi execution.
 - `pibo tui:routed --show-thinking` enables local display of routed thinking deltas.
 - `pibo tui:routed --thinking <level>` accepts only levels parsed by `parsePiboThinkingLevel`.
+- `pibo tui:sessions --help` prints the CLI Session UI help, including `/help /new /session /agent /status /clear /exit /quit` and existing TUI command boundaries.
+- `pibo tui:sessions` accepts `--session`, `--owner-scope`, `--max-rows`, and `--demo` without changing `pibo tui` or `pibo tui:routed` behavior.
 
 #### Scenario: Routed QA with thinking
 
 - GIVEN an operator wants local routed QA with visible thinking
 - WHEN it runs `pibo tui:routed --show-thinking --thinking medium codex`
 - THEN the routed TUI receives the selected profile and thinking controls
+
+### Scenario: Session UI help
+
+- GIVEN an operator wants the reduced session UI
+- WHEN it runs `pibo tui:sessions --help`
+- THEN the CLI prints session-UI-specific help instead of root Commander help.
 
 ### Requirement: Root gateway commands expose only explicit entry points
 
@@ -207,14 +215,16 @@ Root-owned compatibility commands MUST keep their narrow current purpose and mus
 - [ ] SC-002: Delegated command families receive their arguments without root-level option rejection, including `mcp`, `tools`, `pi-packages`, `debug`, `data`, `gateway`, `compute`, `skills`, `cron`, and `ralph`.
 - [ ] SC-003: `pibo config --help` prints compact config discovery and points to `pibo config keys`.
 - [ ] SC-004: `pibo profile` defaults to `codex-compat-openai-web`; gateway-producer aliases still resolve.
-- [ ] SC-005: `pibo tui` and `pibo tui:routed` call distinct runtime paths.
+- [ ] SC-005: `pibo tui`, `pibo tui:routed`, and `pibo tui:sessions` call distinct runtime paths.
 - [ ] SC-006: `pibo gateway:web --web-port` rejects invalid ports before server startup.
+- [x] SC-007: `pibo tui:sessions --help` and root discovery expose the reduced CLI Session UI without hiding existing TUI commands, as covered by `test/cli-ui-session-app.test.mjs`.
 
 ## Verification Coverage
 
 ### Directly Tested
 
 - Root help and MCP/config progressive discovery behavior are covered by `test/mcp-cli.test.mjs`.
+- Root discovery and `pibo tui:sessions --help` coverage for the CLI Session UI are covered by `test/cli-ui-session-app.test.mjs`.
 - `pibo config` load/save, redaction, supported keys, and value mutation behavior are covered by `test/config.test.mjs`, but this is config behavior rather than full root-dispatch coverage.
 - Several delegated command families have focused tests for their own behavior, such as `test/mcp-cli.test.mjs`, `test/tools-cli.test.mjs`, `test/pi-packages.test.mjs`, `test/debug-cli.test.mjs`, `test/data-cli.test.mjs`, and `test/cron-schedule-store.test.mjs`.
 
@@ -222,7 +232,7 @@ Root-owned compatibility commands MUST keep their narrow current purpose and mus
 
 - Early dispatch and fallback Commander passthrough for `mcp`, `tools`, `pi-packages`, `debug`, `data`, `gateway`, `compute`, `skills`, `cron`, and `ralph` are source-inspected from `src/cli.ts`.
 - Root discovery output is source-inspected from `printRootDiscoveryText()` in `src/cli.ts`.
-- Root-owned `profile`, `tui`, `tui:routed`, `router`, `gateway:web`, and `client` command behavior is source-inspected from `src/cli.ts`.
+- Root-owned `profile`, `tui`, `tui:routed`, `tui:sessions`, `router`, `gateway:web`, and `client` command behavior is source-inspected from `src/cli.ts`.
 - The binary entry point is source-inspected from `src/bin/pibo.ts` and `package.json`.
 
 ### Test Gaps
@@ -230,7 +240,7 @@ Root-owned compatibility commands MUST keep their narrow current purpose and mus
 - Add a root-dispatch parity test that stubs or invokes each early-dispatched family with `--help` and verifies the root CLI does not emit Commander `Usage:` output or reject delegated options.
 - Add a regression test that the command names shown in root discovery match the current early-dispatch list and fallback Commander passthrough list.
 - Add built-CLI tests for `pibo ralph --help`, `pibo compute --help`, and `pibo skills --help`, because newer command families are weakest in direct progressive-discovery coverage.
-- Add root-owned command tests for invalid `gateway:web --web-port`, profile default selection, and `tui:routed --thinking` validation without starting long-running runtimes.
+- Add root-owned command tests for invalid `gateway:web --web-port`, profile default selection, `tui:routed --thinking` validation, and `tui:sessions --max-rows` validation without starting long-running runtimes.
 
 ## Assumptions and Open Questions
 
@@ -253,7 +263,7 @@ Root-owned compatibility commands MUST keep their narrow current purpose and mus
 | REQ-002 Specialized command families bypass root Commander parsing | MCP version passthrough | `src/cli.ts` early dispatch for `mcp`, `tools`, `pi-packages`, `debug`, `data`, `gateway`, `compute`, `skills`, `cron`, and `ralph` | Source-inspected |
 | REQ-003 Config discovery is handled before full config parsing | Agent inspects config safely | Existing tests in `test/mcp-cli.test.mjs` | Draft |
 | REQ-004 Root-owned profile commands use the default plugin registry | Inspect default profile | `createCliProfile()` | Draft |
-| REQ-005 Direct and routed TUI commands remain distinct | Routed QA with thinking | `tui` and `tui:routed` command actions | Draft |
+| REQ-005 Direct, routed, and session TUI commands remain distinct | Routed QA with thinking; Session UI help | `tui`, `tui:routed`, and `tui:sessions` command actions; `test/cli-ui-session-app.test.mjs` | Partly component-tested |
 | REQ-006 Root gateway commands expose only explicit entry points | Invalid web port | `parsePort()` and gateway dispatch | Draft |
 | REQ-007 Compatibility commands remain bounded and explicit | Demo router status | `router` and `client` command actions | Draft |
 
@@ -271,7 +281,9 @@ This spec is based on the current workspace code and tests:
 - `test/debug-cli.test.mjs`
 - `test/data-cli.test.mjs`
 - `test/cron-schedule-store.test.mjs`
+- `test/cli-ui-session-app.test.mjs`
 
 Change log:
 
+- 2026-05-17: Updated the direct TUI command contract for the current `pibo tui:sessions` command and help path.
 - 2026-05-11: Updated the delegated-command contract for the current Ralph dispatch path and added verification coverage/test gaps for root CLI discovery parity.
