@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in ab6661aaf8f5f11ff26b8515bbad33550c2a61fa. Added renderer-neutral terminal card descriptor types and builders in src/session-ui/terminalCards.ts for status, thinking, model, login, tool, yielded-run, compaction, command, and error rows. The descriptors map CompactTerminalRow inputs to stable card kind/title/status/tone/rows/actions without importing React, Ink, DOM, CSS, or browser APIs. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/session-ui-terminal-rows.test.mjs test/session-ui-view-models.test.mjs' passed 9/9 focused tests; test/session-ui-view-models.test.mjs covers status, thinking, model, login, tool, yielded-run, compaction, and error descriptors. Path classification: shared model/unit path only; no user-facing TUI rendering changed, so PTY artifacts were not required. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 504 tests; 503 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
     },
     {
       "id": "US-002",
@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in ab6661aaf8f5f11ff26b8515bbad33550c2a61fa. Added src/session-ui/statusViewModel.ts with shared status fields and renderer-neutral progress/quota descriptors for owner, session, model, runtime state, cwd, context usage, provider usage, thinking, fast mode, warnings, and errors. Missing usage data is represented as state=unavailable, while zero usage remains state=available with percent=0. Secret-like values are redacted through redactTerminalSecret before rendering. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/session-ui-terminal-rows.test.mjs test/session-ui-view-models.test.mjs' passed 9/9 focused tests; tests assert unavailable-vs-zero semantics, progress bar text, provider quota descriptors, and redaction. Path classification: shared model/unit path only; no user-facing TUI rendering changed, so PTY artifacts were not required. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 504 tests; 503 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
     },
     {
       "id": "US-003",
@@ -47,8 +47,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in ab6661aaf8f5f11ff26b8515bbad33550c2a61fa. Added src/session-ui/commandCatalog.ts with shared slash command descriptors for slash text, action name, description, argument hints, support status, terminal adaptation metadata, CLI-only commands, Web parity commands, and explicit unsupported reasons for browser-only/deferred commands. Added src/session-ui/commandResults.ts with shared command result descriptors for menu, status, session-link, text, JSON, unsupported, and error results. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/session-ui-terminal-rows.test.mjs test/session-ui-view-models.test.mjs' passed 9/9 focused tests; tests cover catalog generation/merging/filtering and command result normalization for menus, status, session links, unsupported results, and redacted errors. Path classification: shared model/unit path only; no user-facing TUI rendering changed, so PTY artifacts were not required. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 504 tests; 503 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
     },
     {
       "id": "US-004",
@@ -62,8 +62,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed in ab6661aaf8f5f11ff26b8515bbad33550c2a61fa. Added src/session-ui/ownerViewModel.ts and src/session-ui/roomSessionViewModel.ts with shared owner, room, and session picker descriptors. Descriptors include ids, labels, descriptions, owner/room/session ids, active/current/default/fallback/archived/disabled state, markers, back items, and create-new-session actions. Evidence: docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/session-ui-terminal-rows.test.mjs test/session-ui-view-models.test.mjs' passed 9/9 focused tests; tests cover current owner selection, Root recovery markers, Personal Chat default room, active room preference, empty-room create-new action, back item, and current session marker. Path classification: shared model/unit path only; no user-facing TUI rendering changed, so PTY artifacts were not required. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck' passed. docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test' ran 504 tests; 503 passed and only the pre-existing unrelated test/telemetry-store.test.mjs stale/prune assertion failed."
     },
     {
       "id": "US-005",

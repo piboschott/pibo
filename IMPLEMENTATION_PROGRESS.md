@@ -273,3 +273,38 @@ Validation and results for legacy unknown repair and existing transcript hydrati
 - Completed stories marked `passes: true`: PRD 02 `US-004`; PRD 04 `US-005`.
 - Implementation commit: `1b442ef` (`Repair legacy CLI owners and hydrate sessions`).
 - Next recommended group: PRD 03 `US-001` through `US-004` shared terminal/card/status/command/picker descriptors, then PRD 05 catalog stories that consume those descriptors.
+
+## 2026-05-17 run: shared terminal descriptor foundation batch
+
+Selected story group:
+
+- `prd_03_shared_terminal_view_model_v2.json` / `US-001` — Add shared terminal card descriptors.
+- `prd_03_shared_terminal_view_model_v2.json` / `US-002` — Add shared status and progress view model.
+- `prd_03_shared_terminal_view_model_v2.json` / `US-003` — Add shared command catalog and result descriptors.
+- `prd_03_shared_terminal_view_model_v2.json` / `US-004` — Add shared owner room session picker descriptors.
+
+Intended validation plan:
+
+- Add renderer-neutral modules under `src/session-ui` for terminal card descriptors, status/progress descriptors, command catalog/result descriptors, and owner/room/session picker descriptors.
+- Keep these modules free of React, Ink, DOM, browser, CSS, and Web-only imports; export them through `src/session-ui/index.ts`.
+- Add focused shared-model tests covering status, thinking, model, login, tool, yielded-run, compaction, error, progress unavailable-vs-zero semantics, redaction, command filtering/result normalization, and owner/room/session picker defaults/empty-room create actions.
+- Run `npm run build` plus the focused session-ui tests in `pibo-dev-ink-cli-v2-web-parity`, then run `npm run typecheck` before committing.
+- No user-facing Ink rendering is expected in this foundation slice, so PTY artifacts are not planned unless implementation changes the TUI render path.
+
+Validation and results for shared terminal descriptor foundation batch:
+
+- Added renderer-neutral shared modules under `src/session-ui`:
+  - `terminalCards.ts` for status, thinking, model, login, tool, yielded-run, compaction, command, and error card descriptors.
+  - `statusViewModel.ts` for status fields, context/provider progress descriptors, unavailable-vs-zero usage semantics, progress bar text, and shared redaction.
+  - `commandCatalog.ts` and `commandResults.ts` for slash command descriptors, Web parity/CLI-only command catalog entries, unsupported reasons, filtering, and normalized action result descriptors.
+  - `ownerViewModel.ts` and `roomSessionViewModel.ts` for owner, room, and session picker descriptors with markers, active/current/default/fallback/archived/disabled state, back items, and create-new actions.
+- Exported the new shared modules through `src/session-ui/index.ts`; no `src/apps/cli-ui` file imports Web DOM/CSS/browser dependencies.
+- Added `test/session-ui-view-models.test.mjs` covering rich card descriptors, status/progress unavailable and zero usage semantics, secret redaction, command catalog generation/filtering, command result normalization, owner picker descriptors, Personal Chat default room descriptors, empty-room create actions, and renderer-neutral source checks for all `src/session-ui/*.ts` files.
+- Validation commands:
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run build >/tmp/pibo-build.log && node --test test/session-ui-terminal-rows.test.mjs test/session-ui-view-models.test.mjs'` — passed 9/9 focused tests.
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm run typecheck'` — passed.
+  - `docker exec pibo-dev-ink-cli-v2-web-parity bash -lc 'cd /workspace && npm test'` — ran 504 tests; 503 passed and only the pre-existing unrelated `test/telemetry-store.test.mjs` stale/prune assertion failed.
+- Path classification: shared renderer-neutral model/unit path only. This batch did not change user-facing Ink rendering or command execution, so PTY artifacts were not required.
+- Completed stories marked `passes: true`: PRD 03 `US-001`, `US-002`, `US-003`, `US-004`.
+- Implementation commit: ab6661aaf8f5f11ff26b8515bbad33550c2a61fa.
+- Next recommended group: PRD 05 `US-001` and `US-005` to consume the shared command catalog in CLI help/suggestions groundwork, or PRD 03 `US-005` to wire a Web Compact Terminal rich-card path to the shared descriptors.
