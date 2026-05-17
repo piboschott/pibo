@@ -81,8 +81,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented retained/dirty Ralph resource visibility in CLI/API: Ralph list/runs text now includes concise resource summaries with worker id, cleanup state, lease count, retained-until, dirty reason, and next cleanup commands; JSON output continues to include resource metadata; Chat Ralph API owner-scoped endpoints return resource metadata only for the authenticated owner. Added focused CLI/API tests covering disabled retained worker, dirty cleanup failure, legacy no-resource output, and cross-owner filtering. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph visibility tests and full npm run typecheck passed."
     },
     {
       "id": "US-006",
