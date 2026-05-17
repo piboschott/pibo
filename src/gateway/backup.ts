@@ -59,7 +59,7 @@ export function installBackup(sourcePath?: string): void {
 		// ignore if symlink already exists or fails
 	}
 
-	execSync("npm install", { cwd: BACKUP_DIR, stdio: "inherit" });
+	execSync("npm install --include=dev", { cwd: BACKUP_DIR, stdio: "inherit" });
 	execSync("npm run build", { cwd: BACKUP_DIR, stdio: "inherit" });
 
 	const meta: BackupMeta = {
