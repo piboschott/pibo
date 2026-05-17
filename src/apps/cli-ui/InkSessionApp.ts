@@ -372,12 +372,12 @@ export type InkSessionAppViewProps = {
 
 export function InkSessionAppView({ state, maxRows = 20, maxLineChars }: InkSessionAppViewProps): React.ReactElement {
 	const lineLimit = normalizeTerminalLineLimit(maxLineChars);
-	const statusText = useMemo(() => boundedLine(formatStatusLine(state), lineLimit), [lineLimit, state]);
+	const statusLines = useMemo(() => formatStatusHeaderLines(state, lineLimit), [lineLimit, state]);
 	const commandSummary = useMemo(() => boundedLine(cliCommandSummaryText(state.slashCommands), lineLimit), [lineLimit, state.slashCommands]);
 	return React.createElement(
 		Box,
 		{ flexDirection: "column" },
-		React.createElement(Text, { color: state.status?.connected === false ? "red" : "cyan" }, statusText),
+		...statusLines.map((line, index) => React.createElement(Text, { color: state.status?.connected === false ? "red" : "cyan", key: `status-${index}` }, line)),
 		React.createElement(Text, { color: "gray" }, commandSummary),
 		state.loading ? React.createElement(Text, { color: "yellow" }, "Loading CLI session…") : null,
 		state.error ? React.createElement(Text, { color: "red" }, boundedLine(`Error: ${state.error}`, lineLimit)) : null,
@@ -1161,14 +1161,21 @@ function renderBoundedTextLines(value: string, color: string, max: number, keyPr
 	return value.split(/\r?\n/).map((line, index) => React.createElement(Text, { key: `${keyPrefix}-${index}`, color }, boundedLine(line, max)));
 }
 
-function formatStatusLine(state: InkSessionAppState): string {
+export function formatStatusHeaderLines(state: InkSessionAppState, max = 220): string[] {
 	const source = state.status?.source ?? "starting";
 	const owner = state.status?.activeOwnerLabel ? `${state.status.activeOwnerLabel} (${state.status.activeOwnerScope ?? "unknown"})` : state.status?.activeOwnerScope ?? state.session?.ownerScope ?? "owner unknown";
 	const session = state.session?.title ?? state.status?.activeSessionId ?? "no session";
 	const agent = state.session?.agentId ?? state.session?.profile ?? state.status?.activeAgentId ?? "default";
 	const model = state.status?.activeModel ? `${state.status.activeModel.provider}/${state.status.activeModel.id}` : "model unknown";
 	const mode = state.mode === "transcript" ? "transcript" : state.mode;
-	return boundedLine(`Pibo CLI Sessions | ${source} | ${owner} | ${session} | ${agent} | ${model} | ${mode}`);
+	const full = `Pibo CLI Sessions | ${source} | ${owner} | ${session} | ${agent} | ${model} | ${mode}`;
+	if (max >= 72 || full.length <= max) return [boundedLine(full, max)];
+	return [
+		boundedLine(`Pibo CLI Sessions | ${source} | ${mode}`, max),
+		boundedLine(`Owner: ${owner}`, max),
+		boundedLine(`Session: ${session}`, max),
+		boundedLine(`Agent: ${agent} | Model: ${model}`, max),
+	];
 }
 
 function boundedLine(value: string, max = 220): string {

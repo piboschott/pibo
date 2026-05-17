@@ -489,3 +489,20 @@ Validation and results for rich Ink descriptor and status card rendering batch:
 - Completed stories marked `passes: true`: PRD 07 `US-001`, `US-002`.
 - Implementation commit: `d77b423` (`Render rich Ink terminal status cards`).
 - Next recommended group: PRD 07 `US-003` and `US-004` for narrow/no-color PTY fallback checks and reusable `pibo debug pty` smoke scripts.
+
+## 2026-05-17 run: narrow/no-color fallback and reusable PTY smoke scripts batch
+
+Selected story group:
+
+- `prd_07_web_parity_rendering_and_pty_validation.json` / `US-003` — Add narrow terminal and no-color fallbacks.
+- `prd_07_web_parity_rendering_and_pty_validation.json` / `US-004` — Create reusable `pibo debug pty` smoke scripts.
+
+Intended validation plan:
+
+- Add/adjust terminal-safe Ink rendering helpers so narrow terminals preserve owner/session/error/active-command state with wrapping/truncation, and no-color output keeps explicit text markers.
+- Add focused renderer tests for constrained width, no-color marker readability, and bounded transcript/card output.
+- Add reusable documented PTY smoke scenarios under `scripts/` or `docs/reports/` for owner picker, room picker/session creation, message send, slash suggestions, `/status`, `/thinking` or equivalent interactive command, and `--session` transcript hydration; scripts must save raw/clean artifacts and use bounded timeouts.
+- Run focused renderer/session-ui/debug PTY tests after build inside `pibo-dev-ink-cli-v2-web-parity`.
+- Run at least one constrained-column/no-color `pibo debug pty` scenario with raw/clean artifacts and assertions.
+- Run the reusable PTY smoke script in a quick deterministic mode and record generated artifact paths.
+- Run `npm run typecheck`; run broader tests if these changes affect shared behavior beyond the focused CLI/validation paths.
