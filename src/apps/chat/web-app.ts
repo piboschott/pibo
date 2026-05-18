@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, isAbsolute, resolve } from "node:path";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import os from "node:os";
@@ -1715,6 +1715,7 @@ type ChatMessageBody = {
 	text?: unknown;
 	clientTxnId?: unknown;
 	webAnnotationIds?: unknown;
+	fileAttachmentPaths?: unknown;
 };
 
 type ChatProjectsBootstrap = ChatBootstrapCatalog & {
@@ -2442,6 +2443,86 @@ function markWebAnnotationsAttached(prepared: PreparedWebAnnotationAttachments):
 			store.patchAnnotation(annotation.ownerScope, annotation.piboSessionId, annotation.id, { status: "attached" });
 		}
 	}
+}
+
+const CHAT_FILE_ATTACHMENT_LIMIT = 10;
+
+type ChatFileMessageAttachment = {
+	name: string;
+	path: string;
+	bytes: number;
+};
+
+type PreparedChatFileAttachments = {
+	paths: string[];
+	attachments: ChatFileMessageAttachment[];
+	modelContext: string;
+	messageText: string;
+};
+
+function prepareChatFileAttachments(input: {
+	messageText: string;
+	attachmentPaths: unknown;
+}): PreparedChatFileAttachments {
+	const paths = normalizeChatFileAttachmentPaths(input.attachmentPaths);
+	if (!paths.length) return { paths: [], attachments: [], modelContext: "", messageText: input.messageText };
+	const attachments = paths.map(chatFileAttachmentForPath);
+	const modelContext = renderAttachedChatFiles(attachments);
+	return {
+		paths,
+		attachments,
+		modelContext,
+		messageText: modelContext ? `${input.messageText.trimEnd()}\n\n${modelContext}` : input.messageText,
+	};
+}
+
+function normalizeChatFileAttachmentPaths(value: unknown): string[] {
+	if (value === undefined || value === null) return [];
+	if (!Array.isArray(value)) throw new PiboWebHttpError("fileAttachmentPaths must be an array", 400);
+	if (value.length > CHAT_FILE_ATTACHMENT_LIMIT) throw new PiboWebHttpError(`At most ${CHAT_FILE_ATTACHMENT_LIMIT} uploaded files can be attached`, 400);
+	const paths: string[] = [];
+	const seen = new Set<string>();
+	for (const item of value) {
+		if (typeof item !== "string") throw new PiboWebHttpError("fileAttachmentPaths entries must be strings", 400);
+		const absolutePath = resolve(item.trim());
+		if (!item.trim()) throw new PiboWebHttpError("fileAttachmentPaths entries must be non-empty strings", 400);
+		if (absolutePath.length > 4096) throw new PiboWebHttpError("uploaded file path is too long", 400);
+		if (!isPathInsideUploadDir(absolutePath)) throw new PiboWebHttpError("Attached uploads must be under ~/.pibo/uploads", 400);
+		if (!seen.has(absolutePath)) {
+			seen.add(absolutePath);
+			paths.push(absolutePath);
+		}
+	}
+	return paths;
+}
+
+function chatFileAttachmentForPath(path: string): ChatFileMessageAttachment {
+	if (!existsSync(path)) throw new PiboWebHttpError(`Uploaded file was not found: ${path}`, 404);
+	const stats = statSync(path);
+	if (!stats.isFile()) throw new PiboWebHttpError(`Uploaded attachment is not a file: ${path}`, 400);
+	return { name: basename(path), path, bytes: stats.size };
+}
+
+function isPathInsideUploadDir(path: string): boolean {
+	const uploadRelative = relative(CHAT_UPLOAD_DIR, path);
+	return uploadRelative !== "" && !uploadRelative.startsWith("..") && !isAbsolute(uploadRelative);
+}
+
+function renderAttachedChatFiles(attachments: readonly ChatFileMessageAttachment[]): string {
+	const bounded = attachments.slice(0, CHAT_FILE_ATTACHMENT_LIMIT);
+	if (!bounded.length) return "";
+	const lines = ["<attached-uploaded-files>"];
+	bounded.forEach((attachment, index) => {
+		lines.push(`${index + 1}. ${escapeChatFileBlockValue(attachment.name)}`);
+		lines.push(`path: ${escapeChatFileBlockValue(attachment.path)}`);
+		lines.push(`bytes: ${attachment.bytes}`);
+	});
+	lines.push("</attached-uploaded-files>");
+	return lines.join("\n");
+}
+
+function escapeChatFileBlockValue(value: string): string {
+	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function accessDenied(error: unknown): never {
@@ -7852,6 +7933,10 @@ async function sendChatMessage(input: {
 		messageText: text,
 		attachmentIds: input.body.webAnnotationIds,
 	});
+	const fileAttachmentContext = prepareChatFileAttachments({
+		messageText: webAnnotationContext.messageText,
+		attachmentPaths: input.body.fileAttachmentPaths,
+	});
 	const accepted = input.state.eventCommands.appendEvent({
 		roomId: room.id,
 		piboSessionId: selectedSession.id,
@@ -7864,11 +7949,16 @@ async function sendChatMessage(input: {
 			type: "user.message.accepted",
 			piboSessionId: selectedSession.id,
 			roomId: room.id,
-			text: webAnnotationContext.messageText,
+			text: fileAttachmentContext.messageText,
 			...(webAnnotationContext.attachments.length ? {
 				webAnnotationIds: webAnnotationContext.ids,
 				webAnnotationAttachments: webAnnotationContext.attachments,
 				webAnnotationContext: webAnnotationContext.modelContext,
+			} : {}),
+			...(fileAttachmentContext.attachments.length ? {
+				fileAttachmentPaths: fileAttachmentContext.paths,
+				fileAttachments: fileAttachmentContext.attachments,
+				fileAttachmentContext: fileAttachmentContext.modelContext,
 			} : {}),
 			...(clientTxnId ? { clientTxnId } : {}),
 		},
@@ -7878,7 +7968,7 @@ async function sendChatMessage(input: {
 			session: selectedSession,
 			roomId: room.id,
 			actorId,
-			text: webAnnotationContext.messageText,
+			text: fileAttachmentContext.messageText,
 			clientTxnId,
 			legacyEvent: accepted,
 		});
@@ -7893,7 +7983,7 @@ async function sendChatMessage(input: {
 			type: "message",
 			piboSessionId: selectedSession.id,
 			id: messageId,
-			text: webAnnotationContext.messageText,
+			text: fileAttachmentContext.messageText,
 			source: "user",
 		});
 	} catch (error) {
