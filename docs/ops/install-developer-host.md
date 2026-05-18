@@ -41,7 +41,45 @@ pibo setup developer-host \
   --print-files
 ```
 
-Review the generated systemd units, dev start wrapper, environment template, and Caddyfile.
+Review the generated systemd units, dev start wrapper, environment template, and Caddyfile. Stage files before applying when testing a fresh host:
+
+```bash
+pibo setup developer-host \
+  --origin git@github.com:<server-or-user-fork>/pibo.git \
+  --prod-domain pibo.example.com \
+  --dev-domain dev.pibo.example.com \
+  --write-to /tmp/pibo-setup
+```
+
+Apply after review:
+
+```bash
+pibo setup developer-host \
+  --origin git@github.com:<server-or-user-fork>/pibo.git \
+  --prod-domain pibo.example.com \
+  --dev-domain dev.pibo.example.com \
+  --apply --yes
+systemctl daemon-reload
+```
+
+## Important detail: service pinning
+
+Do not globally install the dev worktree over the production install. `npm install -g .` from a local checkout creates a global symlink to that checkout; running it again from the dev worktree can accidentally move `/usr/bin/pibo` to dev.
+
+The generated developer services avoid this by pinning production to:
+
+```text
+/usr/bin/node /root/code/pibo/dist/bin/pibo.js
+```
+
+and dev to the wrapper in `/usr/local/bin/pibo-web-dev-start.mjs`, which imports the dev worktree directly.
+
+Run this in each checkout/worktree instead:
+
+```bash
+npm ci
+npm run build
+```
 
 ## Important detail: dev internal gateway port
 
@@ -65,6 +103,7 @@ systemctl is-active pibo-web
 systemctl is-active pibo-web-dev
 pibo gateway web status
 PIBO_GATEWAY_DEV_PORT=4808 pibo gateway dev status
+pibo setup doctor --domain pibo.example.com --dev-domain dev.pibo.example.com --expected-ip <server-ip> --require-docker
 pibo compute spawn --help
 ```
 
