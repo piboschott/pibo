@@ -609,10 +609,19 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   }
 
   function stableId(element) {
-    const attrs = ["data-pibo-id", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "id", "aria-label"];
-    for (const attr of attrs) {
-      const value = element.getAttribute && element.getAttribute(attr);
-      if (value && value.trim()) return attr + ":" + cap(value.trim(), 160);
+    const attrs = ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-shared-terminal-card", "data-shared-status-field", "data-pibo-markdown-node", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "id", "aria-label"];
+    let current = element;
+    while (current && current.nodeType === 1) {
+      for (const attr of attrs) {
+        const value = current.getAttribute && current.getAttribute(attr);
+        if (value && value.trim()) return attr + ":" + cap(value.trim(), 160);
+      }
+      const terminalRow = current.getAttribute && current.getAttribute("data-pibo-terminal-row");
+      if (terminalRow) {
+        const rowId = current.getAttribute("data-row-id") || current.getAttribute("data-row-kind") || terminalRow;
+        return "data-pibo-terminal-row:" + cap(rowId, 160);
+      }
+      current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
     return undefined;
   }
@@ -639,12 +648,20 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
       const selector = "#" + cssEscape(id);
       return { selector, unique: safeQueryCount(selector) === 1 };
     }
-    for (const attr of ["data-pibo-id", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "aria-label"]) {
+    for (const attr of ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-shared-terminal-card", "data-shared-status-field", "data-pibo-markdown-node", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "aria-label"]) {
       const value = element.getAttribute && element.getAttribute(attr);
       if (value) {
         const selector = tag + "[" + attr + "=\"" + String(value).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\"]";
         return { selector, unique: safeQueryCount(selector) === 1 };
       }
+    }
+    if (element.getAttribute && element.getAttribute("data-pibo-terminal-row")) {
+      const rowId = element.getAttribute("data-row-id");
+      if (rowId) {
+        const selector = tag + "[data-pibo-terminal-row=\"true\"][data-row-id=\"" + String(rowId).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\"]";
+        return { selector, unique: safeQueryCount(selector) === 1 };
+      }
+      return { selector: tag + "[data-pibo-terminal-row=\"true\"]", unique: false };
     }
     return { selector: tag + ":nth-of-type(" + nthOfType(element) + ")", unique: false };
   }
@@ -670,13 +687,14 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
       const tag = (current.tagName || "").toLowerCase();
       if (!tag) break;
       const id = current.getAttribute && current.getAttribute("id");
-      const testId = current.getAttribute && (current.getAttribute("data-pibo-id") || current.getAttribute("data-testid") || current.getAttribute("data-test-id"));
+      const testId = current.getAttribute && (current.getAttribute("data-pibo-id") || current.getAttribute("data-pibo-component") || current.getAttribute("data-pibo-debug") || current.getAttribute("data-shared-terminal-card") || current.getAttribute("data-shared-status-field") || current.getAttribute("data-pibo-markdown-node") || current.getAttribute("data-testid") || current.getAttribute("data-test-id"));
       let part = tag;
       if (id) part += "#" + id;
       else if (testId) part += "[" + testId + "]";
+      else if (current.getAttribute && current.getAttribute("data-pibo-terminal-row")) part += "[terminal-row:" + (current.getAttribute("data-row-kind") || "true") + "]";
       else part += ":nth-of-type(" + nthOfType(current) + ")";
       parts.unshift(part);
-      if (!full && (id || testId || parts.length >= 5)) break;
+      if (!full && (id || testId || current.getAttribute && current.getAttribute("data-pibo-terminal-row") || parts.length >= 5)) break;
       current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
     return parts.join(" > ");
@@ -712,26 +730,65 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
     const explicit = explicitSourceHints(element);
     hints.push(...explicit);
     const locator = locatorHint(element);
-    if (locator) hints.push(locator);
+    if (locator && !hasEquivalentHint(hints, locator)) hints.push(locator);
     const react = reactHint(element);
-    if (react) hints.push(react);
+    if (react && !hasEquivalentHint(hints, react)) hints.push(react);
     if (!hints.length) hints.push({ kind: "dom-fallback", confidence: "low", id: selector || domPath(element, false), raw: { tagName: (element.tagName || "").toLowerCase() } });
     return hints;
   }
 
   function explicitSourceHints(element) {
     const hints = [];
+    const deferredTestHints = [];
     let current = element;
-    while (current && current.nodeType === 1 && hints.length < 6) {
+    while (current && current.nodeType === 1 && hints.length < 8) {
+      const tagName = (current.tagName || "").toLowerCase();
       const piboId = current.getAttribute && current.getAttribute("data-pibo-id");
-      if (piboId) hints.push({ kind: "pibo-id", confidence: "high", id: piboId, raw: { tagName: (current.tagName || "").toLowerCase() } });
+      if (piboId) pushHint(hints, { kind: "pibo-id", confidence: "high", id: piboId, raw: { tagName } });
+      const component = current.getAttribute && current.getAttribute("data-pibo-component");
+      if (component) pushHint(hints, { kind: "pibo-component", confidence: "high", id: component, component, raw: collectPiboRaw(current) });
+      const debug = current.getAttribute && current.getAttribute("data-pibo-debug");
+      if (debug) pushHint(hints, { kind: "pibo-debug", confidence: "high", id: debug, component, raw: collectPiboRaw(current) });
+      const markdownNode = current.getAttribute && current.getAttribute("data-pibo-markdown-node");
+      if (markdownNode) pushHint(hints, { kind: "pibo-markdown", confidence: "high", id: markdownNode, component: component || "MarkdownRenderer", raw: collectPiboRaw(current) });
+      const sharedCard = current.getAttribute && current.getAttribute("data-shared-terminal-card");
+      if (sharedCard) pushHint(hints, { kind: "pibo-shared-card", confidence: "high", id: sharedCard, component: component || "TerminalCard", raw: collectPiboRaw(current) });
+      const sharedField = current.getAttribute && current.getAttribute("data-shared-status-field");
+      if (sharedField) pushHint(hints, { kind: "pibo-shared-card", confidence: "high", id: "status-field:" + sharedField, component: component || "TerminalStatusCard", raw: collectPiboRaw(current) });
+      if (current.getAttribute && current.getAttribute("data-pibo-terminal-row")) {
+        pushHint(hints, { kind: "pibo-terminal-row", confidence: "high", id: current.getAttribute("data-row-id") || current.getAttribute("data-row-kind") || "terminal-row", component: component || "TerminalRow", raw: collectPiboRaw(current) });
+      }
       const testId = current.getAttribute && (current.getAttribute("data-testid") || current.getAttribute("data-test-id") || current.getAttribute("data-cy") || current.getAttribute("data-qa"));
-      if (testId) hints.push({ kind: "test-id", confidence: "high", id: testId, raw: { tagName: (current.tagName || "").toLowerCase() } });
+      if (testId) {
+        const testHint = { kind: "test-id", confidence: "high", id: testId, raw: { tagName } };
+        if (/^virtuoso/i.test(testId) || /virtuoso/i.test(testId)) deferredTestHints.push(testHint);
+        else pushHint(hints, testHint);
+      }
       const locatorId = current.getAttribute && current.getAttribute("data-locatorjs-id");
-      if (locatorId) hints.push({ kind: "locatorjs", confidence: "high", id: locatorId, raw: collectLocatorRaw(current) });
+      if (locatorId) pushHint(hints, { kind: "locatorjs", confidence: "high", id: locatorId, raw: collectLocatorRaw(current) });
       current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
+    if (!hints.length) deferredTestHints.slice(0, 2).forEach((hint) => pushHint(hints, hint));
     return hints;
+  }
+
+  function pushHint(hints, hint) {
+    if (!hint || !hint.kind) return;
+    if (hasEquivalentHint(hints, hint)) return;
+    hints.push(hint);
+  }
+
+  function hasEquivalentHint(hints, hint) {
+    return hints.some((existing) => existing.kind === hint.kind && (existing.id || "") === (hint.id || "") && (existing.component || "") === (hint.component || ""));
+  }
+
+  function collectPiboRaw(element) {
+    const raw = { tagName: (element.tagName || "").toLowerCase() };
+    for (const attr of ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-pibo-session-id", "data-pibo-title", "data-pibo-selected", "data-pibo-state", "data-pibo-terminal-row", "data-pibo-markdown-node", "data-pibo-markdown-kind", "data-shared-terminal-card", "data-shared-status-field", "data-row-id", "data-row-kind", "data-row-status", "data-trace-node-id", "data-event-id", "data-run-id", "data-order-source", "data-order-stream-id", "data-order-frame-index"]) {
+      const value = element.getAttribute && element.getAttribute(attr);
+      if (value) raw[attr.replace(/^data-/, "").replace(/-([a-z])/g, (_, char) => char.toUpperCase())] = cap(value, 300);
+    }
+    return raw;
   }
 
   function locatorHint(element) {

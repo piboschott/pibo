@@ -23,6 +23,11 @@ export type WebAnnotationBindingState = (typeof WEB_ANNOTATION_BINDING_STATES)[n
 
 export const WEB_ANNOTATION_SOURCE_HINT_KINDS = [
 	"pibo-id",
+	"pibo-component",
+	"pibo-debug",
+	"pibo-terminal-row",
+	"pibo-shared-card",
+	"pibo-markdown",
 	"test-id",
 	"locatorjs",
 	"react-fiber",

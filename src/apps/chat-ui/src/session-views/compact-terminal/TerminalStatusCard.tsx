@@ -192,7 +192,7 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 
 	if (!data || !statusView) {
 		return (
-			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-pibo-component="TerminalStatusCard" data-pibo-debug="terminal-status-card" data-shared-terminal-card="status">
 				<div className="text-[#737373]">Status (unparseable)</div>
 			</div>
 		);
@@ -209,7 +209,7 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 	const providerLabel = data.providerUsage?.provider ? `${data.providerUsage.provider} quota` : "Provider quota";
 
 	return (
-		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-card="status">
+		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-pibo-component="TerminalStatusCard" data-pibo-debug="terminal-status-card" data-shared-terminal-card="status">
 			{/* Header */}
 			<div className="mb-2 flex items-center gap-2">
 				<Activity size={14} className="text-[#22c55e]" />

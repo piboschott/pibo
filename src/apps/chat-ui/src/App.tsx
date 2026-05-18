@@ -4638,6 +4638,7 @@ function SessionNode({
 	return (
 		<div>
 			<div
+				data-pibo-component="SessionNode"
 				data-pibo-debug="session-row"
 				data-pibo-session-id={node.piboSessionId}
 				data-pibo-title={safeTitle}
@@ -5188,7 +5189,8 @@ function WebAnnotationsSessionPanel({
 										{selected ? <X size={11} /> : <Plus size={11} />} {selected ? "Detach" : "Attach"}
 									</button>
 								</div>
-								<div className="truncate text-slate-200" title={annotation.label || annotation.selector || annotation.id}>{boundedUiText(annotation.label || annotation.selector || annotation.id, 120)}</div>
+								<div className="truncate text-slate-200" title={annotation.primaryTarget || annotation.label || annotation.selector || annotation.id}>{boundedUiText(annotation.primaryTarget || annotation.label || annotation.selector || annotation.id, 120)}</div>
+								{annotation.piboContext ? <div className="truncate font-mono text-[11px] text-[#11a4d4]" title={annotation.piboContext}>{boundedUiText(annotation.piboContext, 140)}</div> : null}
 								<div className="truncate font-mono text-[11px] text-slate-500" title={annotation.url}>{webAnnotationUrlLabel(annotation.url)}</div>
 								<div className="mt-1 line-clamp-2 text-slate-400" title={annotation.note}>{boundedUiText(annotation.note, 180)}</div>
 								<div className="mt-1 text-[11px] text-slate-600">{shortWorkflowTimestamp(annotation.createdAt)}</div>
@@ -5875,7 +5877,7 @@ function Composer({
 					<div className="flex flex-wrap gap-1.5">
 						{selectedWebAnnotations.map((annotation) => (
 							<button key={annotation.id} type="button" onClick={() => onDetachWebAnnotation(annotation.id)} title={`Detach ${annotation.id}`} className="inline-flex max-w-72 items-center gap-1 rounded-sm border border-[#11a4d4]/50 bg-[#11a4d4]/10 px-2 py-1 text-left text-[11px] text-slate-200" data-pibo-debug="composer-web-annotation-chip" data-web-annotation-id={annotation.id}>
-								<span className="min-w-0 truncate">{boundedUiText(annotation.label || annotation.note || annotation.id, 100)}</span>
+								<span className="min-w-0 truncate">{boundedUiText(annotation.primaryTarget || annotation.label || annotation.note || annotation.id, 100)}</span>
 								<X size={11} className="shrink-0 text-[#11a4d4]" />
 							</button>
 						))}

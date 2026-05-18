@@ -60,7 +60,10 @@ export type WebAnnotationMessageAttachment = {
 	url: string;
 	label?: string;
 	selector?: string;
+	primaryTarget?: string;
+	piboContext?: string;
 	sourceHint?: string;
+	sourceHints?: string[];
 	position?: string;
 	text?: string;
 	note: string;
