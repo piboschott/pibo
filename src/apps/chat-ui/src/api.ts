@@ -1413,11 +1413,25 @@ export async function deleteSession(
 	});
 }
 
-export async function postMessage(piboSessionId: string, text: string, clientTxnId: string, roomId?: string, webAnnotationIds: readonly string[] = []): Promise<unknown> {
+export async function postMessage(
+	piboSessionId: string,
+	text: string,
+	clientTxnId: string,
+	roomId?: string,
+	webAnnotationIds: readonly string[] = [],
+	fileAttachmentPaths: readonly string[] = [],
+): Promise<unknown> {
 	return requestJson("/api/chat/message", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ piboSessionId, text, clientTxnId, ...(roomId ? { roomId } : {}), ...(webAnnotationIds.length ? { webAnnotationIds } : {}) }),
+		body: JSON.stringify({
+			piboSessionId,
+			text,
+			clientTxnId,
+			...(roomId ? { roomId } : {}),
+			...(webAnnotationIds.length ? { webAnnotationIds } : {}),
+			...(fileAttachmentPaths.length ? { fileAttachmentPaths } : {}),
+		}),
 	});
 }
 

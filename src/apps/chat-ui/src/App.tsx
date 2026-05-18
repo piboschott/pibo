@@ -44,7 +44,7 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { createUserSkill, createWebAnnotationBinding, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, getWorkflowVersionPicker, injectWebAnnotationBinding, installUserSkill, listUserSkills, listWebAnnotations, listWebAnnotationTargets, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, patchWebAnnotation, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postProjectWorkflowSession, postProjectWorkflowSessionStart, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, uploadChatFiles, type SaveCustomAgentInput, type UserSettings, type WebAnnotationBindingResponse, type WebAnnotationMessageAttachment, type WebAnnotationOverlayConfig, type WebAnnotationTargetSummary, type WorkflowVersionPickerOption } from "./api";
+import { createUserSkill, createWebAnnotationBinding, deleteCustomAgent, deletePiPackage, deleteProject, deleteRoom, deleteSession, deleteUserSkill, fetchSignalTree, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, getTrace, getTraceSummary, getUserSettings, getUserSkill, getWorkflowVersionPicker, injectWebAnnotationBinding, installUserSkill, listUserSkills, listWebAnnotations, listWebAnnotationTargets, markRoomRead, markSessionRead, patchCustomAgent, patchModelDefaults, patchPiPackage, patchProject, patchProjectSession, patchRoom, patchSession, patchUserSettings, patchWebAnnotation, postAction, postContextFile, postCustomAgent, postMessage, postPiPackage, postProject, postProjectMessage, postProjectSession, postProjectWorkflowSession, postProjectWorkflowSessionStart, postRoom, postSession, signInWithGoogle, signOut, subscribeSignalTree, updateUserSkill, uploadChatFiles, type ChatUploadedFile, type SaveCustomAgentInput, type UserSettings, type WebAnnotationBindingResponse, type WebAnnotationMessageAttachment, type WebAnnotationOverlayConfig, type WebAnnotationTargetSummary, type WorkflowVersionPickerOption } from "./api";
 import { THINKING_LEVELS } from "./types";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelDefaults, ModelProfile, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill, WorkflowLifecycleEventRecord } from "./types";
 import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
@@ -106,6 +106,10 @@ type SlashCommand = {
 	slash: string;
 	action: string;
 	description: string;
+};
+
+type UploadedChatAttachment = ChatUploadedFile & {
+	id: string;
 };
 
 type LoadBootstrapOptions = {
@@ -928,8 +932,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 	});
 
 	const sendMessageMutation = useMutation({
-		mutationFn: ({ piboSessionId, text, clientTxnId, roomId, webAnnotationIds }: { piboSessionId: string; text: string; clientTxnId: string; roomId?: string; webAnnotationIds?: readonly string[] }) =>
-			postMessage(piboSessionId, text, clientTxnId, roomId, webAnnotationIds),
+		mutationFn: ({ piboSessionId, text, clientTxnId, roomId, webAnnotationIds, fileAttachmentPaths }: { piboSessionId: string; text: string; clientTxnId: string; roomId?: string; webAnnotationIds?: readonly string[]; fileAttachmentPaths?: readonly string[] }) =>
+			postMessage(piboSessionId, text, clientTxnId, roomId, webAnnotationIds, fileAttachmentPaths),
 		onMutate: async ({ piboSessionId }) => {
 			await queryClient.cancelQueries({ queryKey: tracePageQueriesForSession(piboSessionId) });
 			updateBootstrapCache((data) => updateSessionNodeInBootstrap(data, piboSessionId, (node) => ({ ...node, status: "running", lastActivityAt: new Date().toISOString() })));
@@ -1870,7 +1874,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onThinkingLevelChange={(level) => void runCommand(`/thinking ${level}`)}
 						onRefreshTrace={refreshSelectedTrace}
 						onRefreshBootstrap={refreshSelectedBootstrap}
-						onSend={async (text, webAnnotationIds) => {
+						onSend={async (text, webAnnotationIds, fileAttachmentPaths) => {
 							if (!selectedPiboSessionId || selectedRoomArchived) return;
 							try {
 								await sendMessageMutation.mutateAsync({
@@ -1879,6 +1883,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 									clientTxnId: createClientTxnId(),
 									roomId: selectedRoomId ?? undefined,
 									webAnnotationIds,
+									fileAttachmentPaths,
 								});
 								await loadBootstrap(selectedPiboSessionId, showArchivedRef.current, selectedRoomId ?? undefined, { force: true });
 								setError(null);
@@ -3084,7 +3089,7 @@ function SessionTracePane({
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onRefreshTrace: () => Promise<void>;
 	onRefreshBootstrap: () => Promise<unknown>;
-	onSend: (text: string, webAnnotationIds?: readonly string[]) => Promise<void>;
+	onSend: (text: string, webAnnotationIds?: readonly string[], fileAttachmentPaths?: readonly string[]) => Promise<void>;
 	onError: (message: string | null) => void;
 }) {
 	const queryClient = useQueryClient();
@@ -3096,6 +3101,7 @@ function SessionTracePane({
 	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
 	const [baseTraceView, setBaseTraceView] = useState<PiboSessionTraceView | null>(null);
 	const [selectedWebAnnotationIds, setSelectedWebAnnotationIds] = useState<string[]>([]);
+	const [selectedUploadAttachmentsBySession, setSelectedUploadAttachmentsBySession] = useState<Record<string, UploadedChatAttachment[]>>({});
 	const [webAnnotationsPanelVisible, setWebAnnotationsPanelVisible] = useState(false);
 	const [webAnnotationsPanelCollapsed, setWebAnnotationsPanelCollapsed] = useState(() => readStoredWebAnnotationsPanelCollapsed());
 	const [clearingWebAnnotations, setClearingWebAnnotations] = useState(false);
@@ -3170,6 +3176,10 @@ function SessionTracePane({
 			.map((id) => visibleWebAnnotations.find((annotation) => annotation.id === id))
 			.filter((annotation): annotation is WebAnnotationMessageAttachment => Boolean(annotation)),
 		[selectedWebAnnotationIds, visibleWebAnnotations],
+	);
+	const selectedUploadAttachments = useMemo(
+		() => selectedPiboSessionId ? selectedUploadAttachmentsBySession[selectedPiboSessionId] ?? [] : [],
+		[selectedPiboSessionId, selectedUploadAttachmentsBySession],
 	);
 
 	useEffect(() => {
@@ -3474,6 +3484,40 @@ function SessionTracePane({
 
 	const clearSelectedWebAnnotationAttachments = () => updateSelectedWebAnnotationIds(() => []);
 
+	const attachUploadedFiles = useCallback((files: readonly ChatUploadedFile[]) => {
+		if (!selectedPiboSessionId || !files.length) return;
+		setSelectedUploadAttachmentsBySession((current) => {
+			const existing = current[selectedPiboSessionId] ?? [];
+			const existingPaths = new Set(existing.map((file) => file.path));
+			const additions = files
+				.filter((file) => file.path && !existingPaths.has(file.path))
+				.map((file): UploadedChatAttachment => ({ ...file, id: `upload-${createClientTxnId()}` }));
+			if (!additions.length) return current;
+			return {
+				...current,
+				[selectedPiboSessionId]: [...existing, ...additions].slice(0, 10),
+			};
+		});
+	}, [selectedPiboSessionId]);
+
+	const detachUploadAttachment = (attachmentId: string) => {
+		if (!selectedPiboSessionId) return;
+		setSelectedUploadAttachmentsBySession((current) => {
+			const existing = current[selectedPiboSessionId] ?? [];
+			const next = existing.filter((attachment) => attachment.id !== attachmentId);
+			if (next.length === existing.length) return current;
+			return { ...current, [selectedPiboSessionId]: next };
+		});
+	};
+
+	const clearSelectedUploadAttachments = () => {
+		if (!selectedPiboSessionId) return;
+		setSelectedUploadAttachmentsBySession((current) => {
+			if (!(current[selectedPiboSessionId]?.length)) return current;
+			return { ...current, [selectedPiboSessionId]: [] };
+		});
+	};
+
 	const toggleWebAnnotationsPanelCollapsed = () => {
 		setWebAnnotationsPanelCollapsed((current) => {
 			const next = !current;
@@ -3500,6 +3544,7 @@ function SessionTracePane({
 	const handleComposerSend = async (text: string) => {
 		if (!selectedPiboSessionId) return;
 		const webAnnotationIds = selectedWebAnnotations.map((annotation) => annotation.id);
+		const fileAttachmentPaths = selectedUploadAttachments.map((attachment) => attachment.path);
 		const now = new Date().toISOString();
 		const eventId = `optimistic:user-message:${createClientTxnId()}`;
 		const optimisticEvent: ChatWebStoredEvent = {
@@ -3515,6 +3560,7 @@ function SessionTracePane({
 				eventId,
 				queuedMessages: 1,
 				text,
+				...(fileAttachmentPaths.length ? { fileAttachmentPaths } : {}),
 				source: "user",
 			},
 		};
@@ -3522,8 +3568,9 @@ function SessionTracePane({
 			piboSessionId: selectedPiboSessionId,
 			events: [...(current?.piboSessionId === selectedPiboSessionId ? current.events : []), optimisticEvent],
 		}));
-		await onSend(text, webAnnotationIds);
+		await onSend(text, webAnnotationIds, fileAttachmentPaths);
 		clearSelectedWebAnnotationAttachments();
+		clearSelectedUploadAttachments();
 		await Promise.all([tracePageQuery.refetch(), webAnnotationsQuery.refetch()]);
 	};
 
@@ -3700,10 +3747,14 @@ function SessionTracePane({
 					value={composerText}
 					focusSignal={composerFocusSignal}
 					selectedWebAnnotations={selectedWebAnnotations}
+					selectedUploadAttachments={selectedUploadAttachments}
 					onValueChange={onComposerTextChange}
 					onCommand={onCommand}
 					onDetachWebAnnotation={(id) => updateSelectedWebAnnotationIds((current) => current.filter((candidate) => candidate !== id))}
 					onClearWebAnnotations={clearSelectedWebAnnotationAttachments}
+					onAttachUploadedFiles={attachUploadedFiles}
+					onDetachUploadAttachment={detachUploadAttachment}
+					onClearUploadAttachments={clearSelectedUploadAttachments}
 					onSend={handleComposerSend}
 				/>
 			</main>
@@ -5636,10 +5687,14 @@ function Composer({
 	value,
 	focusSignal,
 	selectedWebAnnotations,
+	selectedUploadAttachments,
 	onValueChange,
 	onCommand,
 	onDetachWebAnnotation,
 	onClearWebAnnotations,
+	onAttachUploadedFiles,
+	onDetachUploadAttachment,
+	onClearUploadAttachments,
 	onSend,
 }: {
 	sessionId: string | null;
@@ -5649,10 +5704,14 @@ function Composer({
 	value: string;
 	focusSignal: number;
 	selectedWebAnnotations: WebAnnotationMessageAttachment[];
+	selectedUploadAttachments: UploadedChatAttachment[];
 	onValueChange: (value: string) => void;
 	onCommand: (text: string) => Promise<boolean>;
 	onDetachWebAnnotation: (annotationId: string) => void;
 	onClearWebAnnotations: () => void;
+	onAttachUploadedFiles: (files: readonly ChatUploadedFile[]) => void;
+	onDetachUploadAttachment: (attachmentId: string) => void;
+	onClearUploadAttachments: () => void;
 	onSend: (text: string) => Promise<void>;
 }) {
 	const composerRootRef = useRef<HTMLDivElement>(null);
@@ -5878,12 +5937,8 @@ function Composer({
 		setUploadStatus({ message: `Uploading ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}...`, error: false });
 		try {
 			const result = await uploadChatFiles(selectedFiles);
-			const paths = result.files.map((file) => file.path);
-			setUploadStatus({
-				message: `Uploaded ${result.files.length} file${result.files.length === 1 ? "" : "s"} successfully`,
-				copyText: paths.join("\n"),
-				error: false,
-			});
+			onAttachUploadedFiles(result.files);
+			setUploadStatus(null);
 		} catch (caught) {
 			setUploadStatus({ message: caught instanceof Error ? caught.message : String(caught), error: true });
 		} finally {
@@ -6008,6 +6063,27 @@ function Composer({
 							<span className="text-xs text-slate-400">{skill.description ?? skill.path ?? ""}</span>
 						</button>
 					))}
+				</div>
+			) : null}
+			{selectedUploadAttachments.length ? (
+				<div className="mb-2 rounded-sm border border-slate-800 bg-[#0e1116] px-2.5 py-1.5" data-pibo-debug="composer-upload-attachments" data-upload-attachment-count={selectedUploadAttachments.length}>
+					<div className="mb-1.5 flex items-center justify-between gap-2">
+						<div className="text-[11px] font-bold uppercase tracking-wider text-[#11a4d4]">Attached uploads</div>
+						<button type="button" onClick={onClearUploadAttachments} className="text-[11px] text-slate-500 hover:text-[#11a4d4]">Clear</button>
+					</div>
+					<div className="flex flex-wrap gap-1.5">
+						{selectedUploadAttachments.map((attachment) => (
+							<div key={attachment.id} title={attachment.path} className="inline-flex max-w-80 items-center gap-1 rounded-sm border border-emerald-500/45 bg-emerald-500/10 px-2 py-1 text-left text-[11px] text-slate-200" data-pibo-debug="composer-upload-attachment-chip" data-upload-path={attachment.path}>
+								<span className="min-w-0 truncate">{boundedUiText(attachment.name || attachment.path, 100)}</span>
+								<button type="button" onClick={() => void copyTextToClipboard(attachment.path)} title="Copy uploaded file path" aria-label="Copy uploaded file path" className="shrink-0 rounded-sm p-0.5 text-emerald-300 hover:bg-slate-800 hover:text-[#11a4d4]">
+									<Copy size={11} />
+								</button>
+								<button type="button" onClick={() => onDetachUploadAttachment(attachment.id)} title={`Detach ${attachment.name || attachment.path}`} aria-label={`Detach ${attachment.name || attachment.path}`} className="shrink-0 rounded-sm p-0.5 text-emerald-300 hover:bg-slate-800 hover:text-slate-100">
+									<X size={11} />
+								</button>
+							</div>
+						))}
+					</div>
 				</div>
 			) : null}
 			{selectedWebAnnotations.length ? (
