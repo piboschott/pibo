@@ -24,15 +24,16 @@ const scenarios = [
 			PIBO_DEBUG_PTY_ASSISTANT_REPLY: "Smoke assistant reply",
 		},
 		steps: [
-			["--wait-for", "Select effective owner"],
+			["--wait-for", "select owner"],
 			["--expect", "Web user alpha"],
 			["--expect", "Web user beta"],
 			["--press", "Down"],
 			["--press", "Enter"],
-			["--wait-for", "Select room for Web user beta"],
+			["--wait-for", "select room — Web user beta"],
 			["--expect", "Beta Room"],
+			["--press", "Down"],
 			["--press", "Enter"],
-			["--wait-for", "New session in Beta Room"],
+			["--wait-for", "New session"],
 			["--press", "Enter"],
 			["--wait-for", "Created session"],
 			["--type", "Smoke message"],
@@ -55,19 +56,36 @@ const scenarios = [
 			PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS: "user:smoke",
 		},
 		steps: [
-			["--wait-for", "Select room for Web user smoke"],
+			["--wait-for", "select room — Web user smoke"],
 			["--press", "Enter"],
-			["--wait-for", "New session in Personal Chat"],
+			["--wait-for", "New session"],
 			["--press", "Enter"],
 			["--wait-for", "Created session"],
-			["--type", "/status"],
+			["--type", "/"],
+			["--wait-for", "slash commands"],
+			["--expect", "/status"],
+			["--expect", "› /"],
+			["--press", "Escape"],
 			["--press", "Enter"],
-			["--wait-for", "Status: source=local/direct"],
+			["--wait-for", "Use /help for supported CLI commands"],
+			["--type", "/st"],
+			["--wait-for", "slash commands"],
+			["--expect", "/status"],
+			["--expect", "› /st"],
+			["--press", "Enter"],
+			["--wait-for", "› /status"],
+			["--press", "Enter"],
+			["--wait-for", "▣ Status — status · done"],
+			["--expect", "Ran /status"],
 			["--expect", "Owner: Web user smoke (user:smoke)"],
 			["--expect", "Context:"],
+			["--type", "/download"],
+			["--press", "Enter"],
+			["--wait-for", "Usage: /download <path>"],
+			["--expect", "Ran /download"],
 			["--type", "/thinking"],
 			["--press", "Enter"],
-			["--wait-for", "Select thinking level"],
+			["--wait-for", "select thinking level"],
 			["--expect", "xhigh"],
 			["--press", "Down"],
 			["--press", "Down"],
@@ -77,12 +95,105 @@ const scenarios = [
 			["--press", "Enter"],
 			["--wait-for", "Thinking level set to high"],
 			["--type", "/th"],
-			["--wait-for", "Slash commands"],
+			["--wait-for", "slash commands"],
 			["--expect", "/thinking"],
 			["--expect", "› /th"],
 			["--press", "CtrlC"],
 		],
 		command: ["node", "dist/bin/pibo.js", "tui:sessions", "--owner-scope", "user:smoke"],
+	},
+	{
+		name: "overlay-keyboard-model-login",
+		description: "Picker overlays, nested model/login navigation, disabled rows, and /status while picker is open.",
+		cols: 120,
+		rows: 42,
+		timeoutMs: 90_000,
+		idleTimeoutMs: 15_000,
+		env: {
+			PIBO_DEBUG_PTY_CLI_SESSIONS_MOCKED: "1",
+			PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS: "user:overlay",
+		},
+		steps: [
+			["--wait-for", "select room — Web user overlay"],
+			["--press", "Enter"],
+			["--wait-for", "New session"],
+			["--press", "Enter"],
+			["--wait-for", "Created session"],
+			["--type", "/model"],
+			["--press", "Enter"],
+			["--wait-for", "select model provider"],
+			["--expect", "× Offline Provider"],
+			["--press", "Enter"],
+			["--wait-for", "select model — OpenAI"],
+			["--press", "Escape"],
+			["--wait-for", "select model provider"],
+			["--press", "Down"],
+			["--press", "Enter"],
+			["--wait-for", "Offline Provider: Unavailable in debug PTY"],
+			["--press", "Escape"],
+			["--type", "/login"],
+			["--press", "Enter"],
+			["--wait-for", "select login provider"],
+			["--press", "Down"],
+			["--press", "Enter"],
+			["--wait-for", "select login method — OpenAI API"],
+			["--expect", "API key"],
+			["--press", "Enter"],
+			["--wait-for", "requires secret input"],
+			["--type", "/session"],
+			["--press", "Enter"],
+			["--wait-for", "select room — sessions for Web user overlay"],
+			["--type", "/status"],
+			["--press", "Enter"],
+			["--wait-for", "▣ Status — status · done"],
+			["--expect", "Ran /status"],
+			["--press", "CtrlC"],
+		],
+		command: ["node", "dist/bin/pibo.js", "tui:sessions", "--owner-scope", "user:overlay"],
+	},
+	{
+		name: "mixed-transcript-fixture",
+		description: "Deterministic shared-fixture mixed transcript with rich cards, ordering, and redaction.",
+		cols: 120,
+		rows: 42,
+		timeoutMs: 20_000,
+		idleTimeoutMs: 5_000,
+		env: {},
+		steps: [
+			["--wait-for", "Audit the compact terminal renderer"],
+			["--expect", "▣ Status — status · done"],
+			["--expect", "▣ Thinking — thinking · done"],
+			["--expect", "▣ Model — model · done"],
+			["--expect", "▣ Login — login · done"],
+			["--expect", "▣ Tool — tool · error"],
+			["--expect", "token=[redacted]"],
+			["--reject", "sk_fixture_secret"],
+			["--reject", "detail-secret-value"],
+		],
+		command: fixtureRenderCommand("mixed-transcript"),
+	},
+	{
+		name: "narrow-no-color-status",
+		description: "Deterministic narrow NO_COLOR status card with ASCII progress and redaction checks.",
+		cols: 64,
+		rows: 24,
+		timeoutMs: 20_000,
+		idleTimeoutMs: 5_000,
+		env: {
+			NO_COLOR: "1",
+			TERM: "dumb",
+			PIBO_ASCII_PROGRESS: "1",
+		},
+		steps: [
+			["--wait-for", "▣ Status — status · done"],
+			["--expect", "Context: #"],
+			["--expect", "openai spend:"],
+			["--expect", "Provider plan: team"],
+			["--reject", "█"],
+			["--reject", "sk_fixture_secret"],
+			["--reject", "warning-secret-value"],
+		],
+		command: fixtureRenderCommand("narrow-no-color"),
 	},
 	{
 		name: "existing-session-hydration",
@@ -96,7 +207,7 @@ const scenarios = [
 		steps: [
 			["--wait-for", "Smoke existing user prompt"],
 			["--expect", "Smoke existing assistant reply"],
-			["--expect", "Smoke Existing Session"],
+			["--expect", "Smoke Existing"],
 			["--press", "CtrlC"],
 		],
 		command: ["node", "dist/bin/pibo.js", "tui:sessions", "--owner-scope", "user:history", "--session", "ps_smoke_history"],
@@ -131,6 +242,23 @@ for (const scenario of selected) {
 	if (scenario.prepare) await scenario.prepare({ homeDir });
 	const result = spawnSync(process.execPath, args, { cwd: repoRoot, stdio: "inherit", env: process.env });
 	if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+function fixtureRenderCommand(kind) {
+	const source = kind === "narrow-no-color"
+		? `import React from "react";
+import { renderToString } from "ink";
+import { InkTerminalView } from "./dist/apps/cli-ui/index.js";
+import { highUsageStatusPayload } from "./test/fixtures/terminal-parity-fixtures.mjs";
+const rows = [{ id: "status-narrow-no-color", kind: "tool.status", status: "done", lines: [], output: highUsageStatusPayload(), sourceNodeIds: ["status-narrow-no-color"] }];
+console.log(renderToString(React.createElement(InkTerminalView, { rows, maxRows: 8, maxLineChars: 62 })));`
+		: `import React from "react";
+import { renderToString } from "ink";
+import { InkTerminalView } from "./dist/apps/cli-ui/index.js";
+import { buildCanonicalTerminalRows } from "./test/fixtures/terminal-parity-fixtures.mjs";
+const rows = buildCanonicalTerminalRows();
+console.log(renderToString(React.createElement(InkTerminalView, { rows, maxRows: 40, maxLineChars: 120 })));`;
+	return ["node", "--input-type=module", "-e", source];
 }
 
 function debugPtyArgs(scenario, artifactDir, env) {

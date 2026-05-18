@@ -59,12 +59,16 @@ function parseStatusData(output: unknown): StatusData | undefined {
 	const providerLimits = Array.isArray(providerUsage?.limits)
 		? providerUsage.limits
 				.filter((limit): limit is Record<string, unknown> => Boolean(limit) && typeof limit === "object" && !Array.isArray(limit))
-				.map((limit) => ({
-					label: typeof limit.label === "string" ? limit.label : "limit",
-					usedPercent: typeof limit.usedPercent === "number" ? limit.usedPercent : 0,
-					remainingPercent: typeof limit.remainingPercent === "number" ? limit.remainingPercent : 0,
-					resetsAt: typeof limit.resetsAt === "string" ? limit.resetsAt : undefined,
-				}))
+				.map((limit) => {
+					const usedPercent = typeof limit.usedPercent === "number" ? limit.usedPercent : undefined;
+					const remainingPercent = typeof limit.remainingPercent === "number" ? limit.remainingPercent : usedPercent === undefined ? 0 : Math.max(0, Math.min(100, 100 - usedPercent));
+					return {
+						label: typeof limit.label === "string" ? limit.label : "limit",
+						usedPercent: usedPercent ?? 0,
+						remainingPercent,
+						resetsAt: typeof limit.resetsAt === "string" ? limit.resetsAt : undefined,
+					};
+				})
 		: [];
 	const providerCredits =
 		typeof providerUsage?.credits === "object" && providerUsage.credits !== null
@@ -152,17 +156,19 @@ function SharedProgressBar({ progress, label }: { progress: TerminalProgressDesc
 					? "bg-[#38bdf8]"
 					: "bg-[#22c55e]";
 	return (
-		<div className="mt-3 space-y-1" data-shared-progress={progress.id}>
+		<div className="mt-3 space-y-1" data-shared-progress={progress.id} data-shared-progress-state={progress.state}>
 			<div className="flex items-center justify-between text-[11px]">
 				<span className="text-[#737373]">{label ?? progress.label}</span>
-				<span className="font-mono text-[#d4d4d4]">{progress.text}</span>
+				<span className="font-mono text-[#d4d4d4]">{progress.state === "available" ? progress.text : "unavailable"}</span>
 			</div>
-			<div className="h-1.5 w-full overflow-hidden rounded-full bg-[#2a2a2a]">
-				<div
-					className={`h-full rounded-full ${barColor} transition-all`}
-					style={{ width: `${Math.min(Math.max(percent, 0), 100)}%` }}
-				/>
-			</div>
+			{progress.state === "available" ? (
+				<div className="h-1.5 w-full overflow-hidden rounded-full bg-[#2a2a2a]">
+					<div
+						className={`h-full rounded-full ${barColor} transition-all`}
+						style={{ width: `${Math.min(Math.max(percent, 0), 100)}%` }}
+					/>
+				</div>
+			) : null}
 		</div>
 	);
 }
@@ -186,7 +192,7 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 
 	if (!data || !statusView) {
 		return (
-			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-pibo-component="TerminalStatusCard" data-pibo-debug="terminal-status-card" data-shared-terminal-card="status">
 				<div className="text-[#737373]">Status (unparseable)</div>
 			</div>
 		);
@@ -195,12 +201,15 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 	const fieldById = new Map(statusView.fields.map((field) => [field.id, field]));
 	const sessionField = fieldById.get("session") ?? legacyStatusField("session", "Session", data.piboSessionId);
 	const cwdField = fieldById.get("cwd") ?? legacyStatusField("cwd", "CWD", data.cwd);
-	const contextProgress = statusView.progress.find((progress) => progress.id === "context" && progress.state === "available");
-	const providerProgress = statusView.progress.filter((progress) => progress.id.startsWith("provider-") && progress.state === "available");
+	const contextProgress = statusView.progress.find((progress) => progress.id === "context");
+	const providerProgress = statusView.progress.filter((progress) => progress.id.startsWith("provider"));
+	const providerLimitProgress = data.providerUsage?.limits.length ? data.providerUsage.limits : undefined;
 	const enabledTools = data.enabledTools ?? data.activeTools ?? [];
+	const secondaryFields = statusView.fields.filter((field) => !new Set(["session", "cwd"]).has(field.id));
+	const providerLabel = data.providerUsage?.provider ? `${data.providerUsage.provider} quota` : "Provider quota";
 
 	return (
-		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-card="status">
+		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-pibo-component="TerminalStatusCard" data-pibo-debug="terminal-status-card" data-shared-terminal-card="status">
 			{/* Header */}
 			<div className="mb-2 flex items-center gap-2">
 				<Activity size={14} className="text-[#22c55e]" />
@@ -211,6 +220,12 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 			<div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
 				{sessionField ? <StatusFieldRow field={sessionField} icon="session" /> : null}
 				{cwdField ? <StatusFieldRow field={cwdField} icon="cwd" /> : null}
+				{secondaryFields.slice(0, 8).map((field) => (
+					<div key={field.id} className="flex items-center gap-1.5 text-[11px]" data-shared-status-field={field.id}>
+						<span className="shrink-0 text-[#737373]">{field.label}:</span>
+						<span className="truncate font-mono text-[#d4d4d4]">{field.value}</span>
+					</div>
+				))}
 			</div>
 
 			{/* State Badges */}
@@ -242,16 +257,16 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 			{contextProgress ? <SharedProgressBar progress={contextProgress} label="Context Usage" /> : null}
 
 			{/* Provider Usage */}
-			{data.providerUsage ? (
+			{providerProgress.length ? (
 				<div className="mt-3 space-y-1.5 border-t border-[#2a2a2a] pt-2" data-shared-provider-progress={providerProgress.length}>
-					<div className="flex items-center gap-1.5 text-[11px] text-[#737373]">
+					<div className="flex items-center gap-1.5 text-[11px] text-[#737373]" data-shared-status-field="provider-quota">
 						<Gauge size={11} />
-						<span>OpenAI Codex quota{data.providerUsage.planType ? ` (${data.providerUsage.planType})` : ""}</span>
+						<span>{providerLabel}{data.providerUsage?.planType ? ` (${data.providerUsage.planType})` : ""}</span>
 					</div>
-					{data.providerUsage.limits.map((limit) => {
+					{providerLimitProgress ? providerLimitProgress.map((limit) => {
 						const reset = formatResetTime(limit.resetsAt);
 						return (
-							<div key={`${limit.label}-${limit.resetsAt ?? ""}`} className="space-y-1">
+							<div key={`${limit.label}-${limit.resetsAt ?? ""}`} className="space-y-1" data-shared-progress={`provider-limit:${limit.label}`} data-shared-progress-state="available">
 								<div className="flex items-center justify-between gap-2 text-[11px]">
 									<span className="text-[#a3a3a3]">{limit.label}</span>
 									<span className="shrink-0 font-mono text-[#d4d4d4]">
@@ -263,12 +278,19 @@ export function TerminalStatusCard({ row }: { row: CompactTerminalRow }) {
 								</div>
 							</div>
 						);
-					})}
-					{data.providerUsage.credits ? (
-						<div className="text-[11px] text-[#a3a3a3]">
+					}) : providerProgress.map((progress) => <SharedProgressBar key={progress.id} progress={progress} />)}
+					{data.providerUsage?.credits ? (
+						<div className="text-[11px] text-[#a3a3a3]" data-shared-status-field="provider-credits">
 							Credits: {data.providerUsage.credits.unlimited ? "unlimited" : data.providerUsage.credits.balance ?? "available"}
 						</div>
 					) : null}
+				</div>
+			) : null}
+
+			{statusView.warnings.length || statusView.errors.length ? (
+				<div className="mt-3 space-y-1 border-t border-[#2a2a2a] pt-2">
+					{statusView.warnings.map((warning, index) => <div key={`warning-${index}`} data-shared-status-warning className="text-[11px] text-[#facc15]">⚠ {warning}</div>)}
+					{statusView.errors.map((error, index) => <div key={`error-${index}`} data-shared-status-error className="text-[11px] text-[#ef4444]">✕ {error}</div>)}
 				</div>
 			) : null}
 

@@ -68,6 +68,9 @@ export type CliRuntimeStatus = {
 		limits?: readonly { label?: string; usedPercent?: number; remainingPercent?: number; resetsAt?: string }[];
 		credits?: { unlimited?: boolean; balance?: string };
 	} | null;
+	activeTools?: readonly string[];
+	enabledTools?: readonly string[];
+	disposed?: boolean;
 	warnings?: readonly string[];
 	errors?: readonly string[];
 	message?: string;

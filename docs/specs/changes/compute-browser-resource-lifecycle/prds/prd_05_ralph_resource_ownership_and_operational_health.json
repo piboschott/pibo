@@ -1,0 +1,120 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/ralph-resource-ownership-health",
+  "description": "Ralph-owned compute/browser resource tracking, cleanup on job outcomes, and read-only operational resource health diagnostics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add Ralph resource ownership metadata",
+      "description": "As a Ralph operator, I want jobs and runs to record assigned compute resources so that retained workers and browser leases can be traced after a loop stops.",
+      "acceptanceCriteria": [
+        "Add Ralph job/run resource metadata or linked records for assigned worker id, browser lease ids when known, cleanup state, retained-until time, and dirty reason",
+        "Persist resource metadata without breaking existing Ralph store migrations or older jobs",
+        "Expose resource metadata in owner-scoped Ralph list/runs JSON where appropriate",
+        "Store tests cover create, update, read, older-row compatibility, and owner-scoped access",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented Ralph job/run resource metadata persistence with resource_json migrations for jobs and runs, resource normalization, owner-scoped update helpers, CLI JSON visibility through existing list/runs JSON, older-row compatibility tests, and Docker-worker validation. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph tests and full npm run typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Label Ralph-owned compute workers",
+      "description": "As a compute operator, I want Docker workers used by Ralph to carry job, run, and owner labels so that compute cleanup can attribute resources correctly.",
+      "acceptanceCriteria": [
+        "When Ralph acquires or uses a compute worker, the worker has labels or inspectable metadata for owner scope, Ralph job id, and Ralph run id when applicable",
+        "Labels do not expose full prompt text or sensitive data",
+        "Compute list --all can display Ralph ownership fields for labeled workers",
+        "Tests cover label construction and list parsing for Ralph-owned workers",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented safe Ralph worker labels and compute list ownership visibility: Ralph job/run Docker labels are emitted only for safe id-shaped values, owner scope labels are preserved, list parsing exposes owner/worktree/Ralph fields, and `pibo compute list --all` / `--json` display the fields for labeled workers. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused compute tests and full npm run typecheck passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Release browser leases after Ralph run and terminal job outcomes",
+      "description": "As a Ralph user, I want browser resources released after each run or terminal job outcome so that repeated sessions do not accumulate Chromium processes.",
+      "acceptanceCriteria": [
+        "Ralph releases active browser leases after each run unless the next immediate run is explicitly configured to reuse the same managed browser safely",
+        "Promise-complete and max-iteration stop paths release or reap the associated browser pool",
+        "Stop request disables future runs while preserving safe cleanup after the current run finishes",
+        "Cleanup failure marks the worker or resource metadata dirty and exposes the reason",
+        "Service tests cover ok completion, promise-complete, max-iteration, stop-after-run, cleanup failure, and retained worker state",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented Ralph service browser-lease cleanup after run completion and terminal outcomes: run/job resource metadata is marked released after successful browser-pool release, dirty with a reason when release fails, and retained worker metadata without browser leases is preserved. Focused service tests cover ok completion, promise-complete, max-iteration, stop-after-run, cleanup failure, and retained worker state. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph tests, real local CDP release fixture, and full npm run typecheck passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Apply cancel and interrupted-run resource cleanup policy",
+      "description": "As an operator, I want cancelled or interrupted Ralph runs to abort browser work and mark dirty resources so that cleanup is explicit and auditable.",
+      "acceptanceCriteria": [
+        "Cancel path aborts active browser leases or marks them stale when direct release is not possible",
+        "Interrupted-run recovery records resource cleanup state and dirty reason when a worker/browser lease may still exist",
+        "Prompt text cannot disable hard TTL, browser-pool reap, Docker limits, or dirty-worker recycling",
+        "Service tests cover cancel, timeout, gateway restart/interrupted recovery, and prompt text not overriding cleanup policy",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented Ralph cancel/interrupted cleanup policy: cancel emits abort for active sessions and marks resource metadata dirty if abort cannot be sent, timeout/error paths still run browser-pool lease cleanup, interrupted-run recovery marks possible worker/browser resources dirty with an auditable reason, and prompt text cannot bypass service-owned cleanup policy. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph tests, real local browser-pool release fixture, and full npm run typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Expose retained resource state in Ralph CLI and API",
+      "description": "As a human operator, I want disabled jobs to show retained workers or cleanup failures so that I can decide whether to inspect or reap them.",
+      "acceptanceCriteria": [
+        "Ralph CLI JSON output includes resource cleanup state for jobs/runs when available",
+        "Ralph CLI text output summarizes retained worker id, retained-until time, dirty state, and next cleanup command without flooding output",
+        "Chat Web API returns resource metadata only through owner-scoped Ralph endpoints",
+        "Tests cover disabled job with retained worker, cleanup failure, no-resource legacy job, and cross-owner filtering",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented retained/dirty Ralph resource visibility in CLI/API: Ralph list/runs text now includes concise resource summaries with worker id, cleanup state, lease count, retained-until, dirty reason, and next cleanup commands; JSON output continues to include resource metadata; Chat Ralph API owner-scoped endpoints return resource metadata only for the authenticated owner. Added focused CLI/API tests covering disabled retained worker, dirty cleanup failure, legacy no-resource output, and cross-owner filtering. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused Ralph visibility tests and full npm run typecheck passed."
+    },
+    {
+      "id": "US-006",
+      "title": "Add read-only resource health diagnostics",
+      "description": "As an SRE-style maintainer, I want one Pibo-native health command to detect browser leaks and Docker pressure before the host overloads.",
+      "acceptanceCriteria": [
+        "Add a read-only resource health or compute doctor command that reports browser main-process count per worker, total Chromium process count, active browser leases, stale CDP files, dirty workers, OOM-killed containers, Docker disk usage, and reaper/timer status when available",
+        "Text output includes severity and concrete next commands for browser-pool reap, compute reap dry-run, Docker hygiene, or worker recycle",
+        "JSON output exposes stable fields for agents and monitoring",
+        "Default command performs no destructive cleanup",
+        "Tests cover healthy state, browser leak warning, dirty worker, OOM container, Docker disk pressure, and missing reaper/timer state",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Implemented read-only `pibo compute health` / `pibo compute doctor` with text and stable JSON fields for severity, checks, browser process counts, active browser leases, stale CDP files, dirty/OOM/cleanup-eligible workers, Docker disk pressure, reaper/timer status, and safe next commands. Added focused health tests for healthy state, browser leak warning, stale CDP/active lease, dirty worker, OOM container, Docker disk pressure, and missing reaper/timer state. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused tests, real read-only Docker-worker/host command validation, and full npm run typecheck passed."
+    },
+    {
+      "id": "US-007",
+      "title": "Document and validate automatic reaper rollout",
+      "description": "As an operator, I want automatic cleanup timers enabled only after dry-run validation so that production debug state is not removed unexpectedly.",
+      "acceptanceCriteria": [
+        "Document the rollout sequence: resource health read-only, browser-pool reap dry-run, compute reap dry-run, manual apply, then optional timer enablement",
+        "Document recommended timer cadence and selectors for browser pool and compute worker cleanup",
+        "Document rollback steps for disabling automatic timers while keeping manual commands available",
+        "Add validation checklist entries for repeated browser checks, stopped/OOM container visibility, and Ralph terminal cleanup",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Documented the automatic reaper rollout sequence in the rollout checklist and compute capability spec: resource health read-only first, browser-pool reap validation, compute reap dry-run, manual apply, then optional timers. Added recommended browser/compute/disk cadence, selectors, rollback steps that keep manual commands available, and validation entries for repeated browser checks, stopped/OOM visibility, and Ralph terminal cleanup. Evidence recorded in IMPLEMENTATION_PROGRESS.md; documentation was validated with focused tests and full npm run typecheck."
+    }
+  ]
+}

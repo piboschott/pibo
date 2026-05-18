@@ -1,0 +1,67 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/compute-browser-resource-lifecycle-overview",
+  "description": "Product framing, incident baseline, glossary, and rollout guardrails for bounded compute/browser resource lifecycle work.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record the compute browser overload incident baseline",
+      "description": "As an operator, I want the overload incident captured in a durable report so that future implementation work targets the actual failure mode instead of only image-count symptoms.",
+      "acceptanceCriteria": [
+        "Add a report under docs/reports that records the 2026-05-17 baseline: Docker image count, container count, BuildKit cache size, stopped/OOM containers, Chromium process count, host RAM/swap class, and affected worker names when known",
+        "Explain the distinction between Docker image reuse, container reuse, Ralph sessions, browser-use sessions, and Chromium process trees",
+        "State that the primary failure class was unbounded runtime state inside retained workers, not merely many tagged Docker images",
+        "Link the report from docs/specs/changes/compute-browser-resource-lifecycle/prds/README.md or the change spec",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented incident baseline report at docs/reports/compute-browser-resource-lifecycle-incident-baseline-2026-05-17.md; evidence recorded in IMPLEMENTATION_PROGRESS.md; npm run typecheck passed in Docker worker."
+    },
+    {
+      "id": "US-002",
+      "title": "Add resource lifecycle glossary and operating model docs",
+      "description": "As a Ralph job author, I want the resource model documented so that prompts and specs use the same terms for images, workers, browser pools, leases, and worktrees.",
+      "acceptanceCriteria": [
+        "Document the canonical resource model: Docker image, compute container, dev worker, worktree, browser pool, browser lease, auth profile lease, Ralph job, and Ralph run",
+        "Document which component owns each resource and which command or policy releases it",
+        "State that prompt text cannot override hard resource limits, TTLs, browser-pool reaping, or dirty-worker recycling",
+        "Link the model from the compute/browser change spec and PRD catalog",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented canonical resource model at docs/project/compute-browser-resource-operating-model.md and glossary terms in GLOSSARY.md; linked from spec and PRD catalog; npm run typecheck passed in Docker worker."
+    },
+    {
+      "id": "US-003",
+      "title": "Create rollout checklist for safe resource lifecycle changes",
+      "description": "As an engineering lead, I want a rollout checklist so that browser-pool, Docker-limit, and Ralph-cleanup changes can be enabled without deleting debug state or destabilizing the host.",
+      "acceptanceCriteria": [
+        "Add a rollout checklist covering dry-run diagnostics, Docker command construction tests, browser cleanup tests, repeated browser-use stress validation, all-state compute list/reap verification, and Ralph completion cleanup verification",
+        "Checklist states that worktree deletion remains explicit and separate from container/browser cleanup",
+        "Checklist includes rollback notes for disabling managed browser-pool mode while keeping Docker limits active",
+        "Checklist includes real Docker worker validation before enabling automatic timers",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented rollout checklist at docs/project/compute-browser-resource-rollout-checklist.md with dry-run, Docker, browser, Ralph, rollback, and worktree-separation guidance; npm run typecheck passed in Docker worker."
+    },
+    {
+      "id": "US-004",
+      "title": "Add resource lifecycle traceability to existing capability docs",
+      "description": "As a maintainer, I want existing capability docs to reference the new resource lifecycle contract so that implementation agents do not miss cross-cutting requirements.",
+      "acceptanceCriteria": [
+        "Update relevant capability docs to link to the compute-browser resource lifecycle change and summarize their new obligations",
+        "Docker compute docs mention resource budgets, all-state list/reap, and Docker hygiene",
+        "Browser automation and browser-use lease docs mention managed CDP reuse, stale chrome/chromium cleanup, and auth-slot coordination",
+        "Ralph docs mention worker ownership, cleanup policy, retained-resource visibility, and prompt text not overriding policy",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Updated Docker compute, browser automation, browser-use auth lease, and Ralph capability docs with resource lifecycle obligations and links; npm run typecheck passed in Docker worker."
+    }
+  ]
+}

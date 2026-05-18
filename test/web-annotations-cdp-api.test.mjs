@@ -90,6 +90,50 @@ test("Web Annotation CDP service creates selected bindings and marks missing tar
 	}
 });
 
+test("Web Annotation API creates same-origin bindings and serves standalone overlay script", async () => {
+	const store = new WebAnnotationStore({ path: ":memory:" });
+	try {
+		const app = createWebAnnotationsWebApp({ store });
+		const context = createContext();
+		const response = await app.handleRequest(createRequest("/api/web-annotations/bindings", {
+			piboSessionId: "ps_a",
+			url: "http://127.0.0.1/apps/chat/rooms/room_a/sessions/ps_a?view=terminal",
+			title: "Pibo Chat",
+			sameOrigin: true,
+		}), context);
+		assert.equal(response.status, 201);
+		const json = await response.json();
+		assert.equal(json.binding.ownerScope, "user:a");
+		assert.equal(json.binding.state, "active");
+		assert.equal(json.binding.metadata.source, "same-origin");
+		assert.equal(json.overlay.bindingId, json.binding.id);
+		assert.equal(json.overlay.bindingToken, json.binding.metadata.overlaySubmissionToken);
+		assert.match(json.binding.url, /^http:\/\/127\.0\.0\.1\/apps\/chat/);
+
+		await assert.rejects(
+			() => app.handleRequest(createRequest("/api/web-annotations/bindings", {
+				piboSessionId: "ps_a",
+				url: "https://example.com/",
+				sameOrigin: true,
+			}), context),
+			/same-origin annotations require a URL on this Pibo web origin/,
+		);
+
+		const scriptResponse = await app.handleRequest(new Request("http://127.0.0.1/apps/web-annotations/overlay.js"), context);
+		assert.equal(scriptResponse.status, 200);
+		assert.match(scriptResponse.headers.get("content-type"), /javascript/);
+		const script = await scriptResponse.text();
+		assert.match(script, /window\.__piboWebAnnotationConfig/);
+		assert.match(script, /Pibo Web Annotations/);
+		assert.match(script, /Drag annotation widget/);
+		assert.match(script, /data-pibo-component/);
+		assert.match(script, /pibo-terminal-row/);
+		assert.match(script, /data-shared-terminal-card/);
+	} finally {
+		store.close();
+	}
+});
+
 test("Web Annotation overlay submissions use binding token and derive session scope", async () => {
 	const store = new WebAnnotationStore({ path: ":memory:" });
 	try {
@@ -185,11 +229,26 @@ test("Web Annotation API lists gets and patches authorized session annotations",
 		const app = createWebAnnotationsWebApp({ store });
 		const context = createContext();
 
+		store.createAnnotation({
+			id: "ann_other_session",
+			ownerScope: "user:a",
+			piboSessionId: "ps_b",
+			note: "Cross-session note",
+			url: "http://localhost:3000/other",
+			targetKind: "pin",
+			viewport: { width: 100, height: 100 },
+		});
 		const listed = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations?piboSessionId=ps_a&limit=10"), context);
 		const listedJson = await listed.json();
 		assert.equal(listedJson.annotations.length, 1);
 		assert.equal(listedJson.annotations[0].id, created.id);
+		assert.equal(listedJson.annotations[0].piboSessionId, "ps_a");
 		assert.equal(listedJson.annotations[0].label, "Save");
+
+		const listedAll = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations?piboSessionId=ps_a&scope=owner&limit=10"), context);
+		const listedAllJson = await listedAll.json();
+		assert.equal(listedAllJson.scope, "owner");
+		assert.deepEqual(listedAllJson.annotations.map((annotation) => annotation.id).sort(), ["ann_api", "ann_other_session"]);
 
 		const got = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations/ann_api?piboSessionId=ps_a"), context);
 		assert.equal((await got.json()).annotation.note, "Fix spacing");

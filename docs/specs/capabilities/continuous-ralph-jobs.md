@@ -2,8 +2,9 @@
 
 **Status:** Draft  
 **Created:** 2026-05-11  
-**Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code  
-**Related docs:** `docs/specs/capabilities/pibo-session-routing.md`, `docs/specs/capabilities/chat-web-rooms-and-event-streams.md`, `docs/specs/capabilities/scheduled-pibo-jobs.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`, `docs/specs/changes/extensible-ralph-stop-conditions/spec.md`
+**Updated:** 2026-05-17  
+**Owner / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code; 2026-05-17 compute/browser resource incident analysis  
+**Related docs:** `docs/specs/capabilities/pibo-session-routing.md`, `docs/specs/capabilities/chat-web-rooms-and-event-streams.md`, `docs/specs/capabilities/scheduled-pibo-jobs.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`, `docs/specs/changes/extensible-ralph-stop-conditions/spec.md`, `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`
 
 ## Why
 
@@ -331,6 +332,44 @@ Agents and users can operate Ralph without reading source code.
 - THEN the UI shows zero jobs, zero running jobs, and an empty job list state
 - AND the user can create a new Ralph job from the page.
 
+### Requirement: Ralph-owned compute resources are policy-managed
+
+Ralph jobs that use Docker compute workers or browser automation MUST bind those resources to job/run metadata and MUST release, idle-retain, or recycle them by policy.
+
+#### Current
+
+Ralph job prompts can instruct agents to reuse or not release containers, but prompt text is not machine-enforced resource lifecycle. Disabled jobs and completed runs do not necessarily expose retained worker/browser cleanup state.
+
+#### Target
+
+Ralph resource ownership is explicit. Pibo labels or records assigned workers, browser leases, and cleanup state. Stop, cancel, max-iteration, and promise-complete paths apply deterministic cleanup policy regardless of prompt wording.
+
+#### Acceptance
+
+- Ralph job/run records or linked metadata include assigned compute worker ids when Docker workers are used.
+- Worker containers include Ralph job/run labels when a Ralph loop owns or uses them.
+- Ralph releases active browser leases after each run when the lease is no longer needed.
+- Promise-complete, max-iteration stop, stop request, and cancel paths mark associated workers as released, idle-retained, or dirty according to policy.
+- Prompt text such as “do not release container” cannot disable hard TTL, browser-pool reap, Docker resource limits, or dirty-worker recycling.
+- CLI/API status can show disabled jobs that still have retained workers or cleanup failures.
+
+#### Scenario: Completed Ralph loop releases browser resources
+
+- GIVEN a Ralph loop used a compute worker for browser verification
+- WHEN the loop stops with reason `promise-complete`
+- THEN Ralph releases or reaps the worker browser pool
+- AND records whether the worker was released, idle-retained, or marked dirty.
+
+## Resource lifecycle obligations
+
+This capability participates in the compute/browser resource lifecycle change. It must follow the canonical model in `docs/project/compute-browser-resource-operating-model.md` and the rollout checks in `docs/project/compute-browser-resource-rollout-checklist.md`.
+
+- Ralph jobs and runs that use compute/browser resources must record assigned worker ids, browser lease ids when known, owner scope, cleanup status, and retained/dirty reasons.
+- Ralph-owned compute containers must carry `pibo.ralph.jobId`, `pibo.ralph.runId`, and `pibo.compute.ownerScope` labels when Ralph owns or directly assigns the worker.
+- Run completion, promise-complete, max-iteration, stop, cancel, and interrupted-run paths must release browser leases and mark workers released, idle-retained, or dirty according to policy.
+- CLI/API status must show disabled jobs with retained resources or cleanup failures.
+- Prompt text cannot override Docker resource budgets, hard TTLs, browser-pool reaping, or dirty-worker recycling.
+
 ## Edge Cases
 
 - A run can have no Pibo Session id if target resolution or session creation fails before attachment.
@@ -339,6 +378,7 @@ Agents and users can operate Ralph without reading source code.
 - CLI operations require an owner scope from `--owner-scope` or `PIBO_OWNER_SCOPE`.
 - The current Chat Web delete call sends an empty JSON body to satisfy mutation request requirements.
 - The completion marker is exact and case-sensitive, and the built-in condition requires it on its own line.
+- A Ralph prompt may request worker reuse for debugging, but machine-enforced TTL, resource limits, and cleanup policy still apply.
 
 ## Constraints
 
@@ -357,6 +397,7 @@ Agents and users can operate Ralph without reading source code.
 - [ ] SC-004: Cross-owner, cross-origin, invalid target, and invalid profile operations fail without creating or mutating jobs.
 - [ ] SC-005: Chat Web and CLI expose enough status and run history to diagnose the current Ralph loop state.
 - [ ] SC-006: Built-CLI verification covers `pibo ralph` discovery output and at least one JSON-producing management path without using the live default store.
+- [ ] SC-007: Ralph resource policy tests cover worker labels/metadata, browser-lease release, idle retention, dirty-worker marking, and prompt text not overriding hard cleanup policy.
 
 ## Verification Coverage
 
@@ -428,6 +469,7 @@ Agents and users can operate Ralph without reading source code.
 | REQ-008: Auditable errors and recovery | Gateway restarts during active run | Current timeout and recovery behavior | Source-backed |
 | REQ-009: Authenticated API | Cross-site mutation is rejected | Current `handleChatRalphApiRequest` behavior | Source-backed |
 | REQ-010: Discoverable management | User opens Ralph area with no jobs | Current CLI, templates, conditions, policy commands, and `RalphArea` behavior | Source-backed |
+| REQ-011: Ralph-owned compute resources are policy-managed | Completed Ralph loop releases browser resources | Compute/browser resource lifecycle change | Draft |
 
 ## Verification Basis
 

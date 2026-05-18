@@ -240,7 +240,7 @@ function LoginShell({
 }) {
 	const iconClass = tone === "red" ? "text-[#ef4444]" : tone === "green" ? "text-[#22c55e]" : "text-[#38bdf8]";
 	return (
-		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-card="login">
 			<div className="mb-2 flex items-center gap-2">
 				<Lock size={14} className={iconClass} />
 				<span className="font-semibold text-[#d4d4d4]">{title}</span>

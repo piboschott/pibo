@@ -1,0 +1,100 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-status-runtime-cards",
+  "description": "Make /status render as a compact transcript card with Web-aligned runtime, session, context, provider quota, warning/error, tool, unavailable, and redaction semantics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create shared status fixtures and view-model assertions",
+      "description": "As a developer, I want deterministic status states so Web and Ink render the same runtime concepts.",
+      "acceptanceCriteria": [
+        "Shared status fixtures cover full, partial, unavailable, zero usage, high usage, warning, error, secret-bearing, non-OpenAI provider, queued, processing, streaming, and disposed states",
+        "View-model tests assert title, owner, session, profile, model, runtime, cwd, queue/processing/streaming, context, provider quota, credits, tools, warnings, and errors when present",
+        "Tests distinguish missing usage as unavailable and zero usage as 0.0%",
+        "Tests assert provider labels and plan/reset/remaining details come from descriptor data and are not OpenAI-hardcoded",
+        "Tests assert secrets are redacted before Web or Ink rendering",
+        "Focused shared status tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Evidence tier: shared fixture/source/unit. Added full/partial/unavailable/zero/high/disposed status fixtures covering warnings, errors, secrets, non-OpenAI provider labels, queued/processing/streaming states, provider plan/credits/reset/remaining details, enabled/active tools, unavailable vs 0.0% semantics, and redaction before renderers. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs test/cli-ui-ink-renderer.test.mjs test/cli-ui-session-app.test.mjs test/session-ui-view-models.test.mjs; npm run typecheck; npm test; npm run chat-ui:typecheck; npm run chat-ui:build. PTY artifacts not applicable to this fixture-only story beyond PRD05 PTY set."
+    },
+    {
+      "id": "US-002",
+      "title": "Render compact Ink status card with bars and unavailable states",
+      "description": "As an SSH operator, I want /status to show runtime health without a verbose debug dump.",
+      "acceptanceCriteria": [
+        "Ink status card primary line summarizes runtime state, session/model, and abbreviated owner without long owner scope dominating the screen",
+        "Status card supports session id/title, cwd/workspace, processing, streaming, queued count, disposed/error state, context usage, provider quota, plan, credits, tools, owner/profile/model/runtime, warnings, and errors",
+        "Context and provider quota render text bars such as \u2588\u2588\u2588\u2591\u2591\u2591 25.0% when available and meaningful ASCII/text fallback under NO_COLOR or limited glyph conditions",
+        "Unavailable context/provider data renders compactly as unavailable, not blank, zero, or multiple verbose debug lines",
+        "Warnings/errors use high-signal markers and redact secrets",
+        "Narrow-width output keeps session/status/error/quota meaning visible",
+        "Focused Ink status render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Evidence tier: Ink renderer unit plus deterministic PTY fixture/demo. Ink status card now has a compact primary summary, owner/session/model/runtime fields, context/provider text bars, NO_COLOR ASCII fallback, unavailable rows, provider plan/credits, active/enabled tools, warnings/errors, and redaction. Artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd05-2026-05-17/status-fixture-bars and status-fixture-narrow-no-color. Validation: focused node --test suite; npm run typecheck; npm test."
+    },
+    {
+      "id": "US-003",
+      "title": "Place /status in transcript flow for live controller path",
+      "description": "As a TUI user, I want /status output to appear chronologically in the transcript.",
+      "acceptanceCriteria": [
+        "/status appends an execution.command row followed by a tool.status row/card immediately above the prompt/input",
+        "/status does not set state.message with the status payload or render a detached header status panel",
+        "Running/streaming rows visible before /status remain before the command/status rows",
+        "/status with no active session, partial runtime state, or source errors renders a bounded status/error row instead of crashing",
+        "Controller tests cover normal, picker-open, no-session, partial-data, source-error, and streaming-tail cases",
+        "Focused controller tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Evidence tier: controller unit plus mocked default TUI PTY. /status appends execution.command then tool.status rows, clears picker/message state, preserves streaming rows before status, and handles partial/no-session/status payloads through bounded shared descriptors. Artifact: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd05-2026-05-17/slash-suggestions-status-thinking. Validation: test/cli-ui-session-app.test.mjs focused suite; npm test."
+    },
+    {
+      "id": "US-004",
+      "title": "Keep Web TerminalStatusCard parity hooks and shared descriptor use",
+      "description": "As a Web Compact Terminal user, I want the Web status card to remain the reference for status semantics.",
+      "acceptanceCriteria": [
+        "Web TerminalStatusCard or equivalent Web Compact Terminal path consumes the shared status descriptor/view model for supported fields",
+        "Web output/source exposes stable hooks or test ids for shared card kind, status fields, context usage, provider quota, warnings, errors, and unavailable states where feasible",
+        "Web regression tests use the same status fixtures as Ink status tests or derive from the same fixture source",
+        "Web visuals are not redesigned except for semantic hooks needed for tests",
+        "npm run chat-ui:typecheck passes",
+        "npm run chat-ui:build passes",
+        "Focused Web status tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Evidence tier: Web source regression plus chat-ui gates. Web TerminalStatusCard continues to consume buildTerminalCardDescriptor/statusView, exposes data-shared-terminal-card, data-shared-status-field, data-shared-progress-state, provider-progress, warning, and error hooks, and uses provider labels from descriptors instead of hardcoded OpenAI text. Validation: test/session-ui-view-models.test.mjs; npm run chat-ui:typecheck; npm run chat-ui:build; npm run typecheck."
+    },
+    {
+      "id": "US-005",
+      "title": "Validate status cards through PTY artifacts",
+      "description": "As a reviewer, I want terminal evidence that /status looks compact and appears in the right place.",
+      "acceptanceCriteria": [
+        "PTY live/default or closest practical local path runs pibo tui:sessions, executes /status, and asserts command row plus status card appear in transcript flow",
+        "PTY deterministic fixture path covers provider quota/context bars when live provider quota is unavailable",
+        "PTY artifacts include full or partial status, unavailable status, narrow width, and NO_COLOR=1 where feasible",
+        "Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, exact commands, and visual artifact path or fallback reason",
+        "Observed screen does not contain a verbose status dump, dominant long owner id, or header-only status payload",
+        "Focused PTY status tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Evidence tier: mocked default TUI PTY plus deterministic fixture/demo PTY. PTY artifacts contain raw.ansi.log, clean.txt, screen.txt, metadata.json, input.json, assertions.json, and events.jsonl. Artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd05-2026-05-17/slash-suggestions-status-thinking, status-fixture-bars, status-fixture-narrow-no-color. Visual HTML/SVG/PNG conversion remains the documented fallback from the existing audit report; no new converter was introduced. Secret grep over clean/screen artifacts passed. Full validation: npm run build; focused node --test suite; pibo debug pty status scenarios; npm run typecheck; npm test (674 tests); npm run chat-ui:typecheck; npm run chat-ui:build."
+    }
+  ]
+}

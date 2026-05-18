@@ -1,0 +1,106 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/compute-worker-limits-lifecycle",
+  "description": "Docker compute worker resource limits, all-state lifecycle inspection, dry-run cleanup, and Docker hygiene diagnostics.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add compute worker resource policy and Docker run tests",
+      "description": "As a compute engineer, I want Docker run command construction tested for resource limits so that worker safety is enforced before integration changes run on a host.",
+      "acceptanceCriteria": [
+        "Add a compute resource policy model with defaults for memory, memory-swap, pids-limit, shm-size, init, restart policy, and log options",
+        "Add documented override sources for larger hosts without changing safe defaults",
+        "Add command-stub tests for one-time worker and dev worker Docker run arguments",
+        "Tests assert resource policy labels or inspectable metadata are included in Docker run configuration",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented compute resource policy model in src/compute/resource-policy.ts with conservative defaults, spawn-time env overrides, Docker run policy args, and inspectable resource labels. Refactored one-time and dev worker Docker run construction through exported helpers that apply the policy. Documented override sources in docs/specs/capabilities/docker-compute-workers.md. Added test/compute-resource-policy.test.mjs covering defaults, env overrides, policy args, one-time worker run args, dev worker run args, and policy labels. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed; compute spawn help real CLI path checked; npm run typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Apply Docker resource limits to one-time and dev workers",
+      "description": "As an operator, I want every compute worker to start with host-safe Docker limits so that browser leaks are contained inside the worker.",
+      "acceptanceCriteria": [
+        "Update one-time and dev worker spawn paths to include memory, memory-swap, pids-limit, shm-size, init, restart=no or equivalent, and bounded log options",
+        "Worker labels expose resource policy values, owner scope, role, created time, worktree, port block, TTL/idle values, and Ralph ids when applicable",
+        "OOM or PID-limit failures inside a worker do not configure Docker to restart it in a loop",
+        "Real-path Docker smoke check starts a limited worker and verifies basic gateway or shell access when Docker is available; if not feasible in unit tests, document the integration command",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented worker lifecycle metadata labels and CLI/plumbing for TTL, idle, owner-scope, worktree/path, port block/ports, and optional Ralph job/run ids on both one-time and dev worker Docker run paths while preserving enforced resource limits, restart=no, --init, shm, PID, memory/swap, and bounded log options. Added focused tests for one-time and dev worker Docker args plus lifecycle label defaults/overrides. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, compute spawn/dev spawn help showed new options, current Docker dev worker read-only inspect confirmed limited HostConfig with restart=no and bounded logs, full npm run typecheck passed. Real new-worker smoke creation was not run because this Ralph task forbids creating/releasing Docker workers; documented the manual integration command in docker-compute-workers.md."
+    },
+    {
+      "id": "US-003",
+      "title": "Implement all-state compute worker listing",
+      "description": "As an operator, I want Pibo to list running and stopped worker containers so that OOM-killed and retained debug containers are not hidden.",
+      "acceptanceCriteria": [
+        "Add or extend compute listing with an --all mode that includes running, exited, dead, restarting, and OOM-killed Pibo compute containers",
+        "Output includes container id/name, role, status, OOM flag when available, owner, worktree, Ralph ids, created time, last-used time, resource policy, ports when available, and cleanup eligibility",
+        "Text output has a clear empty state and suggests next diagnostic commands",
+        "JSON output exposes stable fields for agents and monitoring",
+        "Tests cover running, stopped, OOM-killed, no-port stopped container, and empty-state fixtures",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented all-state compute worker listing with Docker ps --all plus inspect enrichment for running/exited/dead/restarting/OOM-killed Pibo containers, stable JSON fields for state/status/OOM/ports/owner/worktree/Ralph/resource policy/cleanup eligibility, and text output with OOM/resource/cleanup columns plus empty-state next-command guidance. Added fixtures covering running, stopped, OOM-killed, no-port stopped, and empty-state rendering. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused compute tests, read-only real host compute list --all text/JSON validation, and full Docker-worker npm run typecheck passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Add dry-run compute reap planning for stopped, dirty, old, and dev workers",
+      "description": "As an operator, I want cleanup preview output before deleting containers so that debug state and worktrees are not removed accidentally.",
+      "acceptanceCriteria": [
+        "Reap builds a cleanup plan before destructive actions and supports dry-run or preview output",
+        "Selectors cover one-time workers, dev workers when explicitly included, stopped containers, dirty workers, and max-age filters",
+        "Plan output explains why each worker is eligible or skipped",
+        "Apply removes selected containers but does not delete Git worktrees unless an explicit worktree cleanup option or command is used",
+        "Tests cover dry-run, apply, dev exclusion by default, include-dev behavior, stopped container cleanup, dirty worker cleanup, and worktree preservation",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented plan-first compute reap cleanup: pibo compute reap now dry-runs by default, supports --apply for removal, --include-dev for dev containers, --no-stopped/--no-dirty selector control, max-age selection, JSON/text plan output with selected/skipped reasons, and worktree preservation messaging. Added dirty cleanup labels to worker parsing/listing and pure planning/apply helpers with fake-release test seam. Tests cover dry-run, apply, dev exclusion by default, include-dev behavior, stopped cleanup, dirty/OOM cleanup, max-age selection, skipped reasons, and worktree preservation. Evidence recorded in IMPLEMENTATION_PROGRESS.md; focused compute tests, real read-only host dry-run JSON/text validation, Docker-worker CLI help validation, and full npm run typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Add Docker build context and disk hygiene diagnostics",
+      "description": "As a maintainer, I want Docker build context and cache diagnostics so that few image tags do not hide large retained layers or BuildKit cache.",
+      "acceptanceCriteria": [
+        "Update .dockerignore to exclude .worktrees, local browser-use profile/state, screenshots, logs, and Pibo local state that should not enter images",
+        "Add diagnostics that report Docker image size, container size, local volume size, build-cache size, and reclaimable bytes when Docker is available",
+        "Diagnostics distinguish container cleanup, image cleanup, build-cache prune, and worktree cleanup suggestions",
+        "Diagnostics are read-only by default and provide JSON output",
+        "Tests or fixtures cover parsed Docker disk usage and safe next-command rendering",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented Docker build context hygiene and read-only compute disk diagnostics. .dockerignore now excludes .worktrees, Pibo local state, browser-use/profile state, screenshots, logs, and browser/debug artifacts without excluding source UI assets. Added pibo compute diagnostics (alias disk) with text/JSON output for Docker image, container, local volume, BuildKit cache, byte/reclaimable counts, Docker-unavailable handling, and cleanup suggestions separated across container cleanup, image cleanup, build-cache prune, and worktree cleanup. Added parsing/rendering fixtures in test/compute-resource-policy.test.mjs. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker tests passed, Docker-worker unavailable-path CLI validation passed, read-only real host Docker diagnostics returned images/containers/localVolumes/buildCache rows and suggestions, and full npm run typecheck passed."
+    },
+    {
+      "id": "US-006",
+      "title": "Validate limited worker behavior with real Docker when available",
+      "description": "As an operator, I want an integration validation path proving that limited workers can still run Pibo checks while remaining bounded.",
+      "acceptanceCriteria": [
+        "Add a documented integration command or test script that spawns a limited compute worker and verifies connect/gateway or shell access",
+        "Validation includes a browser-use or Chromium smoke path when the environment supports Docker and browser dependencies",
+        "Validation records resource policy values from Docker inspect or compute list output",
+        "If Docker is unavailable in CI, the test skips with a clear message and the manual command remains documented",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added scripts/compute-limited-worker-smoke.mjs and npm script compute:limited-worker-smoke. The script defaults to read-only dry-run, skips clearly when Docker is unavailable, and when explicitly run with --apply it spawns a bounded one-time worker, verifies shell access, runs a bounded Chromium smoke path, records Docker inspect resource policy values plus compute list visibility, and releases the worker in a finally cleanup path. Documented the script and equivalent manual commands in docs/specs/capabilities/docker-compute-workers.md; updated tasks. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused Docker-worker compute tests passed, Docker-worker dry-run and Docker-unavailable skip paths passed, host read-only dry-run passed, and full npm run typecheck passed. Real --apply creation was not run in this Ralph session because the task explicitly forbids creating/releasing Docker workers."
+    }
+  ]
+}

@@ -24,6 +24,7 @@ import type { PiboThinkingLevel } from "./thinking.js";
 import type { CompactionResult } from "@mariozechner/pi-coding-agent";
 import type { ContextUsage } from "@mariozechner/pi-coding-agent";
 import { getOpenAiCodexProviderUsageForActiveModel } from "../auth/openai-codex-usage.js";
+import { normalizeSessionErrorDetails, runtimeSessionErrorDetails } from "./session-errors.js";
 import { expandInlineSkills } from "./skill-expansion.js";
 import type { ModelProfile } from "./profiles.js";
 
@@ -121,15 +122,15 @@ function assistantErrorDetails(message: AssistantErrorMessage, context?: ErrorCo
 	const providerError = parseEmbeddedProviderError(rawError);
 	const usage = message.usage && typeof message.usage === "object" ? (message.usage as { totalTokens?: unknown }) : undefined;
 	const contextTokens = numberValue(usage?.totalTokens);
-	const details: PiboSessionErrorDetails = {
-		category: providerError?.providerCode === "context_length_exceeded" ? "context_overflow" : undefined,
+	const details: PiboSessionErrorDetails = normalizeSessionErrorDetails(rawError, {
+		...(providerError?.providerCode === "context_length_exceeded" ? { category: "context_overflow", errorClass: "provider_context", code: "context_length_exceeded" } : {}),
 		...providerError,
 		api: stringValue(message.api),
 		provider: stringValue(message.provider),
 		model: stringValue(message.model),
 		contextWindow: context?.contextWindow,
 		contextTokens,
-	};
+	});
 	return Object.values(details).some((value) => value !== undefined) ? details : undefined;
 }
 
@@ -835,11 +836,13 @@ export class RoutedSession {
 				source: event.source,
 			});
 		} catch (error) {
+			const message = errorMessage(error);
 			this.emit({
 				type: "session_error",
 				piboSessionId: this.piboSessionId,
 				eventId: event.id,
-				error: errorMessage(error),
+				error: message,
+				errorDetails: runtimeSessionErrorDetails(message),
 			});
 		} finally {
 			this.activeMessage = undefined;
@@ -861,11 +864,13 @@ export class RoutedSession {
 				result,
 			});
 		} catch (error) {
+			const message = errorMessage(error);
 			this.emit({
 				type: "session_error",
 				piboSessionId: this.piboSessionId,
 				eventId: event.id,
-				error: errorMessage(error),
+				error: message,
+				errorDetails: runtimeSessionErrorDetails(message),
 			});
 		}
 	}

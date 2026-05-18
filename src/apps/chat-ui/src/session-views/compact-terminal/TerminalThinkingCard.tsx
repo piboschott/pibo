@@ -44,14 +44,14 @@ export function TerminalThinkingCard({
 
 	if (!data) {
 		return (
-			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+			<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-card="thinking">
 				<div className="text-[#737373]">Thinking (unparseable)</div>
 			</div>
 		);
 	}
 
 	return (
-		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-card="thinking">
 			<div className="mb-2 flex items-center gap-2">
 				<Brain size={14} className="text-[#f59e0b]" />
 				<span className="font-semibold text-[#d4d4d4]">Thinking</span>

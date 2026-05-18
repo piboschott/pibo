@@ -1,0 +1,89 @@
+{
+  "project": "Compute Browser Resource Lifecycle",
+  "branchName": "ralph/managed-browser-pool-cdp-reuse",
+  "description": "Worker-scoped managed browser pool that reuses a bounded Chromium CDP endpoint for browser-use invocations.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add browser pool state model and lock",
+      "description": "As a tooling engineer, I want a persisted worker-scoped browser pool state model so that browser-use invocations share one authority for pid, CDP port, leases, and health.",
+      "acceptanceCriteria": [
+        "Add browser pool state types with worker id, pool id, max browser processes, pid, process group id when available, CDP port, CDP URL, user-data dir, active lease id, owner, last-used time, idle expiry, state, and last error",
+        "Add lock acquisition with bounded timeout for acquire/release/reap state mutations",
+        "Malformed or missing pool state fails safely or initializes an empty pool according to command context",
+        "Focused unit tests cover lock success, lock timeout, missing state, malformed state, and state write/read round trips",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented src/tools/browser-pool.ts with worker-scoped state types, path helpers, safe missing/malformed state loading, atomic write/read round trips, bounded file lock acquisition, and acquire/release/reap mutation wrapper. Added test/browser-pool-state.test.mjs. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused browser-pool tests passed in Docker worker; npm run typecheck passed."
+    },
+    {
+      "id": "US-002",
+      "title": "Implement managed CDP health and reuse decisions",
+      "description": "As an agent, I want Pibo to reuse a healthy managed Chromium browser so that repeated UI checks do not start new browser main processes.",
+      "acceptanceCriteria": [
+        "Add a CDP health check that validates the recorded CDP URL through a bounded request such as /json/version",
+        "Acquire returns the existing managed CDP URL when the recorded browser is healthy",
+        "Acquire marks the recorded browser stale when the pid is dead, CDP is unreachable, or state identity is invalid",
+        "Acquire starts at most one replacement browser under lock when replacement is required",
+        "Focused tests cover healthy reuse, dead pid, unreachable CDP, malformed CDP response, and replacement start decision",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented managed browser-pool CDP health and acquire decisions in src/tools/browser-pool.ts: bounded /json/version health checks, healthy recorded CDP reuse, stale/dirty marking for dead pid, unreachable CDP, malformed/identity-invalid state, and locked replacement start. Added focused tests in test/browser-pool-state.test.mjs. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused browser-pool tests passed in Docker worker; npm run typecheck passed."
+    },
+    {
+      "id": "US-003",
+      "title": "Route browser-use wrapper through managed pool acquire",
+      "description": "As an AI coding agent, I want normal browser-use commands in a compute worker to attach to Pibo's managed browser so that prompts do not need custom cleanup instructions.",
+      "acceptanceCriteria": [
+        "Update the browser-use wrapper path so compute-worker browser-use invocations acquire a managed browser-pool lease before running browser-use",
+        "Pass the managed CDP URL to browser-use through the supported environment variable or argument path used by the wrapper",
+        "Do not silently fall back to starting an unmanaged browser when managed-pool acquire fails; report a clear error or documented fallback state",
+        "Real-path CLI or wrapper test verifies that the wrapper emits/uses a managed CDP URL for a compute-worker-like environment",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented managed browser-pool acquire in the generated browser-use wrapper: default browser-starting commands now acquire a worker/pool-scoped lock, reuse healthy recorded CDP state, start and record one managed Chrome/Chromium process when needed, pass the managed CDP URL through --cdp-url, and fail clearly instead of falling back to unmanaged startup when acquire/start fails. Extended test/tools-cli.test.mjs to assert wrapper-created browser-pool state and lease metadata. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused wrapper/browser-pool tests passed, real Docker worker wrapper validation with Chromium passed, and npm run typecheck passed."
+    },
+    {
+      "id": "US-004",
+      "title": "Enforce browser pool concurrency and max process limits",
+      "description": "As an operator, I want concurrent browser requests to serialize or fail clearly so that one worker cannot exceed its configured browser main-process limit.",
+      "acceptanceCriteria": [
+        "Pool acquire enforces the configured max browser main-process count, defaulting to one lane for compute workers",
+        "Concurrent acquire attempts cannot start duplicate browser main processes for the same pool",
+        "Busy-pool behavior is explicit: wait with timeout, queue, or fail with a pool-exhausted error according to the implemented policy",
+        "Tests simulate concurrent acquire calls and prove the browser start function is called no more than once for one-lane pools",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented one-lane browser-pool concurrency enforcement in src/tools/browser-pool.ts and the browser-use wrapper: healthy active leases for a different lease id now fail explicitly with a pool-exhausted result instead of starting or replacing another browser, same-lease reuse remains allowed, expired leases can be taken over, and wrapper default lease ids are stable per browser-use session. Added focused concurrency/busy-pool tests in test/browser-pool-state.test.mjs and wrapper busy-path coverage in test/tools-cli.test.mjs. Evidence recorded in IMPLEMENTATION_PROGRESS.md: focused browser-pool/wrapper tests passed, real Docker worker wrapper validation with Chromium proved second lease fails pool-exhausted without unmanaged fallback, and npm run typecheck passed."
+    },
+    {
+      "id": "US-005",
+      "title": "Expose browser pool status in text and JSON",
+      "description": "As an operator, I want browser pool status output so that I can tell whether a worker browser is ready, leased, stale, dirty, or idle.",
+      "acceptanceCriteria": [
+        "Add a pool status command or extend browser-use health to show pool id, state, pid, CDP URL, user-data dir, active lease id, last-used time, idle expiry, and stale/dirty reason",
+        "Text output includes concise next commands for stale or dirty states",
+        "JSON output exposes stable fields for agents and monitoring",
+        "Default status is read-only and does not start or kill browsers",
+        "CLI tests cover text output, JSON output, empty pool, ready pool, and stale pool",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented read-only `pibo tools browser-use pool status [--json]` with stable fields, text next-command hints, CLI tests, Docker real-path read-only validation, and typecheck evidence recorded in IMPLEMENTATION_PROGRESS.md."
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-compact-terminal-renderer",
+  "description": "Implement a high-quality terminal-native Ink renderer that follows TERMINAL_DESIGN.md: transcript-first, ultra-dense, semantic markers, user/assistant distinction, inline details, narrow/no-color support, and bounded output.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Build compact Ink terminal row primitives",
+      "description": "As an SSH operator, I want the transcript to be the dominant surface rather than a dashboard.",
+      "acceptanceCriteria": [
+        "Ink terminal shell keeps header/chrome compact and secondary; transcript rows dominate the screen",
+        "Rows render in chronological order with minimal blank lines and no large card containers or decorative chrome inside the transcript",
+        "Row layout uses a stable prefix column and compact content column analogous to TERMINAL_DESIGN.md within terminal constraints",
+        "Primitives support semantic markers, dim metadata, action/success/error/reasoning tones, and no-color text markers",
+        "Implementation does not import Web DOM/Tailwind/lucide components into CLI modules",
+        "Focused renderer primitive tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Completed in PRD04 renderer batch. Ink row/card rendering now keeps a stable prefix/content layout, compact card headers/rows, no large decorative transcript containers, semantic status markers, bounded progress/text output, and CLI-only imports. Evidence tier: source/unit/render plus demo-renderer PTY. Commands: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/ink-cli-terminal-design-contract.test.mjs; npm run typecheck; npm test. PTY artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/mixed-transcript and /workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/narrow-no-color. Classification: deterministic fixture/demo renderer PTY, not live provider."
+    },
+    {
+      "id": "US-002",
+      "title": "Render every required row kind with distinct semantics",
+      "description": "As a user, I want user, assistant, tools, commands, status, and errors to be distinguishable at a glance.",
+      "acceptanceCriteria": [
+        "Ink render tests cover message.user, message.assistant, reasoning, tool.call, tool.status, tool.thinking, tool.model, tool.login, yielded.run, execution.command, execution.compaction, and error rows",
+        "User rows use a distinct prompt glyph/tone/prefix treatment from assistant rows; tests assert the markers or style tokens differ",
+        "Running, done, and error states use distinct markers/words and do not rely on color alone",
+        "Tool/function rows show action verb, function name, argument preview, status, and detail availability without unbounded dumps",
+        "Command and compaction rows match shared descriptor labels and statuses from PRDs 02-03",
+        "Focused semantic render tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Completed in PRD04 renderer batch. Render tests cover message.user, message.assistant, reasoning, tool.call, tool.status, tool.thinking, tool.model, tool.login, yielded.run, execution.command, execution.compaction, and error rows from shared fixtures. Added explicit user/assistant marker test, running/done/error marker assertions, command/compaction/card semantic assertions, and redaction checks. Commands: npm run build; focused node --test command; npm run typecheck; npm test. Evidence tier: fixture/source/unit/render plus demo-renderer PTY. Artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/mixed-transcript."
+    },
+    {
+      "id": "US-003",
+      "title": "Render inline details, JSON, markdown, and long output safely",
+      "description": "As a power user, I want details to be available inline without turning the transcript into a dump.",
+      "acceptanceCriteria": [
+        "Expandable details render inline below the parent row with equivalent labels: Input, Output, Error, Linked session, and command/tool-specific details",
+        "Large JSON, markdown, tool output, and command output are bounded/truncated with clear continuation/detail markers",
+        "Secrets are redacted in collapsed previews and expanded details",
+        "Long unbroken tokens wrap or truncate without expanding layout horizontally",
+        "Reasoning/markdown output remains dense and monospaced with compact spacing",
+        "Focused detail/long-output tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Completed in PRD04 renderer batch. Ink rows now render inline detailItems and linked sessions below parent rows with Input, Output, Error, Linked session, command/tool detail labels, redaction, bounded JSON/markdown/string previews, and truncation markers. Focused test asserts large JSON, long markdown, detail redaction, and bounded output. Commands: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/ink-cli-terminal-design-contract.test.mjs; npm run typecheck; npm test. Evidence tier: fixture/source/unit/render plus demo-renderer PTY. Artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/mixed-transcript."
+    },
+    {
+      "id": "US-004",
+      "title": "Support narrow terminals and NO_COLOR readability",
+      "description": "As an SSH user, I want the TUI to stay useful in small or limited terminals.",
+      "acceptanceCriteria": [
+        "Narrow-width render tests preserve owner/session/status/error/action meaning rather than hiding it behind truncation",
+        "NO_COLOR=1 render tests prove status, success, error, reasoning, command, selection, and unavailable states remain readable through markers and labels",
+        "Progress bars and badges have ASCII/text fallbacks when Unicode/color support is limited",
+        "Large transcripts remain bounded by existing tail-window/output limits and do not hang renderToString tests",
+        "Focused narrow/no-color/performance tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Completed in PRD04 renderer batch. Added ASCII/text progress fallback under NO_COLOR/TERM=dumb/PIBO_ASCII_PROGRESS, no-color assertions for status/success/error/reasoning/command markers, narrow render assertions for owner/session/status/error/action visibility, and tail-window bounds for large transcripts. Commands: npm run build; focused node --test command; npm run typecheck; npm test. Evidence tier: fixture/source/unit/render plus demo-renderer PTY. Narrow/no-color artifact: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd04-2026-05-17/narrow-no-color."
+    },
+    {
+      "id": "US-005",
+      "title": "Capture mixed-transcript PTY visual evidence",
+      "description": "As a reviewer, I want actual terminal artifacts showing the renderer feels like Compact Terminal.",
+      "acceptanceCriteria": [
+        "PTY scenario captures a mixed transcript containing user, assistant, reasoning, tool, status, command, and error rows where feasible",
+        "Artifact screen proves transcript-first layout, compact rows, clear user/assistant distinction, semantic markers, and no dashboard-style status dump",
+        "Separate PTY or render evidence covers narrow width and NO_COLOR=1",
+        "Artifacts include raw ANSI, clean text, final screen, metadata, input/assertions, and exact command invocations",
+        "Focused PTY/render tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Completed in PRD04 renderer batch. Captured mixed-transcript PTY demo with user, assistant, reasoning, tool, status, command, error, inline details, redaction, compact transcript-first rows, and no dashboard-style status dump. Captured separate narrow/NO_COLOR PTY demo with ASCII bars and redaction. Artifacts include raw.ansi.log, clean.txt, screen.txt, metadata.json, input.json, assertions.json, and events.jsonl. Commands: node dist/bin/pibo.js debug pty run --artifact .../mixed-transcript -- bash -lc \"node --input-type=module -e ...InkTerminalView...\"; node dist/bin/pibo.js debug pty run --artifact .../narrow-no-color -- bash -lc \"NO_COLOR=1 node --input-type=module -e ...InkTerminalView...\"; npm run build; focused node --test command; npm run typecheck; npm test (672 tests). Classification: deterministic fixture/demo renderer PTY, not live provider/default tui:sessions path; final installed/default smoke remains for PRD07."
+    }
+  ]
+}

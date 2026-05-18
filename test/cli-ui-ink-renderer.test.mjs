@@ -6,6 +6,7 @@ import test from "node:test";
 import { renderToString } from "ink";
 import { buildCompactTerminalRows } from "../dist/session-ui/index.js";
 import { formatInkJson, formatStatusHeaderLines, InkSessionAppView, InkTerminalView, renderInkMarkdownLines, rowWindow } from "../dist/apps/cli-ui/index.js";
+import { buildCanonicalTerminalRows, buildExpandableDetailFixtureRow, fullStatusPayload, highUsageStatusPayload, partialStatusPayload, unavailableStatusPayload } from "./fixtures/terminal-parity-fixtures.mjs";
 
 const sessionId = "pibo:ink-renderer-test";
 
@@ -107,6 +108,99 @@ test("InkTerminalView renders rich shared card descriptors with Web-parity label
 	assert.doesNotMatch(output, /secret-value/);
 });
 
+test("Ink renderer consumes the canonical shared parity fixture", () => {
+	const rows = buildCanonicalTerminalRows();
+	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 40, maxLineChars: 160 }));
+
+	for (const kind of [
+		"message.user",
+		"message.assistant",
+		"reasoning",
+		"tool.call",
+		"tool.status",
+		"tool.thinking",
+		"tool.model",
+		"tool.login",
+		"yielded.run",
+		"execution.command",
+		"execution.compaction",
+		"error",
+	]) {
+		assert.ok(rows.some((row) => row.kind === kind), `fixture includes ${kind}`);
+	}
+	assert.match(output, /Audit the compact terminal renderer/);
+	assert.match(output, /▣ Status — status · done/);
+	assert.match(output, /▣ Thinking — thinking · done/);
+	assert.match(output, /▣ Model — model · done/);
+	assert.match(output, /▣ Login — login · done/);
+	assert.match(output, /Provider quota: unavailable/);
+	assert.doesNotMatch(output, /sk_fixture_secret|detail-secret-value/);
+});
+
+function rowsForMarkerTest() {
+	return [
+		{ id: "user-marker", kind: "message.user", status: "done", lines: [{ prefix: "prompt", tokens: [{ text: "user marker" }] }], sourceNodeIds: ["user-marker"] },
+		{ id: "assistant-marker", kind: "message.assistant", status: "done", lines: [{ prefix: "none", tokens: [{ text: "assistant marker" }] }], sourceNodeIds: ["assistant-marker"] },
+	];
+}
+
+test("Ink renderer gives user and assistant rows distinct terminal markers", () => {
+	const output = renderToString(React.createElement(InkTerminalView, { rows: rowsForMarkerTest(), maxRows: 5, maxLineChars: 80 }));
+	assert.match(output, /› user marker/);
+	assert.match(output, /  assistant marker/);
+	assert.doesNotMatch(output, /› assistant marker/);
+});
+
+test("Ink renderer renders inline detail sections with bounded redacted values", () => {
+	const output = renderToString(React.createElement(InkTerminalView, { rows: [buildExpandableDetailFixtureRow()], maxRows: 5, maxLineChars: 120 }));
+
+	for (const label of ["Input", "Output", "Error", "Linked session", "Command args", "Tool result preview", "Large JSON", "Long markdown"]) {
+		assert.match(output, new RegExp(`${label}:`));
+	}
+	assert.match(output, /↳ Call failed detail_tool/);
+	assert.match(output, /more items|fixture-value-0/);
+	assert.match(output, /token=\[redacted\]/);
+	assert.doesNotMatch(output, /detail-secret-value|sk_fixture_secret/);
+	assert.ok(output.length < 5000, "detail rendering stays bounded");
+});
+
+test("Ink status card renders compact runtime fields bars unavailable states tools credits and provider labels", () => {
+	const rows = [
+		{ id: "status-full", kind: "tool.status", status: "done", lines: [], output: fullStatusPayload(), sourceNodeIds: ["status-full"] },
+		{ id: "status-partial", kind: "tool.status", status: "done", lines: [], output: partialStatusPayload(), sourceNodeIds: ["status-partial"] },
+		{ id: "status-unavailable", kind: "tool.status", status: "done", lines: [], output: unavailableStatusPayload(), sourceNodeIds: ["status-unavailable"] },
+	];
+	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 10, maxLineChars: 180 }));
+
+	assert.match(output, /Status — status · done · idle · session Terminal parity fixture/);
+	assert.match(output, /model GPT\s*Test · owner Web user Fixture/);
+	assert.match(output, /Provider plan: pro/);
+	assert.match(output, /Credits: unlimited/);
+	assert.match(output, /Enabled tools: 3 \(read, edit, bash\)/);
+	assert.match(output, /anthropic messages: .*75\.0%/);
+	assert.match(output, /anthropic messages: .*75\.0% remaining/);
+	assert.match(output, /local-ai requests: unavailable · [░-]+/);
+	assert.match(output, /Provider quota: unavailable · [░-]+/);
+	assert.match(output, /Context: unavailable · [░-]+/);
+	assert.doesNotMatch(output, /sk_fixture_secret|warning-secret-value/);
+});
+
+test("Ink status progress bars use readable ASCII fallback when color or glyph support is limited", () => {
+	const previousNoColor = process.env.NO_COLOR;
+	process.env.NO_COLOR = "1";
+	try {
+		const rows = [{ id: "status-ascii", kind: "tool.status", status: "done", lines: [], output: highUsageStatusPayload(), sourceNodeIds: ["status-ascii"] }];
+		const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 5, maxLineChars: 160 }));
+		assert.match(output, /Context: #################-/);
+		assert.match(output, /openai requests: ################## 100\.0%/);
+		assert.match(output, /openai spend: ##---------------- 9\.0%/);
+		assert.doesNotMatch(output, /█|░|sk_fixture_secret|warning-secret-value/);
+	} finally {
+		if (previousNoColor === undefined) delete process.env.NO_COLOR;
+		else process.env.NO_COLOR = previousNoColor;
+	}
+});
+
 test("Ink Session app keeps owner, session, error, and command state readable at narrow widths", () => {
 	const state = {
 		loading: false,
@@ -129,12 +223,12 @@ test("Ink Session app keeps owner, session, error, and command state readable at
 		message: "Status card remains readable.",
 	};
 	const headerLines = formatStatusHeaderLines(state, 60);
-	assert.ok(headerLines.some((line) => line.includes("Owner:")), "narrow header includes an owner line");
-	assert.ok(headerLines.some((line) => line.includes("Session:")), "narrow header includes a session line");
+	assert.ok(headerLines.some((line) => line.includes("owner ")), "narrow header includes an owner line");
+	assert.ok(headerLines.some((line) => line.includes("session ")), "narrow header includes a session line");
 	const output = renderToString(React.createElement(InkSessionAppView, { state, maxRows: 5, maxLineChars: 60 }));
 
-	assert.match(output, /Owner: Web user narrow/);
-	assert.match(output, /Session: Narrow Session/);
+	assert.match(output, /owner Web user narrow/);
+	assert.match(output, /session Narrow Session/);
 	assert.match(output, /Error:/);
 	assert.match(output, /Status card remains readable/);
 	assert.match(output, /› \/status/);
@@ -187,7 +281,8 @@ test("terminal JSON helper pretty-prints and marks bounded truncation", () => {
 	assert.match(text, /… 45 more items/);
 
 	const charBounded = formatInkJson({ ok: true, value: "x".repeat(500) }, { maxChars: 120 });
-	assert.match(charBounded, /… truncated/);
+	assert.doesNotMatch(charBounded, /truncated/);
+	assert.match(charBounded, new RegExp(`x{${500}}`));
 });
 
 test("Ink renderer source avoids Web-only presentation dependencies", () => {

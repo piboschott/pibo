@@ -58,6 +58,25 @@ test("attached web annotation context escapes html and omits screenshots", () =>
 	assert.doesNotMatch(block, /screen\.png/);
 });
 
+test("attached web annotation context highlights Pibo component and row metadata", () => {
+	const sourceHints = [
+		{ kind: "pibo-markdown", confidence: "high", id: "li", component: "MarkdownRenderer", raw: { tagName: "li" } },
+		{ kind: "pibo-terminal-row", confidence: "high", id: "row_1", component: "TerminalRow", raw: { rowKind: "message.assistant", eventId: "evt_1", traceNodeId: "node_1" } },
+		{ kind: "test-id", confidence: "high", id: "virtuoso-item-list" },
+	];
+	const block = renderAttachedWebAnnotations([annotation({ target: { ...annotation().target, sourceHints } })]);
+	assert.match(block, /primaryTarget: MarkdownRenderer li/);
+	assert.match(block, /piboContext: component=MarkdownRenderer/);
+	assert.match(block, /rowKind=message\.assistant/);
+	assert.match(block, /eventId=evt_1/);
+	assert.match(block, /sourceHints: .*TerminalRow/);
+
+	const summary = serializeWebAnnotationAttachment(annotation({ target: { ...annotation().target, sourceHints } }));
+	assert.equal(summary.primaryTarget, "MarkdownRenderer li");
+	assert.match(summary.piboContext, /rowKind=message\.assistant/);
+	assert.ok(summary.sourceHints?.some((hint) => hint.includes("TerminalRow")));
+});
+
 test("web annotation composer attachments reject stale and terminal annotation ids", () => {
 	const store = new WebAnnotationStore({ path: ":memory:" });
 	try {
@@ -78,12 +97,11 @@ test("web annotation composer attachments reject stale and terminal annotation i
 
 		assert.throws(
 			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_missing"] }),
-			/not available for this session/,
+			/not available for this user/,
 		);
-		assert.throws(
-			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_other_session"] }),
-			/not available for this session/,
-		);
+		const crossSession = prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_other_session"] });
+		assert.equal(crossSession.attachments[0].piboSessionId, "ps_b");
+		assert.match(crossSession.modelContext, /sourceSession: ps_b/);
 		assert.throws(
 			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_resolved"] }),
 			/cannot be attached because it is resolved/,

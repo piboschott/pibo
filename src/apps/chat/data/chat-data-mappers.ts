@@ -1,4 +1,5 @@
 import type { PiboJsonObject, PiboJsonValue, PiboOutputEvent } from "../../../core/events.js";
+import { normalizeSessionErrorDetails } from "../../../core/session-errors.js";
 import type { StoredChatEvent } from "../types/event-store.js";
 import { roomWorkspaceFromMetadata, type PiboRoom, type PiboRoomRole } from "../types/rooms.js";
 import type { ChatWebSessionIndexItem, ChatWebStoredPiboEvent } from "../types/read-model.js";
@@ -85,6 +86,10 @@ function outputPayloadFromV2Row(row: EventLogRow, attributes: PiboJsonObject): P
 	if (row.type === "tool_execution_updated") return { ...base, type: "tool_execution_updated", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: null, partialResult: inlinePayload ?? null };
 	if (row.type === "tool_execution_finished") return { ...base, type: "tool_execution_finished", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", result: inlinePayload ?? null, isError: booleanAttribute(attributes, "isError") ?? false };
 	if (row.type === "execution_result") return { ...base, type: "execution_result", action: row.preview_text ?? stringAttribute(attributes, "action") ?? "execution", result: inlinePayload ?? null };
+	if (row.type === "session_error") {
+		const error = stringAttribute(attributes, "error") ?? row.preview_text ?? "Error";
+		return { ...base, type: "session_error", error, errorDetails: normalizeSessionErrorDetails(error, isRecord(attributes.errorDetails) ? attributes.errorDetails : undefined) } as PiboOutputEvent;
+	}
 	if (row.type === "user.message.accepted") return { type: "user.message.accepted", piboSessionId, roomId: row.room_id ?? undefined, text: stringAttribute(attributes, "inlineText") ?? row.preview_text ?? "", clientTxnId: stringAttribute(attributes, "clientTxnId") } as unknown as PiboOutputEvent;
 	return { ...base, type: row.type } as PiboOutputEvent;
 }
@@ -95,6 +100,7 @@ export function parseJsonObject(value: string): PiboJsonObject { try { const par
 export function stringAttribute(attributes: PiboJsonObject, key: string): string | undefined { const value = attributes[key]; return typeof value === "string" ? value : undefined; }
 function booleanAttribute(attributes: PiboJsonObject, key: string): boolean | undefined { const value = attributes[key]; return typeof value === "boolean" ? value : undefined; }
 function numberAttribute(attributes: PiboJsonObject, key: string): number | undefined { const value = attributes[key]; return typeof value === "number" ? value : undefined; }
+function isRecord(value: unknown): value is PiboJsonObject { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 export function nextSessionSequence(store: PiboDataStore, sessionId: string): number { const row = store.db.prepare("SELECT COALESCE(MAX(session_sequence), 0) + 1 AS next_sequence FROM event_log WHERE session_id = ?").get(sessionId) as { next_sequence: number }; return row.next_sequence; }
 export function compactObject(value: Record<string, unknown>): PiboJsonObject { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as PiboJsonObject; }
 export function previewForPayload(payload: unknown): string | undefined { if (typeof payload === "object" && payload && "text" in payload && typeof payload.text === "string") return payload.text.slice(0, 512); if (typeof payload === "string") return payload.slice(0, 512); return undefined; }

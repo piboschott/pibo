@@ -1,0 +1,114 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-terminal-visual-debugging-e2e",
+  "description": "Create the final visual-debugging and E2E validation pipeline: PTY artifacts, ANSI visual artifacts or fallback, golden/semantic screens, Web checks, installed CLI smoke, and completion evidence report.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Standardize PTY rendering-parity artifact capture",
+      "description": "As a Ralph agent, I want repeatable PTY scenarios that leave enough evidence to review what the terminal rendered.",
+      "acceptanceCriteria": [
+        "Add or extend a rendering-parity PTY script/scenario runner with bounded timeout, idle timeout, rows/cols, NO_COLOR support, deterministic env support, expect/reject assertions, and clear failure diagnostics",
+        "Every scenario writes raw.ansi.log, clean.txt, screen.txt, events.jsonl when available, metadata.json, input.json or equivalent, and assertions.json or equivalent",
+        "Scenarios cover startup owner/room/session picker, slash palette filter/run, /status without picker, /status while picker is open, mixed transcript, /thinking, /model or /login deterministic nested flow, narrow width, and NO_COLOR=1",
+        "Scenario docs include host and Docker-worker command examples and warn that artifacts may contain transcripts or secrets",
+        "Focused PTY runner tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Extended scripts/ink-cli-v2-pty-smoke.mjs with final rendering-parity scenarios mixed-transcript-fixture and narrow-no-color-status, preserving bounded timeout/idle timeout, rows/cols, deterministic env, NO_COLOR support, expect/reject assertions, and clear debug pty command output. Existing scenarios cover startup owner/room/session, slash/status/thinking, picker-open /status, model/login overlays, and existing-session hydration. Focused validation: npm run build; node --test test/ink-cli-terminal-rendering-parity-final.test.mjs test/ink-cli-v2-pty-smoke.test.mjs test/terminal-parity-fixtures.test.mjs test/cli-ui-ink-renderer.test.mjs test/cli-ui-session-app.test.mjs. PTY artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd07-2026-05-17/{owner-room-session-message,slash-suggestions-status-thinking,overlay-keyboard-model-login,mixed-transcript-fixture,narrow-no-color-status,existing-session-hydration}. Each contains raw ANSI, clean text, screen text, metadata, input, assertions, and events where available. Evidence tier: deterministic mocked/default TUI PTY plus fixture/demo renderer PTY; no live credentials."
+    },
+    {
+      "id": "US-002",
+      "title": "Generate reviewable ANSI visual artifacts or documented fallback",
+      "description": "As a reviewer, I want screenshot-like terminal artifacts without rerunning the TUI.",
+      "acceptanceCriteria": [
+        "Investigate and wire an ANSI-to-HTML, ANSI-to-SVG, ANSI-to-PNG, or terminal-emulator screenshot path for at least one rendering-parity PTY scenario",
+        "Visual artifact generation command is documented and reproducible from the artifact directory or raw ANSI file",
+        "Report links at least one visual artifact showing status card, slash palette, picker, or mixed transcript",
+        "If conversion is unavailable, committed report documents the reason, exact attempted commands, raw/clean/screen fallback paths, and follow-up task",
+        "Visual artifact or fallback never requires production gateway restart or live credentials",
+        "Focused visual-artifact tests or script dry-run checks pass where feasible",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added scripts/render-pty-artifact-html.mjs and docs for the reviewable HTML fallback. Full ANSI-to-image tooling is not bundled, so the committed fallback writes terminal-styled visual.html from screen.txt/clean.txt and metadata without production gateway restart or credentials. Generated visual artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd07-2026-05-17/mixed-transcript-fixture/visual.html, slash-suggestions-status-thinking/visual.html, overlay-keyboard-model-login/visual.html, installed-slash-status-thinking/visual.html. Focused script test passed in test/ink-cli-terminal-rendering-parity-final.test.mjs. Evidence tier: documented fallback visual artifact from PTY output."
+    },
+    {
+      "id": "US-003",
+      "title": "Add golden and semantic screen regression checks",
+      "description": "As a maintainer, I want automated checks that fail when the TUI drifts back to a dashboard or detached-message layout.",
+      "acceptanceCriteria": [
+        "Golden or normalized screen tests cover slash palette layout, compact status card with bars, room/session picker layout, mixed transcript row order/markers, narrow output, and NO_COLOR output",
+        "Semantic tests assert row kind/status order, user vs assistant marker difference, command result placement above prompt, status bar availability/unavailability, secret redaction, and streaming order preservation",
+        "Dynamic values such as ids, timestamps, cwd, token counts, and ANSI color codes are normalized so tests are stable but still meaningful",
+        "Tests reject top-level status payloads, dashboard-style status dumps, dominant long UUID labels, and command results rendered only in state.message where detectable",
+        "Focused golden/semantic tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added test/ink-cli-terminal-rendering-parity-final.test.mjs with golden/semantic normalized screen checks for slash palette layout, command result placement above prompt, compact status bars, mixed transcript row order and markers, narrow/NO_COLOR ASCII output, row/card redaction, and dashboard/state.message regressions. Existing renderer/source tests cover user vs assistant markers, all required row kinds, unavailable states, details, streaming order, and bounded output. Focused node --test suite passed; npm run typecheck passed. Evidence tier: fixture/render/source unit tests plus PTY scenarios."
+    },
+    {
+      "id": "US-004",
+      "title": "Complete Web regression and shared-fixture validation",
+      "description": "As a Web user, I want Web Compact Terminal to remain the semantic reference while Ink reaches parity.",
+      "acceptanceCriteria": [
+        "Web Compact Terminal source or renderer tests prove shared row/card/status descriptors are still used for status, model, login, thinking, tool, command, and error fixtures where supported",
+        "Stable Web semantic hooks cover shared terminal card kind, status fields, row kind/status, event/run/order metadata, and redacted content where feasible",
+        "Where browser tooling is available, capture or document a Web Compact Terminal screenshot/reference for the same shared fixture or explain why source/render tests are the current reference",
+        "npm run chat-ui:typecheck passes",
+        "npm run chat-ui:build passes",
+        "Focused Web regression tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added final Web source regression checks and semantic hooks for TerminalThinkingCard, TerminalModelCard, and TerminalLoginCard with data-shared-terminal-card values; status card already exposes data-shared-terminal-card, data-shared-status-field, and data-shared-progress. Tests assert shared terminal descriptors for status, model, login, thinking, tool, command, and error fixtures, plus row kind/status, event/run/order metadata hooks and redaction. Browser screenshot was not captured; source/render tests plus chat-ui:typecheck and chat-ui:build are the current worker reference. Commands: focused node --test suite; npm run chat-ui:typecheck; npm run chat-ui:build; npm run typecheck. Evidence tier: Web source/descriptor regression plus build gates."
+    },
+    {
+      "id": "US-005",
+      "title": "Run final installed CLI and full validation gates",
+      "description": "As a release reviewer, I want final default-path proof before calling terminal rendering parity complete.",
+      "acceptanceCriteria": [
+        "npm run typecheck passes",
+        "npm test passes or any pre-existing unrelated failure is explicitly proven with focused passing checks and documented risk before completion is withheld/escalated",
+        "npm run chat-ui:typecheck passes",
+        "npm run chat-ui:build passes",
+        "Build and install the package globally in the dedicated worker or test environment, then run installed pibo tui:sessions through owner/room/session/message, slash palette, /status, picker-open /status, and narrow/NO_COLOR smoke where feasible",
+        "Installed/global PTY artifacts include raw ANSI, clean text, final screen, metadata, assertions, exact commands, artifact paths, and fake/demo/mocked/real classification",
+        "At least one default-path validation uses installed/global pibo tui:sessions, not only npm run dev or renderToString",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Final gates passed in Docker worker: npm run typecheck; npm test; npm run chat-ui:typecheck; npm run chat-ui:build. Installed/global package path was tested with npm install -g . followed by installed pibo debug pty run invoking installed pibo tui:sessions. Installed artifacts: /workspace/.tmp/ink-cli-terminal-rendering-parity/prd07-2026-05-17/{installed-owner-room-session-message,installed-slash-status-thinking,installed-picker-open-status,installed-narrow-no-color-status}; each includes raw ANSI, clean text, final screen, metadata, input/assertions, and mocked/default classification. These cover owner/room/session/message, slash palette, /status, picker-open /status, and narrow/NO_COLOR smoke. Evidence tier: installed/global default CLI command path with deterministic mocked provider data."
+    },
+    {
+      "id": "US-006",
+      "title": "Publish final parity evidence report",
+      "description": "As a human reviewer, I want one report that states exactly what matches Web Compact Terminal behavior and what remains out of scope.",
+      "acceptanceCriteria": [
+        "Add final report under docs/reports/ summarizing implemented behavior, changed files, validation commands, PTY artifact directories, visual artifact/fallback paths, Web checks, and installed CLI evidence",
+        "Report maps final evidence to SC-001 through SC-006 from spec.md and to PRDs 01-07",
+        "Report names remaining gaps, explicitly out-of-scope items, environment limitations, and any live-provider/provider-catalog limitations",
+        "Report includes a real/default-path evidence audit for user-facing paths and states whether any path relies only on fake/demo/mocked support",
+        "README PRD catalog updates Ralph JSON links and final validation instructions",
+        "Focused docs/report checks pass where available",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added docs/reports/ink-cli-terminal-rendering-parity-final-2026-05-17.md summarizing behavior, changed files, validation commands, PTY artifact directories, visual.html fallback paths, Web checks, installed CLI evidence, SC-001 through SC-006 mapping, PRDs 01-07 coverage, and remaining gaps/out-of-scope items. Updated PRD catalog with final report and visual artifact instructions; tasks.md final visual/install checkboxes are complete. Focused docs/report checks are covered by test/ink-cli-terminal-rendering-parity-final.test.mjs and test/ink-cli-v2-pty-smoke.test.mjs. Evidence tier: final report/docs plus full validation gates."
+    }
+  ]
+}

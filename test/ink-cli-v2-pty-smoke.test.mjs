@@ -11,6 +11,7 @@ test("Ink CLI V2 PTY smoke runner lists required reusable scenarios", async () =
 	const result = await execFileAsync("node", [script, "--list"]);
 	assert.match(result.stdout, /owner-room-session-message\t.*Owner picker/);
 	assert.match(result.stdout, /slash-suggestions-status-thinking\t.*Slash suggestions/);
+	assert.match(result.stdout, /overlay-keyboard-model-login\t.*Picker overlays/);
 	assert.match(result.stdout, /existing-session-hydration\t.*--session/);
 });
 
@@ -21,9 +22,9 @@ test("Ink CLI V2 PTY smoke runner dry-run emits bounded pibo debug pty commands"
 	assert.match(result.stdout, /--artifact-dir .*slash-suggestions-status-thinking/);
 	assert.match(result.stdout, /--timeout-ms 80000/);
 	assert.match(result.stdout, /--idle-timeout-ms 15000/);
-	assert.match(result.stdout, /--wait-for Slash commands/);
-	assert.match(result.stdout, /--wait-for Status: source=local\/direct/);
-	assert.match(result.stdout, /--wait-for Select thinking level/);
+	assert.match(result.stdout, /--wait-for slash commands/);
+	assert.match(result.stdout, /--wait-for ▣ Status — status · done/);
+	assert.match(result.stdout, /--wait-for select thinking level/);
 });
 
 test("Ink CLI V2 PTY smoke documentation records artifact evidence rules", () => {

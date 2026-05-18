@@ -8,6 +8,7 @@ import { createDefaultPiboPluginRegistry } from "../plugins/builtin.js";
 import type { PiboPluginRegistry } from "../plugins/registry.js";
 import { createPiboRuntime, type PiboRuntimeOptions } from "./runtime.js";
 import { RoutedSession } from "./routed-session.js";
+import { runtimeSessionErrorDetails } from "./session-errors.js";
 import type {
 	PiboAssistantMessageEvent,
 	PiboEventListener,
@@ -786,10 +787,12 @@ export class PiboSessionRouter {
 				id: randomUUID(),
 			});
 		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
 			this.emitOutput({
 				type: "session_error",
 				piboSessionId,
-				error: error instanceof Error ? error.message : String(error),
+				error: message,
+				errorDetails: runtimeSessionErrorDetails(message),
 			});
 		}
 	}

@@ -8,6 +8,7 @@ import {
 	buildSessionPickerDescriptor,
 	buildSlashCommandCatalog,
 	buildTerminalCardDescriptor,
+	buildTerminalCardDescriptors,
 	groupSlashCommandsForHelp,
 	buildTerminalStatusViewModel,
 	filterSlashCommands,
@@ -15,6 +16,7 @@ import {
 	normalizeCommandResultDescriptor,
 	progressBarText,
 } from "../dist/session-ui/index.js";
+import { buildCanonicalTerminalRows } from "./fixtures/terminal-parity-fixtures.mjs";
 
 function row(kind, overrides = {}) {
 	return {
@@ -74,6 +76,23 @@ test("shared status view model preserves unavailable usage and redacts secrets",
 	assert.equal(context.state, "available");
 	assert.equal(context.percent, 0);
 	assert.equal(progressBarText(context, 8), "░░░░░░░░ 0.0%");
+});
+
+test("shared terminal card descriptors cover required rich rows and redact before renderers", () => {
+	const rows = [
+		row("tool.status", { id: "status", output: { message: "OPENAI_API_KEY=sk_live_secret123456", contextUsage: { percent: 10 } } }),
+		row("tool.thinking", { id: "thinking", output: { level: "high", availableLevels: ["low", "high"] } }),
+		row("tool.model", { id: "model", output: { providers: [{ id: "openai", label: "OpenAI", models: [{ id: "gpt-test", label: "GPT Test" }] }] } }),
+		row("tool.login", { id: "login", output: { providers: [{ id: "openai", name: "OpenAI", authMethods: ["api_key"] }] } }),
+		row("tool.call", { id: "tool", lines: [{ tokens: [{ text: "Called TOKEN=secret-value" }] }] }),
+		row("error", { id: "error", status: "error", error: "Authorization bearer_token=secret-value failed", lines: [] }),
+	];
+	const descriptors = buildTerminalCardDescriptors(rows);
+
+	assert.deepEqual(descriptors.map((descriptor) => descriptor.kind), ["status", "thinking", "model", "login", "tool", "error"]);
+	const serialized = JSON.stringify(descriptors);
+	assert.match(serialized, /\[redacted\]/);
+	assert.doesNotMatch(serialized, /sk_live_secret|secret-value/);
 });
 
 test("shared command catalog merges gateway capabilities and filters prefixes", () => {
@@ -154,17 +173,27 @@ test("shared owner room session picker descriptors include defaults empty rooms 
 	assert.ok(sessions.items[1].markers.includes("current"));
 });
 
-test("Web compact terminal status card consumes shared descriptors without crossing renderer boundaries", () => {
+test("Web and Ink rich terminal renderers consume shared descriptors without crossing boundaries", () => {
 	const statusCardSource = fs.readFileSync(path.resolve("src/apps/chat-ui/src/session-views/compact-terminal/TerminalStatusCard.tsx"), "utf8");
 	assert.match(statusCardSource, /buildTerminalCardDescriptor/, "Web status card should consume shared terminal card descriptors");
 	assert.match(statusCardSource, /statusView/, "Web status card should render from the shared status view model");
 	assert.match(statusCardSource, /data-shared-terminal-card/, "Web status card should expose a stable shared-descriptor hook for regression checks");
+	assert.match(statusCardSource, /data-shared-status-field/, "Web status card should expose shared status field hooks");
+	assert.match(statusCardSource, /data-shared-progress-state/, "Web status card should expose shared progress availability hooks");
+	assert.match(statusCardSource, /data-shared-status-warning/, "Web status card should expose warning hooks");
+	assert.match(statusCardSource, /data-shared-status-error/, "Web status card should expose error hooks");
+	assert.doesNotMatch(statusCardSource, /OpenAI Codex quota/, "Web status card should use provider labels from descriptors instead of hardcoding OpenAI");
+
+	const inkRowSource = fs.readFileSync(path.resolve("src/apps/cli-ui/InkTerminalRow.ts"), "utf8");
+	assert.match(inkRowSource, /buildTerminalCardDescriptor\(row\)/, "Ink rich rows must pass through shared terminal card descriptors");
+	assert.match(inkRowSource, /InkTerminalCard/, "Ink should render shared cards with terminal-native card primitives");
+	assert.doesNotMatch(inkRowSource, /case\s+["']tool\.(?:status|thinking|model|login)["']/, "Ink renderer should not fork rich supported card kinds away from shared descriptors");
 
 	const cliSourceDir = path.resolve("src/apps/cli-ui");
 	const cliFiles = listSourceFiles(cliSourceDir);
 	for (const file of cliFiles) {
 		const source = fs.readFileSync(file, "utf8");
-		assert.doesNotMatch(source, /src\/apps\/chat-ui|session-views\/compact-terminal|react-dom|\.module\.css|window\.|document\./, `${path.relative(process.cwd(), file)} must not import Web DOM components or browser APIs`);
+		assert.doesNotMatch(source, /src\/apps\/chat-ui|session-views\/compact-terminal|react-dom|lucide-react|\.module\.css|window\.|document\.|HTMLElement|Tailwind|className=/, `${path.relative(process.cwd(), file)} must not import Web DOM components or browser APIs`);
 	}
 });
 
@@ -177,6 +206,8 @@ function listSourceFiles(dir) {
 }
 
 test("Web Compact Terminal source preserves shared flow ordering hooks and streaming semantics", () => {
+	const fixtureRows = buildCanonicalTerminalRows();
+	assert.ok(fixtureRows.some((row) => row.kind === "tool.status" && row.orderSource), "canonical shared fixture exercises Web row/card hooks");
 	const compactSource = fs.readFileSync(path.resolve("src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx"), "utf8");
 	assert.match(compactSource, /buildCompactTerminalRows\(traceView, \{ showThinking \}\)/, "Web terminal must derive rows from shared row builder");
 	assert.match(compactSource, /computeItemKey=\{\(_, row\) => row\.id\}/, "Web terminal should use shared row ids as stable render keys");
@@ -195,8 +226,8 @@ test("all shared session-ui view-model modules stay renderer-neutral", () => {
 	const sourceDir = path.resolve("src/session-ui");
 	for (const file of fs.readdirSync(sourceDir).filter((name) => name.endsWith(".ts"))) {
 		const source = fs.readFileSync(path.join(sourceDir, file), "utf8");
-		assert.doesNotMatch(source, /from ["'](?:react|react-dom|react-virtuoso|lucide-react|ink)["']/i, `${file} must not import renderer dependencies`);
+		assert.doesNotMatch(source, /from ["'](?:react|react-dom|react-virtuoso|lucide-react|ink|@uiw\/react-json-view|react-markdown|prismjs)["']/i, `${file} must not import renderer dependencies`);
 		assert.doesNotMatch(source, /\.(?:css|scss|sass)["']/i, `${file} must not import stylesheets`);
-		assert.doesNotMatch(source, /window\.|document\.|HTMLElement|Tailwind/i, `${file} must not use browser or styling APIs`);
+		assert.doesNotMatch(source, /window\.|document\.|HTMLElement|localStorage|navigator\.|Tailwind|className=/i, `${file} must not use browser or styling APIs`);
 	}
 });

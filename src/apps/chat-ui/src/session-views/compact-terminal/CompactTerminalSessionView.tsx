@@ -92,7 +92,7 @@ export function CompactTerminalSessionView({
 	}), [isStreaming]);
 
 	return (
-		<section className="relative min-w-0 flex-1 flex flex-col overflow-hidden bg-[#0b0b0b] text-[#d4d4d4]">
+		<section className="relative min-w-0 flex-1 flex flex-col overflow-hidden bg-[#0b0b0b] text-[#d4d4d4]" data-pibo-component="CompactTerminalSessionView" data-pibo-debug="compact-terminal-session-view" data-pibo-session-id={traceView?.piboSessionId ?? undefined}>
 			<TerminalHeader
 				errorCount={errorCount}
 				toolErrorCount={toolErrorCount}
@@ -254,6 +254,8 @@ function TerminalRow({
 	return (
 		<div
 			className={terminalRowClassName(row)}
+			data-pibo-component="TerminalRow"
+			data-pibo-debug="terminal-row"
 			data-pibo-terminal-row="true"
 			data-row-id={row.id}
 			data-row-kind={row.kind}
@@ -305,8 +307,8 @@ function TerminalRowContent({
 }) {
 	if (row.kind === "message.assistant") {
 		return (
-			<div className="ml-[1.9rem] min-w-0">
-				<div className="compact-terminal-markdown">
+			<div className="ml-[1.9rem] min-w-0" data-pibo-component="TerminalAssistantMessage">
+				<div className="compact-terminal-markdown" data-pibo-component="MarkdownRendererHost" data-pibo-markdown-kind="assistant-message">
 					<MarkdownRenderer>{typeof row.output === "string" ? row.output : ""}</MarkdownRenderer>
 				</div>
 			</div>
@@ -321,8 +323,8 @@ function TerminalRowContent({
 		return (
 			<>
 				<TerminalLines lines={visibleLines} status={row.status} clampPreview={collapseToolCallPreview} />
-				<div className="ml-[1.9rem] min-w-0">
-					<div className="compact-terminal-markdown compact-terminal-reasoning">
+				<div className="ml-[1.9rem] min-w-0" data-pibo-component="TerminalReasoningMarkdown">
+					<div className="compact-terminal-markdown compact-terminal-reasoning" data-pibo-component="MarkdownRendererHost" data-pibo-markdown-kind="reasoning">
 						<MarkdownRenderer>{row.markdown}</MarkdownRenderer>
 					</div>
 				</div>

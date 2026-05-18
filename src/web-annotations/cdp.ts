@@ -262,8 +262,13 @@ function buildDocumentReadyExpression(): string {
 }
 
 function buildInjectExpression(config: { bindingId: string; bindingToken: string; apiBaseUrl?: string }): string {
+	return buildWebAnnotationOverlayScript(JSON.stringify(config));
+}
+
+export function buildWebAnnotationOverlayScript(configExpression = "window.__piboWebAnnotationConfig"): string {
 	return String.raw`(() => {
-  const config = ${JSON.stringify(config)};
+  const config = (${configExpression});
+  if (!config || !config.bindingId || !config.bindingToken) throw new Error("Pibo Web Annotation overlay config is missing bindingId or bindingToken");
   const rootId = "pibo-web-annotation-overlay";
   const outlineId = "pibo-web-annotation-outline";
   const previous = window.__piboWebAnnotations;
@@ -298,32 +303,43 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
   const style = document.createElement("style");
   style.textContent = [
     ":host{all:initial;font:13px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}",
-    ".pibo-wa-panel{min-width:224px;background:#111827;color:#fff;border:1px solid #374151;border-radius:12px;padding:10px;box-shadow:0 12px 32px rgba(0,0,0,.32);font:13px system-ui,sans-serif}",
-    ".pibo-wa-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}",
-    ".pibo-wa-title{font-weight:700;margin-bottom:3px}",
-    ".pibo-wa-status{font-size:12px;color:#d1d5db;max-width:260px;white-space:normal}",
-    ".pibo-wa-button{border:1px solid #4b5563;background:#1f2937;color:#fff;border-radius:8px;padding:5px 8px;font:12px system-ui,sans-serif;cursor:pointer}",
-    ".pibo-wa-button[aria-pressed='true']{background:#2563eb;border-color:#60a5fa}",
+    ".pibo-wa-panel{position:relative;width:38px;min-height:38px;color:#fff;font:13px system-ui,sans-serif}",
+    ".pibo-wa-main,.pibo-wa-button{box-sizing:border-box;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #4b5563;background:#111827;color:#fff;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.32);font:18px system-ui,sans-serif;cursor:pointer;user-select:none}",
+    ".pibo-wa-main{border-color:#38bdf8;background:#0f172a;color:#38bdf8}",
+    ".pibo-wa-actions{position:absolute;right:0;bottom:44px;display:flex;flex-direction:column;gap:6px;opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .12s ease,transform .12s ease}",
+    ".pibo-wa-panel:hover .pibo-wa-actions,.pibo-wa-panel:focus-within .pibo-wa-actions{opacity:1;pointer-events:auto;transform:translateY(0)}",
+    ".pibo-wa-button{font-size:16px;background:#1f2937}",
+    ".pibo-wa-button[aria-pressed='true']{background:#2563eb;border-color:#60a5fa;color:#fff}",
     ".pibo-wa-button-danger{background:#7f1d1d;border-color:#ef4444}",
+    ".pibo-wa-button-move{cursor:grab}",
+    ".pibo-wa-button-move:active{cursor:grabbing}",
+    ".pibo-wa-status{position:absolute;right:44px;bottom:4px;max-width:260px;background:#111827;color:#d1d5db;border:1px solid #374151;border-radius:8px;padding:6px 8px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.28);opacity:0;pointer-events:none;white-space:normal}",
+    ".pibo-wa-panel:hover .pibo-wa-status,.pibo-wa-panel:focus-within .pibo-wa-status{opacity:1}",
     ".pibo-wa-popup{position:fixed;z-index:2147483647;width:min(320px,calc(100vw - 24px));background:#fff;color:#111827;border:1px solid #9ca3af;border-radius:12px;padding:10px;box-shadow:0 14px 36px rgba(0,0,0,.35);font:13px system-ui,sans-serif}",
+    ".pibo-wa-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}",
     ".pibo-wa-popup textarea{box-sizing:border-box;width:100%;min-height:76px;margin:8px 0;border:1px solid #9ca3af;border-radius:8px;padding:8px;font:13px system-ui,sans-serif;color:#111827;background:#fff}",
     ".pibo-wa-popup-label{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ].join("");
   const panel = document.createElement("div");
   panel.className = "pibo-wa-panel";
-  const title = document.createElement("div");
-  title.className = "pibo-wa-title";
-  title.textContent = "Pibo annotations";
+  const actions = document.createElement("div");
+  actions.className = "pibo-wa-actions";
+  const move = button("↕", "Drag annotation widget");
+  move.className += " pibo-wa-button-move";
+  const toggle = button("✎", "Toggle element annotation mode");
+  const pin = button("⌖", "Mark a point instead of an element");
+  const stop = button("×", "Remove the Pibo annotation overlay");
+  stop.className += " pibo-wa-button-danger";
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "pibo-wa-main";
+  main.textContent = "◎";
+  main.title = "Pibo Web Annotations";
+  main.setAttribute("aria-label", "Pibo Web Annotations");
   const status = document.createElement("div");
   status.className = "pibo-wa-status";
-  const row = document.createElement("div");
-  row.className = "pibo-wa-row";
-  const toggle = button("Annotate", "Toggle element annotation mode");
-  const pin = button("Pin", "Mark a point instead of an element");
-  const stop = button("Stop", "Remove the Pibo annotation overlay");
-  stop.className += " pibo-wa-button-danger";
-  row.append(toggle, pin, stop);
-  panel.append(title, status, row);
+  actions.append(move, toggle, pin, stop);
+  panel.append(actions, main, status);
   shadow.append(style, panel);
   document.documentElement.appendChild(host);
 
@@ -332,6 +348,13 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
   outline.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #2563eb;background:rgba(37,99,235,.10);box-shadow:0 0 0 9999px rgba(37,99,235,.04);display:none;border-radius:3px";
   document.documentElement.appendChild(outline);
 
+  main.addEventListener("click", () => {
+    state.active = true;
+    state.mode = "element";
+    closePopup();
+    updateUi();
+  });
+  move.addEventListener("pointerdown", startDrag);
   toggle.addEventListener("click", () => {
     state.active = !state.active;
     state.mode = "element";
@@ -351,8 +374,33 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
     el.type = "button";
     el.className = "pibo-wa-button";
     el.textContent = label;
+    el.title = aria;
     el.setAttribute("aria-label", aria);
     return el;
+  }
+
+  function startDrag(event) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const rect = host.getBoundingClientRect();
+    const originLeft = rect.left;
+    const originTop = rect.top;
+    if (move.setPointerCapture) move.setPointerCapture(event.pointerId);
+    const onMove = (nextEvent) => {
+      const left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, originLeft + nextEvent.clientX - startX));
+      const top = Math.max(8, Math.min(window.innerHeight - rect.height - 8, originTop + nextEvent.clientY - startY));
+      host.style.left = left + "px";
+      host.style.top = top + "px";
+      host.style.right = "auto";
+      host.style.bottom = "auto";
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
   }
 
   function updateUi(message) {
@@ -481,6 +529,7 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
         if (!response.ok) throw new Error("HTTP " + response.status);
         const data = await response.json().catch(() => ({}));
         state.lastError = null;
+        try { window.dispatchEvent(new CustomEvent("pibo:web-annotation-saved", { detail: data })); } catch {}
         closePopup();
         state.active = true;
         updateUi(data && data.annotation && data.annotation.id ? "Saved " + data.annotation.id + "." : "Saved annotation.");
@@ -604,10 +653,19 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
   }
 
   function stableId(element) {
-    const attrs = ["data-pibo-id", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "id", "aria-label"];
-    for (const attr of attrs) {
-      const value = element.getAttribute && element.getAttribute(attr);
-      if (value && value.trim()) return attr + ":" + cap(value.trim(), 160);
+    const attrs = ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-shared-terminal-card", "data-shared-status-field", "data-pibo-markdown-node", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "id", "aria-label"];
+    let current = element;
+    while (current && current.nodeType === 1) {
+      for (const attr of attrs) {
+        const value = current.getAttribute && current.getAttribute(attr);
+        if (value && value.trim()) return attr + ":" + cap(value.trim(), 160);
+      }
+      const terminalRow = current.getAttribute && current.getAttribute("data-pibo-terminal-row");
+      if (terminalRow) {
+        const rowId = current.getAttribute("data-row-id") || current.getAttribute("data-row-kind") || terminalRow;
+        return "data-pibo-terminal-row:" + cap(rowId, 160);
+      }
+      current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
     return undefined;
   }
@@ -634,12 +692,20 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
       const selector = "#" + cssEscape(id);
       return { selector, unique: safeQueryCount(selector) === 1 };
     }
-    for (const attr of ["data-pibo-id", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "aria-label"]) {
+    for (const attr of ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-shared-terminal-card", "data-shared-status-field", "data-pibo-markdown-node", "data-testid", "data-test-id", "data-cy", "data-qa", "data-locatorjs-id", "aria-label"]) {
       const value = element.getAttribute && element.getAttribute(attr);
       if (value) {
         const selector = tag + "[" + attr + "=\"" + String(value).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\"]";
         return { selector, unique: safeQueryCount(selector) === 1 };
       }
+    }
+    if (element.getAttribute && element.getAttribute("data-pibo-terminal-row")) {
+      const rowId = element.getAttribute("data-row-id");
+      if (rowId) {
+        const selector = tag + "[data-pibo-terminal-row=\"true\"][data-row-id=\"" + String(rowId).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\"]";
+        return { selector, unique: safeQueryCount(selector) === 1 };
+      }
+      return { selector: tag + "[data-pibo-terminal-row=\"true\"]", unique: false };
     }
     return { selector: tag + ":nth-of-type(" + nthOfType(element) + ")", unique: false };
   }
@@ -665,13 +731,14 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
       const tag = (current.tagName || "").toLowerCase();
       if (!tag) break;
       const id = current.getAttribute && current.getAttribute("id");
-      const testId = current.getAttribute && (current.getAttribute("data-pibo-id") || current.getAttribute("data-testid") || current.getAttribute("data-test-id"));
+      const testId = current.getAttribute && (current.getAttribute("data-pibo-id") || current.getAttribute("data-pibo-component") || current.getAttribute("data-pibo-debug") || current.getAttribute("data-shared-terminal-card") || current.getAttribute("data-shared-status-field") || current.getAttribute("data-pibo-markdown-node") || current.getAttribute("data-testid") || current.getAttribute("data-test-id"));
       let part = tag;
       if (id) part += "#" + id;
       else if (testId) part += "[" + testId + "]";
+      else if (current.getAttribute && current.getAttribute("data-pibo-terminal-row")) part += "[terminal-row:" + (current.getAttribute("data-row-kind") || "true") + "]";
       else part += ":nth-of-type(" + nthOfType(current) + ")";
       parts.unshift(part);
-      if (!full && (id || testId || parts.length >= 5)) break;
+      if (!full && (id || testId || current.getAttribute && current.getAttribute("data-pibo-terminal-row") || parts.length >= 5)) break;
       current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
     return parts.join(" > ");
@@ -707,26 +774,65 @@ function buildInjectExpression(config: { bindingId: string; bindingToken: string
     const explicit = explicitSourceHints(element);
     hints.push(...explicit);
     const locator = locatorHint(element);
-    if (locator) hints.push(locator);
+    if (locator && !hasEquivalentHint(hints, locator)) hints.push(locator);
     const react = reactHint(element);
-    if (react) hints.push(react);
+    if (react && !hasEquivalentHint(hints, react)) hints.push(react);
     if (!hints.length) hints.push({ kind: "dom-fallback", confidence: "low", id: selector || domPath(element, false), raw: { tagName: (element.tagName || "").toLowerCase() } });
     return hints;
   }
 
   function explicitSourceHints(element) {
     const hints = [];
+    const deferredTestHints = [];
     let current = element;
-    while (current && current.nodeType === 1 && hints.length < 6) {
+    while (current && current.nodeType === 1 && hints.length < 8) {
+      const tagName = (current.tagName || "").toLowerCase();
       const piboId = current.getAttribute && current.getAttribute("data-pibo-id");
-      if (piboId) hints.push({ kind: "pibo-id", confidence: "high", id: piboId, raw: { tagName: (current.tagName || "").toLowerCase() } });
+      if (piboId) pushHint(hints, { kind: "pibo-id", confidence: "high", id: piboId, raw: { tagName } });
+      const component = current.getAttribute && current.getAttribute("data-pibo-component");
+      if (component) pushHint(hints, { kind: "pibo-component", confidence: "high", id: component, component, raw: collectPiboRaw(current) });
+      const debug = current.getAttribute && current.getAttribute("data-pibo-debug");
+      if (debug) pushHint(hints, { kind: "pibo-debug", confidence: "high", id: debug, component, raw: collectPiboRaw(current) });
+      const markdownNode = current.getAttribute && current.getAttribute("data-pibo-markdown-node");
+      if (markdownNode) pushHint(hints, { kind: "pibo-markdown", confidence: "high", id: markdownNode, component: component || "MarkdownRenderer", raw: collectPiboRaw(current) });
+      const sharedCard = current.getAttribute && current.getAttribute("data-shared-terminal-card");
+      if (sharedCard) pushHint(hints, { kind: "pibo-shared-card", confidence: "high", id: sharedCard, component: component || "TerminalCard", raw: collectPiboRaw(current) });
+      const sharedField = current.getAttribute && current.getAttribute("data-shared-status-field");
+      if (sharedField) pushHint(hints, { kind: "pibo-shared-card", confidence: "high", id: "status-field:" + sharedField, component: component || "TerminalStatusCard", raw: collectPiboRaw(current) });
+      if (current.getAttribute && current.getAttribute("data-pibo-terminal-row")) {
+        pushHint(hints, { kind: "pibo-terminal-row", confidence: "high", id: current.getAttribute("data-row-id") || current.getAttribute("data-row-kind") || "terminal-row", component: component || "TerminalRow", raw: collectPiboRaw(current) });
+      }
       const testId = current.getAttribute && (current.getAttribute("data-testid") || current.getAttribute("data-test-id") || current.getAttribute("data-cy") || current.getAttribute("data-qa"));
-      if (testId) hints.push({ kind: "test-id", confidence: "high", id: testId, raw: { tagName: (current.tagName || "").toLowerCase() } });
+      if (testId) {
+        const testHint = { kind: "test-id", confidence: "high", id: testId, raw: { tagName } };
+        if (/^virtuoso/i.test(testId) || /virtuoso/i.test(testId)) deferredTestHints.push(testHint);
+        else pushHint(hints, testHint);
+      }
       const locatorId = current.getAttribute && current.getAttribute("data-locatorjs-id");
-      if (locatorId) hints.push({ kind: "locatorjs", confidence: "high", id: locatorId, raw: collectLocatorRaw(current) });
+      if (locatorId) pushHint(hints, { kind: "locatorjs", confidence: "high", id: locatorId, raw: collectLocatorRaw(current) });
       current = current.parentElement || (current.getRootNode && current.getRootNode().host) || null;
     }
+    if (!hints.length) deferredTestHints.slice(0, 2).forEach((hint) => pushHint(hints, hint));
     return hints;
+  }
+
+  function pushHint(hints, hint) {
+    if (!hint || !hint.kind) return;
+    if (hasEquivalentHint(hints, hint)) return;
+    hints.push(hint);
+  }
+
+  function hasEquivalentHint(hints, hint) {
+    return hints.some((existing) => existing.kind === hint.kind && (existing.id || "") === (hint.id || "") && (existing.component || "") === (hint.component || ""));
+  }
+
+  function collectPiboRaw(element) {
+    const raw = { tagName: (element.tagName || "").toLowerCase() };
+    for (const attr of ["data-pibo-id", "data-pibo-component", "data-pibo-debug", "data-pibo-session-id", "data-pibo-title", "data-pibo-selected", "data-pibo-state", "data-pibo-terminal-row", "data-pibo-markdown-node", "data-pibo-markdown-kind", "data-shared-terminal-card", "data-shared-status-field", "data-row-id", "data-row-kind", "data-row-status", "data-trace-node-id", "data-event-id", "data-run-id", "data-order-source", "data-order-stream-id", "data-order-frame-index"]) {
+      const value = element.getAttribute && element.getAttribute(attr);
+      if (value) raw[attr.replace(/^data-/, "").replace(/-([a-z])/g, (_, char) => char.toUpperCase())] = cap(value, 300);
+    }
+    return raw;
   }
 
   function locatorHint(element) {

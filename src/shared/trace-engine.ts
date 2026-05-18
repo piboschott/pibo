@@ -962,8 +962,10 @@ function traceNodeFromEvent(
 			return {
 				...base,
 				type: "error",
-				title: "Error",
+				title: "Session Error",
 				status: "error",
+				summary: event.errorDetails?.userMessage,
+				input: event.errorDetails,
 				error: event.error,
 				output: event.error,
 			};

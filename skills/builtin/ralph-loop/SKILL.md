@@ -177,7 +177,7 @@ Ralph has two layers of stopping:
 
 This prevents endless loops when runs repeatedly fail or get cancelled before satisfying a semantic stop condition.
 
-Use a high but bounded value for large PRD batches, such as `100`, and a small value for focused one-shot tasks, such as `1`.
+Use a high but bounded value for large PRD batches, such as `100`, and a small value for focused one-shot tasks, such as `1`. For PRD/story batches, a good rule of thumb is `maxIterations = 3 × total user stories`; adjust freely when the job is not PRD-based, the stop condition is different, or the risk profile calls for a smaller or larger fallback.
 
 ### Promise-complete Token Safety
 

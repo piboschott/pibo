@@ -117,6 +117,16 @@ function storedEventFromStreamEvent(
 		};
 		return makeStored(event, piboSessionId, "tool_execution_finished", payload, nextSequence, now);
 	}
+	if (event.type === "RUN_ERROR" && typeof event.message === "string") {
+		const payload = {
+			type: "session_error",
+			piboSessionId,
+			eventId: typeof event.runId === "string" ? event.runId : undefined,
+			error: event.message,
+			errorDetails: event.errorDetails,
+		};
+		return makeStored(event, piboSessionId, "session_error", payload, nextSequence, now);
+	}
 	return undefined;
 }
 

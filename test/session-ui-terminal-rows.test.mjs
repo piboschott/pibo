@@ -76,6 +76,33 @@ test("compact row generation covers core terminal row kinds deterministically", 
 	assert.match(rowText(rows[5]), /Error boom/);
 });
 
+test("compact row generation renders session errors with class details", () => {
+	const rows = buildCompactTerminalRows(traceView([
+		traceNode("error", "node-session-error", {
+			order: 1,
+			status: "error",
+			title: "Session Error",
+			error: "WebSocket error",
+			input: {
+				errorClass: "provider_transport",
+				code: "websocket_error",
+				origin: "provider",
+				api: "openai-codex-responses",
+				provider: "openai-codex",
+				model: "gpt-5.5",
+				retryable: true,
+			},
+		}),
+	]), { showThinking: false });
+
+	assert.equal(rows[0].kind, "error");
+	assert.equal(rows[0].errorKind, "system");
+	assert.match(rowText(rows[0]), /Session Error WebSocket error/);
+	assert.match(rowText(rows[0]), /Class: provider_transport/);
+	assert.match(rowText(rows[0]), /Code: websocket_error/);
+	assert.match(rowText(rows[0]), /Provider: openai-codex-responses \/ openai-codex \/ gpt-5.5/);
+});
+
 test("compact row generation preserves streaming order metadata and running state", () => {
 	const rows = buildCompactTerminalRows(traceView([
 		traceNode("user.message", "node-user", { order: 1, status: "done", output: "Start work", orderKey: { streamId: 1, streamFrameIndex: 0 }, source: "event-log", eventId: "evt-user" }),
@@ -110,9 +137,11 @@ test("compact row previews handle long text, JSON-like values, empty values, and
 	assert.equal(rows[0].expandable, false);
 
 	const longPreviewToken = rows[1].lines[1].tokens[0];
-	assert.equal(longPreviewToken.text.length, 160);
-	assert.ok(longPreviewToken.text.endsWith("…"));
+	assert.equal(longPreviewToken.text.length, 240);
+	assert.equal(longPreviewToken.text, longLine);
+	assert.doesNotMatch(rowText(rows[1]), /truncated/);
 	assert.match(rowText(rows[1]), /\+1 more lines/);
+	assert.doesNotMatch(rowText(rows[1]), /sixth/);
 
 	assert.match(rowText(rows[2]), /"nested": \{/);
 	assert.deepEqual(renderableTerminalValue(undefined), { kind: "empty" });

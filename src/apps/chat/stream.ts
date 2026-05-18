@@ -4,7 +4,7 @@ export type ChatStreamEvent = { piboSessionId?: string } & (
 	| { type: "ready"; piboSessionId: string }
 	| { type: "RUN_STARTED"; runId: string; input?: { text?: string; source?: string } }
 	| { type: "RUN_FINISHED"; runId: string }
-	| { type: "RUN_ERROR"; runId?: string; message: string }
+	| { type: "RUN_ERROR"; runId?: string; message: string; errorDetails?: unknown }
 	| { type: "TEXT_MESSAGE_START"; messageId: string; runId?: string; role: "assistant" }
 	| { type: "TEXT_MESSAGE_CONTENT"; messageId: string; runId?: string; delta: string }
 	| { type: "TEXT_MESSAGE_END"; messageId: string; runId?: string; finalText?: string }
@@ -130,7 +130,7 @@ export function chatStreamFramesFromOutputEvent(
 			frames.push({ type: "EXECUTION_RESULT", runId: eventId, eventId: event.eventId, action: event.action, result: event.result });
 			break;
 		case "session_error":
-			frames.push({ type: "RUN_ERROR", runId: eventId, message: event.error });
+			frames.push({ type: "RUN_ERROR", runId: eventId, message: event.error, errorDetails: event.errorDetails });
 			break;
 		default:
 			break;

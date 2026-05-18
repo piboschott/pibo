@@ -368,8 +368,12 @@ export class WebAnnotationStore {
 
 	listAnnotations(input: WebAnnotationListFilter): WebAnnotation[] {
 		const limit = normalizeLimit(input.limit, 100, 500);
-		const clauses = ["owner_scope = ?", "pibo_session_id = ?"];
-		const values: Array<string | number> = [input.ownerScope, input.piboSessionId];
+		const clauses = ["owner_scope = ?"];
+		const values: Array<string | number> = [input.ownerScope];
+		if (input.piboSessionId !== undefined) {
+			clauses.push("pibo_session_id = ?");
+			values.push(input.piboSessionId);
+		}
 		if (input.status !== undefined) {
 			if (!isWebAnnotationStatus(input.status)) throw new Error(`Invalid annotation status: ${input.status}`);
 			clauses.push("status = ?");
@@ -388,6 +392,14 @@ export class WebAnnotationStore {
 			SELECT * FROM web_annotations
 			WHERE id = ? AND owner_scope = ? AND pibo_session_id = ?
 		`).get(id, ownerScope, piboSessionId) as WebAnnotationRow | undefined;
+		return row ? annotationFromRow(row) : undefined;
+	}
+
+	getAnnotationForOwner(ownerScope: string, id: string): WebAnnotation | undefined {
+		const row = this.db.prepare(`
+			SELECT * FROM web_annotations
+			WHERE id = ? AND owner_scope = ?
+		`).get(id, ownerScope) as WebAnnotationRow | undefined;
 		return row ? annotationFromRow(row) : undefined;
 	}
 

@@ -41,9 +41,27 @@ const allowedElements = [
 ];
 
 const components: Components = {
+	p({ children, node: _node, ...props }) {
+		return <p data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="p" {...props}>{children}</p>;
+	},
+	ul({ children, node: _node, ...props }) {
+		return <ul data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="ul" {...props}>{children}</ul>;
+	},
+	ol({ children, node: _node, ...props }) {
+		return <ol data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="ol" {...props}>{children}</ol>;
+	},
+	li({ children, node: _node, ...props }) {
+		return <li data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="li" {...props}>{children}</li>;
+	},
+	blockquote({ children, node: _node, ...props }) {
+		return <blockquote data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="blockquote" {...props}>{children}</blockquote>;
+	},
+	pre({ children, node: _node, ...props }) {
+		return <pre data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="pre" {...props}>{children}</pre>;
+	},
 	a({ href, children }) {
 		return (
-			<a href={href} target="_blank" rel="noreferrer">
+			<a href={href} target="_blank" rel="noreferrer" data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="a">
 				{children}
 			</a>
 		);
@@ -53,7 +71,7 @@ const components: Components = {
 		const code = String(children).replace(/\n$/, "");
 		if (!language) {
 			return (
-				<code className={className} {...props}>
+				<code className={className} data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="code" {...props}>
 					{children}
 				</code>
 			);
@@ -61,7 +79,7 @@ const components: Components = {
 		const grammar = prism.languages[language];
 		if (!grammar) {
 			return (
-				<code className={className} {...props}>
+				<code className={className} data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="code" {...props}>
 					{children}
 				</code>
 			);
@@ -69,19 +87,21 @@ const components: Components = {
 		return (
 			<code
 				className={`language-${language}`}
+				data-pibo-component="MarkdownRenderer"
+				data-pibo-markdown-node="code"
 				dangerouslySetInnerHTML={{ __html: prism.highlight(code, grammar, language) }}
 				{...props}
 			/>
 		);
 	},
-	th({ children }) {
-		return <th>{children}</th>;
+	th({ children, node: _node, ...props }) {
+		return <th data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="th" {...props}>{children}</th>;
 	},
-	td({ children }) {
-		return <td>{children}</td>;
+	td({ children, node: _node, ...props }) {
+		return <td data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="td" {...props}>{children}</td>;
 	},
 	input({ checked, node: _node, ...props }) {
-		return <input type="checkbox" checked={Boolean(checked)} readOnly disabled {...props} />;
+		return <input type="checkbox" checked={Boolean(checked)} readOnly disabled data-pibo-component="MarkdownRenderer" data-pibo-markdown-node="input" {...props} />;
 	},
 };
 

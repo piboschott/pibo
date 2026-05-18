@@ -532,14 +532,33 @@ function createErrorRow(node: PiboTraceNode): CompactTerminalRow {
 		lines: [
 			{
 				prefix: "bullet",
-				tokens: [token("Error", "red", "bold"), token(node.error ? ` ${node.error}` : "", "red")],
+				tokens: [token(node.title || "Error", "red", "bold"), token(node.error ? ` ${node.error}` : "", "red")],
 			},
+			...sessionErrorDetailLines(node.input),
 		],
 		sourceNodeIds: [node.id],
+		input: node.input,
 		error: node.error,
 		output: node.output,
-		expandable: node.output !== undefined || Boolean(node.error),
+		expandable: node.input !== undefined || node.output !== undefined || Boolean(node.error),
 	};
+}
+
+function sessionErrorDetailLines(details: unknown): CompactTerminalLine[] {
+	if (!isRecord(details)) return [];
+	const fields = [
+		["Class", stringValue(details.errorClass) ?? stringValue(details.category)],
+		["Code", stringValue(details.code) ?? stringValue(details.providerCode)],
+		["Origin", stringValue(details.origin)],
+		["Provider", [stringValue(details.api), stringValue(details.provider), stringValue(details.model)].filter(Boolean).join(" / ") || undefined],
+		["Retryable", typeof details.retryable === "boolean" ? (details.retryable ? "yes" : "no") : undefined],
+	];
+	return fields
+		.filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0)
+		.map(([label, value], index) => ({
+			prefix: index === 0 ? "detail" : "continuation",
+			tokens: [token(`${label}: `, "dim"), token(value, "red")],
+		}));
 }
 
 function groupExploringCandidates(candidates: readonly RowCandidate[]): RowCandidate[] {
@@ -576,7 +595,8 @@ function createExploringGroup(candidates: readonly RowCandidate[]): CompactTermi
 		error: candidate.row.error,
 		linkedPiboSessionId: candidate.row.linkedPiboSessionId,
 	}));
-	const firstId = candidates[0]?.row.id ?? "exploring";
+	const firstRow = candidates[0]?.row;
+	const firstId = firstRow?.id ?? "exploring";
 	const lastId = candidates[candidates.length - 1]?.row.id ?? firstId;
 	const status = candidates.some((candidate) => candidate.row.status === "running")
 		? "running"
@@ -600,6 +620,11 @@ function createExploringGroup(candidates: readonly RowCandidate[]): CompactTermi
 			})),
 		],
 		sourceNodeIds: candidates.flatMap((candidate) => candidate.row.sourceNodeIds),
+		eventId: firstRow?.eventId,
+		runId: firstRow?.runId,
+		orderSource: firstRow?.orderSource,
+		orderStreamId: firstRow?.orderStreamId,
+		orderStreamFrameIndex: firstRow?.orderStreamFrameIndex,
 		detailItems,
 		expandable: detailItems.some((item) => item.input !== undefined || item.output !== undefined || Boolean(item.error)),
 	};
@@ -651,7 +676,7 @@ function previewPath(value?: Record<string, unknown>): string | undefined {
 	if (!value) return undefined;
 	for (const key of ["path", "file", "filePath", "filepath", "url", "uri", "cwd", "pattern", "glob"]) {
 		const candidate = stringValue(value[key]);
-		if (candidate) return truncate(candidate, 80);
+		if (candidate) return candidate;
 	}
 	return undefined;
 }
@@ -660,7 +685,7 @@ function previewQuery(value?: Record<string, unknown>): string | undefined {
 	if (!value) return undefined;
 	for (const key of ["query", "pattern", "text", "name", "q", "regex"]) {
 		const candidate = stringValue(value[key]);
-		if (candidate) return truncate(candidate, 80);
+		if (candidate) return candidate;
 	}
 	return undefined;
 }
@@ -669,7 +694,7 @@ function previewLines(
 	value: unknown,
 	maxVisibleLines: number,
 	tone: TerminalInlineToken["tone"] = "dim",
-	maxLineLength = 160,
+	_maxLineLength = 160,
 ): { lines: CompactTerminalLine[]; truncated: boolean } {
 	const text = previewText(value);
 	if (!text) return { lines: [], truncated: false };
@@ -681,7 +706,7 @@ function previewLines(
 	const visible = allLines.slice(0, maxVisibleLines);
 	const lines: CompactTerminalLine[] = visible.map((line, index) => ({
 		prefix: index === 0 ? "detail" : "continuation",
-		tokens: [token(truncate(line, maxLineLength), tone)],
+		tokens: [token(line, tone)],
 	}));
 	if (allLines.length > maxVisibleLines) {
 		lines.push({
@@ -706,7 +731,7 @@ function previewText(value: unknown): string {
 
 function compactInlinePreview(value: unknown): string {
 	const text = typeof value === "string" ? value : previewText(value);
-	return truncate(text.replace(/\s+/g, " ").trim(), 96);
+	return text.replace(/\s+/g, " ").trim();
 }
 
 function isShellToolName(name: string | undefined): boolean {
@@ -745,10 +770,6 @@ function bashTokens(command: string): TerminalInlineToken[] {
 	});
 }
 
-function truncate(value: string, maxLength: number): string {
-	if (value.length <= maxLength) return value;
-	return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
-}
 
 function toolVerb(status: PiboTraceNode["status"]): string {
 	if (status === "running") return "Calling";

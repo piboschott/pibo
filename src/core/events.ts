@@ -301,8 +301,25 @@ export type PiboCompactionEndEvent = {
 	errorMessage?: string;
 };
 
+export type PiboSessionErrorClass =
+	| "provider_transport"
+	| "provider_context"
+	| "provider_auth"
+	| "provider_rate_limit"
+	| "provider_server"
+	| "provider_error"
+	| "runtime_abort"
+	| "runtime_error"
+	| "unknown";
+
 export type PiboSessionErrorDetails = {
 	category?: string;
+	errorClass?: PiboSessionErrorClass;
+	code?: string;
+	origin?: "provider" | "runtime" | "gateway" | "system" | "unknown";
+	severity?: "error" | "fatal";
+	retryable?: boolean;
+	userMessage?: string;
 	providerType?: string;
 	providerCode?: string;
 	providerParam?: string;

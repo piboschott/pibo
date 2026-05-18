@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { buildTraceView, type PiboTraceNode, type PiboSessionTraceView } from "../apps/chat/trace.js";
 import type { PiboJsonObject, PiboOutputEvent } from "../core/events.js";
+import { normalizeSessionErrorDetails } from "../core/session-errors.js";
 import type { PiboSession } from "../sessions/store.js";
 import type { ChatWebStoredPiboEvent } from "../apps/chat/read-model.js";
 import { compareTraceOrder } from "../shared/trace-order.js";
@@ -328,6 +329,10 @@ function outputPayloadFromV2Row(row: EventRow): PiboOutputEvent | undefined {
 	if (row.type === "tool_execution_started") return compactObject({ ...base, type: "tool_execution_started", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: inlinePayload ?? null }) as PiboOutputEvent;
 	if (row.type === "tool_execution_updated") return compactObject({ ...base, type: "tool_execution_updated", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", args: null, partialResult: inlinePayload ?? null }) as PiboOutputEvent;
 	if (row.type === "tool_execution_finished") return compactObject({ ...base, type: "tool_execution_finished", toolCallId: stringAttribute(attributes, "toolCallId") ?? row.event_id ?? `tool_${row.stream_id}`, toolName: row.preview_text ?? stringAttribute(attributes, "toolName") ?? "tool", result: inlinePayload ?? null, isError: booleanAttribute(attributes, "isError") ?? false }) as PiboOutputEvent;
+	if (row.type === "session_error") {
+		const error = stringAttribute(attributes, "error") ?? row.preview_text ?? "Error";
+		return compactObject({ ...base, type: "session_error", error, errorDetails: normalizeSessionErrorDetails(error, isRecord(attributes.errorDetails) ? attributes.errorDetails : undefined) }) as PiboOutputEvent;
+	}
 	return compactObject({ ...base, type: row.type }) as PiboOutputEvent;
 }
 
@@ -339,6 +344,10 @@ function stringAttribute(attributes: PiboJsonObject, key: string): string | unde
 function booleanAttribute(attributes: PiboJsonObject, key: string): boolean | undefined {
 	const value = attributes[key];
 	return typeof value === "boolean" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is PiboJsonObject {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function compactObject(value: Record<string, unknown>): PiboJsonObject {

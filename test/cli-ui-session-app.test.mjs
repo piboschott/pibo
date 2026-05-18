@@ -110,13 +110,17 @@ function streamWithTty(isTTY, columns = 80) {
 	return stream;
 }
 
-async function openFakeSessionInto(source, harness, sessionId, message) {
+function rowsText(rows) {
+	return rows.map((row) => [row.kind, row.status, row.output, row.error, ...(row.lines ?? []).map((line) => (line.tokens ?? []).map((token) => token.text).join(""))].filter(Boolean).join(" ")).join("\n");
+}
+
+async function openFakeSessionInto(source, harness, sessionId, message, localRows) {
 	const opened = await source.openSession(sessionId);
 	harness.setState((current) => ({
 		...current,
 		session: opened.session,
 		status: opened.status,
-		rows: buildCompactTerminalRows(opened.traceView, { showThinking: false }),
+		rows: [...(localRows ?? []), ...buildCompactTerminalRows(opened.traceView, { showThinking: false })],
 		mode: "transcript",
 		picker: undefined,
 		message,
@@ -139,9 +143,9 @@ test("InkSessionAppView renders status bar transcript viewport and input line", 
 		maxRows: 20,
 	}));
 
-	assert.match(output, /Pibo CLI Sessions \| fake \| owner unknown \| CLI app shell fixture \| pibo-agent/);
-	assert.match(output, /Commands: \/help \/new \/room \/session \/agent \/owner \/repair-user-unknown/);
-	assert.match(output, /type \/ for suggestions, \/help for catalog/);
+	assert.match(output, /pibo sessions · fake · transcript · owner owner unknown · session CLI app shell\s*fixture · agent pibo-agent/);
+	assert.match(output, /commands: \/ opens palette · \/status runtime · \/room \/session navigate/);
+	assert.match(output, /\/help\s*catalog/);
 	assert.match(output, /› Show me status/);
 	assert.match(output, /Status looks healthy\./);
 	assert.match(output, /› \/status/);
@@ -161,10 +165,13 @@ test("InkSessionAppView renders slash suggestions", () => {
 			},
 		},
 	}));
-	assert.match(output, /Slash commands/);
-	assert.match(output, /\/thinking — Show or set model thinking level/);
-	assert.match(output, /❯ \/thinking-show/);
-	assert.match(output, /Use \/thinking in terminal/);
+	assert.match(output, /slash commands/);
+	assert.match(output, /\/thinking · Show or set model thinking level/);
+	assert.match(output, /❯ × \/thinking-show/);
+	assert.match(output, /unavailable: Use \/thinking/);
+	assert.match(output, /↑↓ select · enter accept\/run · esc close · ctrl-c exit/);
+	assert.ok(output.indexOf("Status looks healthy.") < output.indexOf("slash commands"));
+	assert.ok(output.indexOf("slash commands") < output.indexOf("› /th"));
 });
 
 test("InkSessionAppView renders owner room and create-session pickers", () => {
@@ -185,9 +192,10 @@ test("InkSessionAppView renders owner room and create-session pickers", () => {
 			message: "Select the Web user or Root recovery owner to use in this CLI session.",
 		},
 	}));
-	assert.match(ownerOutput, /Select effective owner/);
-	assert.match(ownerOutput, /Web user alpha/);
-	assert.match(ownerOutput, /❯ Web user beta/);
+	assert.match(ownerOutput, /select owner/);
+	assert.match(ownerOutput, /Web user alpha · user:alpha/);
+	assert.match(ownerOutput, /❯ Web user beta · user:beta/);
+	assert.match(ownerOutput, /↑↓ select · enter confirm · esc back\/cancel · ctrl-c exit/);
 
 	const sessionOutput = renderToString(React.createElement(InkSessionAppView, {
 		state: {
@@ -204,8 +212,35 @@ test("InkSessionAppView renders owner room and create-session pickers", () => {
 			},
 		},
 	}));
-	assert.match(sessionOutput, /Select session in Personal Chat/);
-	assert.match(sessionOutput, /New session in Personal Chat/);
+	assert.match(sessionOutput, /select session — Personal Chat/);
+	assert.match(sessionOutput, /❯ \+ New session in Personal Chat · Create and open/);
+});
+
+test("Ink compact overlay style prioritizes labels, dims metadata, and marks disabled items", () => {
+	const output = renderToString(React.createElement(InkSessionAppView, {
+		state: {
+			...baseState(),
+			mode: "picker",
+			picker: {
+				kind: "command-menu",
+				action: "model-provider",
+				title: "Select model provider",
+				items: [
+					{ id: "openai", kind: "command-option", label: "OpenAI", description: "2 models · available" },
+					{ id: "anthropic", kind: "command-option", label: "Anthropic", description: "unavailable: missing API key", disabled: true },
+				],
+				selectedIndex: 1,
+				emptyMessage: "No providers",
+			},
+		},
+		maxLineChars: 100,
+	}));
+
+	assert.match(output, /select model provider/);
+	assert.match(output, /  OpenAI · 2 models · available/);
+	assert.match(output, /❯ × Anthropic · unavailable: missing API key/);
+	assert.match(output, /↑↓ select · enter confirm · esc back\/cancel · ctrl-c exit/);
+	assert.doesNotMatch(output, /card|dashboard/i);
 });
 
 test("Ink session input reducer captures text, enter, navigation, escape, and slash suggestions", () => {
@@ -265,7 +300,9 @@ test("renderCliStatusCardText renders shared status bars and redacts secrets", (
 		streaming: false,
 		cwd: "/workspace",
 		contextUsage: { tokens: 500, contextWindow: 1000, percent: 50 },
-		providerUsage: { provider: "openai", limits: [{ label: "requests", usedPercent: 80 }] },
+		providerUsage: { provider: "openai", planType: "team", limits: [{ label: "requests", usedPercent: 80, remainingPercent: 20, resetsAt: "2026-05-17T01:00:00.000Z" }], credits: { balance: "$5.00" } },
+		activeTools: ["bash"],
+		enabledTools: ["read", "bash"],
 		warnings: ["TOKEN=secret-value"],
 		updatedAt: "2026-05-17T00:00:00.000Z",
 	}, { id: "ps_status", title: "Status Session", profile: "pibo-agent", status: "running" });
@@ -277,7 +314,12 @@ test("renderCliStatusCardText renders shared status bars and redacts secrets", (
 	assert.match(text, /Runtime: processing/);
 	assert.match(text, /Queue: 2/);
 	assert.match(text, /Context: .*50\.0%/);
-	assert.match(text, /openai requests: .*80\.0%/);
+	assert.match(text, /openai requests: .*20\.0%/);
+	assert.match(text, /20\.0% remaining/);
+	assert.match(text, /Provider plan: team/);
+	assert.match(text, /Credits: \$5\.00/);
+	assert.match(text, /Enabled tools: 2 \(read, bash\)/);
+	assert.match(text, /Active tools: 1 \(bash\)/);
 	assert.match(text, /TOKEN=\[redacted\]/);
 	assert.doesNotMatch(text, /secret-value/);
 });
@@ -319,7 +361,7 @@ test("Slash /new uses selected owner and room from Ink state", async () => {
 		sessions: [],
 	});
 	const harness = stateHarness({ ...baseState(), session: undefined, activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: { id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" }, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/new", source, harness.state, harness.setState, openSession, () => {});
 
@@ -340,7 +382,7 @@ test("Slash /new without an active room opens default-first room picker", async 
 		sessions: [],
 	});
 	const harness = stateHarness({ ...baseState(), session: undefined, activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/new", source, harness.state, harness.setState, openSession, () => {});
 
@@ -369,7 +411,7 @@ test("Slash /owner opens owner picker and cross-owner sends are rejected", async
 		],
 	});
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, session: { id: "ps_alpha", title: "Alpha Session", profile: "pibo-agent", ownerScope: "user:alpha", status: "idle" }, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/owner");
@@ -398,7 +440,7 @@ test("Slash /session and /room open owner-scoped room-first pickers", async () =
 		],
 	});
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" }, activeRoom: { id: "room_project", title: "Project Room", ownerScope: "user:alpha" }, session: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/session");
@@ -426,7 +468,7 @@ test("Slash /repair-user-unknown runs source repair for the active owner and roo
 		activeOwner: { ownerScope: "user:alpha", label: "Alpha", kind: "web-user" },
 		activeRoom: { id: "room_alpha", title: "Alpha Room", ownerScope: "user:alpha" },
 	});
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 
 	await handleCliSessionSubmittedInput("/repair-user-unknown", source, harness.state, harness.setState, openSession, () => {});
 
@@ -450,7 +492,8 @@ test("status command result rows preserve transcript flow and can render as Ink 
 	assert.match(output, /Owner: Web user alpha/);
 	assert.match(output, /Session: Status Session \| ps_status/);
 	assert.match(output, /Context: .*50\.0%/);
-	assert.match(output, /openai requests: .*75\.0%/);
+	assert.match(output, /openai requests: .*25\.0%/);
+	assert.match(output, /25\.0% remaining/);
 });
 
 test("/status closes an open picker and appends transcript rows instead of header message", async () => {
@@ -510,12 +553,14 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 		fastMode: true,
 		contextUsage: { tokens: 0, contextWindow: 1000, percent: 0 },
 		providerUsage: { provider: "openai", planType: "pro", limits: [{ label: "requests", usedPercent: 25 }] },
+		activeTools: ["bash"],
+		enabledTools: ["read", "edit", "bash"],
 		warnings: ["API_KEY=secret-value warning"],
 		errors: ["token:secret-value error"],
 	});
 	const harness = stateHarness({ ...baseState(), session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", status: "idle" } });
 	let exited = false;
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => { exited = true; });
 
 	await submit("/help");
@@ -542,7 +587,11 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 	assert.match(statusText, /Session: Existing fake session \| ps_fake_existing/);
 	assert.match(statusText, /Runtime: fake/);
 	assert.match(statusText, /Context: 0\/1000 tokens \(0\.0%\)/);
-	assert.match(statusText, /openai requests: 25\.0% used/);
+	assert.match(statusText, /openai requests: 75\.0% remaining/);
+	assert.doesNotMatch(statusText, /used/);
+	assert.match(statusText, /Provider plan: pro/);
+	assert.match(statusText, /Enabled tools: 3 \(read, edit, bash\)/);
+	assert.match(statusText, /Active tools: 1 \(bash\)/);
 	assert.match(statusText, /Thinking: high/);
 	assert.match(statusText, /Fast mode: on/);
 	assert.match(statusText, /TOKEN=\[redacted\]/);
@@ -582,7 +631,9 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 	assert.ok(harness.state.rows.some((row) => String(row.output ?? "").includes("hello from test")));
 
 	await submit("/unknown");
-	assert.match(harness.state.error, /Unknown command \/unknown/);
+	assert.equal(harness.state.error, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Ran \/unknown/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Use \/help for supported CLI commands/);
 
 	await submit("/quit");
 	assert.equal(exited, true);
@@ -591,11 +642,14 @@ test("Slash commands handle help status clear pickers unknown exit and normal se
 test("Slash /thinking supports direct levels and picker flow", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/thinking high");
-	assert.match(harness.state.message, /Thinking level set to high/);
+	assert.equal(harness.state.message, undefined);
+	assert.deepEqual(harness.state.rows.slice(-2).map((row) => row.kind), ["execution.command", "execution.command"]);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Ran \/thinking high/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Thinking level set to high/);
 	assert.match(harness.state.status.message, /Thinking level high/);
 
 	await submit("/thinking");
@@ -612,7 +666,7 @@ test("Slash /thinking supports direct levels and picker flow", async () => {
 test("Slash /model opens provider and model command menus", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/model");
@@ -627,14 +681,15 @@ test("Slash /model opens provider and model command menus", async () => {
 	const modelPickerState = { ...harness.state, picker: providerPicker, overlayStack: pushInkSessionOverlay(undefined, { kind: "picker", picker: providerPicker }) };
 	const providerItem = providerPicker.items[0];
 	await handleCliSessionSubmittedInput("/model openai/gpt-fake-mini", source, modelPickerState, harness.setState, openSession, () => {});
-	assert.match(harness.state.message, /Model set to openai\/gpt-fake-mini/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Model set to openai\/gpt-fake-mini/);
 	assert.deepEqual(harness.state.status.activeModel, { provider: "openai", id: "gpt-fake-mini" });
 });
 
 test("Slash /login opens provider auth-method menus and safe API-key instructions", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/login");
@@ -645,14 +700,15 @@ test("Slash /login opens provider auth-method menus and safe API-key instruction
 	assert.ok(harness.state.picker.items.some((item) => item.label === "OpenAI API"));
 
 	await submit("/login openai/api_key");
-	assert.match(harness.state.message, /API-key login requires hidden secret input/);
-	assert.doesNotMatch(harness.state.message, /sk-/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /API-key login requires hidden secret input/);
+	assert.doesNotMatch(rowsText(harness.state.rows.slice(-2)), /sk-/);
 });
 
 test("Slash /fork-candidates opens a candidate picker and can fork by entry id", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/fork-candidates");
@@ -663,45 +719,73 @@ test("Slash /fork-candidates opens a candidate picker and can fork by entry id",
 
 	await submit("/fork-candidates entry_fake_1");
 	assert.match(harness.state.session.id, /^ps_fake_fork_/);
-	assert.match(harness.state.message, /fork-candidates: Existing fake session Fork/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows), /fork-candidates: Existing fake session Fork/);
+});
+
+test("Slash command errors append redacted transcript rows instead of header errors", async () => {
+	const source = new FakeCliSessionSource({
+		actionHandler(input) {
+			if (input.command === "fast") throw new Error("failed TOKEN=secret-value");
+			return undefined;
+		},
+	});
+	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
+
+	await handleCliSessionSubmittedInput("/fast", source, harness.state, harness.setState, openSession, () => {});
+
+	assert.equal(harness.state.error, undefined);
+	assert.equal(harness.state.message, undefined);
+	assert.deepEqual(harness.state.rows.slice(-2).map((row) => [row.kind, row.status]), [["execution.command", "error"], ["error", "error"]]);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /TOKEN=\[redacted\]/);
+	assert.doesNotMatch(rowsText(harness.state.rows.slice(-2)), /secret-value/);
 });
 
 test("Slash Web action commands render shared results and open clone sessions", async () => {
 	const source = createDefaultFakeCliSessionSource();
 	const harness = stateHarness({ ...baseState(), activeOwner: { ownerScope: "user:fake", label: "Fake user", kind: "web-user" }, session: { id: "ps_fake_existing", title: "Existing fake session", profile: "pibo-agent", agentId: "pibo-agent", ownerScope: "user:fake", roomId: "room_fake_main", status: "idle" } });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/fast");
-	assert.match(harness.state.message, /mode/);
-	assert.match(harness.state.message, /fast/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /mode/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /fast/);
+
+	for (const command of ["/compact summarize", "/abort", "/kill", "/kill-all"]) {
+		await submit(command);
+		assert.equal(harness.state.message, undefined);
+		assert.match(rowsText(harness.state.rows.slice(-2)), new RegExp(`Ran ${command.split(" ")[0]}`));
+	}
 
 	await submit("/session-current");
-	assert.match(harness.state.message, /session-current: Existing fake session ps_fake_existing/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /session-current: Existing fake session ps_fake_existing/);
 
 	await submit("/sessions");
-	assert.match(harness.state.message, /Existing fake session/);
-	assert.match(harness.state.message, /ps_fake_existing/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Existing fake session/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /ps_fake_existing/);
 
 	await submit("/download");
-	assert.match(harness.state.message, /browser download APIs/i);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /browser download APIs/i);
 	assert.equal(harness.state.error, undefined);
 
 	await submit("/download /tmp/report.txt");
-	assert.match(harness.state.message, /Terminal download for \/tmp\/report\.txt/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Terminal download for \/tmp\/report\.txt/);
 
 	await submit("/upload /tmp/input.txt");
-	assert.match(harness.state.message, /Terminal upload for \/tmp\/input\.txt/);
+	assert.match(rowsText(harness.state.rows.slice(-2)), /Terminal upload for \/tmp\/input\.txt/);
 
 	await submit("/clone");
 	assert.match(harness.state.session.id, /^ps_fake_clone_/);
-	assert.match(harness.state.message, /clone: Existing fake session Clone/);
+	assert.equal(harness.state.message, undefined);
+	assert.match(rowsText(harness.state.rows), /clone: Existing fake session Clone/);
 });
 
 test("empty picker states and recovery errors are actionable and redacted", async () => {
 	const source = new FakeCliSessionSource({ rooms: [], sessions: [], agents: [], status: { rooms: "unsupported", message: "TOKEN=secret-value" } });
 	const harness = stateHarness({ ...baseState(), session: undefined, rows: [] });
-	const openSession = (sessionId, message) => openFakeSessionInto(source, harness, sessionId, message);
+	const openSession = (sessionId, message, localRows) => openFakeSessionInto(source, harness, sessionId, message, localRows);
 	const submit = (input) => handleCliSessionSubmittedInput(input, source, harness.state, harness.setState, openSession, () => {});
 
 	await submit("/session");
@@ -721,7 +805,7 @@ test("empty picker states and recovery errors are actionable and redacted", asyn
 	assert.match(formatted, /Recovery: use \/session/);
 });
 
-test("default app viewport bounds large sessions and narrow terminal lines", () => {
+test("default app viewport bounds large sessions and wraps narrow terminal lines", () => {
 	const rows = Array.from({ length: 30 }, (_, index) => ({
 		id: `row-${index}`,
 		kind: "message.user",
@@ -737,7 +821,7 @@ test("default app viewport bounds large sessions and narrow terminal lines", () 
 	assert.match(output, /… 10 earlier rows omitted/);
 	assert.doesNotMatch(output, /message 0/);
 	assert.match(output, /message 29/);
-	assert.match(output, /truncated/);
+	assert.doesNotMatch(output, /truncated/);
 	assert.equal(terminalLineLimitFromColumns(36), 32);
 	assert.equal(terminalLineLimitFromColumns(10), 20);
 });

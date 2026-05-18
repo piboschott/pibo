@@ -1,0 +1,97 @@
+{
+  "project": "Ink CLI Terminal Rendering Parity",
+  "branchName": "ralph/ink-cli-shared-render-flow-fixtures",
+  "description": "Create canonical shared fixtures and parity tests proving Web and Ink consume the same terminal rows, cards, ordering metadata, streaming state, details, tones, and redaction behavior.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Build canonical compact-terminal fixture helpers",
+      "description": "As a developer, I want one fixture source for all major terminal row kinds so Web and Ink tests cannot drift silently.",
+      "acceptanceCriteria": [
+        "Add canonical fixture helpers for user message, assistant message, running assistant partial, reasoning/thinking, tool call, tool result, exploring/tool group, yielded run, compaction, execution command, status command/result, thinking/model/login menu rows, error row, and expandable details",
+        "Fixtures include realistic order metadata: orderSource, orderStreamId, orderStreamFrameIndex, event id, run id, trace node id where applicable, and stable local command ids for CLI-only rows",
+        "At least one fixture is derived from or shaped like a real event-log/runtime payload, not only hand-written display text",
+        "Fixtures include secret-bearing values, unavailable values, zero values, high-usage values, long markdown, long JSON, and narrow-width labels",
+        "Fixtures live in a neutral test/helper location and do not import Web DOM or Ink components",
+        "Focused fixture/model tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PASS 2026-05-17. Added renderer-neutral canonical fixture helpers in test/fixtures/terminal-parity-fixtures.mjs covering user, assistant, running assistant, reasoning, tool call/result, exploring group, yielded run, compaction, execution command, status command/result, thinking/model/login, error, expandable details, long JSON/markdown, secret-bearing values, unavailable/zero/high/warning status usage, stable local command ids, and real-shaped raw event-log/gateway status payloads. Evidence tier: fixture/source/unit; no PTY artifacts because this story is fixture-only and changes no user-visible TUI behavior. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs test/session-ui-view-models.test.mjs test/session-ui-terminal-rows.test.mjs test/cli-ui-ink-renderer.test.mjs test/ink-cli-terminal-design-contract.test.mjs; npm run typecheck; npm test."
+    },
+    {
+      "id": "US-002",
+      "title": "Assert shared row order, descriptors, tones, and redaction",
+      "description": "As a reviewer, I want model tests that prove both renderers start from identical terminal semantics.",
+      "acceptanceCriteria": [
+        "Shared tests assert exact CompactTerminalRow kind/status sequence for normal transcript and streaming transcript fixtures",
+        "Shared tests assert buildTerminalCardDescriptor output for status, thinking, model, login, tool, yielded-run, compaction, command, and error rows",
+        "Tests assert token tones and prefix-glyph semantics for running, done, error, reasoning, command, detail, and prompt-like rows",
+        "Tests assert context/provider progress descriptors preserve unavailable, zero, warning, high, label, percentage, and raw count semantics",
+        "Tests assert secret redaction happens in shared descriptors before Web or Ink rendering",
+        "Focused shared-model tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "PASS 2026-05-17. Added shared parity assertions for exact row kind/status sequence, card descriptor kind order for status/thinking/model/login/tool/yielded-run/compaction/command/error, prefix glyph semantics, token tones, progress descriptors, unavailable/zero/warning/high states, labels/percent/raw counts, and redaction before shared card/status descriptors reach renderers. Evidence tier: fixture/source/unit. Validation: npm run build; focused node --test parity/view-model/Ink tests; npm run typecheck; npm test."
+    },
+    {
+      "id": "US-003",
+      "title": "Preserve streaming and chronological ordering semantics",
+      "description": "As a user, I want live updates, command results, and tool rows to stay in the same order across Web and TUI.",
+      "acceptanceCriteria": [
+        "Streaming fixture keeps running assistant rows after prior user/tool rows and before later command/status rows",
+        "Running tool calls use running/action semantics and keep orderStream metadata visible to renderer tests or semantic hooks",
+        "Command result rows appended during streaming appear after the current transcript tail without reordering older rows",
+        "Web sticky-follow assumptions and Ink tail-window assumptions are covered by semantic tests or documented source checks",
+        "Tests include dedupe/stable id expectations for local command rows where persisted events may later echo them",
+        "Focused streaming/order tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "PASS 2026-05-17. Added streaming fixture proving running tool and assistant rows keep stream order metadata and local command/status/detail rows append after the live transcript tail with stable ids local-command:status:001 and local-result:status:001. Web sticky-follow and Ink tail-window assumptions remain covered by source checks and existing Ink rowWindow tests. Evidence tier: fixture/source/unit. Validation: focused node --test parity/view-model/Ink tests; npm run typecheck; npm test."
+    },
+    {
+      "id": "US-004",
+      "title": "Share details and bounded previews across Web and Ink",
+      "description": "As a user, I want details to expose the same input/output/error information without unbounded dumps.",
+      "acceptanceCriteria": [
+        "Shared detail fixture exposes Input, Output, Error, Linked session, command args, tool result preview, and large JSON/markdown detail items",
+        "Web and Ink tests assert detail labels are equivalent and collapsed previews preserve error/status meaning",
+        "Large JSON, long markdown, and long tool output are bounded before or during renderer output according to shared/renderer responsibilities",
+        "No detail fixture expands full secret-bearing payloads by default; redacted values are asserted in preview and details",
+        "Focused detail/bounded-output tests pass",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PASS 2026-05-17. Added expandable detail fixture with Input, Output, Error, Linked session, Command args, Tool result preview, Large JSON, and Long markdown labels; tests assert collapsed previews remain bounded and redacted while full detail payloads stay behind detail fields. Existing renderer bounds for Ink JSON/markdown remain covered by cli-ui-ink-renderer tests. Evidence tier: fixture/source/unit. Validation: focused node --test parity/view-model/Ink tests; npm run typecheck; npm test."
+    },
+    {
+      "id": "US-005",
+      "title": "Prove Web and Ink consume the same fixture source",
+      "description": "As a maintainer, I want Web and Ink tests tied to the same fixtures so renderer drift fails early.",
+      "acceptanceCriteria": [
+        "Web Compact Terminal tests or source-level checks import or derive from the canonical fixture source",
+        "Ink renderer tests import or derive from the canonical fixture source",
+        "Web rendered/source output exposes stable semantic hooks for row kind, status, trace node id, event id, run id, order metadata, and shared card kind where feasible",
+        "Ink output from the same fixture contains equivalent labels, markers, row order, statuses, and redacted text",
+        "Web-impacting checks include npm run chat-ui:typecheck and npm run chat-ui:build where changed files require them",
+        "Focused Web/Ink parity fixture tests pass",
+        "Full npm test passes before this PRD is marked complete",
+        "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "PASS 2026-05-17. Web/source checks and Ink renderer tests now import the same canonical fixture source. Added parity tests asserting Web semantic hooks for row kind/status, trace node id, event id, run id, order source, stream id, frame index, and Ink output labels/markers/status/redaction from the same rows. Full npm test passed (668 tests). Web checks passed via npm run typecheck (includes chat-ui:typecheck) and npm run build/npm test (includes chat-ui:build). Evidence tier: fixture/source/unit; no PTY artifacts for fixture-only work."
+    }
+  ]
+}

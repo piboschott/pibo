@@ -52,6 +52,17 @@ export type PiboRalphStopEvaluationSummary = {
 	decisions: PiboRalphStopConditionEvaluation[];
 };
 
+export type PiboRalphResourceCleanupState = 'none' | 'active' | 'released' | 'retained' | 'dirty';
+
+export type PiboRalphResourceMetadata = {
+	workerId?: string;
+	browserLeaseIds?: string[];
+	cleanupState?: PiboRalphResourceCleanupState;
+	retainedUntil?: string;
+	dirtyReason?: string;
+	updatedAt?: string;
+};
+
 export type PiboRalphJobState = {
 	runningAt?: string;
 	lastRunAt?: string;
@@ -81,6 +92,7 @@ export type PiboRalphJob = {
 	modelOverride?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
 	fastMode?: boolean;
+	resources?: PiboRalphResourceMetadata;
 	state: PiboRalphJobState;
 	createdAt: string;
 	updatedAt: string;
@@ -98,6 +110,7 @@ export type PiboRalphRun = {
 	error?: string;
 	startedAt?: string;
 	completedAt?: string;
+	resources?: PiboRalphResourceMetadata;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -172,6 +185,7 @@ export type PiboRalphJobCreateInput = {
 	prompt: string;
 	maxIterations?: number;
 	stopPolicy?: PiboRalphStopPolicy;
+	resources?: PiboRalphResourceMetadata;
 	modelOverride?: ModelProfile;
 	thinkingLevel?: PiboThinkingLevel;
 	fastMode?: boolean;
