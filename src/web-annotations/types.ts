@@ -193,7 +193,7 @@ export type CreateWebAnnotationInput = {
 
 export type WebAnnotationListFilter = {
 	ownerScope: string;
-	piboSessionId: string;
+	piboSessionId?: string;
 	status?: WebAnnotationStatus;
 	limit?: number;
 };

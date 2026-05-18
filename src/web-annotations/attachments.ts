@@ -8,6 +8,8 @@ export type WebAnnotationMessageAttachment = {
 	id: string;
 	status: WebAnnotation["status"];
 	targetKind: WebAnnotation["targetKind"];
+	piboSessionId: string;
+	piboRoomId?: string;
 	url: string;
 	label?: string;
 	selector?: string;
@@ -53,6 +55,8 @@ export function serializeWebAnnotationAttachment(annotation: WebAnnotation): Web
 		id: annotation.id,
 		status: annotation.status,
 		targetKind: annotation.targetKind,
+		piboSessionId: annotation.piboSessionId,
+		piboRoomId: annotation.piboRoomId,
 		url: truncateInline(annotation.url, 240) ?? annotation.url,
 		note: truncateInline(annotation.note, 400) ?? "",
 		createdAt: annotation.createdAt,
@@ -88,8 +92,8 @@ export function prepareWebAnnotationMessageAttachments(input: {
 		return { ids: [], annotations: [], attachments: [], modelContext: "", messageText: input.messageText };
 	}
 	const annotations = ids.map((id) => {
-		const annotation = input.store.getAnnotation(input.ownerScope, input.piboSessionId, id);
-		if (!annotation) throw new Error(`Web Annotation ${id} is not available for this session`);
+		const annotation = input.store.getAnnotationForOwner(input.ownerScope, id);
+		if (!annotation) throw new Error(`Web Annotation ${id} is not available for this user`);
 		if (annotation.status === "resolved" || annotation.status === "dismissed") {
 			throw new Error(`Web Annotation ${id} cannot be attached because it is ${annotation.status}`);
 		}
@@ -118,6 +122,8 @@ export function renderAttachedWebAnnotations(annotations: readonly WebAnnotation
 		const position = positionSummary(annotation);
 		lines.push(`${index + 1}. ${escapeBlockValue(annotation.id)}`);
 		lines.push(`targetKind: ${escapeBlockValue(annotation.targetKind)}`);
+		lines.push(`sourceSession: ${escapeBlockValue(annotation.piboSessionId)}`);
+		if (annotation.piboRoomId) lines.push(`sourceRoom: ${escapeBlockValue(annotation.piboRoomId)}`);
 		lines.push(`url: ${escapeBlockValue(truncateInline(annotation.url, 240) ?? "")}`);
 		if (target?.label) lines.push(`label: ${escapeBlockValue(truncateInline(target.label, 160) ?? "")}`);
 		if (primaryTarget) lines.push(`primaryTarget: ${escapeBlockValue(truncateInline(primaryTarget, 220) ?? "")}`);

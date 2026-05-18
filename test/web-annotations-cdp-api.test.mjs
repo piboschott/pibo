@@ -124,7 +124,8 @@ test("Web Annotation API creates same-origin bindings and serves standalone over
 		assert.match(scriptResponse.headers.get("content-type"), /javascript/);
 		const script = await scriptResponse.text();
 		assert.match(script, /window\.__piboWebAnnotationConfig/);
-		assert.match(script, /Pibo annotations/);
+		assert.match(script, /Pibo Web Annotations/);
+		assert.match(script, /Drag annotation widget/);
 		assert.match(script, /data-pibo-component/);
 		assert.match(script, /pibo-terminal-row/);
 		assert.match(script, /data-shared-terminal-card/);
@@ -228,11 +229,26 @@ test("Web Annotation API lists gets and patches authorized session annotations",
 		const app = createWebAnnotationsWebApp({ store });
 		const context = createContext();
 
+		store.createAnnotation({
+			id: "ann_other_session",
+			ownerScope: "user:a",
+			piboSessionId: "ps_b",
+			note: "Cross-session note",
+			url: "http://localhost:3000/other",
+			targetKind: "pin",
+			viewport: { width: 100, height: 100 },
+		});
 		const listed = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations?piboSessionId=ps_a&limit=10"), context);
 		const listedJson = await listed.json();
 		assert.equal(listedJson.annotations.length, 1);
 		assert.equal(listedJson.annotations[0].id, created.id);
+		assert.equal(listedJson.annotations[0].piboSessionId, "ps_a");
 		assert.equal(listedJson.annotations[0].label, "Save");
+
+		const listedAll = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations?piboSessionId=ps_a&scope=owner&limit=10"), context);
+		const listedAllJson = await listedAll.json();
+		assert.equal(listedAllJson.scope, "owner");
+		assert.deepEqual(listedAllJson.annotations.map((annotation) => annotation.id).sort(), ["ann_api", "ann_other_session"]);
 
 		const got = await app.handleRequest(new Request("http://127.0.0.1/api/web-annotations/ann_api?piboSessionId=ps_a"), context);
 		assert.equal((await got.json()).annotation.note, "Fix spacing");

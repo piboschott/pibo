@@ -149,9 +149,14 @@ export function createWebAnnotationsWebApp(options: WebAnnotationsWebAppOptions 
 					const piboSessionId = requireQueryParam(url, "piboSessionId", "sessionId");
 					const bindingContext = resolveBindingContext(context, webSession, { piboSessionId });
 					const status = optionalStatus(url.searchParams.get("status"));
-					const annotations = store.listAnnotations({ ...bindingContext, status, limit: parseLimit(url.searchParams.get("limit")) })
-						.map(serializeWebAnnotationAttachment);
-					return responseJson({ ok: true, annotations });
+					const scope = url.searchParams.get("scope") === "owner" || url.searchParams.get("allSessions") === "true" ? "owner" : "session";
+					const annotations = store.listAnnotations({
+						ownerScope: bindingContext.ownerScope,
+						...(scope === "session" ? { piboSessionId: bindingContext.piboSessionId } : {}),
+						status,
+						limit: parseLimit(url.searchParams.get("limit")),
+					}).map(serializeWebAnnotationAttachment);
+					return responseJson({ ok: true, annotations, scope });
 				}
 
 				const annotationResource = matchAnnotationResource(url.pathname);

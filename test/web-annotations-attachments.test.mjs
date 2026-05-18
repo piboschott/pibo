@@ -97,12 +97,11 @@ test("web annotation composer attachments reject stale and terminal annotation i
 
 		assert.throws(
 			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_missing"] }),
-			/not available for this session/,
+			/not available for this user/,
 		);
-		assert.throws(
-			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_other_session"] }),
-			/not available for this session/,
-		);
+		const crossSession = prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_other_session"] });
+		assert.equal(crossSession.attachments[0].piboSessionId, "ps_b");
+		assert.match(crossSession.modelContext, /sourceSession: ps_b/);
 		assert.throws(
 			() => prepareWebAnnotationMessageAttachments({ store, ownerScope: "user:a", piboSessionId: "ps_a", messageText: "x", attachmentIds: ["ann_resolved"] }),
 			/cannot be attached because it is resolved/,

@@ -57,6 +57,8 @@ export type WebAnnotationMessageAttachment = {
 	id: string;
 	status: WebAnnotationStatus;
 	targetKind: string;
+	piboSessionId: string;
+	piboRoomId?: string;
 	url: string;
 	label?: string;
 	selector?: string;
@@ -72,6 +74,7 @@ export type WebAnnotationMessageAttachment = {
 
 export type WebAnnotationListResponse = {
 	ok: true;
+	scope?: "session" | "owner";
 	annotations: WebAnnotationMessageAttachment[];
 };
 
@@ -1418,10 +1421,11 @@ export async function postMessage(piboSessionId: string, text: string, clientTxn
 	});
 }
 
-export async function listWebAnnotations(piboSessionId: string, input: { status?: WebAnnotationStatus; limit?: number } = {}): Promise<WebAnnotationListResponse> {
+export async function listWebAnnotations(piboSessionId: string, input: { status?: WebAnnotationStatus; limit?: number; scope?: "session" | "owner" } = {}): Promise<WebAnnotationListResponse> {
 	const params = new URLSearchParams({ piboSessionId });
 	if (input.status) params.set("status", input.status);
 	if (input.limit) params.set("limit", String(input.limit));
+	if (input.scope) params.set("scope", input.scope);
 	return requestJson<WebAnnotationListResponse>(`/api/web-annotations?${params.toString()}`);
 }
 
