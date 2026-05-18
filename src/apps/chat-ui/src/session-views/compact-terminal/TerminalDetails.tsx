@@ -9,7 +9,7 @@ type TerminalDetailsProps = {
 
 export function TerminalDetails({ row, onOpenSession }: TerminalDetailsProps) {
 	return (
-		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]">
+		<div className="mt-2 border border-[#2a2a2a] bg-[#111111] px-3 py-2 text-[12px] text-[#d4d4d4]" data-shared-terminal-details={row.kind}>
 			{row.detailItems?.length ? (
 				<div className="space-y-3">
 					{row.detailItems.map((item) => (
@@ -111,9 +111,9 @@ type CompactedOutputDetails = {
 
 function DetailJson({ label, value, meta }: { label: string; value: unknown; meta?: string }) {
 	return (
-		<div className="space-y-1">
+		<div className="space-y-1" data-shared-terminal-detail-json={label}>
 			<div className="space-y-0.5">
-				<div className="text-[11px] font-semibold text-[#737373]">{label}</div>
+				<div className="text-[11px] font-semibold text-[#737373]" data-shared-terminal-detail-label={label}>{label}</div>
 				{meta ? <div className="min-w-0 break-words text-[11px] text-[#737373]">Status: {meta}</div> : null}
 			</div>
 			<div className="compact-terminal-json border border-[#2a2a2a] bg-[#0b0b0b] p-2">
@@ -133,8 +133,8 @@ function DetailText({
 	tone?: "default" | "red";
 }) {
 	return (
-		<div className="space-y-1">
-			<div className="text-[11px] font-semibold text-[#737373]">{label}</div>
+		<div className="space-y-1" data-shared-terminal-detail-text={label}>
+			<div className="text-[11px] font-semibold text-[#737373]" data-shared-terminal-detail-label={label}>{label}</div>
 			<pre
 				className={`m-0 whitespace-pre-wrap break-words border border-[#2a2a2a] bg-[#0b0b0b] p-2 font-mono text-[12px] leading-[1.45] ${
 					tone === "red" ? "text-[#ef4444]" : "text-[#d4d4d4]"
