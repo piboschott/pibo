@@ -1701,7 +1701,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 									</div>
 								</>
 							) : null}
-							<div className="min-h-0 flex-1 basis-0 overflow-hidden flex flex-col">
+							<div className="min-h-0 flex-1 basis-0 overflow-hidden flex flex-col border-t border-slate-700/80 pt-3">
 								<div className="shrink-0 flex items-center justify-between gap-2 px-1 pb-1">
 									<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Sessions</div>
 									<div className="flex items-center gap-1">
