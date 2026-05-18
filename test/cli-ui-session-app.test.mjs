@@ -308,6 +308,19 @@ test("generic Ink overlay stack supports nested picker back and active overlay",
 	assert.equal(activeInkSessionOverlay(escaped.overlayStack).picker.title, "Owner");
 });
 
+test("command result rows prefer named room labels for session links", () => {
+	const rows = commandResultDescriptorRows(
+		{ name: "session-current", args: "", raw: "/session-current" },
+		{ kind: "session-link", title: "session-current", sessionId: "ps_named", roomId: "room_named", roomLabel: "Named Web Room", label: "Named Session" },
+		undefined,
+		undefined,
+		0,
+	);
+	assert.equal(rows.length, 2);
+	assert.match(String(rows[1].output), /Named Web Room/);
+	assert.doesNotMatch(String(rows[1].output), /in room room_named/);
+});
+
 test("renderCliStatusCardText renders shared status bars and redacts secrets", () => {
 	const text = renderCliStatusCardText({
 		source: "fake",

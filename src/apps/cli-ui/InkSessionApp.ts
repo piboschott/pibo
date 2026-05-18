@@ -129,11 +129,15 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		closeOpenSession();
 		const opened = await source.openSession(sessionId);
 		openedRef.current = opened;
+		const activeRoom = opened.session.roomId
+			? (await source.listRooms({ ownerScope: opened.session.ownerScope })).find((room) => room.id === opened.session.roomId)
+			: undefined;
 		const rows = [...(localRows ?? []), ...buildCompactTerminalRows(opened.traceView, { showThinking: false })];
 		setState((current) => normalizeInkRowSelection({
 			...current,
 			loading: false,
 			status: opened.status,
+			activeRoom,
 			session: opened.session,
 			rows,
 			mode: "transcript",
@@ -1291,7 +1295,7 @@ export function renderCommandResultDescriptorText(descriptor: CommandResultDescr
 	if (descriptor.kind === "text") return [descriptor.title, descriptor.text].filter(Boolean).join(": ");
 	if (descriptor.kind === "unsupported") return `${descriptor.command}: ${descriptor.reason}`;
 	if (descriptor.kind === "error") return `${descriptor.title ?? "Error"}: ${descriptor.message}`;
-	if (descriptor.kind === "session-link") return `${descriptor.title}: ${descriptor.label ?? "session"} ${descriptor.sessionId}${descriptor.roomId ? ` in ${descriptor.roomId}` : ""}`;
+	if (descriptor.kind === "session-link") return `${descriptor.title}: ${descriptor.label ?? "session"} ${descriptor.sessionId}${descriptor.roomLabel ? ` in ${descriptor.roomLabel}` : descriptor.roomId ? ` in room ${descriptor.roomId}` : ""}`;
 	if (descriptor.kind === "status") return renderCliStatusCardText(descriptor.status as CliRuntimeStatus, session, descriptor.title);
 	if (descriptor.kind === "menu") return [descriptor.title, ...descriptor.items.map((item) => `  ${item.disabled ? "-" : "•"} ${item.label}${item.description ? ` — ${item.description}` : ""}`)].join("\n");
 	return `${descriptor.title ?? "Result"}: ${redactCliSessionStatusText(JSON.stringify(descriptor.value, null, 2))}`;

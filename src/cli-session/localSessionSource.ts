@@ -396,14 +396,22 @@ export class LocalCliSessionSource implements CliSessionSource {
 		}
 		if (input.command === "session-current") {
 			if (!input.session) return { supported: false, unsupportedReason: "No session is open." };
-			return sessionMetadataResult(input.session, this.ensureDefaultRoomForOwner(normalizeOwnerScope(input.session.ownerScope)).id);
+			const ownerScope = normalizeOwnerScope(input.session.ownerScope);
+			const defaultRoomId = this.ensureDefaultRoomForOwner(ownerScope).id;
+			const roomId = roomIdFromSession(input.session, defaultRoomId);
+			const room = roomId ? await this.findRoomSummary(ownerScope, roomId) : undefined;
+			return sessionMetadataResult(input.session, defaultRoomId, room?.title);
 		}
 		if (input.command === "sessions") {
+			const ownerScope = input.session?.ownerScope ?? this.ownerScope;
 			const roomId = input.session ? roomIdFromSession(input.session, this.ensureDefaultRoomForOwner(normalizeOwnerScope(input.session.ownerScope)).id) : undefined;
-			return (await this.listSessions({ ownerScope: input.session?.ownerScope ?? this.ownerScope, roomId })).map((session) => ({
+			const rooms = new Map((await this.listRooms({ ownerScope })).map((room) => [room.id, room]));
+			return (await this.listSessions({ ownerScope, roomId })).map((session) => ({
 				id: session.id,
 				title: session.title,
+				sessionTitle: session.title,
 				roomId: session.roomId,
+				roomTitle: session.roomId ? rooms.get(session.roomId)?.title : undefined,
 				profile: session.profile,
 				status: session.status,
 				updatedAt: session.updatedAt,
@@ -972,7 +980,7 @@ function mergeRoomSummaries(rooms: readonly CliRoomSummary[]): CliRoomSummary[] 
 	const byId = new Map<string, CliRoomSummary>();
 	for (const room of rooms) {
 		const existing = byId.get(room.id);
-		byId.set(room.id, existing ? { ...room, description: existing.description ?? room.description, isDefault: existing.isDefault === true || room.isDefault === true } : room);
+		byId.set(room.id, existing ? { ...room, ...existing, description: existing.description ?? room.description, isDefault: existing.isDefault === true || room.isDefault === true } : room);
 	}
 	return [...byId.values()];
 }
@@ -1056,14 +1064,16 @@ function terminalUploadResult(args: string | undefined): Record<string, unknown>
 	return { message: `Terminal upload for ${target}: copy or move the file to ~/.pibo/uploads, or use Web /upload for browser file selection. The CLI did not copy file contents or echo secrets.` };
 }
 
-function sessionMetadataResult(session: PiboSession, defaultRoomId?: string): Record<string, unknown> {
+function sessionMetadataResult(session: PiboSession, defaultRoomId?: string, roomTitle?: string): Record<string, unknown> {
 	return {
 		piboSessionId: session.id,
 		piSessionId: session.piSessionId,
 		title: session.title,
+		sessionTitle: session.title,
 		profile: session.profile,
 		ownerScope: session.ownerScope,
 		roomId: roomIdFromSession(session, defaultRoomId),
+		roomTitle,
 		workspace: session.workspace,
 		status: statusFromSession(session),
 		createdAt: session.createdAt,

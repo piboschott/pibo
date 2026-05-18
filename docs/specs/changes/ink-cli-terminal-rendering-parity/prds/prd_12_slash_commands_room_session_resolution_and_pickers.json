@@ -1,5 +1,5 @@
 {
-  "project": "Ink CLI Terminal Rendering Parity — Web-Derived Completion",
+  "project": "Ink CLI Terminal Rendering Parity \u2014 Web-Derived Completion",
   "branchName": "ralph/ink-cli-slash-room-session-resolution",
   "description": "Bring all slash-command flows, room/session label resolution, and picker overlays into Web-derived terminal behavior, including showing Web room names rather than only room IDs.",
   "userStories": [
@@ -19,8 +19,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. Added durable slash-command behavior matrix at docs/specs/changes/ink-cli-terminal-rendering-parity/slash-command-behavior-matrix.md and renderer-neutral buildSlashCommandBehaviorMatrix() covering static CLI-only, Web-parity, aliases, unsupported/deferred, and dynamic gateway commands. Evidence tier: docs + shared model unit tests, deterministic/fake command capabilities. Validation: npm run build; node --test test/session-ui-view-models.test.mjs test/cli-session-source.test.mjs test/cli-ui-session-app.test.mjs; npm run typecheck; npm run chat-ui:build; npm test. Web preservation: additive src/session-ui command matrix only; no Web Compact Terminal visual/behavioral code changed."
     },
     {
       "id": "US-002",
@@ -38,8 +38,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. LocalCliSessionSource now preserves canonical room-service titles over stale session metadata and resolves room titles for opened-session header context, /sessions, and /session-current. Tests cover renamed Web room replacing stale metadata and default/fallback picker fixtures. Evidence tier: local in-memory data store/ChatRoomService unit tests plus PTY local mocked path. PTY artifacts: /tmp/pibo-pty-slash-room-prd12-local (visual.html generated) shows PTY Named Room as picker/header/command context. Validation: focused tests, npm run typecheck, npm test. Web preservation: shared command-result metadata is additive; Web render logic unchanged."
     },
     {
       "id": "US-003",
@@ -58,15 +58,15 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. Command result normalization accepts roomTitle/roomLabel and sessionTitle fields; session-link text prefers named room labels and keeps raw room ids only as fallback metadata. Fake and local sources include sessionTitle/roomTitle for /session-current, /sessions, /clone, and fork results where available. Evidence tier: shared/unit and CLI renderer tests with deterministic fake/local data. Validation: node --test focused suite; npm run typecheck; npm test. No secrets observed in artifacts."
     },
     {
       "id": "US-004",
       "title": "Align picker overlays with Web navigation semantics",
       "description": "As a keyboard user, I want owner/room/session/model/login/thinking/fork picker flows to be compact and predictable.",
       "acceptanceCriteria": [
-        "Owner → room → session flow keeps active/default markers and supports back/cancel behavior",
+        "Owner \u2192 room \u2192 session flow keeps active/default markers and supports back/cancel behavior",
         "Room/session pickers show named rooms and sessions, not only IDs",
         "Model/login/thinking/fork candidate pickers remain overlays and do not append noisy transcript rows until an action is confirmed",
         "Controller tests cover Enter, Esc, arrow navigation, nested picker back, empty states, and errors",
@@ -78,8 +78,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. Existing compact overlay flow was validated and reinforced with matrix/docs: owner -> room -> session, nested command picker back/cancel, arrows/Enter/Esc, empty states, model/login/thinking/fork overlays that do not append noisy transcript rows until confirmation. Evidence tier: focused controller/render tests plus PTY demo/local flows. Validation: test/cli-ui-session-app.test.mjs and PTY artifacts /tmp/pibo-pty-slash-room-prd12 and /tmp/pibo-pty-slash-room-prd12-local. Web UI unchanged."
     },
     {
       "id": "US-005",
@@ -98,8 +98,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. PTY/default-path evidence captured slash and room/session flows. Demo real TUI path: /tmp/pibo-pty-slash-room-prd12 exercised /room, /session, /sessions, /session-current, /status, and /thinking high using npm run dev -- tui:sessions --demo; observed Fake Room and Existing fake session, rejected secret values. Local mocked non-demo path: /tmp/pibo-pty-slash-room-prd12-local exercised npm run dev -- tui:sessions --owner-scope user:pty with debug mocked local router and named room provider; observed PTY Named Room in picker/session command context, /status, /sessions, and assistant response. visual.html generated for both artifacts. Validation also included npm run build, focused tests, npm run typecheck, npm run chat-ui:build, and npm test."
     }
   ]
 }

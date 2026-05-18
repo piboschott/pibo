@@ -9,7 +9,7 @@
 - `canonical-terminal`: `buildCanonicalTerminalRows()` in `test/fixtures/terminal-parity-fixtures.mjs`.
 - `web-derived-long-output`: `buildWebDerivedLongOutputRows()`; includes 12-line outputs for generic tool calls, tool-result-like rows, async agents, yielded runs, shell-command tools, and execution commands.
 - `web-derived-json-markdown`: `nestedJsonSyntaxFixture()` and `markdownSyntaxFixture()`; includes nested collections, a >140-character string, JSON-looking text, headings, lists, quotes, fenced code, tables, and bash syntax.
-- `web-derived-room-session-slash`: `roomSessionNamingFixture()` and `slashCommandBehaviorFixture()`; includes named/default/archived/missing rooms, session labels, CLI-only commands, Web-parity commands, deferred/browser-only commands, and dynamic gateway commands.
+- `web-derived-room-session-slash`: `roomSessionNamingFixture()` and `slashCommandBehaviorFixture()`; includes named/default/archived/missing rooms, session labels, CLI-only commands, Web-parity commands, deferred/browser-only commands, and dynamic gateway commands. The durable command behavior table lives in `slash-command-behavior-matrix.md` and is backed by `buildSlashCommandBehaviorMatrix()`.
 
 ## Matrix
 

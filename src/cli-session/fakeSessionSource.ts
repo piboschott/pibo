@@ -284,18 +284,18 @@ export class FakeCliSessionSource implements CliSessionSource {
 		return count;
 	}
 
-	private defaultActionResult(command: string, actionName: string, sessionId: string | undefined, args: string | undefined): unknown {
+	private async defaultActionResult(command: string, actionName: string, sessionId: string | undefined, args: string | undefined): Promise<unknown> {
 		const session = sessionId ? this.resolveSession(sessionId) : undefined;
 		if (session) this.assertSessionOwner(session);
 		if (command === "status") return this.buildStatus(sessionId);
-		if (command === "session-current") return session ? { piboSessionId: session.id, title: session.title, profile: session.profile, roomId: session.roomId, ownerScope: session.ownerScope } : { supported: false, unsupportedReason: "No session is open." };
-		if (command === "sessions") return this.listSessions({ roomId: session?.roomId, ownerScope: session?.ownerScope ?? this.activeOwnerScope });
+		if (command === "session-current") return session ? { piboSessionId: session.id, title: session.title, sessionTitle: session.title, profile: session.profile, roomId: session.roomId, roomTitle: this.roomTitle(session.roomId), ownerScope: session.ownerScope } : { supported: false, unsupportedReason: "No session is open." };
+		if (command === "sessions") return (await this.listSessions({ roomId: session?.roomId, ownerScope: session?.ownerScope ?? this.activeOwnerScope })).map((candidate) => ({ ...candidate, sessionTitle: candidate.title, roomTitle: this.roomTitle(candidate.roomId) }));
 		if (command === "clone") {
 			if (!session) return { supported: false, unsupportedReason: "No session is open." };
 			const clone: CliSessionSummary = { ...session, id: `ps_fake_clone_${this.nextSessionNumber++}`, title: `${session.title} Clone`, status: "idle", updatedAt: this.now() };
 			this.sessions.set(clone.id, clone);
 			this.traceViews.set(clone.id, cloneTraceView(this.traceViews.get(session.id) ?? emptyTraceView(session)));
-			return { piboSessionId: clone.id, sessionId: clone.id, roomId: clone.roomId, title: clone.title, clonedFrom: session.id };
+			return { piboSessionId: clone.id, sessionId: clone.id, roomId: clone.roomId, roomTitle: this.roomTitle(clone.roomId), title: clone.title, sessionTitle: clone.title, clonedFrom: session.id };
 		}
 		if (command === "clear") return { cleared: 0 };
 		if (command === "fast") return { mode: args === "off" ? "normal" : "fast", supported: true, changed: true };
@@ -364,7 +364,12 @@ export class FakeCliSessionSource implements CliSessionSource {
 		const fork: CliSessionSummary = { ...session, id: `ps_fake_fork_${this.nextSessionNumber++}`, title: `${session.title} Fork`, status: "idle", updatedAt: this.now() };
 		this.sessions.set(fork.id, fork);
 		this.traceViews.set(fork.id, cloneTraceView(this.traceViews.get(session.id) ?? emptyTraceView(session)));
-		return { piboSessionId: fork.id, sessionId: fork.id, roomId: fork.roomId, title: fork.title, forkedFrom: session.id, entryId };
+		return { piboSessionId: fork.id, sessionId: fork.id, roomId: fork.roomId, roomTitle: this.roomTitle(fork.roomId), title: fork.title, sessionTitle: fork.title, forkedFrom: session.id, entryId };
+	}
+
+	private roomTitle(roomId: string | undefined): string | undefined {
+		if (!roomId) return undefined;
+		return this.rooms.find((room) => room.id === roomId)?.title;
 	}
 
 	close(): void {
