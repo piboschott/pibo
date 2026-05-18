@@ -303,14 +303,18 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   const style = document.createElement("style");
   style.textContent = [
     ":host{all:initial;font:13px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}",
-    ".pibo-wa-panel{position:relative;width:38px;min-height:38px;color:#fff;font:13px system-ui,sans-serif}",
-    ".pibo-wa-main,.pibo-wa-button{box-sizing:border-box;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #4b5563;background:#111827;color:#fff;border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.32);font:18px system-ui,sans-serif;cursor:pointer;user-select:none}",
-    ".pibo-wa-main{border-color:#38bdf8;background:#0f172a;color:#38bdf8}",
-    ".pibo-wa-actions{position:absolute;right:0;bottom:44px;display:flex;flex-direction:column;gap:6px;opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .12s ease,transform .12s ease}",
+    ".pibo-wa-panel{position:relative;width:42px;min-height:42px;color:#fff;font:13px system-ui,sans-serif}",
+    ".pibo-wa-main,.pibo-wa-button{box-sizing:border-box;width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(148,163,184,.5);background:#111827;color:#dbeafe;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.32);cursor:pointer;user-select:none;line-height:0;padding:0;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease}",
+    ".pibo-wa-main{border-color:#38bdf8;background:linear-gradient(180deg,#102334,#0f172a);color:#7dd3fc}",
+    ".pibo-wa-main:hover,.pibo-wa-button:hover{border-color:#7dd3fc;color:#e0f2fe;background:#172033;transform:translateY(-1px)}",
+    ".pibo-wa-icon{width:19px;height:19px;display:block;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:0 0 auto}",
+    ".pibo-wa-actions{position:absolute;right:-2px;bottom:34px;display:flex;flex-direction:column;gap:7px;padding:0 2px 12px 2px;opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .12s ease,transform .12s ease}",
+    ".pibo-wa-actions::before{content:'';position:absolute;inset:0 -8px -12px -8px;z-index:-1}",
     ".pibo-wa-panel:hover .pibo-wa-actions,.pibo-wa-panel:focus-within .pibo-wa-actions{opacity:1;pointer-events:auto;transform:translateY(0)}",
-    ".pibo-wa-button{font-size:16px;background:#1f2937}",
-    ".pibo-wa-button[aria-pressed='true']{background:#2563eb;border-color:#60a5fa;color:#fff}",
-    ".pibo-wa-button-danger{background:#7f1d1d;border-color:#ef4444}",
+    ".pibo-wa-button{background:#1f2937}",
+    ".pibo-wa-button[aria-pressed='true']{background:#2563eb;border-color:#93c5fd;color:#fff}",
+    ".pibo-wa-button-danger{background:#3f1418;border-color:#7f1d1d;color:#fecaca}",
+    ".pibo-wa-button-danger:hover{border-color:#ef4444;color:#fff;background:#7f1d1d}",
     ".pibo-wa-button-move{cursor:grab}",
     ".pibo-wa-button-move:active{cursor:grabbing}",
     ".pibo-wa-status{position:absolute;right:44px;bottom:4px;max-width:260px;background:#111827;color:#d1d5db;border:1px solid #374151;border-radius:8px;padding:6px 8px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.28);opacity:0;pointer-events:none;white-space:normal}",
@@ -324,16 +328,16 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   panel.className = "pibo-wa-panel";
   const actions = document.createElement("div");
   actions.className = "pibo-wa-actions";
-  const move = button("↕", "Drag annotation widget");
+  const move = button(iconSvg("move"), "Drag annotation widget");
   move.className += " pibo-wa-button-move";
-  const toggle = button("✎", "Toggle element annotation mode");
-  const pin = button("⌖", "Mark a point instead of an element");
-  const stop = button("×", "Remove the Pibo annotation overlay");
+  const toggle = button(iconSvg("edit"), "Toggle element annotation mode");
+  const pin = button(iconSvg("arrow-down-to-dot"), "Mark a point instead of an element");
+  const stop = button(iconSvg("x"), "Remove the Pibo annotation overlay");
   stop.className += " pibo-wa-button-danger";
   const main = document.createElement("button");
   main.type = "button";
   main.className = "pibo-wa-main";
-  main.textContent = "◎";
+  main.innerHTML = iconSvg("book-a");
   main.title = "Pibo Web Annotations";
   main.setAttribute("aria-label", "Pibo Web Annotations");
   const status = document.createElement("div");
@@ -369,14 +373,23 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   });
   stop.addEventListener("click", () => api.remove());
 
-  function button(label, aria) {
+  function button(content, aria) {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "pibo-wa-button";
-    el.textContent = label;
+    el.innerHTML = content;
     el.title = aria;
     el.setAttribute("aria-label", aria);
     return el;
+  }
+
+  function iconSvg(name) {
+    const attrs = "class=\"pibo-wa-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"";
+    if (name === "book-a") return "<svg " + attrs + "><path d=\"M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20\"/><path d=\"m8 13 4-7 4 7\"/><path d=\"M9.1 11h5.7\"/></svg>";
+    if (name === "move") return "<svg " + attrs + "><path d=\"M12 2v20\"/><path d=\"m15 19-3 3-3-3\"/><path d=\"m19 9 3 3-3 3\"/><path d=\"M2 12h20\"/><path d=\"m5 9-3 3 3 3\"/><path d=\"m9 5 3-3 3 3\"/></svg>";
+    if (name === "arrow-down-to-dot") return "<svg " + attrs + "><path d=\"M12 2v14\"/><path d=\"m19 9-7 7-7-7\"/><circle cx=\"12\" cy=\"21\" r=\"1\"/></svg>";
+    if (name === "x") return "<svg " + attrs + "><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg>";
+    return "<svg " + attrs + "><path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z\"/></svg>";
   }
 
   function startDrag(event) {
