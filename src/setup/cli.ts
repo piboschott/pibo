@@ -491,7 +491,7 @@ function swapCheck(minSwapGb: number | undefined): DoctorCheck[] {
 	if (!minSwapGb || minSwapGb <= 0) return [];
 	const total = swapTotalGb();
 	if (total === undefined) return [{ name: "swap", status: "warn", detail: "Could not inspect swap from /proc/meminfo" }];
-	const ok = total >= minSwapGb;
+	const ok = total + 0.05 >= minSwapGb;
 	return [{
 		name: "swap",
 		status: ok ? "ok" : "fail",
