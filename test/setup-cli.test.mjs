@@ -21,6 +21,25 @@ test("doctor reports host checks", () => {
 	assert.ok(status.checks.some((check) => check.name === "node"));
 });
 
+test("doctor gives a clear auth blocker before gateway start", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pibo-home-"));
+	try {
+		const status = JSON.parse(pibo(["setup", "doctor", "--pibo-home", dir, "--json"]));
+		const authReady = status.checks.find((check) => check.name === "auth.ready");
+		assert.equal(authReady.status, "fail");
+		assert.match(authReady.detail, /Pibo web will not start until Better Auth is configured/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("doctor can enforce a minimum swap recommendation", () => {
+	const status = JSON.parse(pibo(["setup", "doctor", "--min-swap-gb", "999999", "--json"]));
+	const swap = status.checks.find((check) => check.name === "swap");
+	assert.ok(swap);
+	assert.equal(swap.status, "fail");
+});
+
 test("user-host setup plan is minimal and has one service", () => {
 	const plan = JSON.parse(pibo(["setup", "user-host", "--domain", "pibo.example.com", "--json"]));
 	assert.equal(plan.mode, "user-host");

@@ -49,13 +49,13 @@ pibo config set auth.allowedEmails you@example.com
 
 ## Start the gateway
 
-`pibo-web` will not start until Better Auth config is complete. Check it first:
+`pibo-web` will not start until Better Auth config is complete. This cannot be automated because you must create/select your Google OAuth client and allowed user list. Check it first:
 
 ```bash
 pibo setup doctor --pibo-home /root/.pibo
 ```
 
-After installing the rendered systemd unit:
+If auth is incomplete, the doctor prints a hard blocker and the exact missing keys. After installing the rendered systemd unit:
 
 ```bash
 systemctl daemon-reload

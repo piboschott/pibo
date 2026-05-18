@@ -84,7 +84,7 @@ pibo setup developer-host \
   --write-to /tmp/pibo-setup
 ```
 
-See `docs/ops/install-user-host.md`, `docs/ops/install-developer-host.md`, and `docs/ops/upgrade-user-to-developer-host.md`. Developer-host services are source-pinned so production and dev do not fight over one global `pibo` symlink.
+See `docs/ops/install-user-host.md`, `docs/ops/install-developer-host.md`, and `docs/ops/upgrade-user-to-developer-host.md`. Developer-host services are source-pinned so production and dev do not fight over one global `pibo` symlink. Docker and swap are developer-host prerequisites only; verify them with `pibo setup doctor --require-docker --min-swap-gb 8`.
 
 If the agent should be able to perform server administration, give that Linux user the required sudo or Docker permissions explicitly. Pibo does not need a special onboarding user to work correctly; normal Unix ownership is enough.
 
@@ -106,7 +106,7 @@ PIBO_HOME=/home/pibo/.pibo
 
 ## Web gateway auth
 
-`pibo gateway:web` starts the authenticated web runtime. It requires Better Auth configuration before production use:
+`pibo gateway:web` starts the authenticated web runtime. It requires Better Auth configuration before production use. This step is intentionally not automated because you must create/select the Google OAuth client and allowed user list:
 
 ```bash
 pibo config set auth.baseURL https://your-host.example

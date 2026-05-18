@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { resolve4 } from "node:dns/promises";
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { Command } from "commander";
 import { getPiboConfigValue, loadPiboConfig } from "../config/config.js";
@@ -35,6 +35,12 @@ function parsePort(value: string): number {
 	const port = Number(value);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be an integer between 1 and 65535");
 	return port;
+}
+
+function parseNonNegativeNumber(value: string): number {
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed) || parsed < 0) throw new Error("Value must be a non-negative number");
+	return parsed;
 }
 
 function shellQuote(value: string): string {
@@ -435,26 +441,62 @@ function addCommandCheck(checks: DoctorCheck[], command: string, required: boole
 
 function authConfigChecks(piboHome: string): DoctorCheck[] {
 	const configPath = join(piboHome, "config.json");
-	if (!existsSync(configPath)) return [{ name: "auth.config", status: "fail", detail: `${configPath} does not exist yet; configure auth before starting pibo-web` }];
+	const notReady = "Pibo web will not start until Better Auth is configured. Set auth.baseURL, auth.secret, auth.googleClientId, auth.googleClientSecret, and auth.allowedEmails.";
+	if (!existsSync(configPath)) return [
+		{ name: "auth.ready", status: "fail", detail: notReady },
+		{ name: "auth.config", status: "fail", detail: `${configPath} does not exist yet` },
+	];
 	try {
 		const config = loadPiboConfig(configPath);
 		const checks: DoctorCheck[] = [];
-		const requiredStrings = ["auth.baseURL", "auth.secret", "auth.googleClientId", "auth.googleClientSecret"];
-		for (const key of requiredStrings) {
-			const value = getPiboConfigValue(config, key);
-			const ok = typeof value === "string" && value.length > 0 && (key !== "auth.secret" || value.length >= 32);
-			checks.push({ name: key, status: ok ? "ok" : "fail", detail: ok ? `${key} is configured` : `${key} is missing or invalid` });
+		const missing: string[] = [];
+		const requiredStrings = [
+			{ key: "auth.baseURL", detail: "Set with `pibo config set auth.baseURL https://your-domain.example`." },
+			{ key: "auth.secret", detail: "Set a random value with at least 32 characters." },
+			{ key: "auth.googleClientId", detail: "Create a Google OAuth web client and set its client id." },
+			{ key: "auth.googleClientSecret", detail: "Set the Google OAuth client secret." },
+		];
+		for (const item of requiredStrings) {
+			const value = getPiboConfigValue(config, item.key);
+			const ok = typeof value === "string" && value.length > 0 && (item.key !== "auth.secret" || value.length >= 32);
+			if (!ok) missing.push(item.key);
+			checks.push({ name: item.key, status: ok ? "ok" : "fail", detail: ok ? `${item.key} is configured` : `${item.key} is missing or invalid. ${item.detail}` });
 		}
 		const allowedEmails = getPiboConfigValue(config, "auth.allowedEmails");
+		const allowedEmailsOk = Array.isArray(allowedEmails) && allowedEmails.length > 0;
+		if (!allowedEmailsOk) missing.push("auth.allowedEmails");
 		checks.push({
 			name: "auth.allowedEmails",
-			status: Array.isArray(allowedEmails) && allowedEmails.length > 0 ? "ok" : "fail",
-			detail: Array.isArray(allowedEmails) && allowedEmails.length > 0 ? "auth.allowedEmails is configured" : "auth.allowedEmails is missing or empty",
+			status: allowedEmailsOk ? "ok" : "fail",
+			detail: allowedEmailsOk ? "auth.allowedEmails is configured" : "auth.allowedEmails is missing or empty. Set with `pibo config set auth.allowedEmails you@example.com`.",
 		});
+		checks.unshift({ name: "auth.ready", status: missing.length === 0 ? "ok" : "fail", detail: missing.length === 0 ? "Better Auth is configured" : `${notReady} Missing: ${missing.join(", ")}` });
 		return checks;
 	} catch (error) {
 		return [{ name: "auth.config", status: "fail", detail: error instanceof Error ? error.message : String(error) }];
 	}
+}
+
+function swapTotalGb(): number | undefined {
+	try {
+		const match = readFileSync("/proc/meminfo", "utf8").match(/^SwapTotal:\s+(\d+)\s+kB/m);
+		if (!match) return undefined;
+		return Number(match[1]) / 1024 / 1024;
+	} catch {
+		return undefined;
+	}
+}
+
+function swapCheck(minSwapGb: number | undefined): DoctorCheck[] {
+	if (!minSwapGb || minSwapGb <= 0) return [];
+	const total = swapTotalGb();
+	if (total === undefined) return [{ name: "swap", status: "warn", detail: "Could not inspect swap from /proc/meminfo" }];
+	const ok = total >= minSwapGb;
+	return [{
+		name: "swap",
+		status: ok ? "ok" : "fail",
+		detail: `Swap ${total.toFixed(1)} GiB; expected at least ${minSwapGb} GiB for this host profile`,
+	}];
 }
 
 async function dnsChecks(domain: string | undefined, expectedIp: string | undefined, label: string): Promise<DoctorCheck[]> {
@@ -472,7 +514,7 @@ async function dnsChecks(domain: string | undefined, expectedIp: string | undefi
 	}
 }
 
-async function createDoctorStatus(options: { piboHome?: string; domain?: string; devDomain?: string; expectedIp?: string; requireDocker?: boolean }): Promise<DoctorStatus> {
+async function createDoctorStatus(options: { piboHome?: string; domain?: string; devDomain?: string; expectedIp?: string; requireDocker?: boolean; minSwapGb?: number }): Promise<DoctorStatus> {
 	const piboHome = options.piboHome ?? getPiboHome();
 	const checks: DoctorCheck[] = [];
 	const nodeMajorOk = Number(process.versions.node.split(".")[0]) >= 24;
@@ -486,6 +528,7 @@ async function createDoctorStatus(options: { piboHome?: string; domain?: string;
 		const dockerInfo = commandOutput("docker", ["info", "--format", "{{.ServerVersion}}"]);
 		checks.push({ name: "docker.daemon", status: dockerInfo ? "ok" : options.requireDocker ? "fail" : "warn", detail: dockerInfo ? `Docker daemon ${dockerInfo}` : "Docker daemon is not reachable" });
 	}
+	checks.push(...swapCheck(options.minSwapGb));
 	checks.push(...authConfigChecks(piboHome));
 	checks.push(...await dnsChecks(options.domain, options.expectedIp, "production"));
 	checks.push(...await dnsChecks(options.devDomain, options.expectedIp, "development"));
@@ -500,6 +543,8 @@ async function createDoctorStatus(options: { piboHome?: string; domain?: string;
 			"Use user-host setup for normal npm installs.",
 			"Use developer-host setup only when you need prod/dev gateways, Docker compute workers, GitHub App PR flow, and branch worktrees.",
 			"Configure auth before starting pibo-web; Better Auth requires baseURL, secret, Google OAuth values, and allowed emails.",
+			"Docker is only required for developer-host compute workers; user-host installs can ignore Docker warnings.",
+			"Swap is not created automatically; for developer hosts, provision swap at the OS level and verify it with `--min-swap-gb`."
 		],
 	};
 }
@@ -578,8 +623,9 @@ export async function runSetupCli(argv = process.argv): Promise<void> {
 		.option("--dev-domain <domain>", "Development domain to resolve")
 		.option("--expected-ip <ip>", "Expected A record target for domain checks")
 		.option("--require-docker", "Treat missing Docker as a failure")
+		.option("--min-swap-gb <gb>", "Require at least this much configured swap", parseNonNegativeNumber)
 		.option("--json", "Print JSON")
-		.action(async (options: { piboHome?: string; domain?: string; devDomain?: string; expectedIp?: string; requireDocker?: boolean; json?: boolean }) => {
+		.action(async (options: { piboHome?: string; domain?: string; devDomain?: string; expectedIp?: string; requireDocker?: boolean; minSwapGb?: number; json?: boolean }) => {
 			const status = await createDoctorStatus(options);
 			if (options.json) printJson(status);
 			else printDoctorStatus(status);

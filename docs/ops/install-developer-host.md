@@ -103,8 +103,10 @@ systemctl is-active pibo-web
 systemctl is-active pibo-web-dev
 pibo gateway web status
 PIBO_GATEWAY_DEV_PORT=4808 pibo gateway dev status
-pibo setup doctor --domain pibo.example.com --dev-domain dev.pibo.example.com --expected-ip <server-ip> --require-docker
+pibo setup doctor --domain pibo.example.com --dev-domain dev.pibo.example.com --expected-ip <server-ip> --require-docker --min-swap-gb 8
 pibo compute spawn --help
 ```
 
 DNS must point to the host before Caddy can issue public certificates.
+
+Docker and swap are developer-host prerequisites only. User-host installs can ignore Docker and swap. The setup command does not create swap automatically; provision it at the OS level, then verify it with `pibo setup doctor --min-swap-gb 8`.
