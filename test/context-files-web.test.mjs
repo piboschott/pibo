@@ -46,6 +46,7 @@ async function startContextFilesHost(setup) {
 			},
 			createPiboContextFilesPlugin({
 				managedRoot: setup.managedRoot,
+				globalDir: setup.globalDir,
 				agentWorkspaceRoot: setup.agentWorkspaceRoot,
 				storePath: setup.storePath,
 				metadataPath: setup.metadataPath,
@@ -214,6 +215,54 @@ test("context files web app links plugin files into managed revisions and restor
 		assert.equal(diff.response.status, 200);
 		assert.ok(diff.data.chunks.some((chunk) => chunk.type === "remove"));
 		assert.ok(diff.data.chunks.some((chunk) => chunk.type === "add"));
+	} finally {
+		await channel.stop?.();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("context files web app auto-registers markdown files dropped into the global context directory", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pibo-context-files-discovery-"));
+	const managedRoot = join(dir, "managed");
+	const globalDir = join(managedRoot, "global");
+	const agentWorkspaceRoot = join(dir, "agent-workspaces");
+	const pluginFilePath = join(dir, "plugin-doc.md");
+	mkdirSync(globalDir, { recursive: true });
+	writeFileSync(pluginFilePath, "# Plugin Source\n", "utf8");
+	writeFileSync(join(globalDir, "docker-system.md"), "# Docker System\n", "utf8");
+
+	const { channel, baseURL } = await startContextFilesHost({
+		pluginFilePath,
+		managedRoot,
+		globalDir,
+		agentWorkspaceRoot,
+		metadataPath: join(managedRoot, "context-files.sqlite"),
+	});
+
+	try {
+		const listed = await getJson(`${baseURL}/api/context-files`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(listed.response.status, 200);
+		const discovered = listed.data.files.find((file) => file.key === "ctx:docker-system");
+		assert.ok(discovered);
+		assert.equal(discovered.label, "Docker System");
+		assert.equal(discovered.source, "managed");
+		assert.equal(discovered.scope, "global");
+		assert.equal(discovered.linkState, "managed-unlinked");
+
+		const read = await getJson(`${baseURL}/api/context-files/ctx%3Adocker-system`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(read.response.status, 200);
+		assert.equal(read.data.file.markdown, "# Docker System\n");
+
+		writeFileSync(join(globalDir, "operator-notes.md"), "# Operator Notes\n", "utf8");
+		const relisted = await getJson(`${baseURL}/api/context-files`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(relisted.response.status, 200);
+		assert.ok(relisted.data.files.find((file) => file.key === "ctx:operator-notes"));
 	} finally {
 		await channel.stop?.();
 		rmSync(dir, { recursive: true, force: true });
