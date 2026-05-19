@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -243,6 +243,18 @@ function managedFileName(label: string): string {
 	return `${slugSegment(label)}.md`;
 }
 
+function labelFromManagedPath(path: string): string {
+	const filename = path.split(/[\\/]/).pop() ?? path;
+	const extension = extname(filename);
+	const stem = extension ? filename.slice(0, -extension.length) : filename;
+	const words = stem
+		.replace(/[_-]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!words) return "Context File";
+	return words.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function profileForManaged(file: StoredContextFileRecord): ContextFileProfile {
 	return {
 		key: file.key,
@@ -437,11 +449,13 @@ class ContextFileService {
 	}
 
 	list(context: PiboWebAppContext): ContextFileInfo[] {
+		this.discoverGlobalManagedFiles(context, false);
 		const catalog = context.channelContext.getCapabilityCatalog?.().contextFiles ?? [];
 		return catalog.map((file) => this.resolveCatalogInfo(context, file));
 	}
 
 	async read(context: PiboWebAppContext, key: string): Promise<ContextFileDocument> {
+		this.discoverGlobalManagedFiles(context, false);
 		const managed = this.managed.get(key);
 		if (managed) {
 			const file = this.resolveManagedInfo(context, managed);
@@ -700,6 +714,7 @@ class ContextFileService {
 
 	startWatcher(context: PiboWebAppContext): void {
 		if (this.pollTimer) return;
+		this.discoverGlobalManagedFiles(context, false);
 		for (const file of this.list(context)) this.snapshots.set(file.key, this.snapshotFromInfo(file));
 		this.pollTimer = setInterval(() => {
 			void this.poll(context);
@@ -714,6 +729,7 @@ class ContextFileService {
 	}
 
 	private async poll(context: PiboWebAppContext): Promise<void> {
+		this.discoverGlobalManagedFiles(context, true);
 		for (const file of this.list(context)) {
 			const nextSnapshot = this.snapshotFromInfo(file);
 			const previous = this.snapshots.get(file.key);
@@ -724,6 +740,70 @@ class ContextFileService {
 				: "context-file.external_updated";
 			emitContextFileEvent(context, eventType, "filesystem", undefined, contextFilePayload(file));
 		}
+	}
+
+	private discoverGlobalManagedFiles(context: PiboWebAppContext, emitEvents: boolean): StoredContextFileRecord[] {
+		let entries: Array<{ name: string; isFile(): boolean }>;
+		try {
+			entries = readdirSync(this.paths.globalDir, { withFileTypes: true });
+		} catch (error) {
+			const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+			if (code === "ENOENT") return [];
+			throw error;
+		}
+
+		const knownPaths = new Set([...this.managed.values()].map((file) => resolve(file.managedPath)));
+		const usedKeys = new Set([
+			...this.managed.keys(),
+			...(context.channelContext.getCapabilityCatalog?.().contextFiles ?? []).map((file) => file.key),
+		]);
+		const discovered: StoredContextFileRecord[] = [];
+
+		for (const entry of entries) {
+			if (!entry.isFile()) continue;
+			const extension = extname(entry.name).toLowerCase();
+			if (extension !== ".md" && extension !== ".markdown") continue;
+			const absolutePath = resolve(this.paths.globalDir, entry.name);
+			if (knownPaths.has(absolutePath)) continue;
+			const snapshot = snapshotFromSync(absolutePath);
+			if (!snapshot.exists || !snapshot.version) continue;
+
+			const label = labelFromManagedPath(entry.name);
+			const record = this.store.createFile({
+				key: uniqueKey(`ctx:${slugSegment(entry.name.slice(0, -extension.length) || entry.name)}`, usedKeys),
+				label,
+				managedPath: absolutePath,
+				scope: "global",
+				createdAt: snapshot.updatedAt,
+				updatedAt: snapshot.updatedAt,
+			});
+			const revision = this.store.appendRevision({
+				contextFileKey: record.key,
+				kind: "working",
+				contentHash: snapshot.version,
+				content: snapshot.content ?? "",
+				createdAt: snapshot.updatedAt,
+				note: "Global context file discovered on disk",
+			});
+			const updated = this.store.updateFile({
+				...record,
+				activeRevisionId: revision.id,
+				updatedAt: snapshot.updatedAt ?? new Date().toISOString(),
+			});
+
+			this.upsertManaged(updated);
+			this.managed.set(updated.key, updated);
+			knownPaths.add(absolutePath);
+			usedKeys.add(updated.key);
+			const info = this.resolveManagedInfo(context, updated);
+			discovered.push(updated);
+			if (emitEvents) {
+				this.snapshots.set(updated.key, this.snapshotFromInfo(info));
+				this.emitChanged(context, "context-file.created", "filesystem", undefined, info);
+			}
+		}
+
+		return discovered;
 	}
 
 	private resolveCatalogInfo(context: PiboWebAppContext, file: CatalogContextFile): ContextFileInfo {
