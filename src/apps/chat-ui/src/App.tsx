@@ -28,6 +28,7 @@ import {
 	Loader2,
 	Lock,
 	LogOut,
+	List,
 	Menu,
 	MessageSquarePlus,
 	MoreVertical,
@@ -86,6 +87,8 @@ type Area = "sessions" | "projects" | "workflows" | "cron" | "ralph" | "agents" 
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
 type SettingsPanel = "general" | "shortcuts" | "pi-packages" | "skills" | "providers";
 
+const MAIN_NAV_AREAS: readonly Area[] = ["sessions", "projects", "workflows", "cron", "ralph", "agents", "context", "settings"];
+
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
 	| { area: "projects"; projectId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
@@ -129,6 +132,7 @@ const COMPOSER_DRAFT_STORAGE_PREFIX = "pibo.chat.composerDraft.";
 const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
 const WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY = "pibo.chat.webAnnotations.cdpUrl";
 const WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX = "pibo.chat.webAnnotations.selected.";
+const WEB_ANNOTATIONS_OVERLAY_STORAGE_PREFIX = "pibo.chat.webAnnotations.overlay.";
 const WEB_ANNOTATIONS_PANEL_COLLAPSED_STORAGE_KEY = "pibo.chat.webAnnotations.panelCollapsed";
 const WEB_ANNOTATIONS_TOGGLE_SHORTCUT_STORAGE_KEY = "pibo.chat.shortcuts.webAnnotationsToggle";
 const DEFAULT_WEB_ANNOTATIONS_TOGGLE_SHORTCUT = "Alt+Shift+A";
@@ -141,6 +145,16 @@ const PROJECT_ROUTING_UNKNOWN_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const PROJECT_SESSION_VIEW_ALLOWED_IDS: Record<ChatSessionViewId, readonly ChatSessionViewId[]> = {
 	terminal: ["terminal"],
 	workflow: ["workflow"],
+};
+
+type WebAnnotationOverlayPanelState = {
+	bindingId?: string;
+	piboSessionId: string;
+	installed: boolean;
+	active: boolean;
+	mode?: string;
+	reason?: string;
+	updatedAt?: string;
 };
 
 type StoredSelection = {
@@ -353,6 +367,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [selectedMcpServerName, setSelectedMcpServerName] = useState<string | null>(null);
 	const [creatingRoom, setCreatingRoom] = useState(false);
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+	const [mobileAreaMenuOpen, setMobileAreaMenuOpen] = useState(false);
+	const mobileAreaMenuRef = useRef<HTMLDivElement>(null);
 	const [deleteRoomTarget, setDeleteRoomTarget] = useState<PiboRoom | null>(null);
 	const [deleteRoomConfirmName, setDeleteRoomConfirmName] = useState("");
 	const [deletingRoom, setDeletingRoom] = useState(false);
@@ -372,6 +388,24 @@ export function App({ route }: { route: ChatAppRoute }) {
 	useEffect(() => {
 		showArchivedRef.current = showArchived;
 	}, [showArchived]);
+
+	useEffect(() => {
+		if (!mobileAreaMenuOpen) return;
+		const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+			if (mobileAreaMenuRef.current && !mobileAreaMenuRef.current.contains(event.target as Node)) setMobileAreaMenuOpen(false);
+		};
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setMobileAreaMenuOpen(false);
+		};
+		document.addEventListener("mousedown", handlePointerDown);
+		document.addEventListener("touchstart", handlePointerDown);
+		document.addEventListener("keydown", handleKeyDown);
+		return () => {
+			document.removeEventListener("mousedown", handlePointerDown);
+			document.removeEventListener("touchstart", handlePointerDown);
+			document.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [mobileAreaMenuOpen]);
 
 	useEffect(() => {
 		bootstrapRef.current = bootstrap;
@@ -1433,6 +1467,18 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const totalRoomUnreadCount = countUnreadRooms(bootstrap.rooms);
 	const contextAgentProfiles = [...new Set([...bootstrap.agents.map((agent) => agent.name), ...bootstrap.customAgents.map((agent) => agent.profileName)])];
 	const identity = identityFromBootstrap(bootstrap);
+	const selectMainNavArea = (item: Area) => {
+		setMobileAreaMenuOpen(false);
+		if (item === "sessions") {
+			navigateToSelectedSession(selectedRoomId ?? bootstrap.selectedRoomId, selectedPiboSessionId ?? bootstrap.selectedPiboSessionId);
+			return;
+		}
+		if (item === "projects") {
+			navigateToRoute({ area: "projects" });
+			return;
+		}
+		navigateToRoute({ area: item });
+	};
 
 	return (
 		<>
@@ -1449,55 +1495,75 @@ export function App({ route }: { route: ChatAppRoute }) {
 				data-pibo-selected-session-id={selectedPiboSessionId ?? bootstrap.selectedPiboSessionId ?? undefined}
 				className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_auto_1fr]"
 			>
-				<header className="flex items-center justify-between gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:flex-wrap max-[980px]:py-2">
-					<div className="flex items-center gap-2">
+				<header className="relative flex items-center gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:px-3">
+					<div className="flex min-w-0 items-center gap-2">
 						<button
 							type="button"
 							onClick={() => setMobileSidebarOpen(true)}
-							className="min-[981px]:hidden p-1.5 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
+							className="min-[981px]:hidden shrink-0 p-1.5 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
 							title="Open sidebar"
 							aria-label="Open sidebar"
 						>
 							<Menu size={16} />
 						</button>
-						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto" />
-						<div className="font-extrabold tracking-[0.08em] uppercase text-lg">Pibo Chat</div>
+						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto shrink-0" />
+						<div className="truncate font-extrabold tracking-[0.08em] uppercase text-lg max-[420px]:text-base">Pibo Chat</div>
 					</div>
-					<nav className="flex gap-1 flex-wrap">
-					{(["sessions", "projects", "workflows", "cron", "ralph", "agents", "context", "settings"] as const).map((item) => (
-						<button
-							key={item}
-							type="button"
-							onClick={() => {
-								if (item === "sessions") {
-									navigateToSelectedSession(selectedRoomId ?? bootstrap.selectedRoomId, selectedPiboSessionId ?? bootstrap.selectedPiboSessionId);
-									return;
-								}
-								if (item === "projects") {
-									navigateToRoute({ area: "projects" });
-									return;
-								}
-								navigateToRoute({ area: item });
-							}}
-							className={`h-8 px-3 border rounded-sm text-xs uppercase tracking-wider max-[980px]:h-7 max-[980px]:px-2 ${
-								area === item ? "border-[#11a4d4] text-[#11a4d4] bg-[#11a4d4]/10" : "border-slate-700 text-slate-400"
-							}`}
-						>
-							<span className="inline-flex items-center gap-1.5">
-								<span>{item}</span>
-								{item === "sessions" ? <MobileUnreadBadge count={totalRoomUnreadCount} /> : null}
-							</span>
+					<nav className="flex gap-1 max-[980px]:hidden min-[981px]:absolute min-[981px]:left-1/2 min-[981px]:-translate-x-1/2">
+						{MAIN_NAV_AREAS.map((item) => (
+							<button
+								key={item}
+								type="button"
+								onClick={() => selectMainNavArea(item)}
+								className={`h-8 px-3 border rounded-sm text-xs uppercase tracking-wider ${
+									area === item ? "border-[#11a4d4] text-[#11a4d4] bg-[#11a4d4]/10" : "border-slate-700 text-slate-400"
+								}`}
+							>
+								<span className="inline-flex items-center gap-1.5">
+									<span>{item}</span>
+									{item === "sessions" ? <MobileUnreadBadge count={totalRoomUnreadCount} /> : null}
+								</span>
+							</button>
+						))}
+					</nav>
+					<div className="ml-auto flex shrink-0 items-center justify-end gap-2 text-xs text-slate-400 min-[981px]:ml-0">
+						<UserRound size={14} />
+						<span className="truncate max-[600px]:hidden">{identity.email || identity.name || identity.userId}</span>
+						<button type="button" onClick={() => void signOut().then(() => location.reload())} className="p-1 border border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4]" title="Sign out" aria-label="Sign out">
+							<LogOut size={14} />
 						</button>
-					))}
-				</nav>
-				<div className="flex items-center gap-2 text-xs text-slate-400 min-w-0">
-					<UserRound size={14} />
-					<span className="truncate max-[600px]:hidden">{identity.email || identity.name || identity.userId}</span>
-					<button type="button" onClick={() => void signOut().then(() => location.reload())} className="p-1 border border-slate-700 rounded-sm">
-						<LogOut size={14} />
-					</button>
-				</div>
-			</header>
+						<div className="relative min-[981px]:hidden" ref={mobileAreaMenuRef}>
+							<button
+								type="button"
+								onClick={() => setMobileAreaMenuOpen((open) => !open)}
+								className={`p-1 border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${mobileAreaMenuOpen ? "border-[#11a4d4] text-[#11a4d4] bg-[#11a4d4]/10" : "border-slate-700 text-slate-400"}`}
+								title="Open navigation menu"
+								aria-label="Open navigation menu"
+								aria-expanded={mobileAreaMenuOpen}
+							>
+								<List size={14} />
+							</button>
+							{mobileAreaMenuOpen ? (
+								<div className="absolute right-0 top-full z-50 mt-2 w-52 rounded-sm border border-slate-700 bg-[#1a262b] p-1 shadow-xl" role="menu" aria-label="Main navigation">
+									{MAIN_NAV_AREAS.map((item) => (
+										<button
+											key={item}
+											type="button"
+											onClick={() => selectMainNavArea(item)}
+											className={`flex w-full items-center justify-between gap-2 rounded-sm px-3 py-2 text-left text-xs uppercase tracking-wider ${
+												area === item ? "bg-[#11a4d4]/10 text-[#11a4d4]" : "text-slate-300 hover:bg-slate-800/80 hover:text-[#11a4d4]"
+											}`}
+											role="menuitem"
+										>
+											<span>{item}</span>
+											{item === "sessions" ? <MobileUnreadBadge count={totalRoomUnreadCount} /> : null}
+										</button>
+									))}
+								</div>
+							) : null}
+						</div>
+					</div>
+				</header>
 
 			<div>{error ? <AppErrorBanner message={error} onDismiss={() => setError(null)} /> : null}</div>
 
@@ -3116,6 +3182,7 @@ function SessionTracePane({
 	const [selectedWebAnnotationIds, setSelectedWebAnnotationIds] = useState<string[]>([]);
 	const [selectedUploadAttachmentsBySession, setSelectedUploadAttachmentsBySession] = useState<Record<string, UploadedChatAttachment[]>>({});
 	const [webAnnotationsPanelVisible, setWebAnnotationsPanelVisible] = useState(false);
+	const [webAnnotationOverlayState, setWebAnnotationOverlayState] = useState<WebAnnotationOverlayPanelState | null>(() => selectedPiboSessionId ? readStoredWebAnnotationOverlayState(selectedPiboSessionId) : null);
 	const [webAnnotationsPanelCollapsed, setWebAnnotationsPanelCollapsed] = useState(() => readStoredWebAnnotationsPanelCollapsed());
 	const [clearingWebAnnotations, setClearingWebAnnotations] = useState(false);
 	const [copiedHeaderPiboSessionId, setCopiedHeaderPiboSessionId] = useState<string | null>(null);
@@ -3131,6 +3198,13 @@ function SessionTracePane({
 				: null,
 		[rawEventLimit, selectedPiboSessionId, showRawEvents],
 	);
+	const webAnnotationOverlayActive = Boolean(
+		selectedPiboSessionId
+		&& webAnnotationOverlayState?.piboSessionId === selectedPiboSessionId
+		&& webAnnotationOverlayState.installed
+		&& webAnnotationOverlayState.active,
+	);
+	const webAnnotationsPanelRendered = Boolean(selectedPiboSessionId) && (webAnnotationsPanelVisible || webAnnotationOverlayActive);
 	const traceSummaryQuery = useQuery({
 		queryKey: traceSummaryQueryKey ?? ["chat", "trace-summary", "idle"],
 		queryFn: async () => {
@@ -3174,10 +3248,10 @@ function SessionTracePane({
 			if (!selectedPiboSessionId) throw new Error("Session is required");
 			return listWebAnnotations(selectedPiboSessionId, { limit: 100, scope: "owner" });
 		},
-		enabled: Boolean(selectedPiboSessionId) && (webAnnotationsPanelVisible || selectedWebAnnotationIds.length > 0),
+		enabled: Boolean(selectedPiboSessionId) && (webAnnotationsPanelRendered || selectedWebAnnotationIds.length > 0),
 		staleTime: 1_000,
-		refetchOnWindowFocus: webAnnotationsPanelVisible,
-		refetchInterval: webAnnotationsPanelVisible ? 5_000 : false,
+		refetchOnWindowFocus: webAnnotationsPanelRendered,
+		refetchInterval: webAnnotationsPanelRendered ? 5_000 : false,
 		retry: 1,
 	});
 	const visibleWebAnnotations = useMemo(
@@ -3201,7 +3275,42 @@ function SessionTracePane({
 		setBaseTraceView(null);
 		setLiveTraceOverlay(null);
 		setSelectedWebAnnotationIds(selectedPiboSessionId ? readStoredSelectedWebAnnotationIds(selectedPiboSessionId) : []);
+		setWebAnnotationOverlayState(selectedPiboSessionId ? readStoredWebAnnotationOverlayState(selectedPiboSessionId) : null);
 	}, [selectedPiboSessionId]);
+
+	useEffect(() => {
+		if (!selectedPiboSessionId) return;
+		const applyOverlayState = (state: WebAnnotationOverlayPanelState | null) => {
+			if (!state || state.piboSessionId !== selectedPiboSessionId) return;
+			setWebAnnotationOverlayState((current) => {
+				if (state.active) return state;
+				if (current?.active && current.bindingId && state.bindingId && current.bindingId !== state.bindingId) return current;
+				return state;
+			});
+			if (state.active) {
+				void webAnnotationsQuery.refetch();
+			} else {
+				setWebAnnotationsPanelVisible(false);
+			}
+		};
+		const handleOverlayState = (event: Event) => applyOverlayState(parseWebAnnotationOverlayState((event as CustomEvent).detail));
+		const handleStorage = (event: StorageEvent) => {
+			if (event.key !== `${WEB_ANNOTATIONS_OVERLAY_STORAGE_PREFIX}${selectedPiboSessionId}`) return;
+			applyOverlayState(parseStoredWebAnnotationOverlayState(event.newValue));
+		};
+		const refreshFromStorage = () => applyOverlayState(readStoredWebAnnotationOverlayState(selectedPiboSessionId));
+		window.addEventListener("pibo:web-annotation-overlay-state", handleOverlayState);
+		window.addEventListener("storage", handleStorage);
+		window.addEventListener("focus", refreshFromStorage);
+		document.addEventListener("visibilitychange", refreshFromStorage);
+		refreshFromStorage();
+		return () => {
+			window.removeEventListener("pibo:web-annotation-overlay-state", handleOverlayState);
+			window.removeEventListener("storage", handleStorage);
+			window.removeEventListener("focus", refreshFromStorage);
+			document.removeEventListener("visibilitychange", refreshFromStorage);
+		};
+	}, [selectedPiboSessionId, webAnnotationsQuery.refetch]);
 
 	useEffect(() => {
 		if (!webAnnotationsQuery.data) return;
@@ -3628,7 +3737,7 @@ function SessionTracePane({
 							piboSessionId={selectedPiboSessionId}
 							piboRoomId={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
 							disabled={!selectedPiboSessionId || selectedRoomArchived}
-							panelVisible={webAnnotationsPanelVisible}
+							panelVisible={webAnnotationsPanelRendered}
 							onShowPanel={() => setWebAnnotationsPanelVisible(true)}
 							onHidePanel={() => setWebAnnotationsPanelVisible(false)}
 							onError={onError}
@@ -3738,7 +3847,7 @@ function SessionTracePane({
 						onError,
 					})
 				)}
-				{webAnnotationsPanelVisible ? (
+				{webAnnotationsPanelRendered ? (
 					<WebAnnotationsSessionPanel
 						piboSessionId={selectedPiboSessionId}
 						annotations={visibleWebAnnotations}
@@ -5435,7 +5544,7 @@ function WebAnnotationsEntryPoints({
 			});
 			if (!binding.overlay) throw new Error("Overlay config missing from same-origin binding response");
 			await installSameOriginWebAnnotationOverlay(binding.overlay);
-			setStatus({ kind: "success", message: "Annotation overlay is ready on this Pibo page. Use the overlay button to enable annotation mode." });
+			setStatus({ kind: "success", message: "Annotation mode is active on this Pibo page. Use the overlay controls or shortcut to toggle it." });
 			onError(null);
 		} catch (caught) {
 			const message = compactWebAnnotationError(caught, "Current-page annotation failed");
@@ -5603,7 +5712,7 @@ function installSameOriginWebAnnotationOverlay(config: WebAnnotationOverlayConfi
 	return new Promise((resolve, reject) => {
 		const targetWindow = window as typeof window & {
 			__piboWebAnnotationConfig?: WebAnnotationOverlayConfig;
-			__piboWebAnnotations?: { remove?: () => void };
+			__piboWebAnnotations?: { remove?: () => void; setActive?: (value: boolean) => void };
 		};
 		try {
 			targetWindow.__piboWebAnnotations?.remove?.();
@@ -5611,7 +5720,10 @@ function installSameOriginWebAnnotationOverlay(config: WebAnnotationOverlayConfi
 			const script = document.createElement("script");
 			script.src = `/apps/web-annotations/overlay.js?ts=${Date.now()}`;
 			script.async = true;
-			script.onload = () => resolve();
+			script.onload = () => {
+				targetWindow.__piboWebAnnotations?.setActive?.(true);
+				resolve();
+			};
 			script.onerror = () => reject(new Error("Could not load Web Annotation overlay script"));
 			document.head.appendChild(script);
 		} catch (error) {
@@ -5669,6 +5781,40 @@ function notifyWebAnnotationShortcutChanged(shortcut: string): void {
 function normalizeShortcutLabel(value: string): string {
 	return value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
 }
+
+function readStoredWebAnnotationOverlayState(piboSessionId: string): WebAnnotationOverlayPanelState | null {
+	try {
+		return parseStoredWebAnnotationOverlayState(localStorage.getItem(WEB_ANNOTATIONS_OVERLAY_STORAGE_PREFIX + piboSessionId));
+	} catch {
+		return null;
+	}
+}
+
+function parseStoredWebAnnotationOverlayState(raw: string | null): WebAnnotationOverlayPanelState | null {
+	if (!raw) return null;
+	try {
+		return parseWebAnnotationOverlayState(JSON.parse(raw));
+	} catch {
+		return null;
+	}
+}
+
+function parseWebAnnotationOverlayState(value: unknown): WebAnnotationOverlayPanelState | null {
+	if (!value || typeof value !== "object") return null;
+	const record = value as Record<string, unknown>;
+	const piboSessionId = typeof record.piboSessionId === "string" ? record.piboSessionId.trim() : "";
+	if (!piboSessionId) return null;
+	return {
+		bindingId: typeof record.bindingId === "string" ? record.bindingId : undefined,
+		piboSessionId,
+		installed: record.installed !== false,
+		active: record.active === true,
+		mode: typeof record.mode === "string" ? record.mode : undefined,
+		reason: typeof record.reason === "string" ? record.reason : undefined,
+		updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
+	};
+}
+
 function readStoredSelectedWebAnnotationIds(piboSessionId: string): string[] {
 	try {
 		const raw = localStorage.getItem(WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX + piboSessionId);
@@ -6372,6 +6518,7 @@ function AgentsView({
 	const [catalog, setCatalog] = useState<AgentCatalog | null>(initialCatalog ?? null);
 	const [customAgents, setCustomAgents] = useState(initialCustomAgents);
 	const [draft, setDraft] = useState<AgentDraft>(() => createBlankAgentDraft(initialCatalog));
+	const [showUnsavedAgentDraft, setShowUnsavedAgentDraft] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [showArchivedAgents, setShowArchivedAgents] = useState(() => localStorage.getItem("pibo.chat.showArchivedAgents") === "true");
 	const [deleteConfirmName, setDeleteConfirmName] = useState("");
@@ -6396,6 +6543,7 @@ function AgentsView({
 		[agents, activeCustomAgents],
 	);
 	const archivedDraft = Boolean(draft.archivedAt);
+	const unsavedAgentDraftVisible = showUnsavedAgentDraft && draft.source === "custom" && !draft.id;
 	const readOnly = draft.source === "profile" || archivedDraft;
 	const agentNameError = readOnly ? null : validateAgentName(draft.displayName);
 	const draftProfileName = draft.profileName ?? (agentNameError ? "new custom profile" : draft.displayName);
@@ -6418,6 +6566,17 @@ function AgentsView({
 		() => buildContextFileGroups(visibleContextFiles, draft.contextFiles),
 		[visibleContextFiles, draft.contextFiles],
 	);
+
+	const createNewAgentDraft = () => {
+		const usedNames = [
+			...agents.map((agent) => agent.name),
+			...customAgents.flatMap((agent) => [agent.profileName, agent.displayName]),
+			...(unsavedAgentDraftVisible ? [draft.displayName] : []),
+		];
+		setDraft(createBlankAgentDraft(catalog ?? undefined, uniqueDraftAgentName(usedNames)));
+		setShowUnsavedAgentDraft(true);
+		setLocalError(null);
+	};
 
 	const saveDraft = async () => {
 		if (readOnly) return;
@@ -6459,6 +6618,7 @@ function AgentsView({
 				return [response.agent, ...withoutSaved];
 			});
 			setDraft(agentToDraft(response.agent));
+			setShowUnsavedAgentDraft(false);
 			onSelect(response.agent.profileName);
 			onAgentsChanged();
 			setLocalError(null);
@@ -6527,6 +6687,7 @@ function AgentsView({
 			await deleteCustomAgent(draft.id, deleteConfirmName);
 			setCustomAgents((current) => current.filter((agent) => agent.id !== draft.id));
 			setDraft(createBlankAgentDraft(catalog ?? undefined));
+			setShowUnsavedAgentDraft(false);
 			setDeleteConfirmName("");
 			onAgentsChanged();
 			setLocalError(null);
@@ -6543,7 +6704,7 @@ function AgentsView({
 				<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
 					<span>Agents</span>
 					<div className="flex items-center gap-1">
-						<button type="button" onClick={() => setDraft(createBlankAgentDraft(catalog ?? undefined))} title="New Agent" aria-label="New Agent" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
+						<button type="button" onClick={createNewAgentDraft} title="New Agent" aria-label="New Agent" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
 							<Plus size={13} />
 						</button>
 						<button
@@ -6566,6 +6727,17 @@ function AgentsView({
 				</div>
 				<div className="p-2">
 					<AgentList title="Custom Agents">
+						{unsavedAgentDraftVisible ? (
+							<AgentSidebarRow
+								key="unsaved-agent-draft"
+								title={draft.displayName || "new-agent"}
+								subtitle="unsaved custom agent"
+								selected
+								onSelect={() => {}}
+								onCreateSession={() => {}}
+								createSessionDisabled
+							/>
+						) : null}
 						{activeCustomAgents.map((agent) => (
 							<AgentSidebarRow
 								key={agent.id}
@@ -6573,10 +6745,14 @@ function AgentsView({
 								subtitle={agent.profileName}
 								selected={draft.source === "custom" && draft.id === agent.id}
 								onSelect={() => {
+									setShowUnsavedAgentDraft(false);
 									setDraft(agentToDraft(agent));
 									onSelect(agent.profileName);
 								}}
-								onCopy={() => setDraft(copyCustomAgentToDraft(agent))}
+								onCopy={() => {
+									setDraft(copyCustomAgentToDraft(agent));
+									setShowUnsavedAgentDraft(true);
+								}}
 								onCreateSession={() => {
 									onSelect(agent.profileName);
 									onCreateSession(agent.profileName);
@@ -6584,7 +6760,7 @@ function AgentsView({
 								createSessionDisabled={creatingSession}
 							/>
 						))}
-						{activeCustomAgents.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No custom agents</div> : null}
+						{activeCustomAgents.length === 0 && !unsavedAgentDraftVisible ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No custom agents</div> : null}
 					</AgentList>
 					{showArchivedAgents ? (
 						<AgentList title="Archived Custom Agents">
@@ -6595,9 +6771,13 @@ function AgentsView({
 									subtitle={agent.profileName}
 									selected={draft.source === "custom" && draft.id === agent.id}
 									onSelect={() => {
+										setShowUnsavedAgentDraft(false);
 										setDraft(agentToDraft(agent));
 									}}
-									onCopy={() => setDraft(copyCustomAgentToDraft(agent))}
+									onCopy={() => {
+										setDraft(copyCustomAgentToDraft(agent));
+										setShowUnsavedAgentDraft(true);
+									}}
 									onCreateSession={() => {}}
 									createSessionDisabled
 								/>
@@ -6613,10 +6793,14 @@ function AgentsView({
 								subtitle={agent.aliases.join(", ") || "plugin"}
 								selected={draft.source === "profile" && draft.profileName === agent.name}
 								onSelect={() => {
+									setShowUnsavedAgentDraft(false);
 									setDraft(profileToDraft(agent, catalog ?? undefined));
 									onSelect(agent.name);
 								}}
-								onCopy={() => setDraft(copyProfileToDraft(agent, catalog ?? undefined))}
+								onCopy={() => {
+									setDraft(copyProfileToDraft(agent, catalog ?? undefined));
+									setShowUnsavedAgentDraft(true);
+								}}
 								onCreateSession={() => {
 									onSelect(agent.name);
 									onCreateSession(agent.name);
@@ -6840,9 +7024,9 @@ type AgentDraft = SaveCustomAgentInput & {
 	source: "custom" | "profile";
 };
 
-function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
+function createBlankAgentDraft(catalog?: AgentCatalog, displayName = "new-agent"): AgentDraft {
 	return {
-		displayName: "new-agent",
+		displayName,
 		description: "",
 		nativeTools: [],
 		skills: hasBuiltinSkill(catalog, "pi-agent-harness") ? ["pi-agent-harness"] : [],
@@ -6866,6 +7050,16 @@ function createBlankAgentDraft(catalog?: AgentCatalog): AgentDraft {
 		hardPinnedModel: undefined,
 		source: "custom",
 	};
+}
+
+function uniqueDraftAgentName(usedNames: Iterable<string>): string {
+	const used = new Set([...usedNames].map((name) => name.trim()).filter(Boolean));
+	const baseName = "new-agent";
+	if (!used.has(baseName)) return baseName;
+	for (let index = 1; ; index += 1) {
+		const candidate = `${baseName}-${index}`;
+		if (!used.has(candidate)) return candidate;
+	}
 }
 
 function agentToDraft(agent: CustomAgent): AgentDraft {
