@@ -23,6 +23,7 @@ import {
 	popInkSessionOverlay,
 	pushInkSessionOverlay,
 	reduceInkSessionInputState,
+	normalizeInkRowSelection,
 	runCliSessionsUi,
 	terminalLineLimitFromColumns,
 } from "../dist/apps/cli-ui/index.js";
@@ -270,6 +271,30 @@ test("Ink session input reducer captures text, enter, navigation, escape, and sl
 	assert.equal(closed.slashSuggestions, undefined);
 });
 
+test("Ink session input reducer selects expandable rows and toggles inline details without breaking input or pickers", () => {
+	const expandableRows = [
+		{ id: "plain", kind: "message.assistant", status: "done", lines: [{ prefix: "none", tokens: [{ text: "plain" }] }], sourceNodeIds: ["plain"] },
+		{ id: "tool-a", kind: "tool.call", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Called a" }] }], output: "a", sourceNodeIds: ["tool-a"] },
+		{ id: "tool-b", kind: "execution.command", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Ran b" }] }], output: "b", sourceNodeIds: ["tool-b"] },
+	];
+	const normalized = normalizeInkRowSelection({ loading: false, rows: expandableRows, input: "", mode: "transcript" });
+	assert.equal(normalized.selectedRowId, "tool-b");
+	const selectedUp = reduceInkSessionInputState(normalized, { type: "up" });
+	assert.equal(selectedUp.selectedRowId, "tool-a");
+	const opened = reduceInkSessionInputState(selectedUp, { type: "toggle-details" });
+	assert.deepEqual(opened.expandedRowIds, ["tool-a"]);
+	const closed = reduceInkSessionInputState(opened, { type: "toggle-details" });
+	assert.deepEqual(closed.expandedRowIds, []);
+
+	const typing = reduceInkSessionInputState({ ...normalized, input: "h" }, { type: "down" });
+	assert.equal(typing.selectedRowId, "tool-b", "typing input keeps row focus unchanged");
+	assert.equal(typing.input, "h");
+
+	const picker = { kind: "session", title: "Pick", items: [{ id: "one", label: "One" }, { id: "two", label: "Two" }], selectedIndex: 0, emptyMessage: "None" };
+	const pickerState = reduceInkSessionInputState({ ...normalized, picker, mode: "session-picker" }, { type: "down" });
+	assert.equal(pickerState.picker.selectedIndex, 1, "picker navigation remains picker-owned");
+});
+
 test("generic Ink overlay stack supports nested picker back and active overlay", () => {
 	const ownerPicker = { kind: "owner", title: "Owner", items: [{ id: "user:alpha", label: "Alpha" }], selectedIndex: 0, emptyMessage: "No owners" };
 	const roomPicker = { kind: "room", title: "Room", items: [{ id: "room_alpha", label: "Alpha Room" }], selectedIndex: 0, emptyMessage: "No rooms", parent: ownerPicker };
@@ -281,6 +306,19 @@ test("generic Ink overlay stack supports nested picker back and active overlay",
 	assert.equal(escaped.picker.title, "Owner");
 	assert.equal(escaped.mode, "picker");
 	assert.equal(activeInkSessionOverlay(escaped.overlayStack).picker.title, "Owner");
+});
+
+test("command result rows prefer named room labels for session links", () => {
+	const rows = commandResultDescriptorRows(
+		{ name: "session-current", args: "", raw: "/session-current" },
+		{ kind: "session-link", title: "session-current", sessionId: "ps_named", roomId: "room_named", roomLabel: "Named Web Room", label: "Named Session" },
+		undefined,
+		undefined,
+		0,
+	);
+	assert.equal(rows.length, 2);
+	assert.match(String(rows[1].output), /Named Web Room/);
+	assert.doesNotMatch(String(rows[1].output), /in room room_named/);
 });
 
 test("renderCliStatusCardText renders shared status bars and redacts secrets", () => {
@@ -477,7 +515,7 @@ test("Slash /repair-user-unknown runs source repair for the active owner and roo
 	assert.equal(harness.state.error, undefined);
 });
 
-test("status command result rows preserve transcript flow and can render as Ink card", () => {
+test("status command result rows preserve transcript flow with row-first command and structured status card", () => {
 	const rows = commandResultDescriptorRows(
 		{ name: "status", args: "", raw: "/status" },
 		{ kind: "status", title: "Status", status: { contextUsage: { tokens: 50, contextWindow: 100, percent: 50 }, providerUsage: { provider: "openai", limits: [{ label: "requests", usedPercent: 75 }] } } },
@@ -486,11 +524,12 @@ test("status command result rows preserve transcript flow and can render as Ink 
 	);
 	assert.deepEqual(rows.map((row) => row.kind), ["execution.command", "tool.status"]);
 	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 10, maxLineChars: 140 }));
-	assert.match(output, /Command — command · done/);
-	assert.match(output, /Ran \/status/);
+	assert.match(output, /• Ran \/status/);
+	assert.doesNotMatch(output, /▣ Command/);
 	assert.match(output, /Status — status · done/);
-	assert.match(output, /Owner: Web user alpha/);
-	assert.match(output, /Session: Status Session \| ps_status/);
+	assert.match(output, /Identity: owner Web user alpha · session Status Session · profile pibo-agent\s*· model openai\/gpt-status/);
+	assert.doesNotMatch(output, /Owner: Web user alpha/);
+	assert.doesNotMatch(output, /Session: Status Session \| ps_status/);
 	assert.match(output, /Context: .*50\.0%/);
 	assert.match(output, /openai requests: .*25\.0%/);
 	assert.match(output, /25\.0% remaining/);
@@ -535,9 +574,10 @@ test("/status preserves existing streaming rows and appends after the live trans
 	assert.match(output, /Calling read/);
 	assert.ok(output.indexOf("Partial streamed reply") < output.indexOf("Ran /status"));
 	assert.ok(output.indexOf("Ran /status") < output.indexOf("Status — status · done"));
-	assert.match(output, /Processing: yes/);
-	assert.match(output, /Streaming: yes/);
-	assert.match(output, /Queue: 1/);
+	assert.match(output, /Runtime: processing · queue 1 · processing yes · streaming yes/);
+	assert.doesNotMatch(output, /Processing: yes/);
+	assert.doesNotMatch(output, /Streaming: yes/);
+	assert.doesNotMatch(output, /Queue: 1/);
 	assert.match(output, /Context: .*90\.0%/);
 });
 

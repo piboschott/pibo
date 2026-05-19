@@ -29,6 +29,22 @@ export type GatewayCommandCapability = {
 	hidden?: boolean;
 };
 
+export type SlashCommandBehaviorMatrixEntry = {
+	id: string;
+	slash: `/${string}`;
+	aliases: readonly `/${string}`[];
+	group: SlashCommandDescriptor["group"];
+	support: SlashCommandSupport;
+	supportLabel: string;
+	palette: "shown" | "hidden";
+	argumentBehavior: string;
+	enterBehavior: string;
+	resultPlacement: "transcript" | "overlay" | "navigation" | "exit" | "transcript-or-overlay";
+	contextRequirement: string;
+	errorBehavior: string;
+	terminalAdaptation?: string;
+};
+
 export const CLI_ONLY_SLASH_COMMANDS: readonly SlashCommandDescriptor[] = [
 	{ id: "help", slash: "/help", description: "Show command help and keyboard controls.", group: "cli", support: "supported" },
 	{ id: "new", slash: "/new", description: "Create a new session in the active or selected room.", group: "navigation", support: "supported" },
@@ -111,6 +127,66 @@ export function groupSlashCommandsForHelp(catalog: readonly SlashCommandDescript
 		navigation: catalog.filter((command) => command.group === "navigation" || command.group === "cli"),
 		unsupported: catalog.filter((command) => command.group === "unsupported" || command.support === "browser-only" || command.support === "product-area" || command.support === "deferred"),
 	};
+}
+
+export function buildSlashCommandBehaviorMatrix(catalog: readonly SlashCommandDescriptor[] = buildSlashCommandCatalog()): SlashCommandBehaviorMatrixEntry[] {
+	return catalog.map((command) => ({
+		id: command.id,
+		slash: command.slash,
+		aliases: command.aliases ?? [],
+		group: command.group,
+		support: command.support,
+		supportLabel: commandSupportLabel(command),
+		palette: "shown",
+		argumentBehavior: slashArgumentBehavior(command),
+		enterBehavior: slashEnterBehavior(command),
+		resultPlacement: slashResultPlacement(command),
+		contextRequirement: slashContextRequirement(command),
+		errorBehavior: slashErrorBehavior(command),
+		terminalAdaptation: command.terminalAdaptation,
+	}));
+}
+
+function slashArgumentBehavior(command: SlashCommandDescriptor): string {
+	if (command.argumentHint) return command.argumentHint;
+	if (command.slash === "/model") return "no argument opens provider/model picker; provider/model applies selection";
+	if (command.slash === "/login") return "no argument opens provider/auth picker; provider/method applies selection";
+	if (command.slash === "/thinking") return "no argument opens thinking picker; level applies selection";
+	return "none";
+}
+
+function slashEnterBehavior(command: SlashCommandDescriptor): string {
+	if (command.slash === "/help") return "append help text above transcript guidance";
+	if (command.slash === "/new") return "create session in active or selected room";
+	if (["/room", "/session", "/owner", "/profile", "/agent"].includes(command.slash)) return "open keyboard picker overlay";
+	if (["/exit", "/quit"].includes(command.slash)) return "exit terminal UI";
+	if (command.slash === "/repair-user-unknown") return "append compact repair result";
+	if (["/model", "/login", "/thinking"].includes(command.slash)) return "open picker without arguments or append result with arguments";
+	if (command.slash === "/fork-candidates") return "open candidate picker without entry id or dispatch fork with entry id";
+	if (command.support === "browser-only" || command.support === "product-area" || command.support === "deferred") return "append unsupported/deferred transcript result";
+	return "append command and result rows to transcript";
+}
+
+function slashResultPlacement(command: SlashCommandDescriptor): SlashCommandBehaviorMatrixEntry["resultPlacement"] {
+	if (["/exit", "/quit"].includes(command.slash)) return "exit";
+	if (["/room", "/session", "/owner", "/profile", "/agent"].includes(command.slash)) return "overlay";
+	if (command.slash === "/new") return "navigation";
+	if (["/model", "/login", "/thinking", "/fork-candidates"].includes(command.slash)) return "transcript-or-overlay";
+	return "transcript";
+}
+
+function slashContextRequirement(command: SlashCommandDescriptor): string {
+	if (["/room", "/session", "/new", "/owner", "/profile", "/repair-user-unknown"].includes(command.slash)) return "owner/room navigation";
+	if (["/status", "/sessions", "/session-current", "/clone", "/fork-candidates"].includes(command.slash)) return "active session when available; named room context preferred";
+	if (["/compact", "/clear", "/abort", "/kill", "/kill-all", "/fast", "/thinking", "/model", "/login"].includes(command.slash)) return "active routed session/runtime";
+	if (["/download", "/upload"].includes(command.slash)) return "terminal path argument";
+	return "none";
+}
+
+function slashErrorBehavior(command: SlashCommandDescriptor): string {
+	if (command.support === "browser-only" || command.support === "product-area" || command.support === "deferred") return "render compact unsupported result";
+	if (["/room", "/session", "/owner", "/profile", "/agent", "/model", "/login", "/thinking", "/fork-candidates"].includes(command.slash)) return "keep overlay compact or append redacted error row after confirmed action";
+	return "append redacted command error row";
 }
 
 function expandGatewayCommandCapabilities(capabilities: readonly GatewayCommandCapability[]): GatewayCommandCapability[] {

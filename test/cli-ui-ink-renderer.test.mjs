@@ -5,8 +5,8 @@ import React from "react";
 import test from "node:test";
 import { renderToString } from "ink";
 import { buildCompactTerminalRows } from "../dist/session-ui/index.js";
-import { formatInkJson, formatStatusHeaderLines, InkSessionAppView, InkTerminalView, renderInkMarkdownLines, rowWindow } from "../dist/apps/cli-ui/index.js";
-import { buildCanonicalTerminalRows, buildExpandableDetailFixtureRow, fullStatusPayload, highUsageStatusPayload, partialStatusPayload, unavailableStatusPayload } from "./fixtures/terminal-parity-fixtures.mjs";
+import { formatDetailJsonWellLines, formatFunctionCallTokens, formatInkJson, formatInlineJsonTokens, formatStatusHeaderLines, InkSessionAppView, InkTerminalView, renderInkMarkdownLines, renderInkMarkdownTerminalLines, rowWindow, tokenizeInkBashCommand } from "../dist/apps/cli-ui/index.js";
+import { buildCanonicalTerminalRows, buildExpandableDetailFixtureRow, buildWebDerivedLongOutputRows, disposedStatusPayload, fullStatusPayload, highUsageStatusPayload, markdownSyntaxFixture, nestedJsonSyntaxFixture, partialStatusPayload, unavailableStatusPayload } from "./fixtures/terminal-parity-fixtures.mjs";
 
 const sessionId = "pibo:ink-renderer-test";
 
@@ -60,14 +60,12 @@ test("InkTerminalView renders representative compact rows to terminal text", () 
 
 	assert.match(output, /› Investigate issue/);
 	assert.match(output, /I will check\./);
-	assert.match(output, /- first/);
-	assert.match(output, /▣ Tool — tool · done/);
-	assert.match(output, /Called read/);
+	assert.match(output, /• first/);
+	assert.match(output, /• Called read/);
 	assert.match(output, /src\/index\.ts/);
-	assert.match(output, /▣ Yielded run — yielded-run · running/);
-	assert.match(output, /Waiting on runs typecheck/);
-	assert.match(output, /✕ ▣ Error — error · error/);
-	assert.match(output, /Error: boom/);
+	assert.match(output, /• Waiting on runs typecheck/);
+	assert.match(output, /✕ • Error boom/);
+	assert.doesNotMatch(output, /▣ (Tool|Yielded run|Error)/);
 });
 
 test("InkTerminalView renders rich shared card descriptors with Web-parity labels", () => {
@@ -90,8 +88,8 @@ test("InkTerminalView renders rich shared card descriptors with Web-parity label
 	assert.match(output, /› User prompt/);
 	assert.match(output, /Assistant reply/);
 	assert.match(output, /Thought/);
-	assert.match(output, /▣ Tool — tool · done/);
-	assert.match(output, /Called read/);
+	assert.match(output, /• Called read/);
+	assert.doesNotMatch(output, /▣ Tool/);
 	assert.match(output, /▣ Status — status · done/);
 	assert.match(output, /Context: █/);
 	assert.match(output, /openai requests:/);
@@ -100,10 +98,11 @@ test("InkTerminalView renders rich shared card descriptors with Web-parity label
 	assert.match(output, /▣ Model — model · done/);
 	assert.match(output, /OpenAI \/ GPT Test/);
 	assert.match(output, /▣ Login — login · done/);
-	assert.match(output, /▣ Yielded run — yielded-run · running/);
-	assert.match(output, /▣ Compaction — compaction · done/);
-	assert.match(output, /▣ Command — command · done/);
-	assert.match(output, /✕ ▣ Error — error · error/);
+	assert.match(output, /• Waiting on runs typecheck/);
+	assert.match(output, /• Compacted transcript/);
+	assert.match(output, /• Ran \/status/);
+	assert.match(output, /✕ TOKEN=\[redacted\] failed/);
+	assert.doesNotMatch(output, /▣ (Yielded run|Compaction|Command|Error)/);
 	assert.match(output, /TOKEN=\[redacted\]/);
 	assert.doesNotMatch(output, /secret-value/);
 });
@@ -134,6 +133,7 @@ test("Ink renderer consumes the canonical shared parity fixture", () => {
 	assert.match(output, /▣ Model — model · done/);
 	assert.match(output, /▣ Login — login · done/);
 	assert.match(output, /Provider quota: unavailable/);
+	assert.doesNotMatch(output, /▣ (Tool|Yielded run|Compaction|Command|Error)/);
 	assert.doesNotMatch(output, /sk_fixture_secret|detail-secret-value/);
 });
 
@@ -144,6 +144,41 @@ function rowsForMarkerTest() {
 	];
 }
 
+test("Ink normal rows are row-first and dense while structured exceptions remain card-like", () => {
+	const rows = [
+		{ id: "user", kind: "message.user", status: "done", lines: [{ prefix: "prompt", tokens: [{ text: "user row" }] }], sourceNodeIds: ["user"] },
+		{ id: "assistant", kind: "message.assistant", status: "done", lines: [{ prefix: "none", tokens: [{ text: "assistant row" }] }], sourceNodeIds: ["assistant"] },
+		{ id: "reason", kind: "reasoning", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "thinking row", tone: "amber" }] }], sourceNodeIds: ["reason"] },
+		{ id: "tool", kind: "tool.call", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Called read" }] }], sourceNodeIds: ["tool"], output: "preview" },
+		{ id: "command", kind: "execution.command", status: "done", lines: [{ prefix: "bullet", tokens: [{ text: "Command /status" }] }], sourceNodeIds: ["command"] },
+		{ id: "status", kind: "tool.status", status: "done", lines: [], output: unavailableStatusPayload(), sourceNodeIds: ["status"] },
+		{ id: "error", kind: "error", status: "error", lines: [], error: "TOKEN=secret-value failed", sourceNodeIds: ["error"] },
+	];
+	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 20, maxLineChars: 120 }));
+
+	assert.match(output, /› user row\n  assistant row\n✓ • thinking row\n✓ • Called read\n✓ • Command \/status\n✓ ▣ Status — status · done/);
+	assert.match(output, /✕ TOKEN=\[redacted\] failed/);
+	assert.doesNotMatch(output, /▣ (Tool|Command|Error)/);
+	assert.doesNotMatch(output, /\n\n/);
+	assert.doesNotMatch(output, /secret-value/);
+});
+
+test("Ink long-output rows collapse to five lines and expand full details", () => {
+	const row = buildWebDerivedLongOutputRows().find((item) => item.id === "web-derived-tool-call-long-output");
+	assert.ok(row, "fixture row exists");
+	const collapsed = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, maxRows: 5, maxLineChars: 220 }));
+	assert.match(collapsed, /web-derived output line 05/);
+	assert.doesNotMatch(collapsed, /web-derived output line 06/);
+	assert.match(collapsed, /\+7 more lines/);
+	assert.match(collapsed, /details available/);
+
+	const expanded = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, expandedRowIds: [row.id], maxRows: 5, maxLineChars: 220 }));
+	assert.match(expanded, /Output:.*web-derived output line 01/s);
+	assert.match(expanded, /web-derived output line 12/);
+	assert.match(expanded, /7 hidden while collapsed/);
+	assert.doesNotMatch(expanded, /long-output-secret/);
+});
+
 test("Ink renderer gives user and assistant rows distinct terminal markers", () => {
 	const output = renderToString(React.createElement(InkTerminalView, { rows: rowsForMarkerTest(), maxRows: 5, maxLineChars: 80 }));
 	assert.match(output, /› user marker/);
@@ -151,17 +186,22 @@ test("Ink renderer gives user and assistant rows distinct terminal markers", () 
 	assert.doesNotMatch(output, /› assistant marker/);
 });
 
-test("Ink renderer renders inline detail sections with bounded redacted values", () => {
-	const output = renderToString(React.createElement(InkTerminalView, { rows: [buildExpandableDetailFixtureRow()], maxRows: 5, maxLineChars: 120 }));
+test("Ink renderer renders selected detail affordance collapsed and inline detail sections when expanded", () => {
+	const row = buildExpandableDetailFixtureRow();
+	const collapsed = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, maxRows: 5, maxLineChars: 120 }));
+	assert.match(collapsed, /details available · press d or enter/);
+	assert.doesNotMatch(collapsed, /Command args:/);
 
+	const output = renderToString(React.createElement(InkTerminalView, { rows: [row], selectedRowId: row.id, expandedRowIds: [row.id], maxRows: 5, maxLineChars: 120 }));
+	assert.match(output, /└ Details/);
 	for (const label of ["Input", "Output", "Error", "Linked session", "Command args", "Tool result preview", "Large JSON", "Long markdown"]) {
 		assert.match(output, new RegExp(`${label}:`));
 	}
-	assert.match(output, /↳ Call failed detail_tool/);
+	assert.match(output, /Call failed detail_tool/);
 	assert.match(output, /more items|fixture-value-0/);
 	assert.match(output, /token=\[redacted\]/);
 	assert.doesNotMatch(output, /detail-secret-value|sk_fixture_secret/);
-	assert.ok(output.length < 5000, "detail rendering stays bounded");
+	assert.ok(output.length < 8000, "detail rendering stays bounded");
 });
 
 test("Ink status card renders compact runtime fields bars unavailable states tools credits and provider labels", () => {
@@ -169,14 +209,21 @@ test("Ink status card renders compact runtime fields bars unavailable states too
 		{ id: "status-full", kind: "tool.status", status: "done", lines: [], output: fullStatusPayload(), sourceNodeIds: ["status-full"] },
 		{ id: "status-partial", kind: "tool.status", status: "done", lines: [], output: partialStatusPayload(), sourceNodeIds: ["status-partial"] },
 		{ id: "status-unavailable", kind: "tool.status", status: "done", lines: [], output: unavailableStatusPayload(), sourceNodeIds: ["status-unavailable"] },
+		{ id: "status-disposed", kind: "tool.status", status: "done", lines: [], output: disposedStatusPayload(), sourceNodeIds: ["status-disposed"] },
 	];
 	const output = renderToString(React.createElement(InkTerminalView, { rows, maxRows: 10, maxLineChars: 180 }));
 
 	assert.match(output, /Status — status · done · idle · session Terminal parity fixture/);
 	assert.match(output, /model GPT\s*Test · owner Web user Fixture/);
-	assert.match(output, /Provider plan: pro/);
-	assert.match(output, /Credits: unlimited/);
-	assert.match(output, /Enabled tools: 3 \(read, edit, bash\)/);
+	assert.match(output, /Identity: owner Web user Fixture · session Terminal parity fixture · profile\s*pibo-agent · model GPT\s*Test/);
+	assert.match(output, /Runtime: idle · queue 3/);
+	assert.match(output, /Provider: plan pro · credits unlimited/);
+	assert.match(output, /Tools: enabled 3 folded · active bash · names in details/);
+	assert.doesNotMatch(output, /Enabled tools: 3 \(read, edit, bash\)/);
+	assert.doesNotMatch(output, /Processing: no|Streaming: no|Disposed: no|Fast mode: off/);
+	assert.match(output, /Runtime: streaming · queue 1 · streaming yes/);
+	assert.match(output, /Runtime: idle\n ↳ Message: Provider\/context usage unavailable/);
+	assert.match(output, /Runtime: disposed · disposed yes/);
 	assert.match(output, /anthropic messages: .*75\.0%/);
 	assert.match(output, /anthropic messages: .*75\.0% remaining/);
 	assert.match(output, /local-ai requests: unavailable · [░-]+/);
@@ -210,10 +257,12 @@ test("Ink Session app keeps owner, session, error, and command state readable at
 			connected: true,
 			activeOwnerLabel: "Web user narrow",
 			activeOwnerScope: "user:narrow",
+			activeRoomId: "room_narrow",
 			activeAgentId: "pibo-agent",
 			activeModel: { provider: "openai", id: "gpt-test", label: "GPT Test" },
 		},
-		session: { id: "ps_narrow", title: "Narrow Session", ownerScope: "user:narrow", profile: "pibo-agent", status: "idle" },
+		activeRoom: { id: "room_narrow", title: "Narrow Room", ownerScope: "user:narrow" },
+		session: { id: "ps_narrow", title: "Narrow Session", roomId: "room_narrow", ownerScope: "user:narrow", profile: "pibo-agent", status: "idle" },
 		rows: [
 			{ id: "err", kind: "error", status: "error", lines: [], error: "Provider TOKEN=secret-value failed in a narrow terminal", sourceNodeIds: ["err"] },
 		],
@@ -223,16 +272,17 @@ test("Ink Session app keeps owner, session, error, and command state readable at
 		message: "Status card remains readable.",
 	};
 	const headerLines = formatStatusHeaderLines(state, 60);
-	assert.ok(headerLines.some((line) => line.includes("owner ")), "narrow header includes an owner line");
-	assert.ok(headerLines.some((line) => line.includes("session ")), "narrow header includes a session line");
+	assert.ok(headerLines.some((line) => line.includes("owner Web user narrow") && line.includes("room Narrow Room")), "narrow header includes owner and room names");
+	assert.ok(headerLines.some((line) => line.includes("session Narrow Session")), "narrow header includes a session line");
 	const output = renderToString(React.createElement(InkSessionAppView, { state, maxRows: 5, maxLineChars: 60 }));
 
-	assert.match(output, /owner Web user narrow/);
+	assert.match(output, /owner Web user narrow · room Narrow Room/);
 	assert.match(output, /session Narrow Session/);
 	assert.match(output, /Error:/);
 	assert.match(output, /Status card remains readable/);
 	assert.match(output, /› \/status/);
-	assert.match(output, /✕ ▣ Error/);
+	assert.match(output, /✕ Provider TOKEN=\[redacted\] failed/);
+	assert.doesNotMatch(output, /▣ Error/);
 	assert.match(output, /TOKEN=\[redacted\]/);
 	assert.doesNotMatch(output, /secret-value/);
 });
@@ -243,9 +293,9 @@ test("Ink renderer no-color output remains readable through text markers", () =>
 	try {
 		const output = renderToString(React.createElement(InkTerminalView, { rows: fixtureRows(), maxRows: 20, maxLineChars: 80 }));
 		assert.match(output, /› Investigate issue/);
-		assert.match(output, /▣ Tool — tool · done/);
-		assert.match(output, /↳ Called read/);
-		assert.match(output, /✕ ▣ Error — error · error/);
+		assert.match(output, /• Called read/);
+		assert.match(output, /✕ • Error boom/);
+		assert.doesNotMatch(output, /▣ (Tool|Error)/);
 		assert.doesNotMatch(output, /\u001b\[/);
 	} finally {
 		if (previousNoColor === undefined) delete process.env.NO_COLOR;
@@ -270,9 +320,75 @@ test("InkTerminalView bounds large row lists to a tail window", () => {
 	assert.match(output, /message 5/);
 });
 
-test("terminal markdown helper renders plain lists, links, and code fences", () => {
-	const lines = renderInkMarkdownLines("# Title\n\nSee [docs](https://example.test).\n\n- item\n\n```ts\nconst ok = true;\n```", { maxLines: 20 });
-	assert.deepEqual(lines, ["Title", "", "See docs (https://example.test).", "", "- item", "", "    const ok = true;"]);
+test("terminal markdown helper preserves structure, links, and code fences", () => {
+	const lines = renderInkMarkdownLines("# Title\n\nSee [docs](https://example.test) and `code`.\n\n- item\n  - nested\n\n```ts\nconst ok = true;\n```", { maxLines: 20 });
+	assert.deepEqual(lines, ["# Title", "", "See docs (https://example.test) and `code`.", "", "• item", "  • nested", "", "┌ code ts", "  const ok = true;", "└ code"]);
+});
+
+test("terminal inline JSON helper emits Web-derived token roles and disclosure markers", () => {
+	const fixture = nestedJsonSyntaxFixture();
+	const tokens = formatInlineJsonTokens(fixture.input);
+	const text = tokens.map((token) => token.text).join("");
+	assert.match(text, /^▾\{/);
+	assert.match(text, /"query": "terminal parity"/);
+	assert.match(text, /"paths": ▸\[\.\.\.\]/);
+	assert.match(text, /"filters": ▸\{\.\.\.\}/);
+	assert.match(text, /\.\.\. \(\+\d+ chars\)/);
+	assert.doesNotMatch(text, /fixture-secret-value|json-inline-secret/);
+	assert.equal(tokens.find((token) => token.text === "search_files"), undefined);
+	assert.equal(tokens.some((token) => token.tone === "default" && token.text.includes("query")), true);
+	assert.equal(tokens.some((token) => token.tone === "yellow" && token.text.includes("terminal parity")), true);
+	assert.equal(formatInlineJsonTokens({ ok: true, count: 3, missing: null, nested: { hidden: false } }).some((token) => token.tone === "blue"), true);
+	assert.equal(tokens.some((token) => token.tone === "dim" && token.text.includes("▸")), true);
+
+	const callTokens = formatFunctionCallTokens(fixture.functionName, fixture.input);
+	assert.match(callTokens.map((token) => token.text).join(""), /^search_files\(▾\{/);
+	assert.equal(callTokens[0].tone, "yellow");
+});
+
+test("terminal detail JSON helper renders metadata and bounded JSON wells", () => {
+	const fixture = nestedJsonSyntaxFixture();
+	const lines = formatDetailJsonWellLines(fixture.detailText);
+	assert.ok(lines);
+	const text = lines.join("\n");
+	assert.match(text, /Meta: metadata before json/);
+	assert.match(text, /┌ JSON/);
+	assert.match(text, /"ok": true/);
+	assert.match(text, /"nested":/);
+	assert.match(text, /▸\[\.\.\.\]/);
+	assert.match(text, /└ JSON/);
+	assert.doesNotMatch(text, /fixture-secret-value/);
+});
+
+test("terminal markdown helper tokenizes markdown, bash, JSON, and reasoning roles", () => {
+	const lines = renderInkMarkdownTerminalLines(markdownSyntaxFixture(), { maxLines: 40, reasoning: true });
+	const text = lines.map((line) => line.tokens.map((token) => token.text).join("")).join("\n");
+	assert.match(text, /# Web-derived terminal markdown/);
+	assert.match(text, /> quoted operator note/);
+	assert.match(text, /1\. first numbered item/);
+	assert.match(text, /   • nested bullet/);
+	assert.match(text, /\| command \| result \|/);
+	assert.match(text, /┌ code bash/);
+	assert.match(text, /OPENAI_API_KEY=\[redacted\] pibo tui:sessions --room room_named_fixture \| tee \/tmp\/out/);
+	assert.match(text, /┌ code json/);
+	assert.equal(lines.some((line) => line.tokens.some((token) => token.tone === "amber")), true);
+	assert.equal(lines.some((line) => line.tokens.some((token) => token.tone === "cyan" && token.text.includes("`inline code`"))), true);
+	assert.equal(lines.some((line) => line.tokens.some((token) => token.tone === "red" && token.text === "|")), true);
+	assert.equal(lines.some((line) => line.tokens.some((token) => token.tone === "blue" && /true|3|false/.test(token.text))), true);
+});
+
+test("terminal bash tokenizer follows Web-derived syntax roles", () => {
+	const tokens = tokenizeInkBashCommand("OPENAI_API_KEY=[redacted] pibo tui:sessions --room room_named_fixture | tee /tmp/out");
+	assert.deepEqual(tokens.filter((token) => token.text.trim()).map((token) => [token.text, token.tone, token.weight]), [
+		["OPENAI_API_KEY=[redacted]", "yellow", undefined],
+		["pibo", "green", "semibold"],
+		["tui:sessions", "default", undefined],
+		["--room", "magenta", undefined],
+		["room_named_fixture", "default", undefined],
+		["|", "red", "semibold"],
+		["tee", "default", undefined],
+		["/tmp/out", "cyan", undefined],
+	]);
 });
 
 test("terminal JSON helper pretty-prints and marks bounded truncation", () => {

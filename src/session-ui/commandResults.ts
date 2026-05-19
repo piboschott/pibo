@@ -5,7 +5,7 @@ export type CommandResultDescriptor =
 	| { kind: "json"; title?: string; value: unknown }
 	| { kind: "menu"; title: string; items: readonly CommandResultMenuItem[] }
 	| { kind: "status"; title: string; status: unknown }
-	| { kind: "session-link"; title: string; sessionId: string; roomId?: string; label?: string }
+	| { kind: "session-link"; title: string; sessionId: string; roomId?: string; roomLabel?: string; label?: string }
 	| { kind: "unsupported"; command: string; reason: string }
 	| { kind: "error"; title?: string; message: string };
 
@@ -37,7 +37,8 @@ export function normalizeCommandResultDescriptor(command: string, value: unknown
 			title: command,
 			sessionId: String(record.piboSessionId ?? record.sessionId),
 			roomId: typeof record.roomId === "string" ? record.roomId : undefined,
-			label: typeof record.title === "string" ? redactTerminalSecret(record.title) : undefined,
+			roomLabel: typeof record.roomTitle === "string" ? redactTerminalSecret(record.roomTitle) : typeof record.roomLabel === "string" ? redactTerminalSecret(record.roomLabel) : undefined,
+			label: typeof record.title === "string" ? redactTerminalSecret(record.title) : typeof record.sessionTitle === "string" ? redactTerminalSecret(record.sessionTitle) : undefined,
 		};
 	}
 	if (record.action === "show_login_menu" || record.action === "show_model_menu" || record.action === "show_fork_candidates" || Array.isArray(record.items) || Array.isArray(record.providers) || Array.isArray(record.messages)) {

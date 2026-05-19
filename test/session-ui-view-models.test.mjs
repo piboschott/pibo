@@ -6,15 +6,19 @@ import {
 	buildOwnerPickerDescriptor,
 	buildRoomPickerDescriptor,
 	buildSessionPickerDescriptor,
+	buildSlashCommandBehaviorMatrix,
 	buildSlashCommandCatalog,
 	buildTerminalCardDescriptor,
 	buildTerminalCardDescriptors,
+	CLI_ONLY_SLASH_COMMANDS,
+	commandSupportLabel,
 	groupSlashCommandsForHelp,
 	buildTerminalStatusViewModel,
 	filterSlashCommands,
 	normalizeCommandErrorDescriptor,
 	normalizeCommandResultDescriptor,
 	progressBarText,
+	WEB_PARITY_SLASH_COMMANDS,
 } from "../dist/session-ui/index.js";
 import { buildCanonicalTerminalRows } from "./fixtures/terminal-parity-fixtures.mjs";
 
@@ -95,6 +99,29 @@ test("shared terminal card descriptors cover required rich rows and redact befor
 	assert.doesNotMatch(serialized, /sk_live_secret|secret-value/);
 });
 
+test("shared slash-command behavior matrix covers static and dynamic commands", () => {
+	const catalog = buildSlashCommandCatalog([
+		{ name: "custom.action", slashCommands: ["custom-action"], description: "Run custom action" },
+		{ slash: "/browser-only", description: "Browser only", browserOnly: true, unsupportedReason: "Needs window.document" },
+	]);
+	const matrix = buildSlashCommandBehaviorMatrix(catalog);
+	for (const command of catalog) {
+		const entry = matrix.find((candidate) => candidate.slash === command.slash);
+		assert.ok(entry, `matrix covers ${command.slash}`);
+		assert.equal(entry.supportLabel, commandSupportLabel(command));
+		assert.equal(entry.group, command.group);
+		assert.equal(entry.palette, "shown");
+		assert.ok(entry.enterBehavior.length > 0);
+		assert.ok(entry.errorBehavior.length > 0);
+	}
+	for (const command of [...CLI_ONLY_SLASH_COMMANDS, ...WEB_PARITY_SLASH_COMMANDS]) {
+		assert.ok(matrix.some((entry) => entry.id === command.id && entry.slash === command.slash), `matrix covers static ${command.slash}`);
+	}
+	assert.equal(matrix.find((entry) => entry.slash === "/room")?.resultPlacement, "overlay");
+	assert.equal(matrix.find((entry) => entry.slash === "/session-current")?.contextRequirement, "active session when available; named room context preferred");
+	assert.equal(matrix.find((entry) => entry.slash === "/browser-only")?.errorBehavior, "render compact unsupported result");
+});
+
 test("shared command catalog merges gateway capabilities and filters prefixes", () => {
 	const catalog = buildSlashCommandCatalog([
 		{ name: "custom.action", slashCommands: ["custom-action"], description: "Run TOKEN=secret_value action" },
@@ -126,7 +153,9 @@ test("shared command result descriptors normalize menus status links unsupported
 	assert.equal(forkMenu.kind, "menu");
 	assert.equal(forkMenu.items[0].id, "entry_one");
 	assert.match(forkMenu.items[0].label, /Fork from this user message/);
-	assert.equal(normalizeCommandResultDescriptor("clone", { piboSessionId: "ps_clone", roomId: "room_a", title: "Clone" }).kind, "session-link");
+	const cloneLink = normalizeCommandResultDescriptor("clone", { piboSessionId: "ps_clone", roomId: "room_a", roomTitle: "Named Web Room", title: "Clone" });
+	assert.equal(cloneLink.kind, "session-link");
+	assert.equal(cloneLink.roomLabel, "Named Web Room");
 	const unsupported = normalizeCommandResultDescriptor("download", { supported: false, unsupportedReason: "Browser API only" });
 	assert.equal(unsupported.kind, "unsupported");
 	assert.match(unsupported.reason, /Browser API only/);
@@ -185,9 +214,9 @@ test("Web and Ink rich terminal renderers consume shared descriptors without cro
 	assert.doesNotMatch(statusCardSource, /OpenAI Codex quota/, "Web status card should use provider labels from descriptors instead of hardcoding OpenAI");
 
 	const inkRowSource = fs.readFileSync(path.resolve("src/apps/cli-ui/InkTerminalRow.ts"), "utf8");
-	assert.match(inkRowSource, /buildTerminalCardDescriptor\(row\)/, "Ink rich rows must pass through shared terminal card descriptors");
-	assert.match(inkRowSource, /InkTerminalCard/, "Ink should render shared cards with terminal-native card primitives");
-	assert.doesNotMatch(inkRowSource, /case\s+["']tool\.(?:status|thinking|model|login)["']/, "Ink renderer should not fork rich supported card kinds away from shared descriptors");
+	assert.match(inkRowSource, /buildTerminalCardDescriptor\(row\)/, "Ink structured exceptions must pass through shared terminal card descriptors");
+	assert.match(inkRowSource, /InkTerminalCard/, "Ink should render shared structured exceptions with terminal-native card primitives");
+	assert.match(inkRowSource, /isStructuredCardException/, "Ink should explicitly limit card rendering to Web-equivalent structured exceptions");
 
 	const cliSourceDir = path.resolve("src/apps/cli-ui");
 	const cliFiles = listSourceFiles(cliSourceDir);

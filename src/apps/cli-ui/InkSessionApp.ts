@@ -27,6 +27,7 @@ import type {
 	CliSessionSummary,
 } from "../../cli-session/index.js";
 import { InkTerminalView } from "./InkTerminalView.js";
+import { isExpandableTerminalRow } from "./InkTerminalRow.js";
 
 export type InkSessionPickerItem = {
 	id: string;
@@ -74,6 +75,8 @@ export type InkSessionAppState = {
 	session?: CliSessionSummary;
 	rows: readonly CompactTerminalRow[];
 	input: string;
+	selectedRowId?: string;
+	expandedRowIds?: readonly string[];
 	mode: "transcript" | "session-picker" | "agent-picker" | "detail" | "picker";
 	picker?: InkSessionPickerState;
 	slashCommands?: readonly SlashCommandDescriptor[];
@@ -126,11 +129,15 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		closeOpenSession();
 		const opened = await source.openSession(sessionId);
 		openedRef.current = opened;
+		const activeRoom = opened.session.roomId
+			? (await source.listRooms({ ownerScope: opened.session.ownerScope })).find((room) => room.id === opened.session.roomId)
+			: undefined;
 		const rows = [...(localRows ?? []), ...buildCompactTerminalRows(opened.traceView, { showThinking: false })];
-		setState((current) => ({
+		setState((current) => normalizeInkRowSelection({
 			...current,
 			loading: false,
 			status: opened.status,
+			activeRoom,
 			session: opened.session,
 			rows,
 			mode: "transcript",
@@ -139,7 +146,7 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 			error: undefined,
 		}));
 		unsubscribeRef.current = opened.subscribe((sourceUpdate) => {
-			setState((current) => ({
+			setState((current) => normalizeInkRowSelection({
 				...current,
 				session: sourceUpdate.session ?? current.session,
 				status: sourceUpdate.status ?? current.status,
@@ -344,6 +351,10 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		}
 		if (key.return) {
 			const submitted = stateRef.current.input;
+			if (submitted.length === 0 && !stateRef.current.picker && !stateRef.current.slashSuggestions && canToggleSelectedRowDetails(stateRef.current)) {
+				setState((current) => reduceInkSessionInputState(current, { type: "toggle-details" }));
+				return;
+			}
 			if (stateRef.current.slashSuggestions && !stateRef.current.picker) {
 				const accepted = acceptSlashSuggestion(stateRef.current);
 				if (accepted.runInput) {
@@ -369,6 +380,10 @@ export function InkSessionApp({ source, initialSessionId, skipOwnerPicker = fals
 		}
 		if (key.backspace || key.delete) {
 			setState((current) => reduceInkSessionInputState(current, { type: "backspace" }));
+			return;
+		}
+		if (input === "d" && !key.ctrl && !key.meta && stateRef.current.input.length === 0 && !stateRef.current.picker && !stateRef.current.slashSuggestions && canToggleSelectedRowDetails(stateRef.current)) {
+			setState((current) => reduceInkSessionInputState(current, { type: "toggle-details" }));
 			return;
 		}
 		if (input && !key.ctrl && !key.meta) {
@@ -398,7 +413,7 @@ export function InkSessionAppView({ state, maxRows = 20, maxLineChars }: InkSess
 		state.error ? React.createElement(Text, { color: "red" }, `Error: ${state.error}`) : null,
 		...(state.message ? renderBoundedTextLines(state.message, "gray", lineLimit, "message") : []),
 		state.picker ? React.createElement(InkSessionPickerView, { picker: state.picker, maxLineChars: lineLimit }) : null,
-		React.createElement(InkTerminalView, { rows: state.rows, maxRows, maxLineChars: lineLimit }),
+		React.createElement(InkTerminalView, { rows: state.rows, maxRows, maxLineChars: lineLimit, selectedRowId: state.selectedRowId, expandedRowIds: state.expandedRowIds }),
 		state.slashSuggestions ? React.createElement(InkSlashSuggestionsView, { suggestions: state.slashSuggestions, maxLineChars: lineLimit }) : null,
 		React.createElement(Text, { color: state.mode === "transcript" ? "green" : "yellow" }, `› ${state.input}`),
 	);
@@ -454,11 +469,13 @@ export type InkSessionInputAction =
 	| { type: "enter" }
 	| { type: "escape" }
 	| { type: "up" }
-	| { type: "down" };
+	| { type: "down" }
+	| { type: "toggle-details" };
 
 export function reduceInkSessionInputState(state: InkSessionAppState, action: InkSessionInputAction): InkSessionAppState {
 	if (action.type === "text") return withSlashSuggestions({ ...state, input: state.input + action.value, message: undefined, error: undefined });
 	if (action.type === "backspace") return withSlashSuggestions({ ...state, input: state.input.slice(0, -1) });
+	if (action.type === "toggle-details") return toggleSelectedRowDetails(state);
 	if (action.type === "escape") {
 		if (state.slashSuggestions) return { ...state, slashSuggestions: undefined, overlayStack: popInkSessionOverlay(state.overlayStack), message: "Closed slash suggestions." };
 		if (state.picker?.parent) {
@@ -472,6 +489,7 @@ export function reduceInkSessionInputState(state: InkSessionAppState, action: In
 			const selectedIndex = (state.slashSuggestions.selectedIndex + direction + state.slashSuggestions.items.length) % state.slashSuggestions.items.length;
 			return { ...state, slashSuggestions: { ...state.slashSuggestions, selectedIndex } };
 		}
+		if (!state.picker && state.input.length === 0) return selectExpandableRow(state, action.type === "up" ? -1 : 1);
 		if (!state.picker || state.picker.items.length === 0) return state;
 		const direction = action.type === "up" ? -1 : 1;
 		const selectedIndex = (state.picker.selectedIndex + direction + state.picker.items.length) % state.picker.items.length;
@@ -484,6 +502,53 @@ export function reduceInkSessionInputState(state: InkSessionAppState, action: In
 		message: undefined,
 		error: undefined,
 	};
+}
+
+export function normalizeInkRowSelection(state: InkSessionAppState): InkSessionAppState {
+	const expandableIds = expandableRowIds(state.rows);
+	const expandedRowIds = (state.expandedRowIds ?? []).filter((id) => expandableIds.includes(id));
+	if (expandableIds.length === 0) return { ...state, selectedRowId: undefined, expandedRowIds };
+	const selectedRowId = state.selectedRowId && expandableIds.includes(state.selectedRowId)
+		? state.selectedRowId
+		: expandableIds[expandableIds.length - 1];
+	return { ...state, selectedRowId, expandedRowIds };
+}
+
+function selectExpandableRow(state: InkSessionAppState, direction: -1 | 1): InkSessionAppState {
+	const normalized = normalizeInkRowSelection(state);
+	const ids = expandableRowIds(normalized.rows);
+	if (ids.length === 0) return normalized;
+	const currentIndex = Math.max(0, ids.indexOf(normalized.selectedRowId ?? ids[ids.length - 1]));
+	const selectedRowId = ids[(currentIndex + direction + ids.length) % ids.length];
+	return { ...normalized, selectedRowId, message: `Focused row ${currentIndexLabel(ids, selectedRowId)}. Press d or Enter for details.` };
+}
+
+function toggleSelectedRowDetails(state: InkSessionAppState): InkSessionAppState {
+	const normalized = normalizeInkRowSelection(state);
+	const selectedRowId = normalized.selectedRowId;
+	if (!selectedRowId) return { ...normalized, message: "No expandable row is available." };
+	const expanded = new Set(normalized.expandedRowIds ?? []);
+	const opening = !expanded.has(selectedRowId);
+	if (opening) expanded.add(selectedRowId);
+	else expanded.delete(selectedRowId);
+	return {
+		...normalized,
+		expandedRowIds: [...expanded],
+		message: opening ? "Opened row details." : "Closed row details.",
+	};
+}
+
+function canToggleSelectedRowDetails(state: InkSessionAppState): boolean {
+	return expandableRowIds(state.rows).length > 0;
+}
+
+function expandableRowIds(rows: readonly CompactTerminalRow[]): string[] {
+	return rows.filter(isExpandableTerminalRow).map((row) => row.id);
+}
+
+function currentIndexLabel(ids: readonly string[], selectedRowId: string | undefined): string {
+	const index = selectedRowId ? ids.indexOf(selectedRowId) : -1;
+	return index >= 0 ? `${index + 1}/${ids.length}` : `1/${ids.length}`;
 }
 
 function withSlashSuggestions(state: InkSessionAppState): InkSessionAppState {
@@ -563,7 +628,7 @@ export function cliCommandSummaryText(catalog: readonly SlashCommandDescriptor[]
 }
 
 export function cliCommandHintText(): string {
-	return "commands: / opens palette · /status runtime · /room /session navigate · /help catalog · ctrl-c exit";
+	return "commands: / opens palette · /status runtime · /room /session navigate · /help catalog · ↑↓ focus rows · d/enter details · ctrl-c exit";
 }
 
 export function cliSessionSlashHelpText(catalog: readonly SlashCommandDescriptor[] = buildSlashCommandCatalog()): string {
@@ -580,7 +645,7 @@ export function cliSessionSlashHelpText(catalog: readonly SlashCommandDescriptor
 		navigation,
 		"Unsupported or deferred terminal commands:",
 		unsupported,
-		"Keyboard controls: type / for suggestions; ↑/↓ selects; Enter accepts or runs; Esc closes suggestions or backs out of pickers; room flow is owner → room → session.",
+		"Keyboard controls: type / for suggestions; ↑/↓ selects suggestions, pickers, or expandable transcript rows; Enter accepts/runs or opens focused details when the composer is empty; d toggles focused details; Esc closes suggestions or backs out of pickers; room flow is owner → room → session.",
 	].join("\n");
 }
 
@@ -652,7 +717,7 @@ async function handleSlashCommand(
 	}
 	if (command.name === "clear") {
 		const result = await source.executeSlashCommand({ command: command.name, args: command.args, sessionId: state.session?.id, ownerScope: state.activeOwner?.ownerScope });
-		setState((current) => ({ ...current, rows: [], message: `${renderCommandResultDescriptorText(result.descriptor, current.session)}\nCleared local display. Session data was not deleted.`, error: undefined }));
+		setState((current) => normalizeInkRowSelection({ ...current, rows: [], message: `${renderCommandResultDescriptorText(result.descriptor, current.session)}\nCleared local display. Session data was not deleted.`, error: undefined }));
 		return;
 	}
 	if (command.name === "exit" || command.name === "quit") {
@@ -1124,7 +1189,7 @@ function applyCommandResultToState(
 	descriptor: CommandResultDescriptor,
 	status?: CliRuntimeStatus,
 ): InkSessionAppState {
-	return {
+	return normalizeInkRowSelection({
 		...current,
 		...(status ? { status } : {}),
 		mode: "transcript",
@@ -1134,7 +1199,7 @@ function applyCommandResultToState(
 		rows: appendCommandResultRows(current.rows, command, descriptor, status, current.session),
 		message: undefined,
 		error: undefined,
-	};
+	});
 }
 
 export function appendCommandResultRows(
@@ -1230,7 +1295,7 @@ export function renderCommandResultDescriptorText(descriptor: CommandResultDescr
 	if (descriptor.kind === "text") return [descriptor.title, descriptor.text].filter(Boolean).join(": ");
 	if (descriptor.kind === "unsupported") return `${descriptor.command}: ${descriptor.reason}`;
 	if (descriptor.kind === "error") return `${descriptor.title ?? "Error"}: ${descriptor.message}`;
-	if (descriptor.kind === "session-link") return `${descriptor.title}: ${descriptor.label ?? "session"} ${descriptor.sessionId}${descriptor.roomId ? ` in ${descriptor.roomId}` : ""}`;
+	if (descriptor.kind === "session-link") return `${descriptor.title}: ${descriptor.label ?? "session"} ${descriptor.sessionId}${descriptor.roomLabel ? ` in ${descriptor.roomLabel}` : descriptor.roomId ? ` in room ${descriptor.roomId}` : ""}`;
 	if (descriptor.kind === "status") return renderCliStatusCardText(descriptor.status as CliRuntimeStatus, session, descriptor.title);
 	if (descriptor.kind === "menu") return [descriptor.title, ...descriptor.items.map((item) => `  ${item.disabled ? "-" : "•"} ${item.label}${item.description ? ` — ${item.description}` : ""}`)].join("\n");
 	return `${descriptor.title ?? "Result"}: ${redactCliSessionStatusText(JSON.stringify(descriptor.value, null, 2))}`;
@@ -1364,19 +1429,35 @@ function renderBoundedTextLines(value: string, color: string, _max: number, keyP
 
 export function formatStatusHeaderLines(state: InkSessionAppState, max = 220): string[] {
 	const source = state.status?.source ?? "starting";
-	const owner = state.status?.activeOwnerLabel ? `${state.status.activeOwnerLabel} (${state.status.activeOwnerScope ?? "unknown"})` : state.status?.activeOwnerScope ?? state.session?.ownerScope ?? "owner unknown";
+	const owner = statusHeaderOwner(state);
+	const room = statusHeaderRoom(state);
 	const session = state.session?.title ?? state.status?.activeSessionId ?? "no session";
 	const agent = state.session?.agentId ?? state.session?.profile ?? state.status?.activeAgentId ?? "default";
 	const model = state.status?.activeModel ? `${state.status.activeModel.provider}/${state.status.activeModel.id}` : "model unknown";
 	const mode = state.mode === "transcript" ? "transcript" : state.mode;
-	const full = `pibo sessions · ${source} · ${mode} · owner ${owner} · session ${session} · agent ${agent} · model ${model}`;
-	if (max >= 96 || full.length <= max) return [full];
+	const parts = [`pibo sessions`, source, mode, `owner ${owner}`, room ? `room ${room}` : undefined, `session ${session}`, `agent ${agent}`, `model ${model}`].filter(Boolean);
+	const full = parts.join(" · ");
+	if (max >= 112 || full.length <= max) return [full];
 	return [
 		`pibo sessions · ${source} · ${mode}`,
-		`owner ${owner}`,
+		`owner ${owner}${room ? ` · room ${room}` : ""}`,
 		`session ${session}`,
 		`agent ${agent} · model ${model}`,
 	];
+}
+
+function statusHeaderOwner(state: InkSessionAppState): string {
+	return state.status?.activeOwnerLabel
+		?? state.activeOwner?.label
+		?? state.status?.activeOwnerScope
+		?? state.session?.ownerScope
+		?? "owner unknown";
+}
+
+function statusHeaderRoom(state: InkSessionAppState): string | undefined {
+	const title = state.activeRoom?.title?.trim();
+	if (title) return title;
+	return state.status?.activeRoomId ?? state.session?.roomId;
 }
 
 export function createCliSessionCleanup(closeOpenSession: () => void, closeSource: () => void): () => void {

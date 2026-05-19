@@ -64,7 +64,7 @@ This catalog converts the Ink CLI Terminal Rendering Parity change spec into imp
 
 Before implementing PRDs 02-13, apply the reusable gate in `../terminal-design-contract.md#visual-evidence-checklist`. Record the story id, design rules checked, exact PTY command, artifact directory, evidence tier, observed screen result, limitations, Web impact, redaction check, and gate commands.
 
-For Phase 2, PRD 08 is the ordering anchor: update the difference matrix first, then implement preview/details, row grammar/spacing, JSON/markdown, slash/room resolution, and final validation.
+For Phase 2, PRD 08 is the ordering anchor: update `../web-terminal-difference-matrix.md` first, then implement preview/details, row grammar/spacing, JSON/markdown, slash/room resolution, and final validation. Any newly discovered Web-vs-Ink difference must be added to the matrix with fixture coverage and an owning PRD/story before it is marked complete.
 
 Final PRD 07 evidence is summarized in `../../../../reports/ink-cli-terminal-rendering-parity-final-2026-05-17.md`. Reusable PTY scenarios are documented in `../../../../reports/ink-cli-v2-pty-smoke-scenarios.md`; generate review HTML with `node scripts/render-pty-artifact-html.mjs --artifact-dir <artifact-dir>`.
 

@@ -38,6 +38,21 @@ function baseAppState() {
 	};
 }
 
+test("Web-derived validation suite maps checks to matrix areas", async () => {
+	const listed = await execFileAsync("node", ["scripts/ink-cli-web-derived-parity-validate.mjs"]);
+	for (const id of ["matrix-shared-fixtures", "ink-renderer-controller", "web-semantic-hooks-final", "pty-scenario-catalog", "typecheck"]) {
+		assert.match(listed.stdout, new RegExp(`^${id}\\t`, "m"));
+	}
+	assert.match(listed.stdout, /slash-commands/);
+	assert.match(listed.stdout, /room-session-names/);
+	assert.match(listed.stdout, /web-preservation/);
+
+	const json = await execFileAsync("node", ["scripts/ink-cli-web-derived-parity-validate.mjs", "--json"]);
+	const payload = JSON.parse(json.stdout);
+	assert.ok(payload.checks.every((check) => check.id && check.areas.length && check.command.length), "every validation check names a failed rule area");
+	assert.ok(payload.checks.some((check) => check.command.join(" ").includes("test/ink-cli-terminal-rendering-parity-final.test.mjs")));
+});
+
 test("final PTY smoke runner exposes rendering-parity scenarios with bounded assertions", async () => {
 	const list = await execFileAsync("node", ["scripts/ink-cli-v2-pty-smoke.mjs", "--list"]);
 	for (const name of [
@@ -105,9 +120,10 @@ test("golden terminal screens keep transcript-first slash picker and command pla
 test("golden mixed transcript status and NO_COLOR screens reject visual regressions", () => {
 	const mixedRows = buildCanonicalTerminalRows();
 	const mixed = normalizeScreen(renderToString(React.createElement(InkTerminalView, { rows: mixedRows, maxRows: 40, maxLineChars: 140 })));
-	for (const snippet of ["› Audit the compact terminal renderer", "▣ Status — status · done", "▣ Thinking — thinking · done", "▣ Model — model · done", "▣ Login — login · done", "✕ ▣ Error — error · error"]) {
+	for (const snippet of ["› Audit the compact terminal renderer", "▣ Status — status · done", "▣ Thinking — thinking · done", "▣ Model — model · done", "▣ Login — login · done", "✕ • Error Provider failed"]) {
 		assert.match(mixed, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 	}
+	assert.doesNotMatch(mixed, /▣ (Tool|Yielded run|Compaction|Command|Error)/);
 	assert.ok(mixed.indexOf("Audit the compact terminal renderer") < mixed.indexOf("▣ Status — status · done"));
 	assert.match(mixed, /(?:TOKEN|token)=\[redacted\]/);
 	assert.doesNotMatch(mixed, /sk_fixture_secret|detail-secret-value|warning-secret-value/);
@@ -119,7 +135,7 @@ test("golden mixed transcript status and NO_COLOR screens reject visual regressi
 		const noColor = normalizeScreen(renderToString(React.createElement(InkTerminalView, { rows: statusRows, maxRows: 8, maxLineChars: 72 })));
 		assert.match(noColor, /Context: #/);
 		assert.match(noColor, /openai spend: #/);
-		assert.match(noColor, /Provider plan: team/);
+		assert.match(noColor, /Provider: plan team · credits \$42\.00/);
 		assert.doesNotMatch(noColor, /█|sk_fixture_secret|warning-secret-value/);
 	} finally {
 		if (previousNoColor === undefined) delete process.env.NO_COLOR;
@@ -135,6 +151,8 @@ test("Web compact terminal source keeps shared descriptor hooks for final parity
 	}
 
 	const compactSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx", "utf8");
+	const detailsSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/TerminalDetails.tsx", "utf8");
+	const inlineJsonSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/TerminalInlineJson.tsx", "utf8");
 	const statusSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/TerminalStatusCard.tsx", "utf8");
 	const thinkingSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/TerminalThinkingCard.tsx", "utf8");
 	const modelSource = fs.readFileSync("src/apps/chat-ui/src/session-views/compact-terminal/TerminalModelCard.tsx", "utf8");
@@ -143,6 +161,11 @@ test("Web compact terminal source keeps shared descriptor hooks for final parity
 	for (const hook of ["data-pibo-terminal-row=\"true\"", "data-row-kind={row.kind}", "data-row-status={row.status}", "data-event-id={row.eventId}", "data-run-id={row.runId}", "data-order-source={row.orderSource}"]) {
 		assert.match(compactSource, new RegExp(hook.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 	}
+	assert.match(compactSource, /TerminalDetails row=\{row\}/, "Web details stay row-owned and expanded below the parent row");
+	assert.match(detailsSource, /data-shared-terminal-details=\{row\.kind\}/);
+	assert.match(detailsSource, /data-shared-terminal-detail-json=\{label\}/);
+	assert.match(detailsSource, /data-shared-terminal-detail-text=\{label\}/);
+	assert.match(inlineJsonSource, /data-inline-json-path=\{path\}/);
 	assert.match(statusSource, /buildTerminalCardDescriptor\(row\)/);
 	assert.match(statusSource, /data-shared-terminal-card="status"/);
 	assert.match(statusSource, /data-shared-status-field=\{field\.id\}/);

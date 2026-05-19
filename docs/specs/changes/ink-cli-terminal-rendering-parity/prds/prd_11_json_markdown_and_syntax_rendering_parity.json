@@ -1,5 +1,5 @@
 {
-  "project": "Ink CLI Terminal Rendering Parity — Web-Derived Completion",
+  "project": "Ink CLI Terminal Rendering Parity \u2014 Web-Derived Completion",
   "branchName": "ralph/ink-cli-json-markdown-syntax",
   "description": "Implement terminal-native Ink JSON, markdown, and syntax rendering that follows Web semantic roles without importing Web components.",
   "userStories": [
@@ -19,8 +19,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-18: PASS. Implemented Ink inline function-call JSON token rendering with Web-derived function-name/parens/key/string/literal/punctuation roles, root expanded markers (`\u25be{`/`\u25be[`), nested collapsed collection markers (`\u25b8{...}`/`\u25b8[...]`), explicit long-string disclosure (`... (+N chars)`), and redaction before display. Added render/token tests for color-enabled roles and NO_COLOR-readable text. Evidence tier: focused renderer/unit snapshots plus deterministic fake/demo real Ink TUI PTY path. Docker validation: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/cli-session-source.test.mjs; npm run typecheck; npm test. PTY artifacts: /tmp/pibo-pty-json-markdown-us011-color and /tmp/pibo-pty-json-markdown-us011-nocolor. Classification: deterministic fake/demo source through real TUI path, not live provider. Web preservation: no Web Compact Terminal or shared src/session-ui production files changed; CLI-only renderer changes and fake demo/test updates only. Commit: fd634f6."
     },
     {
       "id": "US-002",
@@ -39,8 +39,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-18: PASS. Added Ink detail JSON well formatting for raw object/array values and JSON-looking text with leading metadata preserved as `Meta:` lines. Expanded details now render bounded `\u250c JSON`/`\u2514 JSON` wells with depth/item/key limits and nested disclosure markers while keeping source row details available through expansion. Tests cover parsed metadata, nested arrays/objects, redaction, and JSON wells in expanded PTY details. Validation: npm run build; focused node --test suite; npm run typecheck; npm test; PTY color artifact /tmp/pibo-pty-json-markdown-us011-color. Web preservation: CLI-only production changes; no Web UI/shared terminal model production changes. Commit: fd634f6."
     },
     {
       "id": "US-003",
@@ -49,7 +49,7 @@
       "acceptanceCriteria": [
         "Ink markdown renderer preserves headings, paragraphs, bullets, ordered lists, nested list indentation, blockquotes, inline code, fenced code, tables, and links as terminal-native text",
         "Reasoning markdown uses reasoning tone/markers distinct from assistant prose",
-        "Snapshots cover complex markdown and narrow wrapping without `… truncated`",
+        "Snapshots cover complex markdown and narrow wrapping without `\u2026 truncated`",
         "Web UI preservation gate passes: Web Compact Terminal visual/behavioral render logic remains unchanged unless the story explicitly documents user-approved Web behavior changes; shared `src/session-ui/**` changes include Web regression evidence.",
         "Implementation does not import Web DOM/Tailwind/lucide components into CLI modules",
         "Secrets are redacted in previews, details, fixtures, snapshots, and PTY artifacts",
@@ -58,8 +58,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-18: PASS. Improved Ink markdown rendering to preserve headings, compact paragraph gaps, unordered/ordered/nested lists, blockquotes, inline code, links, tables, fenced code boundaries, bash fences, JSON fences, and reasoning tones through terminal-native line tokens. Added complex markdown fixture coverage and deterministic demo markdown output for PTY review. Validation: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/cli-session-source.test.mjs; npm run typecheck; npm test. PTY artifacts show markdown/list/table/code output at /tmp/pibo-pty-json-markdown-us011-color and NO_COLOR fallback at /tmp/pibo-pty-json-markdown-us011-nocolor. Web preservation: no Web Compact Terminal changes. Commit: fd634f6."
     },
     {
       "id": "US-004",
@@ -77,8 +77,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-18: PASS. Added Ink bash tokenizer with Web-derived roles for command, flags, env/variables, quoted strings, paths, pipes/control operators, and default text, and applied JSON token roles to JSON fenced code lines. Unknown fences remain safe monospaced text. Existing shared execution command bash tokens remain unchanged. Validation: focused renderer token tests, npm run build, npm run typecheck, npm test, and PTY artifacts /tmp/pibo-pty-json-markdown-us011-color plus /tmp/pibo-pty-json-markdown-us011-nocolor. Secrets were rejected in artifacts and snapshots. Web preservation: CLI-only production changes. Commit: fd634f6."
     },
     {
       "id": "US-005",
@@ -96,8 +96,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-18: PASS. Captured JSON/markdown PTY evidence through the real `pibo tui:sessions --demo` Ink TUI path. Color artifact `/tmp/pibo-pty-json-markdown-us011-color` renders a nested JSON function call (`search_files` with `\u25be{` and `\u25b8[...]`), markdown heading/list/table/quote, fenced bash and JSON code, expanded details with `\u250c JSON`, and rejects json-inline-secret/json-demo-secret/fixture-secret-value. NO_COLOR fallback artifact `/tmp/pibo-pty-json-markdown-us011-nocolor` verifies the same text markers remain readable without color. Commands also passed: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/cli-session-source.test.mjs; npm run typecheck; npm test. Evidence tier: deterministic fake/demo source through real PTY path, not live provider. Web preservation gate satisfied: no Web Compact Terminal or src/session-ui production changes. Commit: fd634f6."
     }
   ]
 }

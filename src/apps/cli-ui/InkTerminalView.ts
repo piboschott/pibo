@@ -8,13 +8,16 @@ export type InkTerminalViewProps = {
 	maxRows?: number;
 	maxLineChars?: number;
 	showOmittedCount?: boolean;
+	selectedRowId?: string;
+	expandedRowIds?: readonly string[];
 };
 
 const DEFAULT_MAX_ROWS = 200;
 
-export function InkTerminalView({ rows, maxRows = DEFAULT_MAX_ROWS, maxLineChars, showOmittedCount = true }: InkTerminalViewProps): React.ReactElement {
+export function InkTerminalView({ rows, maxRows = DEFAULT_MAX_ROWS, maxLineChars, showOmittedCount = true, selectedRowId, expandedRowIds = [] }: InkTerminalViewProps): React.ReactElement {
 	const windowedRows = rowWindow(rows, maxRows);
 	const omitted = Math.max(0, rows.length - windowedRows.length);
+	const expanded = new Set(expandedRowIds);
 	return React.createElement(
 		Box,
 		{ flexDirection: "column" },
@@ -25,6 +28,8 @@ export function InkTerminalView({ rows, maxRows = DEFAULT_MAX_ROWS, maxLineChars
 			key: row.id,
 			maxLineChars,
 			row,
+			isExpanded: expanded.has(row.id),
+			isSelected: row.id === selectedRowId,
 		})),
 	);
 }

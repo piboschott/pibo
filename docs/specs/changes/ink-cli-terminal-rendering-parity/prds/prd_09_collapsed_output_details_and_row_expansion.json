@@ -1,5 +1,5 @@
 {
-  "project": "Ink CLI Terminal Rendering Parity — Web-Derived Completion",
+  "project": "Ink CLI Terminal Rendering Parity \u2014 Web-Derived Completion",
   "branchName": "ralph/ink-cli-output-preview-details",
   "description": "Restore Web collapsed-output disclosure semantics in shared rows and add terminal-native Ink row expansion so previews stay dense while full input/output/error remains available.",
   "userStories": [
@@ -10,7 +10,7 @@
       "acceptanceCriteria": [
         "Shared `previewLines` or successor logic limits collapsed output to five logical output lines for applicable row kinds",
         "Exploration group collapsed child summaries are limited to six logical lines",
-        "Visible preview lines preserve full characters and rely on wrapping, not `… truncated`",
+        "Visible preview lines preserve full characters and rely on wrapping, not `\u2026 truncated`",
         "Tests cover fewer-than-limit, exactly-at-limit, over-limit, empty-line, and long-unbroken-token cases",
         "Web UI preservation gate passes: Web Compact Terminal visual/behavioral render logic remains unchanged unless the story explicitly documents user-approved Web behavior changes; shared `src/session-ui/**` changes include Web regression evidence.",
         "Implementation does not import Web DOM/Tailwind/lucide components into CLI modules",
@@ -20,8 +20,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-17: PASS. Implemented shared Web-derived preview constants and explicit preview metadata in src/session-ui/terminalRows.ts. Collapsed previews remain bounded to 5 output lines for tool.call/tool.result/agent.async/yielded.run/execution.command/shell rows; exploration groups are now bounded to 6 child summaries. Existing preview logic still preserves full visible line text and uses +N omitted-line affordances rather than character truncation. Added focused tests for fewer-than-limit/empty, exactly-at-limit, over-limit, long-unbroken-token, and 8-item exploration group cases. Evidence tier: shared model + renderer-neutral fixture tests; no live/default PTY for this foundational story because PRD09 US-005 owns keyboard expansion PTY evidence. Commands in Docker worker: npm run build; node --test test/session-ui-terminal-rows.test.mjs test/terminal-parity-fixtures.test.mjs; npm run typecheck; npm run chat-ui:typecheck; npm test. Web UI preservation: shared src/session-ui change only; Web Compact Terminal visual code unchanged; npm run build included chat-ui:build, and fixture/source Web regression checks in terminal-parity-fixtures.test.mjs plus full npm test passed. Secret handling: no new unredacted fixture payloads or logs/artifacts added."
     },
     {
       "id": "US-002",
@@ -40,8 +40,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-17: PASS. Added renderer-neutral CompactTerminalPreviewOmission metadata on rows and detail items, including source, visibleLineCount, omittedLineCount, totalLineCount, and maxVisibleLineCount. Long-output fixtures now assert omittedLineCount=7 for 12-line outputs and preserve the full row.output payload for details; exploration grouping keeps all detailItems while collapsing visible summaries to 6 and recording omitted details metadata. Evidence tier: shared model + fake deterministic fixtures; no PTY artifact because PRD09 US-005 owns default-path long-output expansion evidence. Commands in Docker worker: npm run build; node --test test/session-ui-terminal-rows.test.mjs test/terminal-parity-fixtures.test.mjs; npm run typecheck; npm run chat-ui:typecheck; npm test. Web UI preservation: no Web Compact Terminal visual/behavioral render logic changed; shared metadata is additive; chat-ui:build via npm run build, chat-ui:typecheck, and full npm test passed."
     },
     {
       "id": "US-003",
@@ -60,8 +60,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-17: PASS. Added Ink selected-row state (`selectedRowId`) and expanded-row state (`expandedRowIds`) with normalization as rows change. Transcript Up/Down focus expandable rows when the composer is empty; Enter or `d` toggles details for the focused row while slash suggestions, pickers, and non-empty message input keep their existing behavior. Compact help now documents row focus and detail controls. Evidence tier: CLI controller/unit render tests plus deterministic PTY demo/default TUI path. Docker validation: npm run build; node --test test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs; npm run typecheck. PTY check: npm run dev -- debug pty run --rows 36 --cols 120 --artifact --artifact-dir /tmp/pibo-pty-detail-us003-pass2 --wait-for 'select room' --press Enter --wait-for 'select session' --press Enter --wait-for 'd/enter details' --type d --wait-for Details --press CtrlC --expect Details --expect 'Opened row details' --reject detail-secret-value -- npm run dev -- tui:sessions --demo. Artifact path: /tmp/pibo-pty-detail-us003-pass2. Classification: deterministic fake/demo source through real Ink TUI path, not live provider. Web preservation: no Web Compact Terminal or src/session-ui production code changed; build/typecheck included Web gates. Full regression: npm test passed in Docker worker (745 tests)."
     },
     {
       "id": "US-004",
@@ -80,8 +80,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-17: PASS. InkTerminalView now passes selected/expanded row state to InkTerminalRow. Collapsed rows keep bounded previews and show only a selected detail affordance; expanded rows render compact inline details below the parent row with `Details`, `Input`, `Output`, `Error`, linked session, and preview-omission line-count disclosure where present. Detail values preserve full multi-line string output and redact secrets before rendering; object/array values stay bounded through the existing terminal JSON formatter pending PRD11 detail JSON wells. Evidence tier: Ink renderer snapshots with deterministic expandable-detail fixture plus real Ink TUI demo PTY path. Docker validation: npm run build; node --test test/cli-ui-session-app.test.mjs test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs; npm run typecheck. PTY artifact path: /tmp/pibo-pty-detail-us003-pass2 showed collapsed `details available` then expanded `Details`/`Output` below the row and rejected `detail-secret-value`. Classification: deterministic fake/demo source through real TUI path, not live provider. Web preservation: no Web Compact Terminal or shared session-ui production code changed; build/typecheck included Web gates. Full regression: npm test passed in Docker worker (745 tests)."
     },
     {
       "id": "US-005",
@@ -100,8 +100,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "2026-05-17: PASS. Added a deterministic long-output row to the real `pibo tui:sessions --demo` default-path fixture (12 logical output lines, secret-bearing input) so PTY validation exercises the actual Ink app instead of a renderer-only script. Collapsed TUI output shows line 05 plus `+7 more lines` and `details available`, rejects line 06 and the long-output secret; expanded TUI output opened with `d` shows `Details`, `7 hidden while collapsed`, and line 12 while still rejecting the secret. Artifact paths in Docker worker: /tmp/pibo-pty-long-output-us005-collapsed and /tmp/pibo-pty-long-output-us005-expanded, each containing raw.ansi.log, clean.txt, screen.txt, events.jsonl, input.json, metadata.json, and assertions.json. Commands run in Docker: npm run build; node --test test/cli-ui-ink-renderer.test.mjs test/terminal-parity-fixtures.test.mjs test/session-ui-view-models.test.mjs test/cli-session-source.test.mjs test/ink-cli-terminal-rendering-parity-final.test.mjs test/ink-cli-v2-pty-smoke.test.mjs; npm run typecheck; npm test; PTY collapsed and expanded commands recorded in IMPLEMENTATION_PROGRESS.md. Evidence tier: deterministic fake/demo source through the real Ink TUI PTY path, not live provider. Web preservation: no Web Compact Terminal or src/session-ui production code changed."
     }
   ]
 }

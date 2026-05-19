@@ -19,8 +19,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added docs/specs/changes/ink-cli-terminal-rendering-parity/web-terminal-difference-matrix.md with Web law, current Ink gap, target behavior, fixture coverage, owner PRD/story, and validation gate rows for header, row grammar, spacing, preview/details, JSON, markdown/code, status, streaming, slash commands, pickers, room/session naming, no-color/narrow, and redaction. Evidence tier: docs/source plus focused fixture tests; no PTY artifact required for this matrix-only story. Web UI preservation: no Web Compact Terminal visual/behavioral files changed; no src/session-ui production changes. Validation: docker worker npm run build; node --test test/terminal-parity-fixtures.test.mjs; npm run typecheck."
     },
     {
       "id": "US-002",
@@ -38,8 +38,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added renderer-neutral web-derived long-output fixture helpers in test/fixtures/terminal-parity-fixtures.mjs with 12-line outputs for tool.call, tool.result-like rows, agent.async, yielded.run, shell-command tool, and execution.command. Focused tests assert first five preview lines, +7 more-lines affordance, no character truncation marker, bounded collapsed text, expandable rows, and full line 12 retained in output for details. Evidence tier: shared fixture/source/unit, fake deterministic fixture (not live provider); no PTY required in PRD08. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs; npm run typecheck."
     },
     {
       "id": "US-003",
@@ -57,8 +57,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added nestedJsonSyntaxFixture and markdownSyntaxFixture covering function-call JSON roles, nested objects/arrays, strings/numbers/booleans/null, >140-char string, JSON-looking detail text, secret-bearing source value for future redaction assertions, headings, paragraph, quote, nested list, table, inline code, fenced bash, and fenced JSON. Evidence tier: shared fixture/source/unit; fixture includes source secret only for redaction-path tests and no renderer snapshot/log exposes it. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs; npm run typecheck."
     },
     {
       "id": "US-004",
@@ -76,8 +76,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Added roomSessionNamingFixture with named/default/archived/missing-title rooms and titled/missing-room sessions, plus slashCommandBehaviorFixture derived from CLI_ONLY_SLASH_COMMANDS and WEB_PARITY_SLASH_COMMANDS with dynamic/browser-only fixture cases. Tests assert all catalog commands are represented and room/session primary labels prefer Web names with IDs as secondary/fallback metadata. Evidence tier: shared fixture/source/unit, deterministic fixture not live store. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs; npm run typecheck."
     },
     {
       "id": "US-005",
@@ -95,8 +95,8 @@
         "When marking passes true, notes include commands run, evidence tier, artifact paths where applicable, and fake/demo/mocked/real classification"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Passed 2026-05-17. Wired each matrix row to fixture id, owner PRD/story, and validation gate; README and tasks now link the matrix and require newly discovered differences to be added with fixture coverage and owner before completion. Evidence tier: docs/source plus WEB_DERIVED_TERMINAL_MATRIX_COVERAGE unit assertions. Web UI preservation: no direct Web behavior changes and no shared production model changes. Validation: npm run build; node --test test/terminal-parity-fixtures.test.mjs; npm run typecheck."
     }
   ]
 }

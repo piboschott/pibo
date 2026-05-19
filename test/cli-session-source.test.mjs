@@ -47,9 +47,17 @@ test("fake CLI session source opens trace fixtures compatible with shared compac
 	assert.equal(opened.session.title, "Existing fake session");
 	assert.equal(opened.traceView?.piboSessionId, "ps_fake_existing");
 	const rows = buildCompactTerminalRows(opened.traceView, { showThinking: false });
-	assert.deepEqual(rows.map((row) => row.kind), ["message.user", "message.assistant"]);
+	assert.deepEqual(rows.map((row) => row.kind), ["message.user", "message.assistant", "message.assistant", "tool.call", "tool.call", "yielded.run", "error"]);
 	assert.match(JSON.stringify(rows), /Hello from fake source/);
 	assert.match(JSON.stringify(rows), /Fake assistant response/);
+	assert.match(JSON.stringify(rows), /Web-derived terminal markdown/);
+	assert.match(JSON.stringify(rows), /search_files/);
+	const collapsedText = rows.flatMap((row) => row.lines.flatMap((line) => line.tokens.map((token) => token.text))).join("\n");
+	assert.match(collapsedText, /web-derived output line 05/);
+	assert.doesNotMatch(collapsedText, /web-derived output line 06/);
+	assert.equal(rows.find((row) => row.id === "node_fake_long_output_1")?.previewOmission?.omittedLineCount, 7);
+	assert.ok(rows.some((row) => row.kind === "yielded.run" && row.status === "running"));
+	assert.ok(rows.some((row) => row.kind === "error" && row.status === "error"));
 
 	opened.close();
 	assert.equal(source.listenerCount("ps_fake_existing"), 0);
@@ -510,6 +518,39 @@ test("local CLI session source routes slash actions under the selected owner and
 	assert.equal(clone.actionName, "session.clone");
 	assert.equal(clone.openSessionId, "ps_local_clone");
 	assert.equal((await source.openSession(clone.openSessionId)).session.id, "ps_local_clone");
+
+	await source.close();
+});
+
+test("local CLI session source resolves canonical room titles for commands and stale metadata", async () => {
+	const dataStore = new PiboDataStore(":memory:");
+	const sessionStore = new PiboDataSessionStore(dataStore);
+	const rooms = new ChatRoomService(dataStore);
+	const room = rooms.createRoom({ id: "room_named", ownerScope: "user:named", name: "Original Room", type: "chat" });
+	rooms.updateRoom(room.id, { name: "Renamed Web Room" });
+	const stale = sessionStore.create({
+		id: "ps_named_room",
+		piSessionId: "pi_named_room",
+		channel: "cli-session-ui",
+		kind: "chat",
+		profile: "pibo-agent",
+		ownerScope: "user:named",
+		title: "Named command session",
+		metadata: { chatRoomId: room.id, roomId: room.id, chatRoomName: "Stale Room Name", status: "idle", source: "pibo tui:sessions" },
+	});
+	const source = new LocalCliSessionSource({ dataStore, sessionStore, ownerScope: "user:named", now: () => fixedNow });
+
+	const resolvedRooms = await source.listRooms({ ownerScope: "user:named" });
+	assert.equal(resolvedRooms.find((candidate) => candidate.id === room.id)?.title, "Renamed Web Room");
+	const current = await source.executeSlashCommand({ command: "session-current", sessionId: stale.id });
+	assert.equal(current.descriptor.kind, "session-link");
+	assert.equal(current.descriptor.label, "Named command session");
+	assert.equal(current.descriptor.roomLabel, "Renamed Web Room");
+	assert.equal(current.rawResult.roomTitle, "Renamed Web Room");
+	const sessions = await source.executeSlashCommand({ command: "sessions", sessionId: stale.id });
+	assert.equal(sessions.descriptor.kind, "json");
+	assert.match(JSON.stringify(sessions.rawResult), /Renamed Web Room/);
+	assert.doesNotMatch(JSON.stringify(sessions.rawResult), /Stale Room Name/);
 
 	await source.close();
 });

@@ -1,4 +1,6 @@
 import {
+	CLI_ONLY_SLASH_COMMANDS,
+	WEB_PARITY_SLASH_COMMANDS,
 	buildCompactTerminalRows,
 	buildTerminalCardDescriptors,
 } from "../../dist/session-ui/index.js";
@@ -406,6 +408,192 @@ export function longJsonFixture() {
 		metadata: { narrowLabel: "ps_short", deep: { nested: { value: true } } },
 	};
 }
+
+export const WEB_DERIVED_LONG_OUTPUT_LINES = Array.from({ length: 12 }, (_, index) => `web-derived output line ${String(index + 1).padStart(2, "0")} -- ${"x".repeat(90)}`);
+
+export function buildWebDerivedLongOutputTraceView() {
+	const longOutput = WEB_DERIVED_LONG_OUTPUT_LINES.join("\n");
+	const nodes = [
+		terminalParityTraceNode("tool.call", "web-derived-tool-call-long-output", 1, {
+			title: "custom_tool",
+			input: { command: "produce-long-output", token: "token=long-output-secret" },
+			output: longOutput,
+		}),
+		terminalParityTraceNode("tool.result", "web-derived-tool-result-long-output", 2, {
+			title: "custom_tool",
+			output: longOutput,
+		}),
+		terminalParityTraceNode("agent.async", "web-derived-async-long-output", 3, {
+			title: "worker subagent",
+			linkedPiboSessionId: "ps_web_derived_async_worker",
+			output: longOutput,
+		}),
+		terminalParityTraceNode("yielded.run", "web-derived-yielded-long-output", 4, {
+			runId: "run_web_derived_long_output",
+			summary: "long output run",
+			output: longOutput,
+		}),
+		terminalParityTraceNode("tool.call", "web-derived-shell-tool-long-output", 5, {
+			title: "bash",
+			input: { command: "printf 'web-derived output line %02d\\n' {1..12}" },
+			output: longOutput,
+		}),
+		terminalParityTraceNode("execution.command", "web-derived-execution-command-long-output", 6, {
+			title: "download",
+			input: { command: "/download /tmp/long-output.txt" },
+			output: longOutput,
+		}),
+	];
+	return {
+		piboSessionId: TERMINAL_PARITY_SESSION_ID,
+		piSessionId: TERMINAL_PARITY_PI_SESSION_ID,
+		title: "Web-derived long-output parity fixture",
+		version: "web-derived-long-output-v1",
+		latestStreamId: 3,
+		eventCount: nodes.length,
+		nodes,
+		rawEvents: [],
+	};
+}
+
+export function buildWebDerivedLongOutputRows() {
+	return buildCompactTerminalRows(buildWebDerivedLongOutputTraceView(), { showThinking: true });
+}
+
+export function nestedJsonSyntaxFixture() {
+	return {
+		functionName: "search_files",
+		semanticRoles: ["function", "key", "string", "number", "boolean", "null", "punctuation", "collection-open", "collection-collapsed"],
+		input: {
+			query: "terminal parity",
+			paths: ["src/session-ui/terminalRows.ts", "src/apps/cli-ui/InkTerminalRow.ts"],
+			filters: { language: "typescript", includeTests: true, archived: false, maxResults: 25 },
+			longString: `This value is intentionally longer than one hundred and forty characters so inline JSON renderers must choose a disclosure strategy without leaking secrets or deleting characters. ${"z".repeat(32)}`,
+			secret: TERMINAL_PARITY_SECRET,
+		},
+		detailText: `metadata before json\n${JSON.stringify({ ok: true, nested: { array: [1, false, null, { key: "value" }] }, secret: TERMINAL_PARITY_SECRET }, null, 2)}`,
+	};
+}
+
+export function markdownSyntaxFixture() {
+	return [
+		"# Web-derived terminal markdown",
+		"",
+		"Paragraph with `inline code`, **bold text**, and a [link](https://example.invalid).",
+		"",
+		"> quoted operator note",
+		"",
+		"1. first numbered item",
+		"2. second numbered item",
+		"   - nested bullet",
+		"",
+		"| command | result |",
+		"| --- | --- |",
+		"| `/status` | compact row |",
+		"",
+		"```bash",
+		"OPENAI_API_KEY=[redacted] pibo tui:sessions --room room_named_fixture | tee /tmp/out",
+		"```",
+		"",
+		"```json",
+		JSON.stringify({ ok: true, count: 3, nested: { ready: false } }),
+		"```",
+	].join("\n");
+}
+
+export function roomSessionNamingFixture() {
+	return {
+		activeRoomId: "room_named_fixture",
+		rooms: [
+			{ id: "room_named_fixture", title: "Named Web Room", isDefault: false, archived: false, primaryLabel: "Named Web Room", secondaryLabel: "room room_named_fixture" },
+			{ id: "room_default_fixture", title: "Default", isDefault: true, archived: false, primaryLabel: "Default", secondaryLabel: "room room_default_fixture" },
+			{ id: "room_archived_fixture", title: "Archived Research", isDefault: false, archived: true, primaryLabel: "Archived Research", secondaryLabel: "archived · room room_archived_fixture" },
+			{ id: "room_missing_title_fixture", title: "", isDefault: false, archived: false, primaryLabel: "room_missing_title_fixture", secondaryLabel: "missing title fallback" },
+		],
+		sessions: [
+			{ id: "ps_named_session", title: "Named session", roomId: "room_named_fixture", roomTitle: "Named Web Room", primaryLabel: "Named session", secondaryLabel: "Named Web Room · ps_named_session" },
+			{ id: "ps_renamed_session", title: "Renamed from Web", roomId: "room_named_fixture", roomTitle: "Named Web Room", primaryLabel: "Renamed from Web", secondaryLabel: "Named Web Room · ps_renamed_session" },
+			{ id: "ps_missing_room", title: "Missing room fallback", roomId: "room_unknown_fixture", roomTitle: undefined, primaryLabel: "Missing room fallback", secondaryLabel: "room room_unknown_fixture · ps_missing_room" },
+		],
+	};
+}
+
+export function slashCommandBehaviorFixture() {
+	const cli = CLI_ONLY_SLASH_COMMANDS.map((command) => ({
+		command: command.argumentHint ? `${command.slash} ${command.argumentHint}` : command.slash,
+		id: command.id,
+		family: command.group === "navigation" ? "cli-navigation" : "cli-only",
+		palette: true,
+		enterBehavior: cliEnterBehavior(command.id),
+		result: cliResult(command.id),
+		context: command.group === "navigation" ? "owner-room-session" : "none",
+		support: command.support,
+		label: command.description,
+	}));
+	const parity = WEB_PARITY_SLASH_COMMANDS.map((command) => ({
+		command: command.argumentHint ? `${command.slash} ${command.argumentHint}` : command.slash,
+		id: command.id,
+		family: command.support === "deferred" ? "browser-only-deferred" : command.support === "supported" ? "web-parity" : "terminal-adapted",
+		palette: true,
+		enterBehavior: parityEnterBehavior(command.id),
+		result: parityResult(command.id),
+		context: command.group,
+		support: command.support,
+		label: command.description,
+	}));
+	return [
+		...cli,
+		...parity,
+		{ command: "/browser-open", id: "browser-open", family: "browser-only-deferred", palette: false, enterBehavior: "append-unsupported-result", result: "transcript", context: "web", support: "browser-only", label: "Browser-only fixture command." },
+		{ command: "/gateway:fixture", id: "gateway:fixture", family: "dynamic-gateway", palette: true, enterBehavior: "dispatch-gateway-action", result: "transcript-or-overlay", context: "gateway", support: "supported", label: "Dynamic gateway fixture command." },
+	];
+}
+
+function cliEnterBehavior(id) {
+	if (["room", "session", "agent", "owner", "profile"].includes(id)) return `open-${id}-picker`;
+	if (["exit", "quit"].includes(id)) return "exit-tui";
+	if (id === "new") return "create-session-in-active-room";
+	if (id === "repair-user-unknown") return "append-repair-result";
+	return "append-transcript-help";
+}
+
+function cliResult(id) {
+	if (["room", "session", "agent", "owner", "profile"].includes(id)) return "overlay";
+	if (["exit", "quit"].includes(id)) return "exit";
+	return "transcript";
+}
+
+function parityEnterBehavior(id) {
+	if (["model", "login", "thinking"].includes(id)) return `open-${id}-picker-or-apply-argument`;
+	if (id === "sessions") return "append-named-session-list";
+	if (id === "session-current") return "append-current-session-summary";
+	if (id === "fork-candidates") return "append-or-open-fork-candidates";
+	if (["download", "upload"].includes(id)) return "append-terminal-file-instructions";
+	if (id === "thinking-show") return "append-deferred-result";
+	return "append-command-result-row";
+}
+
+function parityResult(id) {
+	if (["model", "login", "thinking"].includes(id)) return "overlay-or-transcript";
+	return "transcript";
+}
+
+export const WEB_DERIVED_TERMINAL_MATRIX_COVERAGE = [
+	{ area: "header", fixture: "web-derived-room-session-slash", owner: "PRD10 US-004; PRD12 US-002/003" },
+	{ area: "row-grammar", fixture: "canonical-terminal", owner: "PRD10 US-001/002" },
+	{ area: "spacing", fixture: "canonical-terminal", owner: "PRD10 US-003/005" },
+	{ area: "preview-expansion", fixture: "web-derived-long-output", owner: "PRD09 US-001/002/005" },
+	{ area: "details", fixture: "expandable-detail", owner: "PRD09 US-003/004" },
+	{ area: "json", fixture: "web-derived-json-markdown", owner: "PRD11 US-001/002" },
+	{ area: "markdown-code", fixture: "web-derived-json-markdown", owner: "PRD11 US-003/004/005" },
+	{ area: "status", fixture: "canonical-terminal", owner: "PRD10 US-004" },
+	{ area: "streaming", fixture: "streaming-terminal", owner: "PRD13 US-002" },
+	{ area: "slash-commands", fixture: "web-derived-room-session-slash", owner: "PRD12 US-001/005" },
+	{ area: "pickers", fixture: "web-derived-room-session-slash", owner: "PRD12 US-004" },
+	{ area: "room-session-names", fixture: "web-derived-room-session-slash", owner: "PRD12 US-002/003" },
+	{ area: "no-color-narrow", fixture: "canonical-terminal; web-derived-json-markdown", owner: "PRD10; PRD11; PRD13" },
+	{ area: "redaction", fixture: "all", owner: "PRD08-13" },
+];
 
 export function longMarkdownFixture() {
 	return [

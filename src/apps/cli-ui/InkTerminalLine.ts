@@ -1,8 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { CompactTerminalLine, TerminalInlineToken } from "../../session-ui/index.js";
+import { redactTerminalSecret, type CompactTerminalLine, type TerminalInlineToken } from "../../session-ui/index.js";
 import { colorForTone, type InkTerminalColor } from "./inkColors.js";
-import { formatInlineJson } from "./inkJson.js";
+import { formatFunctionCallTokens } from "./inkJson.js";
 
 export type InkTerminalLineProps = {
 	line: CompactTerminalLine;
@@ -17,13 +17,13 @@ export function InkTerminalLine({ line, leadingMarker, leadingColor, maxChars = 
 		Box,
 		{ flexDirection: "row" },
 		React.createElement(Text, { color: leadingColor, key: "marker" }, markerText(line, leadingMarker)),
-		...chunks.map((chunk, index) => React.createElement(Text, {
+		React.createElement(Text, { key: "content" }, " ", ...chunks.map((chunk, index) => React.createElement(Text, {
 			bold: chunk.weight === "bold" || chunk.weight === "semibold",
 			color: colorForTone(chunk.tone),
 			dimColor: chunk.tone === "dim",
 			italic: chunk.italic,
 			key: `token-${index}`,
-		}, chunk.text)),
+		}, chunk.text))),
 	);
 }
 
@@ -48,17 +48,19 @@ type LineChunk = TerminalInlineToken;
 
 function markerText(line: CompactTerminalLine, leadingMarker: string | undefined): string {
 	const prefix = linePrefixSymbol(line.prefix);
-	if (leadingMarker === undefined) return `${prefix} `;
-	if (prefix.trim() && prefix !== leadingMarker) return `${leadingMarker} ${prefix} `;
-	return `${leadingMarker} `;
+	if (leadingMarker === undefined) return prefix;
+	if (prefix.trim() && prefix !== leadingMarker) return `${leadingMarker} ${prefix}`;
+	return leadingMarker;
 }
 
 function buildLineChunks(line: CompactTerminalLine, _maxChars: number): LineChunk[] {
 	const chunks: LineChunk[] = [...line.tokens];
 	if (line.functionCall) {
-		chunks.push({ text: line.functionCall.name, tone: "cyan", weight: "semibold" });
-		if (line.functionCall.input !== undefined) chunks.push({ text: ` ${formatInlineJson(line.functionCall.input)}`, tone: "dim" });
+		if (line.functionCall.input === undefined) chunks.push({ text: line.functionCall.name, tone: "yellow", weight: "semibold" });
+		else chunks.push(...formatFunctionCallTokens(line.functionCall.name, line.functionCall.input));
 	}
 	if (chunks.length === 0) return [{ text: "∅", tone: "dim" }];
-	return chunks.map((chunk) => ({ ...chunk, text: chunk.text.replace(/\n/g, " ") })).filter((chunk) => chunk.text.length > 0);
+	return chunks
+		.map((chunk) => ({ ...chunk, text: redactTerminalSecret(chunk.text).replace(/\n/g, " ") }))
+		.filter((chunk) => chunk.text.length > 0);
 }

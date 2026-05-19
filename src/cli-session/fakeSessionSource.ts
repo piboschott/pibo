@@ -284,18 +284,18 @@ export class FakeCliSessionSource implements CliSessionSource {
 		return count;
 	}
 
-	private defaultActionResult(command: string, actionName: string, sessionId: string | undefined, args: string | undefined): unknown {
+	private async defaultActionResult(command: string, actionName: string, sessionId: string | undefined, args: string | undefined): Promise<unknown> {
 		const session = sessionId ? this.resolveSession(sessionId) : undefined;
 		if (session) this.assertSessionOwner(session);
 		if (command === "status") return this.buildStatus(sessionId);
-		if (command === "session-current") return session ? { piboSessionId: session.id, title: session.title, profile: session.profile, roomId: session.roomId, ownerScope: session.ownerScope } : { supported: false, unsupportedReason: "No session is open." };
-		if (command === "sessions") return this.listSessions({ roomId: session?.roomId, ownerScope: session?.ownerScope ?? this.activeOwnerScope });
+		if (command === "session-current") return session ? { piboSessionId: session.id, title: session.title, sessionTitle: session.title, profile: session.profile, roomId: session.roomId, roomTitle: this.roomTitle(session.roomId), ownerScope: session.ownerScope } : { supported: false, unsupportedReason: "No session is open." };
+		if (command === "sessions") return (await this.listSessions({ roomId: session?.roomId, ownerScope: session?.ownerScope ?? this.activeOwnerScope })).map((candidate) => ({ ...candidate, sessionTitle: candidate.title, roomTitle: this.roomTitle(candidate.roomId) }));
 		if (command === "clone") {
 			if (!session) return { supported: false, unsupportedReason: "No session is open." };
 			const clone: CliSessionSummary = { ...session, id: `ps_fake_clone_${this.nextSessionNumber++}`, title: `${session.title} Clone`, status: "idle", updatedAt: this.now() };
 			this.sessions.set(clone.id, clone);
 			this.traceViews.set(clone.id, cloneTraceView(this.traceViews.get(session.id) ?? emptyTraceView(session)));
-			return { piboSessionId: clone.id, sessionId: clone.id, roomId: clone.roomId, title: clone.title, clonedFrom: session.id };
+			return { piboSessionId: clone.id, sessionId: clone.id, roomId: clone.roomId, roomTitle: this.roomTitle(clone.roomId), title: clone.title, sessionTitle: clone.title, clonedFrom: session.id };
 		}
 		if (command === "clear") return { cleared: 0 };
 		if (command === "fast") return { mode: args === "off" ? "normal" : "fast", supported: true, changed: true };
@@ -364,7 +364,12 @@ export class FakeCliSessionSource implements CliSessionSource {
 		const fork: CliSessionSummary = { ...session, id: `ps_fake_fork_${this.nextSessionNumber++}`, title: `${session.title} Fork`, status: "idle", updatedAt: this.now() };
 		this.sessions.set(fork.id, fork);
 		this.traceViews.set(fork.id, cloneTraceView(this.traceViews.get(session.id) ?? emptyTraceView(session)));
-		return { piboSessionId: fork.id, sessionId: fork.id, roomId: fork.roomId, title: fork.title, forkedFrom: session.id, entryId };
+		return { piboSessionId: fork.id, sessionId: fork.id, roomId: fork.roomId, roomTitle: this.roomTitle(fork.roomId), title: fork.title, sessionTitle: fork.title, forkedFrom: session.id, entryId };
+	}
+
+	private roomTitle(roomId: string | undefined): string | undefined {
+		if (!roomId) return undefined;
+		return this.rooms.find((room) => room.id === roomId)?.title;
 	}
 
 	close(): void {
@@ -390,6 +395,8 @@ export class FakeCliSessionSource implements CliSessionSource {
 			activeAgentId: session?.agentId,
 			activeModel: session?.model,
 			message: "Fake CLI session source fixture",
+			activeTools: ["bash"],
+			enabledTools: ["read", "edit", "bash"],
 			updatedAt: this.now(),
 			...this.statusOverrides,
 		};
@@ -470,13 +477,38 @@ function defaultSessions(): CliSessionSummary[] {
 }
 
 function defaultTraceViews(): Record<string, PiboSessionTraceView> {
+	const longOutput = Array.from({ length: 12 }, (_, index) => `web-derived output line ${String(index + 1).padStart(2, "0")} -- ${"x".repeat(90)}`).join("\n");
+	const markdownOutput = [
+		"# Web-derived terminal markdown",
+		"",
+		"Paragraph with `inline code` and a [link](https://example.invalid).",
+		"",
+		"> quoted operator note",
+		"",
+		"1. first numbered item",
+		"2. second numbered item",
+		"   - nested bullet",
+		"",
+		"| command | result |",
+		"| --- | --- |",
+		"| `/status` | compact row |",
+		"",
+		"```bash",
+		"OPENAI_API_KEY=[redacted] pibo tui:sessions --room room_fake_main | tee /tmp/out",
+		"```",
+		"",
+		"```json",
+		JSON.stringify({ ok: true, count: 3, nested: { ready: false } }),
+		"```",
+	].join("\n");
+	const jsonDetailOutput = `metadata before json\n${JSON.stringify({ ok: true, nested: { array: [1, false, null, { key: "value" }] }, secret: "TOKEN=json-demo-secret" }, null, 2)}`;
 	return {
 		ps_fake_existing: {
 			piboSessionId: "ps_fake_existing",
 			piSessionId: "pi_fake_existing",
 			title: "Existing fake session",
 			version: "fake-v1",
-			eventCount: 2,
+			eventCount: 7,
 			nodes: [
 				{
 					id: "node_fake_user_1",
@@ -496,6 +528,65 @@ function defaultTraceViews(): Record<string, PiboSessionTraceView> {
 					status: "done",
 					startedAt: "2026-05-16T12:00:01.000Z",
 					output: "Fake assistant response",
+					children: [],
+				},
+				{
+					id: "node_fake_markdown_1",
+					piboSessionId: "ps_fake_existing",
+					type: "assistant.message",
+					title: "Agent Message",
+					status: "done",
+					startedAt: "2026-05-16T12:00:01.500Z",
+					output: markdownOutput,
+					children: [],
+				},
+				{
+					id: "node_fake_json_tool_1",
+					piboSessionId: "ps_fake_existing",
+					type: "tool.call",
+					title: "search_files",
+					status: "done",
+					startedAt: "2026-05-16T12:00:01.750Z",
+					input: {
+						query: "terminal parity",
+						paths: ["src/session-ui/terminalRows.ts", "src/apps/cli-ui/InkTerminalRow.ts"],
+						filters: { language: "typescript", includeTests: true, archived: false, maxResults: 25 },
+						longString: `This value is intentionally longer than one hundred and forty characters so inline JSON renderers must disclose it safely without deleting structure. ${"z".repeat(32)}`,
+						secret: "TOKEN=json-inline-secret",
+					},
+					output: jsonDetailOutput,
+					children: [],
+				},
+				{
+					id: "node_fake_long_output_1",
+					piboSessionId: "ps_fake_existing",
+					type: "tool.call",
+					title: "long_output_demo",
+					status: "done",
+					startedAt: "2026-05-16T12:00:02.000Z",
+					input: { command: "produce-long-output", token: "token=long-output-secret" },
+					output: longOutput,
+					children: [],
+				},
+				{
+					id: "node_fake_yielded_1",
+					piboSessionId: "ps_fake_existing",
+					type: "yielded.run",
+					title: "typecheck",
+					status: "running",
+					startedAt: "2026-05-16T12:00:03.000Z",
+					summary: "typecheck",
+					output: "npm run typecheck",
+					children: [],
+				},
+				{
+					id: "node_fake_error_1",
+					piboSessionId: "ps_fake_existing",
+					type: "error",
+					title: "Error",
+					status: "error",
+					startedAt: "2026-05-16T12:00:04.000Z",
+					error: "Demo error TOKEN=demo-secret-value stayed redacted",
 					children: [],
 				},
 			],

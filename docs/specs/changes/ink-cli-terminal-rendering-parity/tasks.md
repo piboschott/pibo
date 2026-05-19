@@ -59,40 +59,42 @@
 
 ## 8. Requirement: Collapsed Output Preview Parity
 
-- [ ] 8.1 Add/restore a shared fixture with at least 12 output lines for tool calls, execution commands, yielded runs, and async agents.
-- [ ] 8.2 Restore shared collapsed preview bounds: 5 output preview lines for tool/result/async/yielded/execution rows and 6 child summary lines for grouped exploration.
-- [ ] 8.3 Preserve no character truncation in visible preview lines; assert wrapping/no `… truncated` separately from preview omission.
-- [ ] 8.4 Add omitted-line metadata or an equivalent descriptor so renderers can show `+N more lines` and expose details.
-- [ ] 8.5 Add Web and Ink tests proving collapsed previews are bounded and expanded details show full output.
+- [x] 8.1 Add/restore a shared fixture with at least 12 output lines for tool calls, execution commands, yielded runs, and async agents.
+- [x] 8.2 Restore shared collapsed preview bounds: 5 output preview lines for tool/result/async/yielded/execution rows and 6 child summary lines for grouped exploration.
+- [x] 8.3 Preserve no character truncation in visible preview lines; assert wrapping/no `… truncated` separately from preview omission.
+- [x] 8.4 Add omitted-line metadata or an equivalent descriptor so renderers can show `+N more lines` and expose details.
+- [x] 8.5 Add Web and Ink tests proving collapsed previews are bounded and expanded details show full output.
 
 ## 9. Requirement: Ink Row Grammar and Spacing
 
-- [ ] 9.1 Change Ink rendering so normal rows (`tool.call`, `tool.group.exploring`, `yielded.run`, `execution.command`, `execution.compaction`, `error`) render as terminal rows rather than `▣` card headers.
-- [ ] 9.2 Keep structured renderers for Web-equivalent exceptions: `tool.status`, `tool.thinking`, `tool.login`, and `tool.model`.
-- [ ] 9.3 Add spacing snapshots for adjacent user/assistant/tool/status/command rows.
-- [ ] 9.4 Add a regression assertion that normal rows do not contain decorative card headers.
+- [x] 9.1 Change Ink rendering so normal rows (`tool.call`, `tool.group.exploring`, `yielded.run`, `execution.command`, `execution.compaction`, `error`) render as terminal rows rather than `▣` card headers.
+- [x] 9.2 Keep structured renderers for Web-equivalent exceptions: `tool.status`, `tool.thinking`, `tool.login`, and `tool.model`.
+- [x] 9.3 Add spacing snapshots for adjacent user/assistant/tool/status/command rows.
+- [x] 9.4 Add a regression assertion that normal rows do not contain decorative card headers.
 
 ## 10. Requirement: Ink Row Expansion and Details
 
-- [ ] 10.1 Add selected-row and expanded-row state to `InkSessionApp` or a small controller model.
-- [ ] 10.2 Add keyboard handling for selecting expandable rows and toggling details without breaking text input/slash picker behavior.
-- [ ] 10.3 Render terminal-native details below the parent row with `Input`, `Output`, `Error`, linked session controls, compacted-output disclosure, and redaction.
-- [ ] 10.4 Add controller and renderer tests for expand/collapse, full output visibility, and collapsed transcript density.
-- [ ] 10.5 Add a PTY flow that opens details for a long-output row.
+- [x] 10.1 Add selected-row and expanded-row state to `InkSessionApp` or a small controller model.
+- [x] 10.2 Add keyboard handling for selecting expandable rows and toggling details without breaking text input/slash picker behavior.
+- [x] 10.3 Render terminal-native details below the parent row with `Input`, `Output`, `Error`, linked session controls, compacted-output disclosure, and redaction.
+- [x] 10.4 Add controller and renderer tests for expand/collapse, full output visibility, and collapsed transcript density.
+- [x] 10.5 Add a PTY flow that opens details for a long-output row.
 
 ## 11. Requirement: Ink JSON and Markdown Semantic Parity
 
-- [ ] 11.1 Add an Ink JSON renderer for inline function-call JSON with key/string/literal/punctuation token roles and collapsed collection markers.
-- [ ] 11.2 Add detail JSON well rendering for parsed object/array values and JSON-looking text output.
-- [ ] 11.3 Add color and `NO_COLOR` snapshot coverage for JSON rendering.
-- [ ] 11.4 Improve Ink markdown approximation for headings, lists, blockquotes, inline code, fenced code, tables, and reasoning tone.
-- [ ] 11.5 Add shared JSON/markdown fixtures used by Web semantic-hook tests and Ink snapshots.
+- [x] 11.1 Add an Ink JSON renderer for inline function-call JSON with key/string/literal/punctuation token roles and collapsed collection markers.
+- [x] 11.2 Add detail JSON well rendering for parsed object/array values and JSON-looking text output.
+- [x] 11.3 Add color and `NO_COLOR` snapshot coverage for JSON rendering.
+- [x] 11.4 Improve Ink markdown approximation for headings, lists, blockquotes, inline code, fenced code, tables, and reasoning tone.
+- [x] 11.5 Add shared JSON/markdown fixtures used by Web semantic-hook tests and Ink snapshots.
 
 ## 12. Final Web-Derived Validation
 
-- [ ] 12.1 Run focused shared, Web, and Ink renderer tests.
-- [ ] 12.2 Run `npm run typecheck` and `npm test`.
-- [ ] 12.3 Run `npm run chat-ui:typecheck` and `npm run chat-ui:build` when Web fixture/hooks change.
-- [ ] 12.4 Run PTY visual smoke tests for `/status`, long output preview/details, JSON function-call rendering, and spacing rhythm.
-- [ ] 12.5 Update a report under `docs/reports/` with exact commands and artifact paths.
-- [ ] 12.6 Run the Web UI preservation gate: if `src/session-ui/**` or Web Compact Terminal files changed, prove Web collapsed previews, status provider rendering, details, JSON, and row grammar still match Web reference behavior; direct Web UI behavior changes require explicit user approval.
+Matrix source: keep `web-terminal-difference-matrix.md` current. Any new Web-vs-Ink difference must list Web law, Ink gap, target behavior, fixture coverage, owner PRD/story, and validation gate before completion.
+
+- [x] 12.1 Run focused shared, Web, and Ink renderer tests.
+- [x] 12.2 Run `npm run typecheck` and `npm test`.
+- [x] 12.3 Run `npm run chat-ui:typecheck` and `npm run chat-ui:build` when Web fixture/hooks change.
+- [x] 12.4 Run PTY visual smoke tests for `/status`, long output preview/details, JSON function-call rendering, and spacing rhythm.
+- [x] 12.5 Update a report under `docs/reports/` with exact commands and artifact paths.
+- [x] 12.6 Run the Web UI preservation gate: if `src/session-ui/**` or Web Compact Terminal files changed, prove Web collapsed previews, status provider rendering, details, JSON, and row grammar still match Web reference behavior; direct Web UI behavior changes require explicit user approval.
