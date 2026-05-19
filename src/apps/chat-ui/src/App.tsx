@@ -1484,7 +1484,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				data-pibo-selected-session-id={selectedPiboSessionId ?? bootstrap.selectedPiboSessionId ?? undefined}
 				className="h-dvh overflow-hidden bg-[#101d22] text-slate-200 grid grid-rows-[auto_auto_1fr]"
 			>
-				<header className="flex items-center gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:px-3">
+				<header className="relative flex items-center gap-3 px-4 bg-[#1a262b] border-b border-slate-800 min-h-14 max-[980px]:px-3">
 					<div className="flex min-w-0 items-center gap-2">
 						<button
 							type="button"
@@ -1498,7 +1498,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto shrink-0" />
 						<div className="truncate font-extrabold tracking-[0.08em] uppercase text-lg max-[420px]:text-base">Pibo Chat</div>
 					</div>
-					<nav className="ml-auto flex gap-1 max-[980px]:hidden">
+					<nav className="flex gap-1 max-[980px]:hidden min-[981px]:absolute min-[981px]:left-1/2 min-[981px]:-translate-x-1/2">
 						{MAIN_NAV_AREAS.map((item) => (
 							<button
 								key={item}
