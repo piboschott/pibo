@@ -723,6 +723,21 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, [loadBootstrap, queryClient]);
 
 	useEffect(() => {
+		if (area !== "sessions") return;
+		let stopped = false;
+		const refreshVisibleNavigation = () => {
+			if (stopped || document.hidden || !bootstrapRef.current) return;
+			loadNavigation(selectedPiboSessionId ?? undefined, showArchivedRef.current, activeRoomId ?? undefined, { force: true })
+				.catch(() => undefined);
+		};
+		const interval = window.setInterval(refreshVisibleNavigation, 2500);
+		return () => {
+			stopped = true;
+			window.clearInterval(interval);
+		};
+	}, [activeRoomId, area, loadNavigation, selectedPiboSessionId]);
+
+	useEffect(() => {
 		const stored = readStoredSelection();
 		const storedPiboSessionId = routeRoomId ? stored.sessionsByRoom?.[routeRoomId] : stored.piboSessionId;
 		const requestedRoomId = route.area === "sessions"
@@ -5053,8 +5068,8 @@ function workflowSessionKindPresentation(kind: PiboWebSessionNode["workflowSessi
 
 function sessionNodeSignal(node: PiboWebSessionNode, now: number): { className: string; title: string } {
 	const base = "session-signal h-2 w-2 rounded-full";
-	if (node.status === "error" && (node.unreadCount ?? 0) > 0) {
-		return { className: `${base} session-signal-error`, title: "Run failed" };
+	if (node.status === "error") {
+		return { className: `${base} session-signal-error`, title: (node.unreadCount ?? 0) > 0 ? "Run failed" : "Run failed (read)" };
 	}
 	if (node.status === "running") {
 		return { className: `${base} session-signal-running`, title: "Runtime is working" };

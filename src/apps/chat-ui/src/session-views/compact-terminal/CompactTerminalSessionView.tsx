@@ -48,8 +48,9 @@ export function CompactTerminalSessionView({
 	const runningCount = rows.filter((row) => row.status === "running").length;
 	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
 	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
-	const signalWorking = selectedSessionSignal?.isTreeActive ?? false;
-	const isStreaming = signalWorking || selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
+	const isStreaming = selectedSessionSignal
+		? selectedSessionSignal.isTreeActive
+		: selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
 
 	const stickyView = useStickyVirtuoso({
 		itemCount: rows.length,
