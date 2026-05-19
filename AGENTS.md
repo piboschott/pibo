@@ -9,17 +9,6 @@ Always read `GLOSSARY.md`. It contains a shared vocabulary for our project.
 ## Session Debugging
 When reading Pibo Sessions, use the debug CLI first: `npm run dev -- debug session --help`.
 
-## Pibo Development Style
-Develop Pibo code and features only inside a Docker compute worker. Before changing code or implementing features, run `pibo compute spawn`. The Docker system creates an isolated worker and worktree; edit, build, restart gateways, run browser checks, and perform end-to-end tests in that worktree.
-
-Documentation-only edits do not require a Docker compute worker unless they are coupled to code, build, gateway, or browser testing work.
-
-Use the worker's returned web and CDP ports for app and browser testing. Keep the tested changes in the worker worktree. Release the container with `pibo compute release <id>`; this does not remove the worktree. Merge, push, or discard that worktree only after review or explicit user approval.
-
-Do not edit the host checkout as the experimental workspace. Do not use the host production gateway for development. Do not restart, replace, or run ad hoc host gateways unless the user explicitly requests host operations or Docker is unavailable. The host gateway is for observation only.
-
-Dev-auth belongs only to Docker workers. Never start the host gateway with dev-auth flags or fake-auth infrastructure. The normal host gateway must use Better Auth.
-
 ## Host Gateway
 Pibo has host gateways. They are managed only through the Pibo CLI.
 
@@ -46,11 +35,7 @@ Deploy host-level web changes to dev first: `./scripts/deploy-web-dev.sh`.
 
 Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh`.
 
-Normal flow: Docker compute worker -> dev web gateway -> production web gateway.
-
 ## Browser/App Debugging
-For Chat Web browser debugging while changing Pibo, start from a Docker compute worker when one is available. Use the worker's returned web/CDP ports for app checks so browser automation and gateway restarts stay isolated from the host gateway.
-
 For debugging an already-running Chat Web instance, start from the browser that already exists. First list CDP targets with `npm run dev -- tools browser-use targets`, then inspect Chat Web targets until you find one that is authenticated and has a composer textarea. Do not assume the first tab is the usable tab. If the helper is unavailable, fall back to `curl -s http://127.0.0.1:56663/json/list`.
 
 If no usable browser exists, create one through the Browser Use auth flow instead of starting ad hoc fake-auth infrastructure. First try to acquire an isolated authenticated slot with `eval "$(npm run --silent dev -- tools browser-use lease acquire --app pibo-chat --owner "$USER")"`, then open the current Chat Web URL in that shell. If lease acquisition says no authenticated template exists, prepare it with `eval "$(npm run --silent dev -- tools browser-use auth-template env)"`, open the Chat Web App there, sign in once, close it, then acquire the lease again.
@@ -81,7 +66,7 @@ Rules:
 
 - Put normal/current project docs and other canonical documentation in `docs/project/`.
 - Put specifications in `docs/specs/`.
-- Put implementation plans in `docs/plans/`.
+- Put implementation plans and design plans in `docs/plans/`.
 - Put investigation, validation, incident, and generated reports in `docs/reports/`.
 - Keep old documentation in `docs/legacy/` unless there is an explicit cleanup decision.
 - Do not create new root-level `plans/`, `reports/`, or `specs/` directories.
