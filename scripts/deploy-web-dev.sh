@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-DEV_PUBLIC_URL="${PIBO_DEV_PUBLIC_URL:-https://dev.pibo.neuralnexus.me/apps/chat}"
+DEV_PUBLIC_URL="${PIBO_DEV_PUBLIC_URL:-https://dev.pibo2.neuralnexus.me/apps/chat}"
 DEV_BRANCH="${PIBO_DEV_BRANCH:-dev}"
 DEV_REMOTE="${PIBO_DEV_REMOTE:-origin}"
 
