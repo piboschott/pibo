@@ -33,6 +33,8 @@ Do not use any other restart mechanism. If the CLI blocks a production restart, 
 ## Deployment
 Deploy host-level web changes to dev first: `./scripts/deploy-web-dev.sh`.
 
+Canonical hosted dev Chat URL: `https://dev.pibo2.neuralnexus.me/apps/chat`. Treat `dev.pibo.neuralnexus.me` as a legacy alias, not the primary dev test URL.
+
 Deploy production only after dev testing succeeds and the user approves it: `./scripts/deploy-web.sh`.
 
 ## Browser/App Debugging
