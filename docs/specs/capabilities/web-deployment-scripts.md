@@ -91,7 +91,7 @@ The dev deployment script MUST allow operators to override the public URL used f
 
 #### Current
 
-`DEV_PUBLIC_URL` defaults to `https://dev.pibo.neuralnexus.me/apps/chat` and can be overridden with the `PIBO_DEV_PUBLIC_URL` environment variable.
+`DEV_PUBLIC_URL` defaults to the canonical hosted dev Chat Web URL, `https://dev.pibo2.neuralnexus.me/apps/chat`, and can be overridden with the `PIBO_DEV_PUBLIC_URL` environment variable.
 
 #### Acceptance
 
