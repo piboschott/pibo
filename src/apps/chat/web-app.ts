@@ -30,7 +30,8 @@ import {
 } from "./types/rooms.js";
 import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStreamEvent } from "./stream.js";
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView, type PiboWebSessionNode, type PiboWebSessionStatus } from "./trace.js";
-import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
+import type { ChatWebStoredEvent, PiboSessionTraceSummary } from "../../shared/trace-types.js";
+import { patchTraceViewWithEvent } from "../../shared/trace-engine.js";
 import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadata.js";
 import { withWorkflowSessionKind } from "../../sessions/workflow-session-kind.js";
 import {
@@ -2073,6 +2074,56 @@ function traceCacheKey(piboSessionId: string, version: string): string {
 function withRawTraceTail(trace: PiboSessionTraceView, rawEvents: PiboSessionTraceView["rawEvents"]): PiboSessionTraceView {
 	if (rawEvents.length === 0) return trace;
 	return { ...trace, rawEvents };
+}
+
+function liveSnapshotVersion(snapshots: readonly PiboOutputEvent[]): string {
+	if (snapshots.length === 0) return "";
+	const hash = createHash("sha1");
+	for (const snapshot of snapshots) {
+		hash.update(JSON.stringify(snapshot));
+		hash.update("\n");
+	}
+	return hash.digest("hex").slice(0, 16);
+}
+
+function storedLiveSnapshotEvents(input: {
+	piboSessionId: string;
+	snapshots: readonly PiboOutputEvent[];
+	lastEventSequence: number;
+	now?: string;
+}): ChatWebStoredEvent<PiboOutputEvent>[] {
+	const createdAt = input.now ?? new Date().toISOString();
+	return input.snapshots.map((snapshot, index) => ({
+		id: `live-snapshot:${input.piboSessionId}:${index}:${liveSnapshotVersion([snapshot])}`,
+		piboSessionId: input.piboSessionId,
+		eventSequence: input.lastEventSequence + index + 1,
+		eventId: "eventId" in snapshot && typeof snapshot.eventId === "string" ? snapshot.eventId : undefined,
+		type: snapshot.type,
+		createdAt,
+		payload: snapshot,
+	}));
+}
+
+function withLiveSnapshots(
+	trace: PiboSessionTraceView,
+	snapshots: readonly PiboOutputEvent[],
+	input: { piboSessionId: string; lastEventSequence: number; status?: PiboWebSessionStatus },
+): PiboSessionTraceView {
+	if (snapshots.length === 0) return trace;
+	const events = storedLiveSnapshotEvents({
+		piboSessionId: input.piboSessionId,
+		snapshots,
+		lastEventSequence: input.lastEventSequence,
+	});
+	let next = trace;
+	for (const event of events) {
+		next = patchTraceViewWithEvent(next, event, input.status ?? "running");
+	}
+	return {
+		...next,
+		version: `${trace.version}:live:${liveSnapshotVersion(snapshots)}`,
+		rawEvents: trace.rawEvents,
+	};
 }
 
 function annotateTracePage(
@@ -10525,7 +10576,8 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const metadataMs = performance.now() - metadataStartedAt;
 				const lastEventSequence = state.timelineQuery.getLatestEventSequence(selectedSession.id);
 				const latestStreamId = state.timelineQuery.getLatestStreamId({ piboSessionId: selectedSession.id });
-				const version = createTraceViewVersion({
+				const liveSnapshots = beforeSequence === undefined ? state.outputCompactor.snapshotsForSession(selectedSession.id) : [];
+				const baseVersion = createTraceViewVersion({
 					session: selectedSession,
 					sessions: ownedSessions,
 					events: lastEventSequence > 0
@@ -10535,8 +10587,10 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					metadata,
 					latestStreamId,
 				});
+				const snapshotVersion = liveSnapshotVersion(liveSnapshots);
+				const version = snapshotVersion ? `${baseVersion}:live:${snapshotVersion}` : baseVersion;
 				const pageCursorKey = beforeSequence === undefined ? "tail" : `before:${beforeSequence}`;
-				const cacheKey = traceCacheKey(selectedSession.id, `${version}:limit:${eventLimit}:${pageCursorKey}`);
+				const cacheKey = traceCacheKey(selectedSession.id, `${baseVersion}:limit:${eventLimit}:${pageCursorKey}`);
 				const cached = state.traceCache.get(cacheKey);
 				const serverTiming = (cacheState: "hit" | "miss", eventCount = 0) => ({
 					"server-timing": [
@@ -10571,6 +10625,11 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					trace = annotateTracePage(trace, events, { lastEventSequence, pageSize: eventLimit, beforeSequence });
 					setTraceCache(state.traceCache, cacheKey, trace);
 				}
+				trace = withLiveSnapshots(trace, liveSnapshots, {
+					piboSessionId: selectedSession.id,
+					lastEventSequence,
+					status: liveSnapshots.length ? "running" : indexedSession?.status,
+				});
 				if (includeRawEvents) {
 					const rawEvents = state.timelineQuery.listTraceEvents({
 						piboSessionId: selectedSession.id,
@@ -10580,7 +10639,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					eventCount = eventCount || rawEvents.length;
 					return responseJson(withRawTraceTail(trace, rawEvents), { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
 				}
-				return responseJson(trace, { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
+				return responseJson({ ...trace, rawEvents: [] }, { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/debug/persistence` && request.method === "GET") {
