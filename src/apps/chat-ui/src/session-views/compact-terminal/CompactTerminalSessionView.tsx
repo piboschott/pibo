@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
-import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer, MessageSquare } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
@@ -18,7 +18,7 @@ const INITIAL_BOTTOM_ITEM = { index: "LAST", align: "end" } as const;
 const VIRTUOSO_VIEWPORT = { top: 2_400, bottom: 2_400 } as const;
 const DEFAULT_ROW_HEIGHT_PX = 84;
 const COLLAPSED_EXPLORING_PREVIEW_LINES = 6;
-type ErrorNavigationKind = "system" | "tool";
+type TerminalNavigationKind = "system" | "tool" | "user";
 
 export function CompactTerminalSessionView({
 	traceView,
@@ -46,11 +46,12 @@ export function CompactTerminalSessionView({
 		[showThinking, traceView],
 	);
 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-	const [focusedErrorRowId, setFocusedErrorRowId] = useState<string | null>(null);
-	const errorNavigationCursorRef = useRef<Partial<Record<ErrorNavigationKind, string>>>({});
+	const [focusedNavigationRowId, setFocusedNavigationRowId] = useState<string | null>(null);
+	const navigationCursorRef = useRef<Partial<Record<TerminalNavigationKind, string>>>({});
 	const runningCount = rows.filter((row) => row.status === "running").length;
-	const toolErrorCount = rows.filter((row) => isNavigableErrorRow(row, "tool")).length;
-	const errorCount = rows.filter((row) => isNavigableErrorRow(row, "system")).length;
+	const userMessageCount = rows.filter((row) => isNavigableTerminalRow(row, "user")).length;
+	const toolErrorCount = rows.filter((row) => isNavigableTerminalRow(row, "tool")).length;
+	const errorCount = rows.filter((row) => isNavigableTerminalRow(row, "system")).length;
 	const isStreaming = selectedSessionSignal
 		? selectedSessionSignal.isTreeActive
 		: selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
@@ -68,18 +69,18 @@ export function CompactTerminalSessionView({
 
 	useEffect(() => {
 		const rowIds = new Set(rows.map((row) => row.id));
-		setFocusedErrorRowId((current) => (current && rowIds.has(current) ? current : null));
-		for (const kind of ["system", "tool"] as const) {
-			const current = errorNavigationCursorRef.current[kind];
-			if (current && !rowIds.has(current)) delete errorNavigationCursorRef.current[kind];
+		setFocusedNavigationRowId((current) => (current && rowIds.has(current) ? current : null));
+		for (const kind of ["system", "tool", "user"] as const) {
+			const current = navigationCursorRef.current[kind];
+			if (current && !rowIds.has(current)) delete navigationCursorRef.current[kind];
 		}
 	}, [rows]);
 
-	const navigateToErrorRow = useCallback((kind: ErrorNavigationKind) => {
-		const target = nextErrorNavigationTarget(rows, kind, errorNavigationCursorRef.current[kind]);
+	const navigateToTerminalRow = useCallback((kind: TerminalNavigationKind) => {
+		const target = nextNavigationTarget(rows, kind, navigationCursorRef.current[kind]);
 		if (!target) return;
-		errorNavigationCursorRef.current[kind] = target.row.id;
-		setFocusedErrorRowId(target.row.id);
+		navigationCursorRef.current[kind] = target.row.id;
+		setFocusedNavigationRowId(target.row.id);
 		stickyView.scrollToIndex(target.index, "center", "smooth");
 		focusTerminalRowAfterScroll(target.row.id);
 	}, [rows, stickyView]);
@@ -99,7 +100,7 @@ export function CompactTerminalSessionView({
 			<TerminalRow
 				row={row}
 				expanded={expandedRows.has(row.id)}
-				focused={focusedErrorRowId === row.id}
+				focused={focusedNavigationRowId === row.id}
 				piboSessionId={traceView?.piboSessionId ?? ""}
 				onToggle={() => toggleRow(row)}
 				onFork={onFork}
@@ -108,7 +109,7 @@ export function CompactTerminalSessionView({
 				onModelChanged={onModelChanged}
 			/>
 		</div>
-	), [expandedRows, focusedErrorRowId, onFork, onModelChanged, onOpenSession, onThinkingLevelChange, traceView?.piboSessionId]);
+	), [expandedRows, focusedNavigationRowId, onFork, onModelChanged, onOpenSession, onThinkingLevelChange, traceView?.piboSessionId]);
 
 	const virtuosoComponents = useMemo(() => ({
 		Footer: isStreaming ? TerminalStreamingFooter : undefined,
@@ -119,7 +120,8 @@ export function CompactTerminalSessionView({
 			<TerminalHeader
 				errorCount={errorCount}
 				toolErrorCount={toolErrorCount}
-				onNavigateErrors={navigateToErrorRow}
+				userMessageCount={userMessageCount}
+				onNavigate={navigateToTerminalRow}
 				sessionAgentProfile={sessionAgentProfile}
 				sessionActiveModel={sessionActiveModel}
 				sessionBreadcrumbs={sessionBreadcrumbs}
@@ -184,7 +186,8 @@ export function CompactTerminalSessionView({
 function TerminalHeader({
 	errorCount,
 	toolErrorCount,
-	onNavigateErrors,
+	userMessageCount,
+	onNavigate,
 	sessionAgentProfile,
 	sessionActiveModel,
 	sessionBreadcrumbs,
@@ -194,7 +197,8 @@ function TerminalHeader({
 }: {
 	errorCount: number;
 	toolErrorCount: number;
-	onNavigateErrors: (kind: ErrorNavigationKind) => void;
+	userMessageCount: number;
+	onNavigate: (kind: TerminalNavigationKind) => void;
 	sessionAgentProfile?: string;
 	sessionActiveModel?: string;
 	sessionBreadcrumbs: ChatSessionViewProps["sessionBreadcrumbs"];
@@ -207,13 +211,18 @@ function TerminalHeader({
 			<div className="flex flex-wrap items-center gap-2">
 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
+				{userMessageCount > 0 ? (
+					<TerminalBadge tone="cyan" label={`${userMessageCount} user messages · jump to previous user message`} onClick={() => onNavigate("user")}>
+						{userMessageCount}<MessageSquare size={12} />
+					</TerminalBadge>
+				) : null}
 				{errorCount > 0 ? (
-					<TerminalBadge tone="red" label={`${errorCount} errors · jump to previous error`} onClick={() => onNavigateErrors("system")}>
+					<TerminalBadge tone="red" label={`${errorCount} errors · jump to previous error`} onClick={() => onNavigate("system")}>
 						{errorCount}<CircleX size={12} />
 					</TerminalBadge>
 				) : null}
 				{toolErrorCount > 0 ? (
-					<TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors · jump to previous tool error`} onClick={() => onNavigateErrors("tool")}>
+					<TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors · jump to previous tool error`} onClick={() => onNavigate("tool")}>
 						{toolErrorCount}<Hammer size={12} />
 					</TerminalBadge>
 				) : null}
@@ -435,19 +444,20 @@ function retainExistingExpandedRows(
 	return sameSet(current, next) ? current : next;
 }
 
-function isNavigableErrorRow(row: CompactTerminalRow, kind: ErrorNavigationKind): boolean {
+function isNavigableTerminalRow(row: CompactTerminalRow, kind: TerminalNavigationKind): boolean {
+	if (kind === "user") return row.kind === "message.user";
 	if (row.status !== "error") return false;
 	return kind === "tool" ? row.errorKind === "tool" : row.errorKind !== "tool";
 }
 
-function nextErrorNavigationTarget(
+function nextNavigationTarget(
 	rows: readonly CompactTerminalRow[],
-	kind: ErrorNavigationKind,
+	kind: TerminalNavigationKind,
 	currentRowId: string | undefined,
 ): { row: CompactTerminalRow; index: number } | undefined {
 	const candidates = rows
 		.map((row, index) => ({ row, index }))
-		.filter(({ row }) => isNavigableErrorRow(row, kind));
+		.filter(({ row }) => isNavigableTerminalRow(row, kind));
 	if (!candidates.length) return undefined;
 	const currentIndex = currentRowId ? rows.findIndex((row) => row.id === currentRowId) : -1;
 	return candidates.filter((candidate) => currentIndex < 0 || candidate.index < currentIndex).at(-1) ?? candidates.at(-1);
