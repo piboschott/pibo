@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
-import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer, MessageSquare } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
@@ -18,6 +18,7 @@ const INITIAL_BOTTOM_ITEM = { index: "LAST", align: "end" } as const;
 const VIRTUOSO_VIEWPORT = { top: 2_400, bottom: 2_400 } as const;
 const DEFAULT_ROW_HEIGHT_PX = 84;
 const COLLAPSED_EXPLORING_PREVIEW_LINES = 6;
+type TerminalNavigationKind = "system" | "tool" | "user";
 
 export function CompactTerminalSessionView({
 	traceView,
@@ -45,9 +46,12 @@ export function CompactTerminalSessionView({
 		[showThinking, traceView],
 	);
 	const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+	const [focusedNavigationRowId, setFocusedNavigationRowId] = useState<string | null>(null);
+	const navigationCursorRef = useRef<Partial<Record<TerminalNavigationKind, string>>>({});
 	const runningCount = rows.filter((row) => row.status === "running").length;
-	const toolErrorCount = rows.filter((row) => row.status === "error" && row.errorKind === "tool").length;
-	const errorCount = rows.filter((row) => row.status === "error" && row.errorKind !== "tool").length;
+	const userMessageCount = rows.filter((row) => isNavigableTerminalRow(row, "user")).length;
+	const toolErrorCount = rows.filter((row) => isNavigableTerminalRow(row, "tool")).length;
+	const errorCount = rows.filter((row) => isNavigableTerminalRow(row, "system")).length;
 	const isStreaming = selectedSessionSignal
 		? selectedSessionSignal.isTreeActive
 		: selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
@@ -62,6 +66,24 @@ export function CompactTerminalSessionView({
 	useEffect(() => {
 		setExpandedRows((current) => retainExistingExpandedRows(current, rows, expandThinking));
 	}, [expandThinking, rows]);
+
+	useEffect(() => {
+		const rowIds = new Set(rows.map((row) => row.id));
+		setFocusedNavigationRowId((current) => (current && rowIds.has(current) ? current : null));
+		for (const kind of ["system", "tool", "user"] as const) {
+			const current = navigationCursorRef.current[kind];
+			if (current && !rowIds.has(current)) delete navigationCursorRef.current[kind];
+		}
+	}, [rows]);
+
+	const navigateToTerminalRow = useCallback((kind: TerminalNavigationKind) => {
+		const target = nextNavigationTarget(rows, kind, navigationCursorRef.current[kind]);
+		if (!target) return;
+		navigationCursorRef.current[kind] = target.row.id;
+		setFocusedNavigationRowId(target.row.id);
+		stickyView.scrollToIndex(target.index, "center", "smooth");
+		focusTerminalRowAfterScroll(target.row.id);
+	}, [rows, stickyView]);
 
 	const toggleRow = (row: CompactTerminalRow) => {
 		if (!row.expandable) return;
@@ -78,6 +100,7 @@ export function CompactTerminalSessionView({
 			<TerminalRow
 				row={row}
 				expanded={expandedRows.has(row.id)}
+				focused={focusedNavigationRowId === row.id}
 				piboSessionId={traceView?.piboSessionId ?? ""}
 				onToggle={() => toggleRow(row)}
 				onFork={onFork}
@@ -86,7 +109,7 @@ export function CompactTerminalSessionView({
 				onModelChanged={onModelChanged}
 			/>
 		</div>
-	), [expandedRows, onFork, onModelChanged, onOpenSession, onThinkingLevelChange, traceView?.piboSessionId]);
+	), [expandedRows, focusedNavigationRowId, onFork, onModelChanged, onOpenSession, onThinkingLevelChange, traceView?.piboSessionId]);
 
 	const virtuosoComponents = useMemo(() => ({
 		Footer: isStreaming ? TerminalStreamingFooter : undefined,
@@ -97,6 +120,8 @@ export function CompactTerminalSessionView({
 			<TerminalHeader
 				errorCount={errorCount}
 				toolErrorCount={toolErrorCount}
+				userMessageCount={userMessageCount}
+				onNavigate={navigateToTerminalRow}
 				sessionAgentProfile={sessionAgentProfile}
 				sessionActiveModel={sessionActiveModel}
 				sessionBreadcrumbs={sessionBreadcrumbs}
@@ -161,6 +186,8 @@ export function CompactTerminalSessionView({
 function TerminalHeader({
 	errorCount,
 	toolErrorCount,
+	userMessageCount,
+	onNavigate,
 	sessionAgentProfile,
 	sessionActiveModel,
 	sessionBreadcrumbs,
@@ -170,6 +197,8 @@ function TerminalHeader({
 }: {
 	errorCount: number;
 	toolErrorCount: number;
+	userMessageCount: number;
+	onNavigate: (kind: TerminalNavigationKind) => void;
 	sessionAgentProfile?: string;
 	sessionActiveModel?: string;
 	sessionBreadcrumbs: ChatSessionViewProps["sessionBreadcrumbs"];
@@ -182,8 +211,21 @@ function TerminalHeader({
 			<div className="flex flex-wrap items-center gap-2">
 				{sessionAgentProfile ? <TerminalBadge tone="neutral">{sessionAgentProfile}</TerminalBadge> : null}
 				{sessionActiveModel ? <TerminalBadge tone="purple">{sessionActiveModel}</TerminalBadge> : null}
-				{errorCount > 0 ? <TerminalBadge tone="red" label={`${errorCount} errors`}>{errorCount}<CircleX size={12} /></TerminalBadge> : null}
-				{toolErrorCount > 0 ? <TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors`}>{toolErrorCount}<Hammer size={12} /></TerminalBadge> : null}
+				{userMessageCount > 0 ? (
+					<TerminalBadge tone="cyan" label={`${userMessageCount} user messages · jump to previous user message`} onClick={() => onNavigate("user")}>
+						{userMessageCount}<MessageSquare size={12} />
+					</TerminalBadge>
+				) : null}
+				{errorCount > 0 ? (
+					<TerminalBadge tone="red" label={`${errorCount} errors · jump to previous error`} onClick={() => onNavigate("system")}>
+						{errorCount}<CircleX size={12} />
+					</TerminalBadge>
+				) : null}
+				{toolErrorCount > 0 ? (
+					<TerminalBadge tone="amber" label={`${toolErrorCount} tool call errors · jump to previous tool error`} onClick={() => onNavigate("tool")}>
+						{toolErrorCount}<Hammer size={12} />
+					</TerminalBadge>
+				) : null}
 				{originSession ? (
 					<SessionLinkButton onClick={() => onOpenSession(originSession.piboSessionId)}>
 						Origin {originSession.label}
@@ -222,6 +264,7 @@ function SessionLinkButton({ children, onClick }: { children: ReactNode; onClick
 function TerminalRow({
 	row,
 	expanded,
+	focused,
 	piboSessionId,
 	onToggle,
 	onFork,
@@ -231,6 +274,7 @@ function TerminalRow({
 }: {
 	row: CompactTerminalRow;
 	expanded: boolean;
+	focused: boolean;
 	piboSessionId: string;
 	onToggle: () => void;
 	onFork: ChatSessionViewProps["onFork"];
@@ -254,7 +298,7 @@ function TerminalRow({
 
 	return (
 		<div
-			className={terminalRowClassName(row)}
+			className={terminalRowClassName(row, focused)}
 			data-pibo-component="TerminalRow"
 			data-pibo-debug="terminal-row"
 			data-pibo-terminal-row="true"
@@ -270,8 +314,9 @@ function TerminalRow({
 			onDoubleClick={row.expandable ? handleRowDoubleClick : undefined}
 			onKeyDown={row.expandable ? handleRowKeyDown : undefined}
 			role={row.expandable ? "button" : undefined}
-			tabIndex={row.expandable ? 0 : undefined}
+			tabIndex={row.expandable || focused ? 0 : undefined}
 			aria-expanded={row.expandable ? expanded : undefined}
+			aria-current={focused ? "true" : undefined}
 		>
 			<div className="flex gap-3">
 				<div className="min-w-0 flex-1">
@@ -375,14 +420,15 @@ function TerminalRowActions({
 	);
 }
 
-function terminalRowClassName(row: CompactTerminalRow): string {
+function terminalRowClassName(row: CompactTerminalRow, focused = false): string {
 	const base =
 		row.kind === "message.user"
 			? "group border-b border-[#141414] bg-[#11a4d4]/10 py-2 last:border-b-0 hover:bg-[#11a4d4]/15"
 			: row.kind === "execution.command"
 				? "group border-b border-[#141414] bg-[#f59e0b]/5 py-2 last:border-b-0 hover:bg-[#f59e0b]/10"
 				: "group border-b border-[#141414] py-2 last:border-b-0 hover:bg-[#161616]";
-	return row.expandable ? `${base} focus:outline-none focus:ring-1 focus:ring-[#38bdf8]/50` : base;
+	const focusClass = row.expandable || focused ? " focus:outline-none focus:ring-1 focus:ring-[#38bdf8]/50" : "";
+	return focused ? `${base}${focusClass} ring-1 ring-[#38bdf8] bg-[#123040]` : `${base}${focusClass}`;
 }
 
 function retainExistingExpandedRows(
@@ -396,6 +442,34 @@ function retainExistingExpandedRows(
 		if (expandThinking && row.kind === "reasoning" && row.expandable) next.add(row.id);
 	}
 	return sameSet(current, next) ? current : next;
+}
+
+function isNavigableTerminalRow(row: CompactTerminalRow, kind: TerminalNavigationKind): boolean {
+	if (kind === "user") return row.kind === "message.user";
+	if (row.status !== "error") return false;
+	return kind === "tool" ? row.errorKind === "tool" : row.errorKind !== "tool";
+}
+
+function nextNavigationTarget(
+	rows: readonly CompactTerminalRow[],
+	kind: TerminalNavigationKind,
+	currentRowId: string | undefined,
+): { row: CompactTerminalRow; index: number } | undefined {
+	const candidates = rows
+		.map((row, index) => ({ row, index }))
+		.filter(({ row }) => isNavigableTerminalRow(row, kind));
+	if (!candidates.length) return undefined;
+	const currentIndex = currentRowId ? rows.findIndex((row) => row.id === currentRowId) : -1;
+	return candidates.filter((candidate) => currentIndex < 0 || candidate.index < currentIndex).at(-1) ?? candidates.at(-1);
+}
+
+function focusTerminalRowAfterScroll(rowId: string): void {
+	const focusRow = () => {
+		const row = Array.from(document.querySelectorAll<HTMLElement>('[data-pibo-component="TerminalRow"]'))
+			.find((element) => element.dataset.rowId === rowId);
+		row?.focus({ preventScroll: true });
+	};
+	requestAnimationFrame(() => requestAnimationFrame(focusRow));
 }
 
 function collapsedToolCallPreviewLines(row: { kind: string; lines: CompactTerminalLine[] }) {
@@ -551,10 +625,12 @@ function useAnimatedDots() {
 function TerminalBadge({
 	tone,
 	label,
+	onClick,
 	children,
 }: {
 	tone: "cyan" | "red" | "amber" | "purple" | "neutral";
 	label?: string;
+	onClick?: () => void;
 	children: ReactNode;
 }) {
 	const className =
@@ -567,7 +643,15 @@ function TerminalBadge({
 					: tone === "purple"
 						? "border-purple-500/40 text-purple-300"
 						: "border-[#3a3a3a] text-[#d4d4d4]";
-	return <span className={`inline-flex items-center gap-1 border px-2 py-0.5 ${className}`} title={label} aria-label={label}>{children}</span>;
+	const badgeClassName = `inline-flex items-center gap-1 border px-2 py-0.5 ${className}`;
+	if (onClick) {
+		return (
+			<button type="button" onClick={onClick} className={`${badgeClassName} hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-[#38bdf8]`} title={label} aria-label={label}>
+				{children}
+			</button>
+		);
+	}
+	return <span className={badgeClassName} title={label} aria-label={label}>{children}</span>;
 }
 
 function RowAction({

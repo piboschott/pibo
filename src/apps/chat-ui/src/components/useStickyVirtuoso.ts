@@ -5,6 +5,7 @@ const DEFAULT_BOTTOM_THRESHOLD = 24;
 const USER_SCROLL_INTENT_MS = 700;
 
 type StickyScrollBehavior = "auto" | "smooth";
+type StickyScrollAlign = "start" | "center" | "end";
 
 type StickyVirtuosoOptions = {
 	itemCount: number;
@@ -69,6 +70,14 @@ export function useStickyVirtuoso({
 		setSticky(true);
 		scheduleScrollToBottom(behavior);
 	}, [scheduleScrollToBottom, setSticky]);
+
+	const scrollToIndex = useCallback((index: number, align: StickyScrollAlign = "center", behavior: StickyScrollBehavior = "auto") => {
+		setSticky(false);
+		clearScheduledScroll();
+		requestAnimationFrame(() => {
+			virtuosoRef.current?.scrollToIndex({ index, align, behavior });
+		});
+	}, [clearScheduledScroll, setSticky]);
 
 	const markUserScrollIntent = useCallback((event?: Event) => {
 		userScrollIntentRef.current = true;
@@ -153,6 +162,7 @@ export function useStickyVirtuoso({
 		virtuosoRef,
 		isSticky,
 		stickToBottom,
+		scrollToIndex,
 		scrollerRef: setScroller,
 		atBottomStateChange,
 		atBottomThreshold,
