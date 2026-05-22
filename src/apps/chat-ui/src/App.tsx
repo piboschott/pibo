@@ -4400,6 +4400,7 @@ function collectConfirmedTraceNodeKeys(nodes: readonly PiboTraceNode[], keys: Se
 		if (node.type === "user.message") {
 			const eventId = node.id.startsWith("event:message_queued:") ? node.id.slice("event:message_queued:".length) : undefined;
 			if (eventId) keys.add(`${node.piboSessionId}:message_queued:${eventId}`);
+			if (node.source === "transcript" && node.entryId) keys.add(`${node.piboSessionId}:message_queued:${node.entryId}`);
 		}
 		if (node.eventId && node.type === "assistant.message") {
 			keys.add(`${node.piboSessionId}:assistant_delta:${node.eventId}`);
