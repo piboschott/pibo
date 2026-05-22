@@ -242,7 +242,7 @@ test("chat navigation clears stale indexed running status from settled signal st
 	}
 });
 
-test("chat navigation treats session errors as unread until marked read", async () => {
+test("chat navigation treats session errors as acknowledged after marked read", async () => {
 	const { channel, baseURL, sessions, signals, emitOutput } = await startSignalWebHost();
 	try {
 		const selected = createSession(sessions, "ps_navigation_error_selected");
@@ -270,7 +270,7 @@ test("chat navigation treats session errors as unread until marked read", async 
 		const readNavigation = await fetch(`${baseURL}/api/chat/navigation?piboSessionId=${selected.id}`, { headers: { "x-test-user": "user-1" } });
 		assert.equal(readNavigation.status, 200);
 		const readBody = await readNavigation.json();
-		assert.equal(findSessionNode(readBody.sessions, failed.id)?.status, "error");
+		assert.equal(findSessionNode(readBody.sessions, failed.id)?.status, "idle");
 		assert.equal(findSessionNode(readBody.sessions, failed.id)?.unreadCount, undefined);
 	} finally {
 		await channel.stop?.();

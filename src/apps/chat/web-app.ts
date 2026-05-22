@@ -7190,10 +7190,22 @@ function buildSessionUnreadCounts(
 	});
 }
 
-function signalStatusFromSnapshot(snapshot: ReturnType<NonNullable<PiboWebAppContext["channelContext"]["snapshotSignalSession"]>> | undefined, piboSessionId: string): { status?: PiboWebSessionStatus; updatedAt?: string } | undefined {
+function hasUnreadInSessionSubtree(sessions: readonly PiboSession[], sessionUnreadCounts: ReadonlyMap<string, number>, rootSessionId: string): boolean {
+	return sessionSubtree(sessions, rootSessionId).some((session) => (sessionUnreadCounts.get(session.id) ?? 0) > 0);
+}
+
+function signalStatusFromSnapshot(
+	snapshot: ReturnType<NonNullable<PiboWebAppContext["channelContext"]["snapshotSignalSession"]>> | undefined,
+	piboSessionId: string,
+	options: { sessions?: readonly PiboSession[]; sessionUnreadCounts?: ReadonlyMap<string, number> } = {},
+): { status?: PiboWebSessionStatus; updatedAt?: string } | undefined {
 	const session = snapshot?.sessions[piboSessionId];
 	if (!session) return undefined;
-	if (session.hasError || session.hasErrorDescendant || session.aggregateStatus === "error") return { status: "error", updatedAt: session.updatedAt };
+	const hasSignalError = session.hasError || session.hasErrorDescendant || session.aggregateStatus === "error";
+	const hasUnreadError = options.sessions && options.sessionUnreadCounts
+		? hasUnreadInSessionSubtree(options.sessions, options.sessionUnreadCounts, piboSessionId)
+		: true;
+	if (hasSignalError && hasUnreadError) return { status: "error", updatedAt: session.updatedAt };
 	if (session.isTreeActive) return { status: "running", updatedAt: session.updatedAt };
 	return { status: "idle", updatedAt: session.updatedAt };
 }
@@ -7202,15 +7214,16 @@ function sessionIndexItemsWithSignalState(
 	context: PiboWebAppContext,
 	sessions: readonly PiboSession[],
 	indexItems: readonly ChatWebSessionIndexItem[],
+	sessionUnreadCounts: ReadonlyMap<string, number> = new Map(),
 ): ChatWebSessionIndexItem[] {
 	const snapshotSignalSession = context.channelContext.snapshotSignalSession;
 	if (!snapshotSignalSession) return [...indexItems];
 	const bySessionId = new Map(indexItems.map((item) => [item.piboSessionId, item]));
 	for (const session of sessions) {
 		const existing = bySessionId.get(session.id);
-		const signal = signalStatusFromSnapshot(snapshotSignalSession(session.id), session.id);
+		const signal = signalStatusFromSnapshot(snapshotSignalSession(session.id), session.id, { sessions, sessionUnreadCounts });
 		if (!signal?.status) continue;
-		if (signal.status === "idle" && existing?.status !== "running") continue;
+		if (signal.status === "idle" && existing?.status !== "running" && existing?.status !== "error") continue;
 		bySessionId.set(session.id, {
 			...(existing ?? {
 				piboSessionId: session.id,
@@ -9202,7 +9215,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const sessionUnreadCounts = buildSessionUnreadCounts(state, ownedSessions, principalId);
 				const sessions = await buildSessionNodes(
 					roomSessions,
-					sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions()),
+					sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions(), sessionUnreadCounts),
 					process.cwd(),
 					sessionUnreadCounts,
 					{ skipPiMetadataFallback: true },
@@ -9261,7 +9274,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const [sessions, catalog] = await Promise.all([
 					buildSessionNodes(
 						roomSessions,
-						sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions()),
+						sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions(), sessionUnreadCounts),
 						process.cwd(),
 						sessionUnreadCounts,
 					),

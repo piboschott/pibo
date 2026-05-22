@@ -9815,7 +9815,7 @@ function traceNodeText(node: PiboTraceNode): string {
 	return typeof node.output === "string" ? node.output : typeof node.summary === "string" ? node.summary : "";
 }
 
-type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string };
+type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string; isTreeActive?: boolean };
 
 function latestIsoTimestamp(...values: Array<string | undefined>): string | undefined {
 	let latest: string | undefined;
@@ -9854,7 +9854,7 @@ function updateSignalStatusInSessionNode(
 	updateFor: (piboSessionId: string) => SignalSessionUpdate | undefined,
 ): PiboWebSessionNode {
 	const update = updateFor(node.piboSessionId);
-	const status = update?.status;
+	const status = acknowledgedSignalStatus(update, sessionNodeUnreadCount(node));
 	const statusChanged = Boolean(status && status !== node.status);
 	const lastActivityAt = statusChanged
 		? latestIsoTimestamp(node.lastActivityAt, update?.updatedAt, new Date().toISOString())
@@ -9866,10 +9866,11 @@ function updateSignalStatusInSessionNode(
 		children: node.children.map((child) => updateSignalStatusInSessionNode(child, updateFor)),
 		derivedSessions: node.derivedSessions.map((derived) => {
 			const derivedUpdate = updateFor(derived.piboSessionId);
-			const derivedStatusChanged = Boolean(derivedUpdate?.status && derivedUpdate.status !== derived.status);
+			const derivedStatus = acknowledgedSignalStatus(derivedUpdate, 0);
+			const derivedStatusChanged = Boolean(derivedStatus && derivedStatus !== derived.status);
 			return {
 				...derived,
-				status: derivedUpdate?.status ?? derived.status,
+				status: derivedStatus ?? derived.status,
 				lastActivityAt: derivedStatusChanged
 					? latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt, new Date().toISOString())
 					: latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt),
@@ -9878,10 +9879,19 @@ function updateSignalStatusInSessionNode(
 	};
 }
 
+function sessionNodeUnreadCount(node: PiboWebSessionNode): number {
+	return (node.unreadCount ?? 0) + node.children.reduce((sum, child) => sum + sessionNodeUnreadCount(child), 0);
+}
+
+function acknowledgedSignalStatus(update: SignalSessionUpdate | undefined, unreadCount: number): PiboWebSessionNode["status"] | undefined {
+	if (update?.status !== "error") return update?.status;
+	return unreadCount > 0 ? "error" : update.isTreeActive ? "running" : "idle";
+}
+
 function signalSessionUpdate(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): SignalSessionUpdate | undefined {
 	const status = signalLegacyStatus(snapshot);
 	if (!snapshot && !status) return undefined;
-	return { status, updatedAt: snapshot?.updatedAt };
+	return { status, updatedAt: snapshot?.updatedAt, isTreeActive: snapshot?.isTreeActive };
 }
 
 function signalLegacyStatus(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): PiboWebSessionNode["status"] | undefined {
