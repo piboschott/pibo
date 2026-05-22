@@ -3697,6 +3697,15 @@ function SessionTracePane({
 	}, [recoverSelectedLiveStream]);
 
 	useEffect(() => {
+		if (!selectedPiboSessionId || selectedSessionStatus !== "running") return;
+		const timer = window.setInterval(() => {
+			flushPendingStreamEvents(selectedPiboSessionId);
+			onRefreshTrace().catch((caught) => onError(errorMessage(caught)));
+		}, 1000);
+		return () => window.clearInterval(timer);
+	}, [flushPendingStreamEvents, onError, onRefreshTrace, selectedPiboSessionId, selectedSessionStatus]);
+
+	useEffect(() => {
 		return () => {
 			if (copyHeaderPiboSessionTimeout.current) window.clearTimeout(copyHeaderPiboSessionTimeout.current);
 		};
@@ -4391,6 +4400,14 @@ function collectConfirmedTraceNodeKeys(nodes: readonly PiboTraceNode[], keys: Se
 		if (node.type === "user.message") {
 			const eventId = node.id.startsWith("event:message_queued:") ? node.id.slice("event:message_queued:".length) : undefined;
 			if (eventId) keys.add(`${node.piboSessionId}:message_queued:${eventId}`);
+		}
+		if (node.eventId && node.type === "assistant.message") {
+			keys.add(`${node.piboSessionId}:assistant_delta:${node.eventId}`);
+			keys.add(`${node.piboSessionId}:assistant_message:${node.eventId}`);
+		}
+		if (node.eventId && node.type === "model.reasoning") {
+			keys.add(`${node.piboSessionId}:thinking_delta:${node.eventId}`);
+			keys.add(`${node.piboSessionId}:thinking_finished:${node.eventId}`);
 		}
 		collectConfirmedTraceNodeKeys(node.children, keys);
 	}
