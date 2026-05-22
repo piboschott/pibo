@@ -81,7 +81,7 @@ export function CompactTerminalSessionView({
 		if (!target) return;
 		navigationCursorRef.current[kind] = target.row.id;
 		setFocusedNavigationRowId(target.row.id);
-		stickyView.scrollToIndex(target.index, "center", "smooth");
+		stickyView.scrollToIndex(target.index, "start", "fast-smooth", { fromIndex: target.fromIndex });
 		focusTerminalRowAfterScroll(target.row.id);
 	}, [rows, stickyView]);
 
@@ -454,13 +454,15 @@ function nextNavigationTarget(
 	rows: readonly CompactTerminalRow[],
 	kind: TerminalNavigationKind,
 	currentRowId: string | undefined,
-): { row: CompactTerminalRow; index: number } | undefined {
+): { row: CompactTerminalRow; index: number; fromIndex: number } | undefined {
 	const candidates = rows
 		.map((row, index) => ({ row, index }))
 		.filter(({ row }) => isNavigableTerminalRow(row, kind));
 	if (!candidates.length) return undefined;
 	const currentIndex = currentRowId ? rows.findIndex((row) => row.id === currentRowId) : -1;
-	return candidates.filter((candidate) => currentIndex < 0 || candidate.index < currentIndex).at(-1) ?? candidates.at(-1);
+	const fromIndex = currentIndex >= 0 ? currentIndex : rows.length;
+	const target = candidates.filter((candidate) => candidate.index < fromIndex).at(-1) ?? candidates[candidates.length - 1];
+	return { ...target, fromIndex };
 }
 
 function focusTerminalRowAfterScroll(rowId: string): void {
