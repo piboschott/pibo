@@ -328,6 +328,9 @@ export function patchTraceViewWithEvent(
 	if (view.rawEvents.some((re) => traceEventDedupeKey(re) === traceEventDedupeKey(event))) {
 		return view;
 	}
+	if (isConfirmedUserMessageEcho(view.nodes, event)) {
+		return view;
+	}
 
 	const allNodes = flattenTraceNodes(view.nodes).map((node) => ({ ...node, children: [] }));
 	const byId = mapTraceNodesById(allNodes);
@@ -354,6 +357,18 @@ export function patchTraceViewWithEvent(
 		nodes: sharedNodes,
 		latestStreamId: latestTraceStreamId([event], view.latestStreamId),
 	};
+}
+
+function isConfirmedUserMessageEcho(nodes: readonly PiboTraceNode[], event: ChatWebStoredEvent): boolean {
+	const payload = event.payload as PiboOutputEvent;
+	if (payload.type !== "message_queued" || payload.source !== "user") return false;
+	const eventId = typeof payload.eventId === "string" ? payload.eventId : event.eventId;
+	if (!eventId) return false;
+	return flattenTraceNodes([...nodes]).some((node) =>
+		node.type === "user.message" &&
+		node.source === "transcript" &&
+		(node.entryId === eventId || node.stableKey === `entry:${eventId}`)
+	);
 }
 
 function shareUnchangedTraceNodes(
