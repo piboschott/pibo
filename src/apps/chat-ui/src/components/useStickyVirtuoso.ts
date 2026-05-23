@@ -4,8 +4,16 @@ import type { FollowOutputScalarType, VirtuosoHandle } from "react-virtuoso";
 const DEFAULT_BOTTOM_THRESHOLD = 24;
 const USER_SCROLL_INTENT_MS = 700;
 
-type StickyScrollBehavior = "auto" | "smooth";
+type StickyScrollBehavior = "auto" | "smooth" | "fast-smooth";
+type NativeScrollBehavior = "auto" | "smooth";
 type StickyScrollAlign = "start" | "center" | "end";
+
+type StickyScrollToIndexOptions = {
+	fromIndex?: number;
+	stagingDistance?: number;
+};
+
+const DEFAULT_FAST_SMOOTH_STAGING_DISTANCE = 3;
 
 type StickyVirtuosoOptions = {
 	itemCount: number;
@@ -48,7 +56,7 @@ export function useStickyVirtuoso({
 		}
 	}, []);
 
-	const scheduleScrollToBottom = useCallback((behavior: StickyScrollBehavior = "auto") => {
+	const scheduleScrollToBottom = useCallback((behavior: NativeScrollBehavior = "auto") => {
 		clearScheduledScroll();
 		scrollFrameRef.current = requestAnimationFrame(() => {
 			scrollFrameRef.current = undefined;
@@ -66,16 +74,34 @@ export function useStickyVirtuoso({
 		});
 	}, [clearScheduledScroll]);
 
-	const stickToBottom = useCallback((behavior: StickyScrollBehavior = "auto") => {
+	const stickToBottom = useCallback((behavior: NativeScrollBehavior = "auto") => {
 		setSticky(true);
 		scheduleScrollToBottom(behavior);
 	}, [scheduleScrollToBottom, setSticky]);
 
-	const scrollToIndex = useCallback((index: number, align: StickyScrollAlign = "center", behavior: StickyScrollBehavior = "auto") => {
+	const scrollToIndex = useCallback((index: number, align: StickyScrollAlign = "center", behavior: StickyScrollBehavior = "auto", options: StickyScrollToIndexOptions = {}) => {
 		setSticky(false);
 		clearScheduledScroll();
 		requestAnimationFrame(() => {
-			virtuosoRef.current?.scrollToIndex({ index, align, behavior });
+			if (behavior !== "fast-smooth") {
+				virtuosoRef.current?.scrollToIndex({ index, align, behavior });
+				return;
+			}
+			const fromIndex = options.fromIndex;
+			const distance = Math.abs(typeof fromIndex === "number" ? fromIndex - index : 0);
+			const stagingDistance = options.stagingDistance ?? DEFAULT_FAST_SMOOTH_STAGING_DISTANCE;
+			if (typeof fromIndex !== "number" || distance <= stagingDistance) {
+				virtuosoRef.current?.scrollToIndex({ index, align, behavior: "smooth" });
+				return;
+			}
+			const lastIndex = itemCountRef.current - 1;
+			const stagedIndex = index < fromIndex
+				? Math.min(lastIndex, index + stagingDistance)
+				: Math.max(0, index - stagingDistance);
+			virtuosoRef.current?.scrollToIndex({ index: stagedIndex, align, behavior: "auto" });
+			requestAnimationFrame(() => {
+				virtuosoRef.current?.scrollToIndex({ index, align, behavior: "smooth" });
+			});
 		});
 	}, [clearScheduledScroll, setSticky]);
 
