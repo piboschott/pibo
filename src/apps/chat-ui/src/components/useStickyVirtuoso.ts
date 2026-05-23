@@ -10,6 +10,7 @@ type StickyScrollAlign = "start" | "center" | "end";
 
 type StickyScrollToIndexOptions = {
 	fromIndex?: number;
+	stagingAlign?: StickyScrollAlign;
 	stagingDistance?: number;
 };
 
@@ -85,6 +86,15 @@ export function useStickyVirtuoso({
 		requestAnimationFrame(() => {
 			if (behavior !== "fast-smooth") {
 				virtuosoRef.current?.scrollToIndex({ index, align, behavior });
+				return;
+			}
+			if (options.stagingAlign) {
+				virtuosoRef.current?.scrollToIndex({ index, align: options.stagingAlign, behavior: "auto" });
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						virtuosoRef.current?.scrollToIndex({ index, align, behavior: "smooth" });
+					});
+				});
 				return;
 			}
 			const fromIndex = options.fromIndex;
