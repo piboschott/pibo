@@ -168,6 +168,36 @@ test("persisted user message with optimistic event id keeps one trace node", () 
 	assert.equal(after[0].id, `event:message_queued:${clientTxnId}`);
 });
 
+test("optimistic user echo is ignored once the transcript entry exists", () => {
+	const clientTxnId = "web-client-txn-transcript-1";
+	const baseView = buildTraceViewFromEvents({
+		session: { id: "chat:test", piSessionId: "pi-test" },
+		status: "running",
+		transcriptEntries: [
+			{
+				id: "pi-transcript-entry-1",
+				type: "message",
+				timestamp: "2026-04-29T08:00:00.000Z",
+				message: { role: "user", content: [{ type: "text", text: "hello persisted optimistic" }] },
+			},
+		],
+		events: [],
+		includeRawEvents: true,
+	});
+
+	const patched = patchTraceViewWithEvent(baseView, createEvent({
+		seq: 2,
+		streamId: 20,
+		type: "message_queued",
+		payload: { type: "message_queued", eventId: clientTxnId, text: "hello persisted optimistic", source: "user", queuedMessages: 1 },
+	}), "running");
+
+	const users = flatNodes(patched).filter((node) => node.type === "user.message");
+	assert.equal(users.length, 1);
+	assert.equal(users[0].id, "entry:pi-transcript-entry-1");
+	assert.equal(users[0].source, "transcript");
+});
+
 test("live stream simulation: thinking -> assistant -> tool -> finish", () => {
 	const baseView = createBaseView([]);
 

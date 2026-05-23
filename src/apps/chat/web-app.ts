@@ -28,9 +28,10 @@ import {
 	type PiboRoomRole,
 	type UpdatePiboRoomInput,
 } from "./types/rooms.js";
-import { chatStreamFramesFromOutputEvent, createChatStreamState, type ChatStreamEvent } from "./stream.js";
+import { chatStreamFramesFromOutputEvent, createChatStreamState, nextTransientChatStreamFrameId, type ChatStreamEvent } from "./stream.js";
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, type PiboSessionTraceView, type PiboWebSessionNode, type PiboWebSessionStatus } from "./trace.js";
-import type { PiboSessionTraceSummary } from "../../shared/trace-types.js";
+import type { ChatWebStoredEvent, PiboSessionTraceSummary } from "../../shared/trace-types.js";
+import { patchTraceViewWithEvent } from "../../shared/trace-engine.js";
 import { isChatWebSessionArchived, withChatWebArchived } from "./session-metadata.js";
 import { withWorkflowSessionKind } from "../../sessions/workflow-session-kind.js";
 import {
@@ -1720,6 +1721,20 @@ type ChatMessageBody = {
 	fileAttachmentPaths?: unknown;
 };
 
+type ChatStreamingFixtureBody = {
+	piboSessionId?: unknown;
+	roomId?: unknown;
+	deltas?: unknown;
+	cadenceMs?: unknown;
+	profile?: unknown;
+	mix?: unknown;
+	traceSnapshots?: unknown;
+	suppressLiveDeltas?: unknown;
+};
+
+type ChatStreamingFixtureProfile = "steady" | "jitter" | "burst" | "batch";
+type ChatStreamingFixtureMix = "text" | "reasoning-text";
+
 type ChatProjectsBootstrap = ChatBootstrapCatalog & {
 	identity: PiboWebSession["authSession"]["identity"];
 	personalProject: PiboProject;
@@ -2073,6 +2088,56 @@ function traceCacheKey(piboSessionId: string, version: string): string {
 function withRawTraceTail(trace: PiboSessionTraceView, rawEvents: PiboSessionTraceView["rawEvents"]): PiboSessionTraceView {
 	if (rawEvents.length === 0) return trace;
 	return { ...trace, rawEvents };
+}
+
+function liveSnapshotVersion(snapshots: readonly PiboOutputEvent[]): string {
+	if (snapshots.length === 0) return "";
+	const hash = createHash("sha1");
+	for (const snapshot of snapshots) {
+		hash.update(JSON.stringify(snapshot));
+		hash.update("\n");
+	}
+	return hash.digest("hex").slice(0, 16);
+}
+
+function storedLiveSnapshotEvents(input: {
+	piboSessionId: string;
+	snapshots: readonly PiboOutputEvent[];
+	lastEventSequence: number;
+	now?: string;
+}): ChatWebStoredEvent<PiboOutputEvent>[] {
+	const createdAt = input.now ?? new Date().toISOString();
+	return input.snapshots.map((snapshot, index) => ({
+		id: `live-snapshot:${input.piboSessionId}:${index}:${liveSnapshotVersion([snapshot])}`,
+		piboSessionId: input.piboSessionId,
+		eventSequence: input.lastEventSequence + index + 1,
+		eventId: "eventId" in snapshot && typeof snapshot.eventId === "string" ? snapshot.eventId : undefined,
+		type: snapshot.type,
+		createdAt,
+		payload: snapshot,
+	}));
+}
+
+function withLiveSnapshots(
+	trace: PiboSessionTraceView,
+	snapshots: readonly PiboOutputEvent[],
+	input: { piboSessionId: string; lastEventSequence: number; status?: PiboWebSessionStatus },
+): PiboSessionTraceView {
+	if (snapshots.length === 0) return trace;
+	const events = storedLiveSnapshotEvents({
+		piboSessionId: input.piboSessionId,
+		snapshots,
+		lastEventSequence: input.lastEventSequence,
+	});
+	let next = trace;
+	for (const event of events) {
+		next = patchTraceViewWithEvent(next, event, input.status ?? "running");
+	}
+	return {
+		...next,
+		version: `${trace.version}:live:${liveSnapshotVersion(snapshots)}`,
+		rawEvents: trace.rawEvents,
+	};
 }
 
 function annotateTracePage(
@@ -2442,6 +2507,68 @@ function normalizeMessageText(value: unknown): string {
 		throw new PiboWebHttpError("Message text is required", 400);
 	}
 	return value;
+}
+
+function normalizeStreamingFixtureDeltas(value: unknown): string[] {
+	if (value === undefined) return [" a", " b", " c", " d", " e", " f", " g", " h", " i", " j", " k", " l"];
+	if (!Array.isArray(value) || value.length === 0) throw new PiboWebHttpError("deltas must be a non-empty string array", 400);
+	if (value.length > 100) throw new PiboWebHttpError("deltas must contain at most 100 entries", 400);
+	return value.map((item) => {
+		if (typeof item !== "string" || item.length === 0) throw new PiboWebHttpError("deltas entries must be non-empty strings", 400);
+		if (item.length > 200) throw new PiboWebHttpError("deltas entries must be at most 200 characters", 400);
+		return item;
+	});
+}
+
+function normalizeStreamingFixtureCadenceMs(value: unknown): number {
+	if (value === undefined) return 100;
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 10 || value > 5_000) {
+		throw new PiboWebHttpError("cadenceMs must be a number between 10 and 5000", 400);
+	}
+	return Math.round(value);
+}
+
+function normalizeStreamingFixtureProfile(value: unknown): ChatStreamingFixtureProfile {
+	if (value === undefined) return "steady";
+	if (value === "steady" || value === "jitter" || value === "burst" || value === "batch") return value;
+	throw new PiboWebHttpError("profile must be steady, jitter, burst, or batch", 400);
+}
+
+function normalizeStreamingFixtureMix(value: unknown): ChatStreamingFixtureMix {
+	if (value === undefined) return "text";
+	if (value === "text" || value === "reasoning-text") return value;
+	throw new PiboWebHttpError("mix must be text or reasoning-text", 400);
+}
+
+function normalizeStreamingFixtureTraceSnapshots(value: unknown): boolean {
+	if (value === undefined) return false;
+	if (typeof value === "boolean") return value;
+	throw new PiboWebHttpError("traceSnapshots must be a boolean", 400);
+}
+
+function normalizeStreamingFixtureSuppressLiveDeltas(value: unknown): boolean {
+	if (value === undefined) return false;
+	if (typeof value === "boolean") return value;
+	throw new PiboWebHttpError("suppressLiveDeltas must be a boolean", 400);
+}
+
+function buildStreamingFixtureSchedule(deltaCount: number, cadenceMs: number, profile: ChatStreamingFixtureProfile): number[] {
+	const delays: number[] = [];
+	let elapsedMs = 0;
+	for (let index = 0; index < deltaCount; index += 1) {
+		let gapMs = cadenceMs;
+		if (profile === "jitter") {
+			const jitterMs = [-30, 50, -20, 30, -40, 60, -10, 40, -50, 70, -20, 30][index % 12];
+			gapMs = Math.max(10, cadenceMs + jitterMs);
+		} else if (profile === "burst") {
+			gapMs = index > 0 && index % 3 !== 0 ? Math.max(10, Math.round(cadenceMs / 5)) : Math.max(cadenceMs, Math.round(cadenceMs * 2.5));
+		} else if (profile === "batch") {
+			gapMs = index % 4 === 0 ? Math.max(cadenceMs, Math.round(cadenceMs * 3)) : 0;
+		}
+		elapsedMs += gapMs;
+		delays.push(elapsedMs);
+	}
+	return delays;
 }
 
 let defaultChatWebAnnotationStore: WebAnnotationStore | undefined;
@@ -7139,10 +7266,22 @@ function buildSessionUnreadCounts(
 	});
 }
 
-function signalStatusFromSnapshot(snapshot: ReturnType<NonNullable<PiboWebAppContext["channelContext"]["snapshotSignalSession"]>> | undefined, piboSessionId: string): { status?: PiboWebSessionStatus; updatedAt?: string } | undefined {
+function hasUnreadInSessionSubtree(sessions: readonly PiboSession[], sessionUnreadCounts: ReadonlyMap<string, number>, rootSessionId: string): boolean {
+	return sessionSubtree(sessions, rootSessionId).some((session) => (sessionUnreadCounts.get(session.id) ?? 0) > 0);
+}
+
+function signalStatusFromSnapshot(
+	snapshot: ReturnType<NonNullable<PiboWebAppContext["channelContext"]["snapshotSignalSession"]>> | undefined,
+	piboSessionId: string,
+	options: { sessions?: readonly PiboSession[]; sessionUnreadCounts?: ReadonlyMap<string, number> } = {},
+): { status?: PiboWebSessionStatus; updatedAt?: string } | undefined {
 	const session = snapshot?.sessions[piboSessionId];
 	if (!session) return undefined;
-	if (session.hasError || session.hasErrorDescendant || session.aggregateStatus === "error") return { status: "error", updatedAt: session.updatedAt };
+	const hasSignalError = session.hasError || session.hasErrorDescendant || session.aggregateStatus === "error";
+	const hasUnreadError = options.sessions && options.sessionUnreadCounts
+		? hasUnreadInSessionSubtree(options.sessions, options.sessionUnreadCounts, piboSessionId)
+		: true;
+	if (hasSignalError && hasUnreadError) return { status: "error", updatedAt: session.updatedAt };
 	if (session.isTreeActive) return { status: "running", updatedAt: session.updatedAt };
 	return { status: "idle", updatedAt: session.updatedAt };
 }
@@ -7151,15 +7290,16 @@ function sessionIndexItemsWithSignalState(
 	context: PiboWebAppContext,
 	sessions: readonly PiboSession[],
 	indexItems: readonly ChatWebSessionIndexItem[],
+	sessionUnreadCounts: ReadonlyMap<string, number> = new Map(),
 ): ChatWebSessionIndexItem[] {
 	const snapshotSignalSession = context.channelContext.snapshotSignalSession;
 	if (!snapshotSignalSession) return [...indexItems];
 	const bySessionId = new Map(indexItems.map((item) => [item.piboSessionId, item]));
 	for (const session of sessions) {
 		const existing = bySessionId.get(session.id);
-		const signal = signalStatusFromSnapshot(snapshotSignalSession(session.id), session.id);
+		const signal = signalStatusFromSnapshot(snapshotSignalSession(session.id), session.id, { sessions, sessionUnreadCounts });
 		if (!signal?.status) continue;
-		if (signal.status === "idle" && existing?.status !== "running") continue;
+		if (signal.status === "idle" && existing?.status !== "running" && existing?.status !== "error") continue;
 		bySessionId.set(session.id, {
 			...(existing ?? {
 				piboSessionId: session.id,
@@ -7264,7 +7404,8 @@ function writeChatEventFrames(
 	});
 	for (let index = 0; index < frames.length; index += 1) {
 		if (cursor && streamId !== undefined && streamId === cursor.streamId && index <= cursor.frameIndex) continue;
-		writeSse(controller, "pibo", { ...frames[index], piboSessionId }, streamId === undefined ? undefined : `${streamId}:${index}`);
+		const frameId = streamId === undefined ? nextTransientChatStreamFrameId(state) : `${streamId}:${index}`;
+		writeSse(controller, "pibo", { ...frames[index], piboSessionId }, frameId);
 	}
 }
 
@@ -7342,6 +7483,7 @@ function createEventStream(input: {
 		headers: {
 			"content-type": "text/event-stream; charset=utf-8",
 			"cache-control": "no-cache, no-transform",
+			"x-accel-buffering": "no",
 			connection: "keep-alive",
 		},
 	});
@@ -7964,6 +8106,91 @@ async function sendProjectMessage(input: {
 		source: "user",
 	});
 	return responseJson({ accepted, output });
+}
+
+function startChatStreamingFixture(input: {
+	state: ChatWebAppState;
+	context: PiboWebAppContext;
+	webSession: PiboWebSession;
+	defaultProfile: string;
+	body: ChatStreamingFixtureBody;
+}): Response {
+	const requestedRoomId = typeof input.body.roomId === "string" ? input.body.roomId : undefined;
+	const selectedSession = resolveRequestedSession(
+		input.state,
+		input.context,
+		input.webSession,
+		input.defaultProfile,
+		typeof input.body.piboSessionId === "string" ? input.body.piboSessionId : undefined,
+		requestedRoomId,
+	);
+	const room = ensureSessionRoom(input.state, input.context, selectedSession, input.webSession);
+	if (requestedRoomId && room.id !== requestedRoomId) throw new PiboWebHttpError("Session is not available in this room", 404);
+	if (isPiboRoomArchived(room)) throw new PiboWebHttpError("Archived rooms are read-only", 403);
+	input.state.sessionQuery.upsertSession(selectedSession);
+
+	const deltas = normalizeStreamingFixtureDeltas(input.body.deltas);
+	const cadenceMs = normalizeStreamingFixtureCadenceMs(input.body.cadenceMs);
+	const profile = normalizeStreamingFixtureProfile(input.body.profile);
+	const mix = normalizeStreamingFixtureMix(input.body.mix);
+	const traceSnapshots = normalizeStreamingFixtureTraceSnapshots(input.body.traceSnapshots);
+	const suppressLiveDeltas = normalizeStreamingFixtureSuppressLiveDeltas(input.body.suppressLiveDeltas);
+	const scheduleMs = buildStreamingFixtureSchedule(deltas.length, cadenceMs, profile);
+	const reasoningDeltas = mix === "reasoning-text" ? [" think", " plan", " check", " answer"] : [];
+	const reasoningScheduleMs = reasoningDeltas.map((_, index) => Math.max(10, Math.round(((index + 1) * cadenceMs) / 2)));
+	const eventId = `streaming-fixture-${randomUUID()}`;
+	const emit = (event: PiboOutputEvent) => {
+		if (traceSnapshots && (event.type === "assistant_delta" || event.type === "assistant_message" || event.type === "message_finished")) {
+			input.state.outputCompactor.compact(event);
+		}
+		if (suppressLiveDeltas && event.type === "assistant_delta") return;
+		const liveEvent: TransientChatEvent = {
+			roomId: room.id,
+			piboSessionId: selectedSession.id,
+			eventType: event.type,
+			payload: event,
+		};
+		for (const listener of input.state.liveListeners) listener(liveEvent);
+	};
+	const emitAt = (delayMs: number, event: PiboOutputEvent) => {
+		setTimeout(() => emit(event), delayMs);
+	};
+
+	emit({ type: "message_started", piboSessionId: selectedSession.id, eventId, text: "Streaming benchmark fixture", source: "service" });
+	if (reasoningDeltas.length) {
+		emit({ type: "thinking_started", piboSessionId: selectedSession.id, eventId, thinkingIndex: 0 });
+		reasoningDeltas.forEach((delta, index) => {
+			emitAt(reasoningScheduleMs[index] ?? Math.max(10, Math.round(((index + 1) * cadenceMs) / 2)), { type: "thinking_delta", piboSessionId: selectedSession.id, eventId, thinkingIndex: 0, text: delta });
+		});
+		emitAt((reasoningScheduleMs[reasoningScheduleMs.length - 1] ?? 0) + Math.max(10, Math.round(cadenceMs / 2)), { type: "thinking_finished", piboSessionId: selectedSession.id, eventId, thinkingIndex: 0, text: reasoningDeltas.join("") });
+	}
+	deltas.forEach((delta, index) => {
+		emitAt(scheduleMs[index] ?? cadenceMs * (index + 1), { type: "assistant_delta", piboSessionId: selectedSession.id, eventId, assistantIndex: 0, text: delta });
+	});
+	const finalText = deltas.join("");
+	const finalReasoning = reasoningDeltas.join("");
+	const finishDelayMs = Math.max(scheduleMs[scheduleMs.length - 1] ?? 0, reasoningScheduleMs[reasoningScheduleMs.length - 1] ?? 0) + cadenceMs;
+	emitAt(finishDelayMs, { type: "assistant_message", piboSessionId: selectedSession.id, eventId, assistantIndex: 0, text: finalText });
+	emitAt(finishDelayMs, { type: "message_finished", piboSessionId: selectedSession.id, eventId, source: "service" });
+
+	return responseJson({
+		fixture: {
+			piboSessionId: selectedSession.id,
+			roomId: room.id,
+			eventId,
+			deltaCount: deltas.length,
+			cadenceMs,
+			profile,
+			mix,
+			traceSnapshots,
+			suppressLiveDeltas,
+			scheduleMs,
+			reasoningScheduleMs,
+			reasoningDeltaCount: reasoningDeltas.length,
+			textBytes: new TextEncoder().encode(finalText).length,
+			reasoningBytes: new TextEncoder().encode(finalReasoning).length,
+		},
+	});
 }
 
 async function sendChatMessage(input: {
@@ -9149,7 +9376,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const sessionUnreadCounts = buildSessionUnreadCounts(state, ownedSessions, principalId);
 				const sessions = await buildSessionNodes(
 					roomSessions,
-					sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions()),
+					sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions(), sessionUnreadCounts),
 					process.cwd(),
 					sessionUnreadCounts,
 					{ skipPiMetadataFallback: true },
@@ -9208,7 +9435,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const [sessions, catalog] = await Promise.all([
 					buildSessionNodes(
 						roomSessions,
-						sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions()),
+						sessionIndexItemsWithSignalState(context, roomSessions, state.sessionQuery.listSessions(), sessionUnreadCounts),
 						process.cwd(),
 						sessionUnreadCounts,
 					),
@@ -10525,7 +10752,8 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const metadataMs = performance.now() - metadataStartedAt;
 				const lastEventSequence = state.timelineQuery.getLatestEventSequence(selectedSession.id);
 				const latestStreamId = state.timelineQuery.getLatestStreamId({ piboSessionId: selectedSession.id });
-				const version = createTraceViewVersion({
+				const liveSnapshots = beforeSequence === undefined ? state.outputCompactor.snapshotsForSession(selectedSession.id) : [];
+				const baseVersion = createTraceViewVersion({
 					session: selectedSession,
 					sessions: ownedSessions,
 					events: lastEventSequence > 0
@@ -10535,8 +10763,10 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					metadata,
 					latestStreamId,
 				});
+				const snapshotVersion = liveSnapshotVersion(liveSnapshots);
+				const version = snapshotVersion ? `${baseVersion}:live:${snapshotVersion}` : baseVersion;
 				const pageCursorKey = beforeSequence === undefined ? "tail" : `before:${beforeSequence}`;
-				const cacheKey = traceCacheKey(selectedSession.id, `${version}:limit:${eventLimit}:${pageCursorKey}`);
+				const cacheKey = traceCacheKey(selectedSession.id, `${baseVersion}:limit:${eventLimit}:${pageCursorKey}`);
 				const cached = state.traceCache.get(cacheKey);
 				const serverTiming = (cacheState: "hit" | "miss", eventCount = 0) => ({
 					"server-timing": [
@@ -10571,6 +10801,11 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					trace = annotateTracePage(trace, events, { lastEventSequence, pageSize: eventLimit, beforeSequence });
 					setTraceCache(state.traceCache, cacheKey, trace);
 				}
+				trace = withLiveSnapshots(trace, liveSnapshots, {
+					piboSessionId: selectedSession.id,
+					lastEventSequence,
+					status: liveSnapshots.length ? "running" : indexedSession?.status,
+				});
 				if (includeRawEvents) {
 					const rawEvents = state.timelineQuery.listTraceEvents({
 						piboSessionId: selectedSession.id,
@@ -10580,7 +10815,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					eventCount = eventCount || rawEvents.length;
 					return responseJson(withRawTraceTail(trace, rawEvents), { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
 				}
-				return responseJson(trace, { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
+				return responseJson({ ...trace, rawEvents: [] }, { headers: { ...baseHeaders, ...serverTiming(cached ? "hit" : "miss", eventCount) } });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/debug/persistence` && request.method === "GET") {
@@ -10611,6 +10846,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					status: indexedSession?.status,
 				});
 				return responseJson(trace);
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/debug/streaming-fixture` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				const webSession = await requireSession(request, context);
+				const body = await readJsonBody<ChatStreamingFixtureBody>(request);
+				return startChatStreamingFixture({ state, context, webSession, defaultProfile, body });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/message` && request.method === "POST") {

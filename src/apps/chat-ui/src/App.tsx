@@ -82,6 +82,19 @@ import {
 	tracePageQueriesForSession,
 	traceSummaryQueriesForSession,
 } from "./cache";
+import {
+	isStreamingDebugEnabled,
+	recordStreamingDebugEnqueue,
+	recordStreamingDebugFlush,
+	recordStreamingDebugLiveError,
+	recordStreamingDebugLiveOpen,
+	recordStreamingDebugStreamEvent,
+	recordStreamingDebugTraceRefreshEnd,
+	recordStreamingDebugTraceRefreshScheduled,
+	recordStreamingDebugTraceRefreshStart,
+	recordStreamingDebugTraceState,
+	shouldDropStreamingBenchmarkOverlayEvent,
+} from "./streamingDebug";
 
 type Area = "sessions" | "projects" | "workflows" | "cron" | "ralph" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
@@ -888,14 +901,23 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, []);
 
 	const refreshTrace = useCallback(async (piboSessionId: string) => {
-		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), refetchType: "none" }),
-			queryClient.invalidateQueries({ queryKey: tracePageQueriesForSession(piboSessionId), refetchType: "none" }),
-		]);
-		await Promise.all([
-			queryClient.refetchQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), type: "active" }),
-			queryClient.refetchQueries({ queryKey: tracePageQueriesForSession(piboSessionId), type: "active" }),
-		]);
+		const startedAt = recordStreamingDebugTraceRefreshStart(piboSessionId);
+		let failed = false;
+		try {
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), refetchType: "none" }),
+				queryClient.invalidateQueries({ queryKey: tracePageQueriesForSession(piboSessionId), refetchType: "none" }),
+			]);
+			await Promise.all([
+				queryClient.refetchQueries({ queryKey: traceSummaryQueriesForSession(piboSessionId), type: "active" }),
+				queryClient.refetchQueries({ queryKey: tracePageQueriesForSession(piboSessionId), type: "active" }),
+			]);
+		} catch (error) {
+			failed = true;
+			throw error;
+		} finally {
+			recordStreamingDebugTraceRefreshEnd(piboSessionId, startedAt, failed);
+		}
 	}, [queryClient]);
 	const refreshSelectedTrace = useCallback(
 		() => selectedPiboSessionId ? refreshTrace(selectedPiboSessionId) : Promise.resolve(),
@@ -1543,7 +1565,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						<img src="/apps/chat/assets/pwa-images/android/launchericon-512x512.png" alt="Logo" className="h-5 w-auto shrink-0" />
 						<div className="truncate font-extrabold tracking-[0.08em] uppercase text-lg max-[420px]:text-base">Pibo Chat</div>
 					</div>
-					<nav className="flex gap-1 max-[980px]:hidden min-[981px]:absolute min-[981px]:left-1/2 min-[981px]:-translate-x-1/2">
+					<nav className="flex gap-1 max-[1200px]:hidden min-[1201px]:absolute min-[1201px]:left-1/2 min-[1201px]:-translate-x-1/2">
 						{MAIN_NAV_AREAS.map((item) => (
 							<button
 								key={item}
@@ -1560,13 +1582,13 @@ export function App({ route }: { route: ChatAppRoute }) {
 							</button>
 						))}
 					</nav>
-					<div className="ml-auto flex shrink-0 items-center justify-end gap-2 text-xs text-slate-400 min-[981px]:ml-0">
+					<div className="ml-auto flex shrink-0 items-center justify-end gap-2 text-xs text-slate-400 min-[1201px]:ml-0">
 						<UserRound size={14} />
 						<span className="truncate max-[600px]:hidden">{identity.email || identity.name || identity.userId}</span>
 						<button type="button" onClick={() => void signOut().then(() => location.reload())} className="p-1 border border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4]" title="Sign out" aria-label="Sign out">
 							<LogOut size={14} />
 						</button>
-						<div className="relative min-[981px]:hidden" ref={mobileAreaMenuRef}>
+						<div className="relative min-[1201px]:hidden" ref={mobileAreaMenuRef}>
 							<button
 								type="button"
 								onClick={() => setMobileAreaMenuOpen((open) => !open)}
@@ -3383,6 +3405,13 @@ function SessionTracePane({
 			const currentLatestStreamId = latestLiveStreamIdBySession.current.get(trace.piboSessionId);
 			latestLiveStreamIdBySession.current.set(trace.piboSessionId, Math.max(currentLatestStreamId ?? trace.latestStreamId, trace.latestStreamId));
 		}
+		if (isStreamingDebugEnabled()) {
+			recordStreamingDebugTraceState(trace.piboSessionId, {
+				overlayEventCount: 0,
+				traceBaseOutputLength: traceAssistantOutputLength(trace),
+				traceBaseUpdated: true,
+			});
+		}
 		startTransition(() => {
 			setBaseTraceView(trace);
 			setLiveTraceOverlay((current) => trimLiveOverlayForBaseTrace(current, trace));
@@ -3401,6 +3430,15 @@ function SessionTracePane({
 		annotateLiveTraceForkEntryIds(liveTrace.nodes, baseTraceView.nodes);
 		return reconcileOptimisticUserMessages(liveTrace);
 	}, [liveTraceOverlay, selectedPiboSessionId, bootstrap, baseTraceView]);
+
+	useEffect(() => {
+		if (!selectedPiboSessionId || !currentTraceView?.piboSessionId || !isStreamingDebugEnabled()) return;
+		recordStreamingDebugTraceState(currentTraceView.piboSessionId, {
+			overlayEventCount: liveTraceOverlay?.piboSessionId === currentTraceView.piboSessionId ? liveTraceOverlay.events.length : 0,
+			traceBaseOutputLength: traceAssistantOutputLength(baseTraceView),
+			currentOutputLength: traceAssistantOutputLength(currentTraceView),
+		});
+	}, [baseTraceView, currentTraceView, liveTraceOverlay, selectedPiboSessionId]);
 
 	const loadOlderTracePage = useCallback(async () => {
 		if (!selectedPiboSessionId || !currentTraceView?.nextBeforeSequence) return;
@@ -3440,14 +3478,16 @@ function SessionTracePane({
 		if (!pending?.length) return;
 		setLiveTraceOverlay((current) => {
 			const currentEvents = current?.piboSessionId === piboSessionId ? current.events : [];
+			const events = applyTraceLiveEvents({
+				currentEvents,
+				streamEvents: pending,
+				piboSessionId,
+				nextSequence: () => liveEventSeqRef.current++,
+			});
+			recordStreamingDebugFlush(piboSessionId, pending.length, events.length);
 			return {
 				piboSessionId,
-				events: applyTraceLiveEvents({
-					currentEvents,
-					streamEvents: pending,
-					piboSessionId,
-					nextSequence: () => liveEventSeqRef.current++,
-				}),
+				events,
 			};
 		});
 		pendingStreamEventsBySession.current.delete(piboSessionId);
@@ -3472,6 +3512,7 @@ function SessionTracePane({
 		const pending = pendingStreamEventsBySession.current.get(piboSessionId) ?? [];
 		pending.push(event);
 		pendingStreamEventsBySession.current.set(piboSessionId, pending);
+		recordStreamingDebugEnqueue(piboSessionId, event, pending.length, flushImmediately);
 		if (flushImmediately || piboSessionId !== selectedPiboSessionId) {
 			flushPendingStreamEvents(piboSessionId);
 		} else {
@@ -3545,6 +3586,7 @@ function SessionTracePane({
 				if (!reset) return;
 				clearTimeout(traceTimer);
 			}
+			recordStreamingDebugTraceRefreshScheduled(selectedPiboSessionId, delayMs);
 			traceTimer = setTimeout(() => {
 				traceTimer = undefined;
 				onRefreshTrace().catch((caught) => onError(errorMessage(caught)));
@@ -3584,11 +3626,13 @@ function SessionTracePane({
 				clearTimeout(selectedLiveStreamReconnectTimer.current);
 				selectedLiveStreamReconnectTimer.current = undefined;
 			}
+			recordStreamingDebugLiveOpen(selectedPiboSessionId, events.readyState);
 			const liveStream = selectedLiveStreamRef.current;
 			if (liveStream?.events === events) liveStream.lastActivityAt = Date.now();
 		};
 		events.onerror = () => {
 			if (closed) return;
+			recordStreamingDebugLiveError(selectedPiboSessionId, events.readyState);
 			const liveStream = selectedLiveStreamRef.current;
 			if (liveStream?.events === events) {
 				liveStream.lastErrorAt = Date.now();
@@ -3605,6 +3649,8 @@ function SessionTracePane({
 			const liveStream = selectedLiveStreamRef.current;
 			if (liveStream?.events === events) liveStream.lastActivityAt = Date.now();
 			recordLatestLiveStreamId(targetPiboSessionId, event);
+			recordStreamingDebugStreamEvent(targetPiboSessionId, event, message.lastEventId, events.readyState);
+			if (shouldDropStreamingBenchmarkOverlayEvent(event)) return;
 			const flushImmediately = event.type !== "TEXT_MESSAGE_CONTENT" && event.type !== "REASONING_MESSAGE_CONTENT";
 			if (targetPiboSessionId === selectedPiboSessionId) {
 				enqueueStreamEvent(targetPiboSessionId, event, flushImmediately);
@@ -3695,6 +3741,15 @@ function SessionTracePane({
 			document.removeEventListener("visibilitychange", recoverWhenVisible);
 		};
 	}, [recoverSelectedLiveStream]);
+
+	useEffect(() => {
+		if (!selectedPiboSessionId || selectedSessionStatus !== "running") return;
+		const timer = window.setInterval(() => {
+			flushPendingStreamEvents(selectedPiboSessionId);
+			onRefreshTrace().catch((caught) => onError(errorMessage(caught)));
+		}, 1000);
+		return () => window.clearInterval(timer);
+	}, [flushPendingStreamEvents, onError, onRefreshTrace, selectedPiboSessionId, selectedSessionStatus]);
 
 	useEffect(() => {
 		return () => {
@@ -4359,6 +4414,7 @@ function dropReplacedOptimisticUserMessages(
 
 function isOptimisticUserMessageNode(node: PiboTraceNode): boolean {
 	if (node.type !== "user.message") return false;
+	if (node.source === "event-log" && node.id.startsWith("event:message_queued:")) return true;
 	return [node.id, node.stableKey, node.eventId]
 		.filter((value): value is string => typeof value === "string")
 		.some((value) => value.startsWith("optimistic:user-message:") || value.includes(":optimistic:user-message:"));
@@ -4368,12 +4424,38 @@ function trimLiveOverlayForBaseTrace(overlay: LiveTraceOverlay | null, baseTrace
 	if (!overlay || overlay.piboSessionId !== baseTrace.piboSessionId) return overlay;
 	const latestStreamId = baseTrace.latestStreamId;
 	const confirmedEventKeys = confirmedTraceEventKeys(baseTrace);
+	const confirmedUserMessageTexts = confirmedTranscriptUserMessageTexts(baseTrace.nodes);
 	const events = overlay.events.filter((event) => {
 		if (latestStreamId !== undefined && event.streamId !== undefined && event.streamId <= latestStreamId) return false;
+		if (isUserMessageQueuedEvent(event) && confirmedUserMessageTexts.has(event.payload.text)) return false;
 		const key = traceEventConfirmationKey(event);
 		return !key || !confirmedEventKeys.has(key);
 	});
 	return events.length ? { ...overlay, events } : null;
+}
+
+function confirmedTranscriptUserMessageTexts(nodes: readonly PiboTraceNode[]): Set<string> {
+	const texts = new Set<string>();
+	for (const node of nodes) {
+		if (node.type === "user.message" && node.source === "transcript") {
+			const text = traceNodeText(node);
+			if (text) texts.add(text);
+		}
+		for (const text of confirmedTranscriptUserMessageTexts(node.children)) texts.add(text);
+	}
+	return texts;
+}
+
+function isUserMessageQueuedEvent(event: ChatWebStoredEvent): event is ChatWebStoredEvent & { payload: { type: "message_queued"; source: "user"; text: string } } {
+	const payload = event.payload;
+	return Boolean(
+		payload &&
+		typeof payload === "object" &&
+		!Array.isArray(payload) &&
+		"type" in payload && payload.type === "message_queued" &&
+		"source" in payload && payload.source === "user" &&
+		"text" in payload && typeof payload.text === "string"
+	);
 }
 
 function confirmedTraceEventKeys(trace: PiboSessionTraceView): Set<string> {
@@ -4391,6 +4473,15 @@ function collectConfirmedTraceNodeKeys(nodes: readonly PiboTraceNode[], keys: Se
 		if (node.type === "user.message") {
 			const eventId = node.id.startsWith("event:message_queued:") ? node.id.slice("event:message_queued:".length) : undefined;
 			if (eventId) keys.add(`${node.piboSessionId}:message_queued:${eventId}`);
+			if (node.source === "transcript" && node.entryId) keys.add(`${node.piboSessionId}:message_queued:${node.entryId}`);
+		}
+		if (node.eventId && node.type === "assistant.message") {
+			keys.add(`${node.piboSessionId}:assistant_delta:${node.eventId}`);
+			keys.add(`${node.piboSessionId}:assistant_message:${node.eventId}`);
+		}
+		if (node.eventId && node.type === "model.reasoning") {
+			keys.add(`${node.piboSessionId}:thinking_delta:${node.eventId}`);
+			keys.add(`${node.piboSessionId}:thinking_finished:${node.eventId}`);
 		}
 		collectConfirmedTraceNodeKeys(node.children, keys);
 	}
@@ -9770,7 +9861,14 @@ function traceNodeText(node: PiboTraceNode): string {
 	return typeof node.output === "string" ? node.output : typeof node.summary === "string" ? node.summary : "";
 }
 
-type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string };
+function traceAssistantOutputLength(trace: PiboSessionTraceView | null | undefined): number | undefined {
+	if (!trace) return undefined;
+	return flattenPiboTraceNodes(trace.nodes)
+		.filter((node) => node.type === "assistant.message")
+		.reduce((sum, node) => sum + traceNodeText(node).length, 0);
+}
+
+type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string; isTreeActive?: boolean };
 
 function latestIsoTimestamp(...values: Array<string | undefined>): string | undefined {
 	let latest: string | undefined;
@@ -9809,7 +9907,7 @@ function updateSignalStatusInSessionNode(
 	updateFor: (piboSessionId: string) => SignalSessionUpdate | undefined,
 ): PiboWebSessionNode {
 	const update = updateFor(node.piboSessionId);
-	const status = update?.status;
+	const status = acknowledgedSignalStatus(update, sessionNodeUnreadCount(node));
 	const statusChanged = Boolean(status && status !== node.status);
 	const lastActivityAt = statusChanged
 		? latestIsoTimestamp(node.lastActivityAt, update?.updatedAt, new Date().toISOString())
@@ -9821,10 +9919,11 @@ function updateSignalStatusInSessionNode(
 		children: node.children.map((child) => updateSignalStatusInSessionNode(child, updateFor)),
 		derivedSessions: node.derivedSessions.map((derived) => {
 			const derivedUpdate = updateFor(derived.piboSessionId);
-			const derivedStatusChanged = Boolean(derivedUpdate?.status && derivedUpdate.status !== derived.status);
+			const derivedStatus = acknowledgedSignalStatus(derivedUpdate, 0);
+			const derivedStatusChanged = Boolean(derivedStatus && derivedStatus !== derived.status);
 			return {
 				...derived,
-				status: derivedUpdate?.status ?? derived.status,
+				status: derivedStatus ?? derived.status,
 				lastActivityAt: derivedStatusChanged
 					? latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt, new Date().toISOString())
 					: latestIsoTimestamp(derived.lastActivityAt, derivedUpdate?.updatedAt),
@@ -9833,10 +9932,19 @@ function updateSignalStatusInSessionNode(
 	};
 }
 
+function sessionNodeUnreadCount(node: PiboWebSessionNode): number {
+	return (node.unreadCount ?? 0) + node.children.reduce((sum, child) => sum + sessionNodeUnreadCount(child), 0);
+}
+
+function acknowledgedSignalStatus(update: SignalSessionUpdate | undefined, unreadCount: number): PiboWebSessionNode["status"] | undefined {
+	if (update?.status !== "error") return update?.status;
+	return unreadCount > 0 ? "error" : update.isTreeActive ? "running" : "idle";
+}
+
 function signalSessionUpdate(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): SignalSessionUpdate | undefined {
 	const status = signalLegacyStatus(snapshot);
 	if (!snapshot && !status) return undefined;
-	return { status, updatedAt: snapshot?.updatedAt };
+	return { status, updatedAt: snapshot?.updatedAt, isTreeActive: snapshot?.isTreeActive };
 }
 
 function signalLegacyStatus(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): PiboWebSessionNode["status"] | undefined {

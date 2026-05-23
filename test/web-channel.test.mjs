@@ -337,6 +337,50 @@ test("chat web trace returns raw events only when requested", async () => {
 	}
 });
 
+test("chat web trace includes live compactor snapshots without raw events", async () => {
+	const { channel, baseURL, emitOutput } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+
+	try {
+		const sessionResponse = await fetch(`${baseURL}/api/chat/session`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(sessionResponse.status, 200);
+		const sessionPayload = await sessionResponse.json();
+		const piboSessionId = sessionPayload.session.id;
+		emitOutput({ type: "assistant_delta", piboSessionId, eventId: "answer-live", text: "Hello" });
+		emitOutput({ type: "assistant_delta", piboSessionId, eventId: "answer-live", text: " world" });
+
+		const response = await fetch(`${baseURL}/api/chat/trace?piboSessionId=${encodeURIComponent(piboSessionId)}`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(response.status, 200);
+		const trace = await response.json();
+		assert.equal(trace.rawEvents.length, 0);
+		assert.equal(findAssistantOutput(trace.nodes), "Hello world");
+
+		emitOutput({ type: "assistant_delta", piboSessionId, eventId: "answer-live", text: " again" });
+		const refreshed = await fetch(`${baseURL}/api/chat/trace?piboSessionId=${encodeURIComponent(piboSessionId)}`, {
+			headers: { "x-test-user": "user-1", "if-none-match": response.headers.get("etag") },
+		});
+		assert.equal(refreshed.status, 200);
+		const refreshedTrace = await refreshed.json();
+		assert.equal(findAssistantOutput(refreshedTrace.nodes), "Hello world again");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
+function findAssistantOutput(nodes) {
+	for (const node of nodes) {
+		if (node.type === "assistant.message") return node.output;
+		const child = findAssistantOutput(node.children ?? []);
+		if (child) return child;
+	}
+	return undefined;
+}
+
 test("chat web trace supports cursor pages", async () => {
 	const { channel, baseURL, emitOutput } = await startWebHostChannel({
 		auth: createFakeAuthService(),
@@ -1212,6 +1256,7 @@ test("chat web app selected live event streams receive assistant deltas", async 
 			},
 		);
 		assert.equal(eventsResponse.status, 200);
+		assert.equal(eventsResponse.headers.get("x-accel-buffering"), "no");
 		const reader = eventsResponse.body.getReader();
 		await reader.read();
 
@@ -1223,6 +1268,7 @@ test("chat web app selected live event streams receive assistant deltas", async 
 		});
 		const liveFrame = await readSseTextUntil(reader, (text) => text.includes("TEXT_MESSAGE_CONTENT") && text.includes("visible live token"));
 		assert.equal(liveFrame.matched, true, liveFrame.text);
+		assert.match(liveFrame.text, /id: live:\d+/);
 
 		controller.abort();
 	} finally {

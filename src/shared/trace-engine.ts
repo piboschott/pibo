@@ -328,6 +328,9 @@ export function patchTraceViewWithEvent(
 	if (view.rawEvents.some((re) => traceEventDedupeKey(re) === traceEventDedupeKey(event))) {
 		return view;
 	}
+	if (isConfirmedUserMessageEcho(view.nodes, event)) {
+		return view;
+	}
 
 	const allNodes = flattenTraceNodes(view.nodes).map((node) => ({ ...node, children: [] }));
 	const byId = mapTraceNodesById(allNodes);
@@ -354,6 +357,24 @@ export function patchTraceViewWithEvent(
 		nodes: sharedNodes,
 		latestStreamId: latestTraceStreamId([event], view.latestStreamId),
 	};
+}
+
+function isConfirmedUserMessageEcho(nodes: readonly PiboTraceNode[], event: ChatWebStoredEvent): boolean {
+	const payload = event.payload as PiboOutputEvent;
+	if (payload.type !== "message_queued" || payload.source !== "user") return false;
+	const eventId = typeof payload.eventId === "string" ? payload.eventId : event.eventId;
+	const text = typeof payload.text === "string" ? payload.text : undefined;
+	return flattenTraceNodes([...nodes]).some((node) => {
+		if (node.type !== "user.message" || node.source !== "transcript") return false;
+		if (eventId && (node.entryId === eventId || node.stableKey === `entry:${eventId}`)) return true;
+		return Boolean(text && traceNodeText(node) === text);
+	});
+}
+
+function traceNodeText(node: PiboTraceNode): string | undefined {
+	if (typeof node.output === "string") return node.output;
+	if (typeof node.summary === "string") return node.summary;
+	return undefined;
 }
 
 function shareUnchangedTraceNodes(
