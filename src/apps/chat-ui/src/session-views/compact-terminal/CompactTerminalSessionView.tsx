@@ -81,7 +81,10 @@ export function CompactTerminalSessionView({
 		if (!target) return;
 		navigationCursorRef.current[kind] = target.row.id;
 		setFocusedNavigationRowId(target.row.id);
-		stickyView.scrollToIndex(target.index, "start", "fast-smooth", { fromIndex: target.fromIndex });
+		stickyView.scrollToIndex(target.index, "start", "fast-smooth", {
+			fromIndex: target.fromIndex,
+			stagingAlign: kind === "tool" ? "end" : undefined,
+		});
 		focusTerminalRowAfterScroll(target.row.id);
 	}, [rows, stickyView]);
 
@@ -466,10 +469,17 @@ function nextNavigationTarget(
 }
 
 function focusTerminalRowAfterScroll(rowId: string): void {
+	let attempts = 0;
 	const focusRow = () => {
 		const row = Array.from(document.querySelectorAll<HTMLElement>('[data-pibo-component="TerminalRow"]'))
 			.find((element) => element.dataset.rowId === rowId);
-		row?.focus({ preventScroll: true });
+		if (row) {
+			row.scrollIntoView({ block: "start", inline: "nearest", behavior: "smooth" });
+			row.focus({ preventScroll: true });
+			return;
+		}
+		attempts += 1;
+		if (attempts < 8) requestAnimationFrame(focusRow);
 	};
 	requestAnimationFrame(() => requestAnimationFrame(focusRow));
 }
