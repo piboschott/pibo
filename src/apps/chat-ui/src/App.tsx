@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
@@ -160,6 +160,7 @@ const HIDDEN_STREAM_FLUSH_DELAY_MS = 100;
 const SIGNAL_TREE_ERROR_RECOVERY_DELAY_MS = 750;
 const SESSION_PAGE_SIZE = 120;
 const ARCHIVED_SESSION_PAGE_SIZE = 60;
+const SESSION_INFINITE_SCROLL_ROOT_MARGIN = "240px 0px";
 const PROJECT_ROUTING_UNKNOWN_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const PROJECT_SESSION_VIEW_ALLOWED_IDS: Record<ChatSessionViewId, readonly ChatSessionViewId[]> = {
 	terminal: ["terminal"],
@@ -398,6 +399,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
 	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
+	const sessionListScrollRef = useRef<HTMLDivElement>(null);
 	const bootstrapRef = useRef<BootstrapData | null>(null);
 	const bootstrapRequestId = useRef(0);
 	const activeRoomId = selectedRoomId ?? bootstrap?.selectedRoomId ?? null;
@@ -1476,6 +1478,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 		() => showArchived ? sessionGroups.archived.slice(0, visibleArchivedSessionCount) : [],
 		[sessionGroups.archived, showArchived, visibleArchivedSessionCount],
 	);
+	const hasMoreActiveSessions = sessionGroups.active.length > visibleActiveSessions.length;
+	const hasMoreArchivedSessions = showArchived && sessionGroups.archived.length > visibleArchivedSessions.length;
 	const selectedSessionPathIds = useMemo(
 		() => selectedPiboSessionId ? new Set(findSessionPath(bootstrap?.sessions ?? [], selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS,
 		[bootstrap?.sessions, selectedPiboSessionId],
@@ -1876,7 +1880,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 										</button>
 									</div>
 								</div>
-								<div className="min-h-0 flex-1 overflow-y-auto pr-1">
+								<div ref={sessionListScrollRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
 								{visibleActiveSessions.map((session) => (
 									<SessionNode
 										key={session.piboSessionId}
@@ -1895,15 +1899,15 @@ export function App({ route }: { route: ChatAppRoute }) {
 									/>
 								))}
 								{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active sessions</div> : null}
-								{sessionGroups.active.length > visibleActiveSessions.length ? (
-									<button
-										type="button"
-										onClick={() => void loadMoreSessionPage(false)}
-										disabled={loadingActiveSessions}
-										className="mt-2 w-full px-2 py-2 text-[11px] text-slate-400 border border-dashed border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
+								{hasMoreActiveSessions ? (
+									<SessionSidebarLoadMoreButton
+										debugName="active-session-load-more"
+										loading={loadingActiveSessions}
+										rootRef={sessionListScrollRef}
+										onLoadMore={() => loadMoreSessionPage(false)}
 									>
 										{loadingActiveSessions ? "Loading active sessions…" : `Load more active sessions (${visibleActiveSessions.length} of ${sessionGroups.active.length})`}
-									</button>
+									</SessionSidebarLoadMoreButton>
 								) : null}
 							{showArchived ? (
 								<div className="mt-3">
@@ -1931,15 +1935,15 @@ export function App({ route }: { route: ChatAppRoute }) {
 												autoRenameSessionId={autoRenameSessionId}
 												onAutoRenameConsumed={() => setAutoRenameSessionId(null)}
 											/>
-											{sessionGroups.archived.length > visibleArchivedSessions.length ? (
-												<button
-													type="button"
-													onClick={() => void loadMoreSessionPage(true)}
-													disabled={loadingArchivedSessions}
-													className="mt-2 w-full px-2 py-2 text-[11px] text-slate-400 border border-dashed border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
+											{hasMoreArchivedSessions ? (
+												<SessionSidebarLoadMoreButton
+													debugName="archived-session-load-more"
+													loading={loadingArchivedSessions}
+													rootRef={sessionListScrollRef}
+													onLoadMore={() => loadMoreSessionPage(true)}
 												>
 													{loadingArchivedSessions ? "Loading archived sessions…" : `Load more archived sessions (${visibleArchivedSessions.length} of ${sessionGroups.archived.length})`}
-												</button>
+												</SessionSidebarLoadMoreButton>
 											) : null}
 										</>
 									) : <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived sessions</div>}
@@ -4792,6 +4796,69 @@ function ArchivedRoomsList({
 				/>
 			))}
 		</div>
+	);
+}
+
+function SessionSidebarLoadMoreButton({
+	children,
+	debugName,
+	loading,
+	rootRef,
+	onLoadMore,
+}: {
+	children: ReactNode;
+	debugName: string;
+	loading: boolean;
+	rootRef: RefObject<HTMLElement | null>;
+	onLoadMore: () => void | Promise<void>;
+}) {
+	const buttonRef = useRef<HTMLButtonElement>(null);
+	const onLoadMoreRef = useRef(onLoadMore);
+	const requestedRef = useRef(false);
+
+	useEffect(() => {
+		onLoadMoreRef.current = onLoadMore;
+	}, [onLoadMore]);
+
+	useEffect(() => {
+		if (!loading) requestedRef.current = false;
+	}, [loading]);
+
+	const triggerLoadMore = useCallback(() => {
+		if (requestedRef.current || loading) return;
+		requestedRef.current = true;
+		void Promise.resolve(onLoadMoreRef.current()).finally(() => {
+			requestedRef.current = false;
+		});
+	}, [loading]);
+
+	useEffect(() => {
+		if (loading || typeof IntersectionObserver === "undefined") return;
+		const target = buttonRef.current;
+		if (!target) return;
+		const observer = new IntersectionObserver((entries) => {
+			if (!entries.some((entry) => entry.isIntersecting)) return;
+			triggerLoadMore();
+		}, {
+			root: rootRef.current,
+			rootMargin: SESSION_INFINITE_SCROLL_ROOT_MARGIN,
+			threshold: 0,
+		});
+		observer.observe(target);
+		return () => observer.disconnect();
+	}, [loading, rootRef, triggerLoadMore]);
+
+	return (
+		<button
+			ref={buttonRef}
+			data-pibo-debug={debugName}
+			type="button"
+			onClick={triggerLoadMore}
+			disabled={loading}
+			className="mt-2 w-full px-2 py-2 text-[11px] text-slate-400 border border-dashed border-slate-700 rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-60"
+		>
+			{children}
+		</button>
 	);
 }
 
