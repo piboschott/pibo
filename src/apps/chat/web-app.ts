@@ -1731,12 +1731,14 @@ type ChatStreamingFixtureBody = {
 	cadenceMs?: unknown;
 	profile?: unknown;
 	mix?: unknown;
+	preludeMessages?: unknown;
+	preludeOnly?: unknown;
 	traceSnapshots?: unknown;
 	suppressLiveDeltas?: unknown;
 };
 
 type ChatStreamingFixtureProfile = "steady" | "jitter" | "burst" | "batch";
-type ChatStreamingFixtureMix = "text" | "reasoning-text";
+type ChatStreamingFixtureMix = "text" | "reasoning-text" | "markdown" | "gfm-markdown" | "gfm-task-markdown" | "gfm-full-markdown";
 
 type ChatProjectsBootstrap = ChatBootstrapCatalog & {
 	identity: PiboWebSession["authSession"]["identity"];
@@ -2530,8 +2532,16 @@ function normalizeMessageText(value: unknown): string {
 	return value;
 }
 
-function normalizeStreamingFixtureDeltas(value: unknown): string[] {
-	if (value === undefined) return [" a", " b", " c", " d", " e", " f", " g", " h", " i", " j", " k", " l"];
+function defaultStreamingFixtureDeltas(mix: ChatStreamingFixtureMix): string[] {
+	if (mix === "markdown") return [" **a**", " **b**", " **c**", " **d**", " **e**", " **f**", " **g**", " **h**", " **i**", " **j**", " **k**", " **l**"];
+	if (mix === "gfm-markdown") return [" ~~a~~", " ~~b~~", " ~~c~~", " ~~d~~", " ~~e~~", " ~~f~~", " ~~g~~", " ~~h~~", " ~~i~~", " ~~j~~", " ~~k~~", " ~~l~~"];
+	if (mix === "gfm-task-markdown") return ["- [ ] [_**a**_](https://e.co/a)", " [_**b**_](https://e.co/b)", " [_**c**_](https://e.co/c)", " [_**d**_](https://e.co/d)", " [_**e**_](https://e.co/e)", " [_**f**_](https://e.co/f)", " [_**g**_](https://e.co/g)", " [_**h**_](https://e.co/h)", " [_**i**_](https://e.co/i)", " [_**j**_](https://e.co/j)", " [_**k**_](https://e.co/k)", " [_**l**_](https://e.co/l)"];
+	if (mix === "gfm-full-markdown") return ["- [ ] [_~~a~~_](https://e.co/a)", " [_~~b~~_](https://e.co/b)", " [_~~c~~_](https://e.co/c)", " [_~~d~~_](https://e.co/d)", " [_~~e~~_](https://e.co/e)", " [_~~f~~_](https://e.co/f)", " [_~~g~~_](https://e.co/g)", " [_~~h~~_](https://e.co/h)", " [_~~i~~_](https://e.co/i)", " [_~~j~~_](https://e.co/j)", " [_~~k~~_](https://e.co/k)", " [_~~l~~_](https://e.co/l)"];
+	return [" a", " b", " c", " d", " e", " f", " g", " h", " i", " j", " k", " l"];
+}
+
+function normalizeStreamingFixtureDeltas(value: unknown, mix: ChatStreamingFixtureMix): string[] {
+	if (value === undefined) return defaultStreamingFixtureDeltas(mix);
 	if (!Array.isArray(value) || value.length === 0) throw new PiboWebHttpError("deltas must be a non-empty string array", 400);
 	if (value.length > 100) throw new PiboWebHttpError("deltas must contain at most 100 entries", 400);
 	return value.map((item) => {
@@ -2557,8 +2567,22 @@ function normalizeStreamingFixtureProfile(value: unknown): ChatStreamingFixtureP
 
 function normalizeStreamingFixtureMix(value: unknown): ChatStreamingFixtureMix {
 	if (value === undefined) return "text";
-	if (value === "text" || value === "reasoning-text") return value;
-	throw new PiboWebHttpError("mix must be text or reasoning-text", 400);
+	if (value === "text" || value === "reasoning-text" || value === "markdown" || value === "gfm-markdown" || value === "gfm-task-markdown" || value === "gfm-full-markdown") return value;
+	throw new PiboWebHttpError("mix must be text, reasoning-text, markdown, gfm-markdown, gfm-task-markdown, or gfm-full-markdown", 400);
+}
+
+function normalizeStreamingFixturePreludeMessages(value: unknown): number {
+	if (value === undefined) return 0;
+	if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 2000) {
+		throw new PiboWebHttpError("preludeMessages must be an integer between 0 and 2000", 400);
+	}
+	return value;
+}
+
+function normalizeStreamingFixturePreludeOnly(value: unknown): boolean {
+	if (value === undefined) return false;
+	if (typeof value === "boolean") return value;
+	throw new PiboWebHttpError("preludeOnly must be a boolean", 400);
 }
 
 function normalizeStreamingFixtureTraceSnapshots(value: unknown): boolean {
@@ -8227,10 +8251,12 @@ function startChatStreamingFixture(input: {
 	if (isPiboRoomArchived(room)) throw new PiboWebHttpError("Archived rooms are read-only", 403);
 	input.state.sessionQuery.upsertSession(selectedSession);
 
-	const deltas = normalizeStreamingFixtureDeltas(input.body.deltas);
 	const cadenceMs = normalizeStreamingFixtureCadenceMs(input.body.cadenceMs);
 	const profile = normalizeStreamingFixtureProfile(input.body.profile);
 	const mix = normalizeStreamingFixtureMix(input.body.mix);
+	const preludeMessages = normalizeStreamingFixturePreludeMessages(input.body.preludeMessages);
+	const preludeOnly = normalizeStreamingFixturePreludeOnly(input.body.preludeOnly);
+	const deltas = normalizeStreamingFixtureDeltas(input.body.deltas, mix);
 	const traceSnapshots = normalizeStreamingFixtureTraceSnapshots(input.body.traceSnapshots);
 	const suppressLiveDeltas = normalizeStreamingFixtureSuppressLiveDeltas(input.body.suppressLiveDeltas);
 	const scheduleMs = buildStreamingFixtureSchedule(deltas.length, cadenceMs, profile);
@@ -8253,6 +8279,24 @@ function startChatStreamingFixture(input: {
 	const emitAt = (delayMs: number, event: PiboOutputEvent) => {
 		setTimeout(() => emit(event), delayMs);
 	};
+	for (let index = 0; index < preludeMessages; index += 1) {
+		const preludeEventId = `streaming-fixture-prelude-${randomUUID()}`;
+		const text = ` prelude ${index}`;
+		emit({ type: "message_started", piboSessionId: selectedSession.id, eventId: preludeEventId, text: "Streaming benchmark prelude", source: "service" });
+		emit({ type: "assistant_delta", piboSessionId: selectedSession.id, eventId: preludeEventId, assistantIndex: 0, text });
+		emit({ type: "assistant_message", piboSessionId: selectedSession.id, eventId: preludeEventId, assistantIndex: 0, text });
+		emit({ type: "message_finished", piboSessionId: selectedSession.id, eventId: preludeEventId, source: "service" });
+	}
+	if (preludeOnly) {
+		return responseJson({
+			fixture: {
+				piboSessionId: selectedSession.id,
+				roomId: room.id,
+				preludeMessages,
+				preludeOnly,
+			},
+		});
+	}
 
 	emit({ type: "message_started", piboSessionId: selectedSession.id, eventId, text: "Streaming benchmark fixture", source: "service" });
 	if (reasoningDeltas.length) {
@@ -8280,6 +8324,7 @@ function startChatStreamingFixture(input: {
 			cadenceMs,
 			profile,
 			mix,
+			preludeMessages,
 			traceSnapshots,
 			suppressLiveDeltas,
 			scheduleMs,

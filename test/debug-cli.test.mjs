@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PiboDataStore } from "../dist/data/pibo-store.js";
 import { PiboReliabilityStore } from "../dist/reliability/store.js";
-import { attachStreamingProviderTelemetryToBenchmark, collectStreamingProviderTelemetryFromSelectedBrowserSession, collectStreamingProviderTelemetryFromSession, collectStreamingProviderTelemetryFromTurn, evaluateStreamingBenchmarkAssertion, evaluateStreamingBenchmarkUrlComparisonRegressions, evaluateStreamingLivePipelineRegressions, evaluateStreamingProviderRegressions, formatStreamingBenchmarkAssertionSummary, formatStreamingBenchmarkUrlComparison, formatWatch, inferWatchFlickers, resolveStreamingBenchmarkHostedCompareUrlFromValues, summarizeStreamingBenchmarkUrlComparison, summarizeStreamingBenchmarks, summarizeStreamingLivePipeline, summarizeStreamingProviderPreservation, summarizeStreamingProviderTelemetry } from "../dist/debug/web.js";
+import { attachStreamingProviderTelemetryToBenchmark, collectStreamingProviderTelemetryFromSelectedBrowserSession, collectStreamingProviderTelemetryFromSession, collectStreamingProviderTelemetryFromTurn, evaluateStreamingBenchmarkAssertion, evaluateStreamingBenchmarkUrlComparisonRegressions, evaluateStreamingLivePipelineRegressions, evaluateStreamingProviderRegressions, formatStreamingBenchmarkAssertionSummary, formatStreamingBenchmarkUrlComparison, formatWatch, inferWatchFlickers, resolveStreamingBenchmarkHostedCompareUrlFromValues, summarizeStreamingBenchmarkUrlComparison, summarizeStreamingBenchmarks, summarizeStreamingLivePipeline, summarizeStreamingProviderPreservation, summarizeStreamingProviderTelemetry, summarizeStreamingSelectedLiveEventSource } from "../dist/debug/web.js";
 
 const execFileAsyncRaw = promisify(execFile);
 const cliPath = resolve("dist/bin/pibo.js");
@@ -52,8 +52,8 @@ test("pibo debug web report renders saved streaming benchmark artifacts without 
 				enabledRequested: true,
 				available: true,
 				reset: true,
-				delta: { textDeltaCount: 12, textDeltaBytes: 24, reasoningDeltaCount: 4, enqueueCount: 22, flushCount: 20, overlayUpdateCount: 20 },
-				after: { overlayEventCount: 16, currentOutputLength: 24, traceBaseOutputLength: 0 },
+				delta: { textDeltaCount: 12, textDeltaBytes: 24, reasoningDeltaCount: 4, enqueueCount: 22, flushCount: 20, overlayUpdateCount: 20, markdownRenderCount: 12, markdownRenderPlainCount: 12, markdownRenderCommonMarkCount: 0, markdownRenderGfmCount: 0, markdownRenderGfmFastCount: 0, markdownRenderFullCount: 0, markdownRenderDurationMsTotal: 1.5 },
+				after: { overlayEventCount: 16, currentOutputLength: 24, traceBaseOutputLength: 0, markdownRenderDurationMsMax: 0.25 },
 			},
 			dom: {
 				selector: "[data-pibo-component=MarkdownRendererHost]",
@@ -70,6 +70,7 @@ test("pibo debug web report renders saved streaming benchmark artifacts without 
 			},
 			raf: { count: 100, gapsMs: { count: 99, p50: 16.7, p90: 16.8, p99: 17, max: 17, avg: 16.7 } },
 			longTasks: { count: 0, totalMs: 0, maxMs: 0 },
+			eventSource: { streams: [{ role: "selected-live", eventCount: 26, eventCountAfterStart: 26, textEventCount: 12, textEventCountAfterStart: 12, reasoningEventCount: 4, reasoningEventCountAfterStart: 4, transientIdCount: 24, uniqueTransientIdCount: 17, transientIdCountAfterStart: 24, uniqueTransientIdCountAfterStart: 17, durableIdCount: 0, otherIdCount: 0, liveReplayEventCount: 24, liveReplayEventCountAfterStart: 24, sinceValues: [], liveSinceValues: ["153"], openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 1, forcedCloseCountAfterStart: 1, firstTextEventMsAfterStart: 184 }] },
 			score: { smoothness: 58, textDeltaCount: 12, domPositiveUpdateCount: 12 },
 			regressions: [],
 			warnings: [],
@@ -83,6 +84,8 @@ test("pibo debug web report renders saved streaming benchmark artifacts without 
 		assert.match(compactReport.stdout, /# Web Streaming Benchmark Compact Report/);
 		assert.match(compactReport.stdout, /\| Layer \| Preservation \| Cadence \/ latency \|/);
 		assert.match(compactReport.stdout, /\| SSE transport \| n\/a \| n\/a \|/);
+		assert.match(compactReport.stdout, /\| EventSource selected-live \| text 12, reasoning 4, events 26 \| first text 184ms, transient 17\/24, replay 24, liveSince 1 \|/);
+		assert.match(compactReport.stdout, /\| Markdown render \| count 12, plain 12, commonmark 0, gfm 0, gfmFast 0, full 0 \| total 1\.5ms, max 0\.25ms \|/);
 		assert.match(compactReport.stdout, /\| DOM \| positive 12, max jump 2 chars \| p90 gap 101ms, first visible 145ms \|/);
 		const output = join(cwd, "reports", "streaming-compact.md");
 		const outputReport = await execFileAsync("node", [cliPath, "debug", "web", "report", "streaming-benchmark", "--from", artifact, "--compact", "--output", output], { cwd });
@@ -97,6 +100,12 @@ test("pibo debug web report renders saved streaming benchmark artifacts without 
 		assert.equal(writtenJson.format, "compact");
 		assert.equal(writtenJson.benchmark.kind, "streaming-benchmark");
 		assert.match(writtenJson.markdown, /# Web Streaming Benchmark Compact Report/);
+		assert.deepEqual(writtenJson.rows.find((row) => row.metric === "Markdown render"), {
+			section: "compact",
+			metric: "Markdown render",
+			preservation: "count 12, plain 12, commonmark 0, gfm 0, gfmFast 0, full 0",
+			cadenceLatency: "total 1.5ms, max 0.25ms",
+		});
 		assert.deepEqual(writtenJson.rows.find((row) => row.metric === "DOM"), {
 			section: "compact",
 			metric: "DOM",
@@ -245,11 +254,12 @@ test("pibo debug web report recomputes streaming summaries for older artifacts",
 
 test("pibo debug web streaming benchmark help advertises the deterministic fixture", async () => {
 	const help = await execFileAsync("node", [cliPath, "debug", "web", "scenario", "--help"]);
-	assert.match(help.stdout, /streaming-benchmark \[--fixture\|--backend-fixture\].*\[--fixture-profile steady\|jitter\|burst\|batch\].*\[--fixture-mix text\|reasoning-text\].*\[--simulate-reconnect\|--simulate-trace-catchup\].*\[--provider-request-id pr_\.\.\.\|--provider-session-id ps_\.\.\.\|--provider-turn-id turn_\.\.\.\|--provider-selected-session\].*\[--compare-url url\|--compare-hosted\|--compare-hosted-if-configured\].*\[--assert\].*\[--expect-regression text\].*\[--negative-profile batch\|overlay-drop\]/);
+	assert.match(help.stdout, /streaming-benchmark \[--fixture\|--backend-fixture\].*\[--fixture-profile steady\|jitter\|burst\|batch\].*\[--fixture-mix text\|reasoning-text\|markdown\|gfm-markdown\|gfm-task-markdown\|gfm-full-markdown\].*\[--fixture-prelude-messages n\].*\[--simulate-reconnect\|--simulate-trace-catchup\].*\[--provider-request-id pr_\.\.\.\|--provider-session-id ps_\.\.\.\|--provider-turn-id turn_\.\.\.\|--provider-selected-session\].*\[--compare-url url\|--compare-hosted\|--compare-hosted-if-configured\].*\[--assert\].*\[--expect-regression text\].*\[--negative-profile batch\|overlay-drop\]/);
 	assert.match(help.stdout, /deterministic in-browser stream fixture/);
 	assert.match(help.stdout, /real app consumes deterministic \/api\/chat\/events frames/);
 	assert.match(help.stdout, /--fixture-profile selects steady cadence, deterministic jitter, bursty timing, or intentional batch stress/);
-	assert.match(help.stdout, /--fixture-mix includes text-only or mixed reasoning\/text deltas/);
+	assert.match(help.stdout, /--fixture-mix includes text-only, mixed reasoning\/text, CommonMark Markdown, simple GFM Markdown, or full-parser GFM Markdown assistant deltas/);
+	assert.match(help.stdout, /--fixture-prelude-messages seeds completed live assistant messages before counters reset/);
 	assert.match(help.stdout, /--simulate-reconnect reloads the app with an EventSource probe/);
 	assert.match(help.stdout, /--simulate-trace-catchup suppresses backend live text deltas/);
 	assert.match(help.stdout, /--runs repeats the same scenario and reports medians/);
@@ -309,9 +319,13 @@ test("streaming hosted compare URL resolution prefers env and supports optional 
 });
 
 test("streaming benchmark summaries include live pipeline debug counters", () => {
-	const run = (enqueueCount, traceRefreshCompletedCount) => ({
+	const run = (enqueueCount, traceRefreshCompletedCount, stateBaseline = 0) => ({
 		kind: "streaming-benchmark",
 		debug: {
+			stateBeforeReset: {
+				overlayEventCount: stateBaseline,
+				currentOutputLength: stateBaseline * 2,
+			},
 			delta: {
 				textDeltaCount: 12,
 				reasoningDeltaCount: 4,
@@ -319,6 +333,15 @@ test("streaming benchmark summaries include live pipeline debug counters", () =>
 				flushCount: enqueueCount - 1,
 				flushedEventCount: enqueueCount,
 				overlayUpdateCount: enqueueCount - 1,
+				liveTraceComputeCount: enqueueCount - 1,
+				liveTraceComputeDurationMsTotal: (enqueueCount - 1) * 0.25,
+				markdownRenderCount: enqueueCount + 2,
+				markdownRenderPlainCount: enqueueCount,
+				markdownRenderCommonMarkCount: 1,
+				markdownRenderGfmCount: 1,
+				markdownRenderGfmFastCount: 1,
+				markdownRenderFullCount: 2,
+				markdownRenderDurationMsTotal: enqueueCount * 0.1,
 				traceRefreshScheduledCount: 2,
 				traceRefreshCompletedCount,
 				traceRefreshFailedCount: 0,
@@ -330,9 +353,13 @@ test("streaming benchmark summaries include live pipeline debug counters", () =>
 				firstEnqueueAt: "2026-01-01T00:00:00.110Z",
 				firstFlushAt: "2026-01-01T00:00:00.125Z",
 				firstOverlayUpdateAt: "2026-01-01T00:00:00.126Z",
-				overlayEventCount: enqueueCount,
-				currentOutputLength: enqueueCount * 2,
+				overlayEventCount: stateBaseline + enqueueCount,
+				currentOutputLength: (stateBaseline * 2) + (enqueueCount * 2),
 				traceBaseOutputLength: 4,
+				liveTraceComputeDurationMsMax: 0.5,
+				markdownRenderDurationMsMax: 0.4,
+				markdownRenderPlainDurationMsMax: 0.2,
+				markdownRenderFullDurationMsMax: 0.4,
 				traceRefreshDurationMsMax: 25,
 			},
 		},
@@ -344,16 +371,30 @@ test("streaming benchmark summaries include live pipeline debug counters", () =>
 		regressions: [],
 		score: { smoothness: 50, textDeltaCount: 12, domPositiveUpdateCount: enqueueCount },
 	});
-	const summary = summarizeStreamingBenchmarks([run(12, 1), run(14, 2)]);
+	const summary = summarizeStreamingBenchmarks([run(12, 1), run(14, 2, 40)]);
 	assert.equal(summary.debugEnqueueCount.p50, 12);
 	assert.equal(summary.debugFlushCount.p50, 11);
 	assert.equal(summary.debugFlushedEventCount.p90, 12);
 	assert.equal(summary.debugOverlayUpdateCount.p90, 11);
 	assert.equal(summary.debugOverlayEventCount.max, 14);
+	assert.equal(summary.debugLiveTraceComputeCount.p50, 11);
+	assert.equal(summary.debugLiveTraceComputeDurationTotalMs.p50, 2.75);
+	assert.equal(summary.debugLiveTraceComputeDurationMaxMs.p50, 0.5);
+	assert.equal(summary.debugMarkdownRenderCount.p50, 14);
+	assert.equal(summary.debugMarkdownRenderPlainCount.p50, 12);
+	assert.equal(summary.debugMarkdownRenderFullCount.p50, 2);
+	assert.equal(summary.debugMarkdownRenderCommonMarkCount.p50, 1);
+	assert.equal(summary.debugMarkdownRenderGfmCount.p50, 1);
+	assert.equal(summary.debugMarkdownRenderGfmFastCount.p50, 1);
+	assert.equal(summary.debugMarkdownRenderDurationTotalMs.p50, 1.2);
+	assert.equal(summary.debugMarkdownRenderDurationMaxMs.p50, 0.4);
+	assert.equal(summary.debugMarkdownRenderPlainDurationMaxMs.p50, 0.2);
+	assert.equal(summary.debugMarkdownRenderFullDurationMaxMs.p50, 0.4);
 	assert.equal(summary.debugTraceRefreshCompletedCount.max, 2);
 	assert.equal(summary.debugTraceRefreshDurationMaxMs.p50, 25);
 	assert.equal(summary.debugCurrentOutputLength.max, 28);
 	assert.equal(summary.liveExpectedInputEventCount.p50, 16);
+	assert.equal(summary.liveExpectedPipelineEventCount.p50, 16);
 	assert.equal(summary.liveEnqueueToExpectedRatio.p50, 0.75);
 	assert.equal(summary.liveFlushedEventsToExpectedRatio.p90, 0.75);
 	assert.equal(summary.liveOverlayEventsToExpectedRatio.max, 0.875);
@@ -369,10 +410,97 @@ test("streaming benchmark summaries include live pipeline debug counters", () =>
 	assert.equal(summary.selectedLiveFirstTextEventMsAfterStart.p50, 103);
 });
 
+test("streaming benchmark summaries aggregate selected-live reconnect streams", () => {
+	const summary = summarizeStreamingBenchmarks([{
+		kind: "streaming-benchmark",
+		debug: { delta: { textDeltaCount: 12, reasoningDeltaCount: 4 }, after: {} },
+		fixture: { available: true, requested: true, mode: "backend", started: true, deltaCount: 12, reasoningDeltaCount: 4, textBytes: 24 },
+		eventSource: {
+			streams: [
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live", sinceValues: [], liveSinceValues: [], eventCount: 12, eventCountAfterStart: 12, textEventCount: 7, textEventCountAfterStart: 7, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 1, forcedCloseCountAfterStart: 1, transientIdCount: 12, uniqueTransientIdCount: 12, transientIdCountAfterStart: 12, uniqueTransientIdCountAfterStart: 12, durableIdCount: 0, otherIdCount: 0, firstTextEventMsAfterStart: 105 },
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live", sinceValues: [], liveSinceValues: ["42"], eventCount: 8, eventCountAfterStart: 8, textEventCount: 5, textEventCountAfterStart: 5, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 0, forcedCloseCountAfterStart: 0, transientIdCount: 8, uniqueTransientIdCount: 8, transientIdCountAfterStart: 8, uniqueTransientIdCountAfterStart: 8, durableIdCount: 0, otherIdCount: 0, liveReplayEventCount: 4, liveReplayEventCountAfterStart: 4, liveReplayMissedCount: 1, liveReplayMissedCountAfterStart: 1, liveReplayDuplicateCount: 2, liveReplayDuplicateCountAfterStart: 2, liveReplayCursorLagMax: 6, liveReplayCursorLagMaxAfterStart: 6, firstTextEventMsAfterStart: 212 },
+			],
+		},
+		dom: { gapsMs: { count: 0 }, positiveCharJumps: { count: 0 }, positiveUpdateCount: 12 },
+		longTasks: { maxMs: 0 },
+		regressions: [],
+		score: { smoothness: 50, textDeltaCount: 12, domPositiveUpdateCount: 12 },
+	}]);
+	assert.equal(summary.selectedLiveEventCountAfterStart.p50, 20);
+	assert.equal(summary.selectedLiveTextEventCountAfterStart.p50, 12);
+	assert.equal(summary.selectedLiveReasoningEventCountAfterStart.p50, 4);
+	assert.equal(summary.selectedLiveForcedCloseCountAfterStart.p50, 1);
+	assert.equal(summary.selectedLiveReconnectOpenCountAfterStart.p50, 2);
+	assert.equal(summary.selectedLiveTransientIdCountAfterStart.p50, 20);
+	assert.equal(summary.selectedLiveLiveSinceCount.p50, 1);
+	assert.equal(summary.selectedLiveReplayEventCountAfterStart.p50, 4);
+	assert.equal(summary.selectedLiveReplayCursorLagMaxAfterStart.p50, 6);
+	assert.equal(summary.selectedLiveReplayDuplicateCountAfterStart.p50, 2);
+	assert.equal(summary.selectedLiveReplayMissedCountAfterStart.p50, 1);
+	assert.equal(summary.selectedLiveFirstTextEventMsAfterStart.p50, 105);
+});
+
+test("selected-live EventSource summary aggregates reconnect replay status", () => {
+	const selectedLive = summarizeStreamingSelectedLiveEventSource({
+		eventSource: {
+			streams: [
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live", sinceValues: ["100:1"], liveSinceValues: [], eventCount: 12, eventCountAfterStart: 12, textEventCount: 7, textEventCountAfterStart: 7, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 1, forcedCloseCountAfterStart: 1, transientIdCount: 12, uniqueTransientIdCount: 12, transientIdCountAfterStart: 12, uniqueTransientIdCountAfterStart: 12, durableIdCount: 0, otherIdCount: 0, firstTextEventMsAfterStart: 105 },
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live&liveSince=42", sinceValues: [], liveSinceValues: ["42"], eventCount: 8, eventCountAfterStart: 8, textEventCount: 5, textEventCountAfterStart: 5, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 0, forcedCloseCountAfterStart: 0, transientIdCount: 8, uniqueTransientIdCount: 8, transientIdCountAfterStart: 8, uniqueTransientIdCountAfterStart: 8, durableIdCount: 0, otherIdCount: 0, liveReplayEventCount: 2, liveReplayEventCountAfterStart: 2, liveReplayMissedCount: 1, liveReplayMissedCountAfterStart: 1, liveReplayDuplicateCount: 1, liveReplayDuplicateCountAfterStart: 1, liveReplayEvictedBeforeMax: 41, liveReplayCursorLagMax: 3, liveReplayCursorLagMaxAfterStart: 3, firstTextEventMsAfterStart: 212 },
+				{ role: "room-summary", url: "/api/chat/events?roomId=room_test&mode=summary", sinceValues: [], liveSinceValues: [], eventCount: 6, eventCountAfterStart: 6, textEventCount: 0, textEventCountAfterStart: 0, reasoningEventCount: 0, reasoningEventCountAfterStart: 0, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 0, forcedCloseCountAfterStart: 0, transientIdCount: 6, uniqueTransientIdCount: 6, transientIdCountAfterStart: 6, uniqueTransientIdCountAfterStart: 6, durableIdCount: 0, otherIdCount: 0, liveReplayEventCount: 5, liveReplayEventCountAfterStart: 5 },
+			],
+		},
+	});
+	assert.equal(selectedLive.textEventCountAfterStart, 12);
+	assert.equal(selectedLive.reasoningEventCountAfterStart, 4);
+	assert.deepEqual(selectedLive.liveSinceValues, ["42"]);
+	assert.deepEqual(selectedLive.sinceValues, ["100:1"]);
+	assert.equal(selectedLive.liveReplayEventCountAfterStart, 2);
+	assert.equal(selectedLive.liveReplayMissedCountAfterStart, 1);
+	assert.equal(selectedLive.liveReplayDuplicateCountAfterStart, 1);
+	assert.equal(selectedLive.liveReplayEvictedBeforeMax, 41);
+	assert.equal(selectedLive.liveReplayCursorLagMaxAfterStart, 3);
+	assert.equal(selectedLive.forcedCloseCountAfterStart, 1);
+	assert.equal(selectedLive.openCountAfterStart, 2);
+	assert.equal(selectedLive.firstTextEventMsAfterStart, 105);
+});
+
+test("provider preservation aggregates selected-live reconnect streams", () => {
+	const preservation = summarizeStreamingProviderPreservation({
+		provider: { available: true, textDeltaCount: 12, reasoningDeltaCount: 4 },
+		eventSource: {
+			streams: [
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live", sinceValues: [], liveSinceValues: [], eventCount: 12, eventCountAfterStart: 12, textEventCount: 7, textEventCountAfterStart: 7, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 1, forcedCloseCountAfterStart: 1, transientIdCount: 12, uniqueTransientIdCount: 12, transientIdCountAfterStart: 12, uniqueTransientIdCountAfterStart: 12, durableIdCount: 0, otherIdCount: 0 },
+				{ role: "selected-live", url: "/api/chat/events?piboSessionId=ps_test&mode=live&liveSince=42", sinceValues: [], liveSinceValues: ["42"], eventCount: 8, eventCountAfterStart: 8, textEventCount: 5, textEventCountAfterStart: 5, reasoningEventCount: 2, reasoningEventCountAfterStart: 2, openCountAfterStart: 1, errorCountAfterStart: 0, closeCountAfterStart: 0, forcedCloseCountAfterStart: 0, transientIdCount: 8, uniqueTransientIdCount: 8, transientIdCountAfterStart: 8, uniqueTransientIdCountAfterStart: 8, durableIdCount: 0, otherIdCount: 0, liveReplayEventCount: 2, liveReplayEventCountAfterStart: 2 },
+			],
+		},
+		dom: { positiveUpdateCount: 12 },
+	});
+	assert.equal(preservation.selectedLiveTextEventCountAfterStart, 12);
+	assert.equal(preservation.selectedLiveReasoningEventCountAfterStart, 4);
+	assert.equal(preservation.selectedLiveTextToProviderRatio, 1);
+	assert.equal(preservation.selectedLiveReasoningToProviderRatio, 1);
+});
+
+test("streaming live pipeline summary subtracts pre-reset trace state", () => {
+	const summary = summarizeStreamingLivePipeline({
+		debug: {
+			delta: { enqueueCount: 16, flushCount: 16, flushedEventCount: 16, overlayUpdateCount: 16, textDeltaCount: 12, reasoningDeltaCount: 4 },
+			stateBeforeReset: { overlayEventCount: 32, currentOutputLength: 48 },
+			after: { overlayEventCount: 48, currentOutputLength: 72 },
+		},
+		fixture: { available: true, requested: true, mode: "backend", started: true, deltaCount: 12, reasoningDeltaCount: 4, textBytes: 24 },
+	});
+	assert.equal(summary.expectedPipelineEventCount, 16);
+	assert.equal(summary.overlayEventCount, 16);
+	assert.equal(summary.currentOutputLength, 24);
+	assert.equal(summary.overlayEventsToExpectedRatio, 1);
+	assert.equal(summary.currentOutputToExpectedTextBytesRatio, 1);
+});
+
 test("streaming live pipeline summary computes fixture-normalized ratios", () => {
 	const summary = summarizeStreamingLivePipeline({
 		debug: {
-			delta: { enqueueCount: 22, flushCount: 20, flushedEventCount: 22, overlayUpdateCount: 20, textDeltaCount: 12, reasoningDeltaCount: 4 },
+			delta: { enqueueCount: 16, flushCount: 16, flushedEventCount: 16, overlayUpdateCount: 16, textDeltaCount: 12, reasoningDeltaCount: 4 },
 			after: {
 				startedAt: "2026-01-01T00:00:00.000Z",
 				firstTextDeltaAt: "2026-01-01T00:00:00.120Z",
@@ -386,12 +514,13 @@ test("streaming live pipeline summary computes fixture-normalized ratios", () =>
 	});
 	assert.equal(summary.expectedSource, "fixture");
 	assert.equal(summary.expectedInputEventCount, 16);
-	assert.equal(summary.enqueueToExpectedRatio, 1.375);
-	assert.equal(summary.flushedEventsToExpectedRatio, 1.375);
+	assert.equal(summary.expectedPipelineEventCount, 16);
+	assert.equal(summary.enqueueToExpectedRatio, 1);
+	assert.equal(summary.flushedEventsToExpectedRatio, 1);
 	assert.equal(summary.overlayEventsToExpectedRatio, 1);
 	assert.equal(summary.currentOutputToExpectedTextBytesRatio, 1);
-	assert.equal(summary.flushToEnqueueRatio, 0.909);
-	assert.equal(summary.overlayUpdatesToFlushedEventsRatio, 0.909);
+	assert.equal(summary.flushToEnqueueRatio, 1);
+	assert.equal(summary.overlayUpdatesToFlushedEventsRatio, 1);
 	assert.equal(summary.firstTextDeltaMs, 120);
 	assert.equal(summary.firstEnqueueMs, 121);
 	assert.equal(summary.firstFlushMs, 130);
@@ -404,16 +533,17 @@ test("streaming live pipeline regressions gate preservation and flush ratios", (
 			expectedTextDeltaCount: 12,
 			expectedReasoningDeltaCount: 4,
 			expectedInputEventCount: 16,
-			enqueueCount: 22,
-			flushCount: 20,
-			flushedEventCount: 22,
-			overlayUpdateCount: 20,
+			enqueueCount: 16,
+			flushCount: 16,
+			flushedEventCount: 16,
+			overlayUpdateCount: 16,
 			overlayEventCount: 16,
-			flushedEventsToExpectedRatio: 1.375,
+			expectedPipelineEventCount: 16,
+			flushedEventsToExpectedRatio: 1,
 			overlayEventsToExpectedRatio: 1,
 			currentOutputToExpectedTextBytesRatio: 1,
-			flushToEnqueueRatio: 0.909,
-			overlayUpdatesToFlushedEventsRatio: 0.909,
+			flushToEnqueueRatio: 1,
+			overlayUpdatesToFlushedEventsRatio: 1,
 			expectedTextBytes: 24,
 		},
 	}), []);
@@ -428,7 +558,8 @@ test("streaming live pipeline regressions gate preservation and flush ratios", (
 			flushedEventCount: 14,
 			overlayUpdateCount: 13,
 			overlayEventCount: 13,
-			flushedEventsToExpectedRatio: 0.9,
+			expectedPipelineEventCount: 16,
+			flushedEventsToExpectedRatio: 0.875,
 			overlayEventsToExpectedRatio: 0.8,
 			currentOutputToExpectedTextBytesRatio: 0.7,
 			flushToEnqueueRatio: 0.591,
@@ -436,8 +567,8 @@ test("streaming live pipeline regressions gate preservation and flush ratios", (
 			expectedTextBytes: 24,
 		},
 	}), [
-		"live pipeline flushed events/expected ratio 0.9 < 0.95",
-		"live pipeline overlay events/expected ratio 0.8 < 0.95",
+		"live pipeline flushed events/overlay expected ratio 0.875 < 0.95",
+		"live pipeline overlay events/input expected ratio 0.8 < 0.95",
 		"live pipeline current text/expected bytes ratio 0.7 < 0.95",
 		"live pipeline flush/enqueue ratio 0.591 < 0.75",
 		"live pipeline overlay updates/flushed ratio 0.591 < 0.75",
@@ -720,7 +851,7 @@ test("streaming URL comparison preserves controlled negative profile in artifact
 		longTasks: { count: 0, maxMs: 0, totalMs: 0 },
 		eventSource: { streams: [{ role: "selected-live", eventCountAfterStart: 22, textEventCountAfterStart: 12, reasoningEventCountAfterStart: 4, transientIdCountAfterStart: 22, firstTextEventMsAfterStart: 121 }] },
 		sse: { textEventCount: 12, reasoningEventCount: 4, firstTextEventMs: 119, chunkBytes: { count: 1, p50: 200 }, chunkGapsMs: { count: 1, p90: 100 }, textEventsPerChunk: { count: 1, p90: 1 }, textEventGapsMs: { count: 1, p90: 100 } },
-		livePipeline: { expectedInputEventCount: 16, flushedEventsToExpectedRatio: 0.375, overlayEventsToExpectedRatio: 0, currentOutputToExpectedTextBytesRatio: 0, flushToEnqueueRatio: 0.5, overlayUpdatesToFlushedEventsRatio: 0.5, firstTextDeltaMs: 120, firstEnqueueMs: 40, firstFlushMs: 42, firstOverlayUpdateMs: 44 },
+		livePipeline: { expectedInputEventCount: 16, expectedPipelineEventCount: 16, flushedEventsToExpectedRatio: 0, overlayEventsToExpectedRatio: 0, currentOutputToExpectedTextBytesRatio: 0, flushToEnqueueRatio: 0.5, overlayUpdatesToFlushedEventsRatio: 0.5, firstTextDeltaMs: 120, firstEnqueueMs: 40, firstFlushMs: 42, firstOverlayUpdateMs: 44 },
 		score: { smoothness: 10, textDeltaCount: 12, domPositiveUpdateCount: 0 },
 		negativeProfile: "overlay-drop",
 		regressions: [regression],
@@ -750,9 +881,9 @@ test("streaming URL comparison preserves controlled negative profile in artifact
 	assert.match(text, /primary selected-live: .*text=count=1, p50=12/);
 	assert.match(text, /compare selected-live: .*reasoning=count=1, p50=4/);
 	assert.match(text, /comparison selected-live: events 0, text 0, reasoning 0/);
-	assert.match(text, /primary live ratios: .*flushed\/expected=count=1, p50=0.375/);
-	assert.match(text, /compare live ratios: .*overlayEvents\/expected=count=1, p50=0/);
-	assert.match(text, /comparison live ratios: flushed\/expected 0, overlayEvents\/expected 0, flush\/enqueue 0, overlayUpdates\/flushed 0/);
+	assert.match(text, /primary live ratios: .*overlayExpected=count=1, p50=16.*flushed\/overlayExpected=count=1, p50=0/);
+	assert.match(text, /compare live ratios: .*overlayEvents\/inputExpected=count=1, p50=0/);
+	assert.match(text, /comparison live ratios: flushed\/overlayExpected 0, overlayEvents\/inputExpected 0, flush\/enqueue 0, overlayUpdates\/flushed 0/);
 	assert.match(text, /primary first latency: .*selectedLive=count=1, p50=121.*sse=count=1, p50=119.*liveText=count=1, p50=120.*domVisible=count=1, p50=140/);
 	assert.match(text, /comparison first latency: selectedLive 0ms, sse 0ms, liveText 0ms, liveEnqueue 0ms, liveFlush 0ms, liveOverlay 0ms, domVisible 0ms/);
 });
@@ -942,7 +1073,7 @@ test("pibo debug web streaming benchmark rejects invalid fixture mix before targ
 	await assert.rejects(
 		execFileAsync("node", [cliPath, "debug", "web", "scenario", "streaming-benchmark", "--backend-fixture", "--fixture-mix", "thinking-only"]),
 		(error) => {
-			assert.match(error.stderr, /--fixture-mix must be text or reasoning-text/);
+			assert.match(error.stderr, /--fixture-mix must be text, reasoning-text, markdown, gfm-markdown, gfm-task-markdown, or gfm-full-markdown/);
 			assert.doesNotMatch(error.stderr, /No attachable CDP target/);
 			return true;
 		},
@@ -954,6 +1085,28 @@ test("pibo debug web streaming benchmark rejects fixture mix without fixture bef
 		execFileAsync("node", [cliPath, "debug", "web", "scenario", "streaming-benchmark", "--fixture-mix", "reasoning-text"]),
 		(error) => {
 			assert.match(error.stderr, /--fixture-mix requires --fixture or --backend-fixture/);
+			assert.doesNotMatch(error.stderr, /No attachable CDP target/);
+			return true;
+		},
+	);
+});
+
+test("pibo debug web streaming benchmark rejects fixture prelude without backend fixture before target discovery", async () => {
+	await assert.rejects(
+		execFileAsync("node", [cliPath, "debug", "web", "scenario", "streaming-benchmark", "--fixture-prelude-messages", "100"]),
+		(error) => {
+			assert.match(error.stderr, /--fixture-prelude-messages requires --backend-fixture/);
+			assert.doesNotMatch(error.stderr, /No attachable CDP target/);
+			return true;
+		},
+	);
+});
+
+test("pibo debug web streaming benchmark rejects invalid fixture prelude count before target discovery", async () => {
+	await assert.rejects(
+		execFileAsync("node", [cliPath, "debug", "web", "scenario", "streaming-benchmark", "--backend-fixture", "--fixture-prelude-messages", "2.5"]),
+		(error) => {
+			assert.match(error.stderr, /--fixture-prelude-messages must be a non-negative integer/);
 			assert.doesNotMatch(error.stderr, /No attachable CDP target/);
 			return true;
 		},
