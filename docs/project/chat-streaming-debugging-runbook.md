@@ -38,6 +38,18 @@ pibo debug web scenario streaming-benchmark \
   --artifact
 ```
 
+When live trace compute is too small to measure on the default fixture, seed a larger live overlay before counters reset. Backend fixture DOM metrics are scoped to the active fixture message and ignore debug prelude rows, so larger preludes can profile overlay compute without turning delayed prelude rendering into DOM max-jump failures:
+
+```bash
+pibo debug web scenario streaming-benchmark \
+  --backend-fixture \
+  --fixture-mix reasoning-text \
+  --fixture-prelude-messages 20 \
+  --runs 5 \
+  --assert \
+  --artifact
+```
+
 Compare hosted dev against the current direct target when a dev URL is configured:
 
 ```bash
@@ -107,8 +119,9 @@ Prefer these rows in compact reports:
 
 - **Provider/Pi**: upstream cadence and parse health.
 - **SSE transport**: text/reasoning preservation, chunk gaps, text events per chunk.
-- **EventSource selected-live**: browser-delivered live frames and transient id count.
-- **Live overlay**: enqueue/flush/overlay preservation ratios.
+- **EventSource selected-live**: browser-delivered live frames, transient id count, and reconnect replay/cursor-lag/duplicate fields when `liveSince` is used.
+- **Live overlay**: enqueue/flush/overlay preservation ratios plus first live text, flush, and overlay latencies.
+- **Markdown render**: renderer invocation count/plain/CommonMark/GFM parser/GFM fast/full split and total/max duration for assistant Markdown hosts when debug streaming is enabled; full-path timing includes synchronous ReactMarkdown parse and tree building, while GFM fast counts direct renderers, such as simple strikethrough and simple task-list output with guarded strong/code spans and simple link labels with strong, emphasis, inline code, strong-wrapped emphasis, or emphasis-wrapped strong, that intentionally bypass `remark-gfm`.
 - **DOM**: visible positive updates, max jump, p90 gap, first visible latency.
 - **Score**: aggregate smoothness plus regression/warning count.
 

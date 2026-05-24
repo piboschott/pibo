@@ -43,6 +43,8 @@ Useful options:
 
 `--backend-fixture` posts to `/api/chat/debug/streaming-fixture` and drives deterministic live-only events through the real Chat Web `/api/chat/events` path.
 
+`--fixture-prelude-messages <n>` can be used with backend fixtures to seed completed live assistant messages before benchmark counters reset. This creates a larger live overlay for browser-visible trace-compute measurements while keeping the main fixture's text/reasoning preservation denominators unchanged. DOM cadence/jump measurement for backend fixtures scopes to assistant targets created after the timing window begins and ignores debug prelude rows, so delayed prelude rendering does not masquerade as active fixture batching.
+
 This is the default deterministic regression mode because it exercises:
 
 - authenticated Chat Web app;
@@ -77,10 +79,14 @@ This is the default deterministic regression mode because it exercises:
 
 - `text`: assistant text deltas only.
 - `reasoning-text`: reasoning deltas plus assistant text deltas.
+- `markdown`: CommonMark assistant deltas with real emphasis markers that force the full Markdown renderer path without GFM plugins while keeping small per-delta visible jumps.
+- `gfm-markdown`: GFM assistant deltas with strikethrough markers that exercise GFM rendering while keeping small per-delta visible jumps. Simple strikethrough may use the GFM fast path.
+- `gfm-task-markdown`: GFM task-list assistant deltas with simple inline links, including strong, emphasis, inline-code, simple strong-wrapped-emphasis labels, or simple emphasis-wrapped-strong labels, that can exercise narrowly guarded task-list fast rendering while keeping small per-delta visible jumps.
+- `gfm-full-markdown`: GFM task-list assistant deltas with richer nested Markdown inside link labels that must exercise the full `remark-gfm` parser while keeping small per-delta visible jumps.
 
 ### Simulations
 
-`--simulate-reconnect` reloads the app with an EventSource probe, forces live stream closes, and checks reconnect/transient id behavior. Reconnected selected-live streams may resume transient live-only deltas with the `liveSince` replay cursor while keeping SSE ids in the `live:<n>` transient form.
+`--simulate-reconnect` reloads the app with an EventSource probe, forces live stream closes, and checks reconnect/transient id behavior. Reconnected selected-live streams may resume transient live-only deltas with the `liveSince` replay cursor while keeping SSE ids in the `live:<n>` transient form. Replay buffer misses are surfaced in the stream `ready` frame and fail reconnect assertions.
 
 `--simulate-trace-catchup` suppresses backend live text deltas while compacting output into trace snapshots. It verifies trace snapshot recovery rather than fine-grained DOM cadence.
 
@@ -139,7 +145,7 @@ Collected by an in-page EventSource wrapper:
 - transient id count;
 - reconnect/open/error observations;
 - first event/text/reasoning latency;
-- `liveSince` transient replay cursor use during selected-live reconnects.
+- `liveSince` transient replay cursor use, replayed transient frame count from the stream `ready` replay status, replay cursor lag (`newestAvailable - requestedAfter`), duplicate replay counts for already-observed transient ids, and bounded replay-buffer miss indicators during selected-live reconnects.
 
 ### Live pipeline
 
@@ -147,10 +153,13 @@ Collected from `window.__piboStreamingDebug` when `?debugStreaming=1` or local s
 
 - live open/error count;
 - event, enqueue, flush, flushed-event, overlay-update, overlay-event counts;
+- live trace overlay compute count plus total/max duration for committed overlay renders;
+- Markdown renderer invocation count split into plain/CommonMark/GFM parser/GFM fast/full paths plus total/max duration when debug streaming is enabled; full-path timing includes the synchronous ReactMarkdown parse and React tree build, while GFM fast timing covers narrowly guarded direct renderers such as simple strikethrough and task-list output that bypass `remark-gfm`;
 - current output and trace base output lengths;
 - trace refresh count/duration;
 - first text, enqueue, flush, and overlay-update latency;
-- preservation ratios normalized by fixture/provider/debug expected input.
+- preservation ratios split by denominator: enqueue/flushed overlay work normalized to expected text and reasoning input, and overlay/current text normalized to expected text and reasoning input. EventSource/SSE rows cover non-rendering stream boundary frames.
+- multi-run summaries report overlay/current output as the per-run state window when a pre-reset trace state is available, not the cumulative selected-session total.
 
 ### DOM
 
@@ -205,8 +214,10 @@ Compact single/group reports include rows for:
 - Provider ratios;
 - SSE transport;
 - Cadence lag;
-- EventSource selected-live;
-- Live overlay;
+- EventSource selected-live; compact single-run and group reports include reconnect replay cursor/frame counts, replay cursor lag, and duplicate replay counts when used;
+- Live overlay preservation and first live latencies;
+- Live trace compute count/total/max duration when debug instrumentation is available;
+- Markdown renderer count/plain/CommonMark/GFM parser/GFM fast/full and total/max duration when debug instrumentation is available;
 - DOM;
 - Score.
 
@@ -233,6 +244,20 @@ npm run typecheck
 npm run build
 node --test test/debug-cli.test.mjs test/web-channel.test.mjs test/trace-live-reducer.test.mjs
 pibo debug web scenario streaming-benchmark --backend-fixture --fixture-mix reasoning-text --assert --artifact
+```
+
+For large live-overlay trace work, add a prelude to make browser trace-compute cost visible:
+
+```bash
+pibo debug web scenario streaming-benchmark --backend-fixture --fixture-mix reasoning-text --fixture-prelude-messages 20 --runs 5 --assert --artifact
+```
+
+For Markdown rendering changes, also run the Markdown/GFM renderer fixtures:
+
+```bash
+pibo debug web scenario streaming-benchmark --backend-fixture --fixture-mix markdown --runs 5 --assert --artifact
+pibo debug web scenario streaming-benchmark --backend-fixture --fixture-mix gfm-markdown --runs 5 --assert --artifact
+pibo debug web scenario streaming-benchmark --backend-fixture --fixture-mix gfm-full-markdown --runs 5 --assert --artifact
 ```
 
 Use `--runs 5` when comparing performance or smoothness changes.
