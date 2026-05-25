@@ -6,6 +6,7 @@ type ChatStreamEvent = {
 	streamFrameId?: string;
 	streamId?: number;
 	streamFrameIndex?: number;
+	liveReplayId?: number;
 	[key: string]: unknown;
 };
 
@@ -19,15 +20,42 @@ type ApplyInput = {
 
 export function applyTraceLiveEvents(input: ApplyInput): ChatWebStoredEvent[] {
 	let events = input.currentEvents;
+	let mutableEvents: ChatWebStoredEvent[] | undefined;
+	let seenIdentities: Set<string> | undefined;
+	const ensureSeenIdentities = () => {
+		seenIdentities ??= new Set(events.map(eventIdentityKey));
+		return seenIdentities;
+	};
+	const appendStoredEvent = (event: ChatWebStoredEvent) => {
+		mutableEvents ??= events.slice();
+		mutableEvents.push(event);
+		events = mutableEvents;
+	};
 	for (const streamEvent of input.streamEvents) {
 		const stored = storedEventFromStreamEvent(streamEvent, input.piboSessionId, input.nextSequence, input.now ?? (() => new Date().toISOString()));
 		if (!stored) continue;
-		events = reduceStoredEvent(events, stored);
+		if (isFinalReplacementEvent(stored)) {
+			events = replaceLiveDeltasWithFinalEvent(events, stored);
+			mutableEvents = events;
+			seenIdentities = undefined;
+			continue;
+		}
+		const identity = eventIdentityKey(stored);
+		const seen = ensureSeenIdentities();
+		if (seen.has(identity)) continue;
+		seen.add(identity);
+		appendStoredEvent(stored);
 	}
 	return events;
 }
 
-function reduceStoredEvent(events: ChatWebStoredEvent[], event: ChatWebStoredEvent): ChatWebStoredEvent[] {
+function isFinalReplacementEvent(event: ChatWebStoredEvent): boolean {
+	return event.type === "assistant_message"
+		|| event.type === "thinking_finished"
+		|| event.type === "tool_execution_finished";
+}
+
+function replaceLiveDeltasWithFinalEvent(events: ChatWebStoredEvent[], event: ChatWebStoredEvent): ChatWebStoredEvent[] {
 	if (event.type === "assistant_message") {
 		return [...dropMatching(events, event, "assistant_delta"), event];
 	}
@@ -37,7 +65,7 @@ function reduceStoredEvent(events: ChatWebStoredEvent[], event: ChatWebStoredEve
 	if (event.type === "tool_execution_finished") {
 		return [...dropMatching(events, event, "tool_execution_updated"), event];
 	}
-	return dedupeByIdentity([...events, event]);
+	return events;
 }
 
 function storedEventFromStreamEvent(
@@ -140,13 +168,16 @@ function makeStored(
 ): ChatWebStoredEvent {
 	const streamFrame = typeof streamEvent.streamFrameId === "string" ? streamEvent.streamFrameId : undefined;
 	const streamFrameIndex = typeof streamEvent.streamFrameIndex === "number" ? streamEvent.streamFrameIndex : undefined;
+	const liveReplayId = typeof streamEvent.liveReplayId === "number" && Number.isFinite(streamEvent.liveReplayId) ? streamEvent.liveReplayId : undefined;
 	const sequence = nextSequence();
 	return {
 		id: typeof streamEvent.streamId === "number"
 			? `stream:${streamEvent.streamId}:${streamFrameIndex ?? "raw"}:${type}`
-			: streamFrame
-				? `stream:${streamFrame}:${type}`
-				: `live:${sequence}:${type}`,
+			: liveReplayId !== undefined
+				? `live-replay:${liveReplayId}:${type}`
+				: streamFrame
+					? `stream:${streamFrame}:${type}`
+					: `live:${sequence}:${type}`,
 		piboSessionId,
 		eventSequence: sequence,
 		streamId: typeof streamEvent.streamId === "number" ? streamEvent.streamId : undefined,
@@ -161,18 +192,6 @@ function makeStored(
 function dropMatching(events: ChatWebStoredEvent[], finalEvent: ChatWebStoredEvent, dropType: string): ChatWebStoredEvent[] {
 	const finalKey = eventGroupKey(finalEvent);
 	return events.filter((event) => event.type !== dropType || eventGroupKey(event) !== finalKey);
-}
-
-function dedupeByIdentity(events: ChatWebStoredEvent[]): ChatWebStoredEvent[] {
-	const seen = new Set<string>();
-	const deduped: ChatWebStoredEvent[] = [];
-	for (const event of events) {
-		const key = eventIdentityKey(event);
-		if (seen.has(key)) continue;
-		seen.add(key);
-		deduped.push(event);
-	}
-	return deduped;
 }
 
 function eventIdentityKey(event: ChatWebStoredEvent): string {
