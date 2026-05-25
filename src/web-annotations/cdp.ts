@@ -302,6 +302,7 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
     lastHoverAt: 0,
     pendingFrame: 0,
     dragMoved: false,
+    toolbarExpanded: false,
     shortcut: parseShortcut(config.annotationShortcut || readStoredShortcut() || defaultAnnotationShortcut),
     submissions: [],
     lastError: null,
@@ -348,8 +349,8 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
     ".pibo-wa-icon{width:22px;height:22px;display:block;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:0 0 auto}",
     ".pibo-wa-actions{position:absolute;right:-2px;bottom:42px;display:flex;flex-direction:column;gap:7px;padding:0 2px 12px 2px;opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .12s ease,transform .12s ease}",
     ".pibo-wa-actions::before{content:'';position:absolute;inset:0 -8px -12px -8px;z-index:-1}",
-    ".pibo-wa-panel:hover .pibo-wa-actions,.pibo-wa-panel:focus-within .pibo-wa-actions,.pibo-wa-panel.pibo-wa-active .pibo-wa-actions{opacity:1;pointer-events:auto;transform:translateY(0)}",
-    "@media (hover:none),(pointer:coarse){.pibo-wa-panel{width:54px;min-height:54px}.pibo-wa-main,.pibo-wa-button{width:52px;height:52px;border-radius:16px}.pibo-wa-actions{right:-1px;bottom:48px;gap:8px;opacity:1;pointer-events:auto;transform:none}.pibo-wa-main:hover,.pibo-wa-button:hover{transform:none}}",
+    ".pibo-wa-panel:hover .pibo-wa-actions,.pibo-wa-panel:focus-within .pibo-wa-actions,.pibo-wa-panel.pibo-wa-active .pibo-wa-actions,.pibo-wa-panel.pibo-wa-expanded .pibo-wa-actions{opacity:1;pointer-events:auto;transform:translateY(0)}",
+    "@media (hover:none),(pointer:coarse){.pibo-wa-panel{width:54px;min-height:54px}.pibo-wa-main,.pibo-wa-button{width:52px;height:52px;border-radius:16px}.pibo-wa-actions,.pibo-wa-panel:hover .pibo-wa-actions,.pibo-wa-panel.pibo-wa-active .pibo-wa-actions{right:-1px;bottom:48px;gap:8px;opacity:0;pointer-events:none;transform:translateY(6px)}.pibo-wa-panel.pibo-wa-expanded .pibo-wa-actions,.pibo-wa-panel:focus-within .pibo-wa-actions{opacity:1;pointer-events:auto;transform:none}.pibo-wa-main:hover,.pibo-wa-button:hover{transform:none}}",
     ".pibo-wa-button{background:#1f2937}",
     ".pibo-wa-button[aria-pressed='true']{background:#2563eb;border-color:#93c5fd;color:#fff}",
     ".pibo-wa-button-danger{background:#3f1418;border-color:#7f1d1d;color:#fecaca}",
@@ -394,6 +395,12 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
       state.dragMoved = false;
       return;
     }
+    if (isCoarsePointer()) {
+      state.toolbarExpanded = !state.toolbarExpanded;
+      updateUi();
+      publishOverlayState("toolbar-toggle");
+      return;
+    }
     state.active = true;
     state.mode = "element";
     closePopup();
@@ -404,6 +411,7 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   toggle.addEventListener("click", () => {
     state.active = !state.active;
     state.mode = "element";
+    state.toolbarExpanded = true;
     closePopup();
     updateUi();
     publishOverlayState("toggle");
@@ -411,6 +419,7 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   pin.addEventListener("click", () => {
     state.active = true;
     state.mode = state.mode === "pin" ? "element" : "pin";
+    state.toolbarExpanded = true;
     closePopup();
     updateUi();
     publishOverlayState("pin-toggle");
@@ -470,16 +479,22 @@ export function buildWebAnnotationOverlayScript(configExpression = "window.__pib
   }
 
   function updateUi(message) {
-    const title = shortcutTitle("Enable element annotation mode");
+    const title = isCoarsePointer() ? (state.toolbarExpanded ? "Hide annotation controls" : "Show annotation controls") : shortcutTitle("Enable element annotation mode");
     main.setAttribute("aria-label", title);
+    main.setAttribute("aria-expanded", state.toolbarExpanded ? "true" : "false");
     main.title = title;
     toggle.title = shortcutTitle("Toggle element annotation mode");
     toggle.setAttribute("aria-label", shortcutTitle("Toggle element annotation mode"));
     toggle.setAttribute("aria-pressed", state.active && state.mode === "element" ? "true" : "false");
     pin.setAttribute("aria-pressed", state.active && state.mode === "pin" ? "true" : "false");
     panel.classList.toggle("pibo-wa-active", state.active);
+    panel.classList.toggle("pibo-wa-expanded", state.toolbarExpanded);
     outline.style.display = state.active && state.mode === "element" && state.hovered ? "block" : "none";
     status.textContent = message || (state.active ? (state.mode === "pin" ? "Pin mode: click anywhere to mark a point." : "Element mode: hover and click a visible target.") : "Inactive: page clicks and typing pass through normally.");
+  }
+
+  function isCoarsePointer() {
+    return Boolean(window.matchMedia && window.matchMedia("(hover: none), (pointer: coarse)").matches);
   }
 
   function readStoredShortcut() {

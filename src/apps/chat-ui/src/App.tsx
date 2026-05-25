@@ -5892,7 +5892,7 @@ function WebAnnotationsEntryPoints({
 			});
 			if (!binding.overlay) throw new Error("Overlay config missing from same-origin binding response");
 			await installSameOriginWebAnnotationOverlay(binding.overlay);
-			setStatus({ kind: "success", message: "Annotation mode is active on this Pibo page. Use the overlay controls or shortcut to toggle it." });
+			setStatus({ kind: "success", message: "Annotation overlay is ready on this Pibo page. Open the overlay controls or use the shortcut to start annotating." });
 			onError(null);
 		} catch (caught) {
 			const message = compactWebAnnotationError(caught, "Current-page annotation failed");
@@ -6060,7 +6060,7 @@ function installSameOriginWebAnnotationOverlay(config: WebAnnotationOverlayConfi
 	return new Promise((resolve, reject) => {
 		const targetWindow = window as typeof window & {
 			__piboWebAnnotationConfig?: WebAnnotationOverlayConfig;
-			__piboWebAnnotations?: { remove?: () => void; setActive?: (value: boolean) => void };
+			__piboWebAnnotations?: { remove?: () => void };
 		};
 		try {
 			targetWindow.__piboWebAnnotations?.remove?.();
@@ -6068,10 +6068,7 @@ function installSameOriginWebAnnotationOverlay(config: WebAnnotationOverlayConfi
 			const script = document.createElement("script");
 			script.src = `/apps/web-annotations/overlay.js?ts=${Date.now()}`;
 			script.async = true;
-			script.onload = () => {
-				targetWindow.__piboWebAnnotations?.setActive?.(true);
-				resolve();
-			};
+			script.onload = () => resolve();
 			script.onerror = () => reject(new Error("Could not load Web Annotation overlay script"));
 			document.head.appendChild(script);
 		} catch (error) {
