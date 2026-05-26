@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow runtime state/view/patch helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/state.ts`.
 - Result: `runtime/index.ts` is down from 3,784 to 3,594 LOC; state scoping, state readers, code-node patch validation/application, and `WorkflowStateAccessViolation` now live behind a focused runtime state module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-code-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: pending (`refactor(workflows): extract runtime state helpers`).
+- Commit: `feef0bef52568d2ebd19817bbb789b705758f916` (`refactor(workflows): extract runtime state helpers`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` with the wait-token/time helper extraction, or analyze failure/result builder extraction before touching dispatch orchestration.
 
