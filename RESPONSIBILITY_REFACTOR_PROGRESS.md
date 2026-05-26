@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow runtime retry decision/scheduling helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/retry.ts`.
 - Result: `runtime/index.ts` is down from 3,909 to 3,784 LOC and now re-exports the public retry helpers/types from a focused module; shared runtime id generation lives in `packages/workflows/src/runtime/ids.ts`.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-retry-policy.test.ts'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: pending.
+- Commit: `4aa060d5630cfb1f2a5aac408ee8b3a7e493673d` (`refactor(workflows): extract runtime retry helpers`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` with a test-backed extraction of another pure seam, likely wait-token/time helpers or state patch/read helpers, before touching larger dispatch orchestration.
 
