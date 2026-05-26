@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow adapter node dispatch types/functions into `packages/workflows/src/runtime/adapter-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
-- Result: `runtime/index.ts` is down from 1,253 to 1,037 LOC; adapter node input validation, registry lookup, adapter execution, node-output validation, completion/failure persistence, and adapter error summarization now live in a focused runtime module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-mixed-node-workflow.test.ts src/testing/registry.test.ts'` passed (the package test script also executed all workflow tests: 138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for mixed code/agent/human/adapter/nested dispatch, adapter registry validation, adapter output validation, and persistence-adjacent runtime behavior.
-- Commit: `6a480720250b2404f01c88e36fb7381a09d7c9f4` (`refactor(workflows): extract adapter node runtime`).
+- Last batch: Extracted workflow code node dispatch types/functions into `packages/workflows/src/runtime/code-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
+- Result: `runtime/index.ts` is down from 1,037 to 753 LOC; code node handler resolution, scoped state/edge readers, command collection/emission, patch validation/application, output validation, event persistence, and code-handler error summarization now live in a focused runtime module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-code-node.test.ts'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for code-node dispatch plus mixed code/agent/human/adapter/nested workflow execution.
+- Commit: pending this run (`refactor(workflows): extract code node runtime`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with one more small test-backed seam: extract code node dispatch next, because existing code-node runtime tests cover handler success, missing handler refs, state write violations, invalid output, and wrong-kind dispatch. Avoid central dispatch orchestration until after code and nested workflow dispatch seams are isolated.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` by extracting nested workflow node dispatch into `packages/workflows/src/runtime/nested-workflow-node.ts`; existing nested workflow and mixed workflow tests cover registered child execution, missing child refs, incomplete child runs, child output validation, and persistence-adjacent behavior.
 
 ## Progress log
 
@@ -95,3 +95,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow human action application runtime/types into `packages/workflows/src/runtime/human-action.ts`; focused human/wait persistence command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow human node dispatch runtime/types into `packages/workflows/src/runtime/human-node.ts`; focused human/mixed/persistence command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow adapter node dispatch runtime/types into `packages/workflows/src/runtime/adapter-node.ts`; focused mixed/registry command, full workflow package tests, and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow code node dispatch runtime/types into `packages/workflows/src/runtime/code-node.ts`; focused code-node command, full workflow package tests, and root typecheck passed in Docker.
