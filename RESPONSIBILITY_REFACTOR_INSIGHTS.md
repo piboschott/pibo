@@ -26,6 +26,7 @@
 - For pure extraction, focused unit/type checks may be enough for the batch, but still run `npm run typecheck` before commit.
 - For Chat Web UI or server behavior, run a Docker-hosted manual path and record the route, observable result, and any screenshot/log path if available.
 - If full `npm test` is too expensive for every small batch, run focused tests plus typecheck, then run broader tests after several coherent commits or before handoff.
+- The repo root is not configured as an npm workspace for `packages/workflows`; run focused workflow tests with `cd /workspace/packages/workflows && npm test` inside the Docker worker.
 
 ## Initial large-file candidates
 
@@ -34,6 +35,11 @@
 - `src/apps/chat-ui/src/WorkflowsArea.tsx`: likely a focused feature area but still large enough for component/hook extraction.
 - `src/debug/web.ts`: debug CLI/browser/render logic may be separable by command or renderer.
 - `packages/workflows/src/runtime/index.ts`: runtime orchestration may need careful test-backed extraction.
+
+## Workflow validation seams
+
+- `packages/workflows/src/validation/json-schema.ts` now owns the pure JSON Schema subset/value validation seam: schema keyword/type checks, object/array/ref/anyOf validation, runtime JSON value checks, and semantic schema equality for port compatibility.
+- `packages/workflows/src/validation/index.ts` still mixes workflow orchestration, retry/loop/cycle rules, registry reference checks, state access validation, and port/value entry points. The next safest extraction is likely registry-reference validation because those helpers are clustered around guard, adapter, profile, prompt builder, code-node, and human-action refs and are covered by `packages/workflows/src/testing/validation.test.ts`.
 
 ## Commit policy
 
