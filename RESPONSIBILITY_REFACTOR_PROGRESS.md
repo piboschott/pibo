@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow retry/backoff policy validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/retry-policy.ts`.
 - Result: `validation/index.ts` is down from 679 to 530 LOC and now keeps workflow validation orchestration, loop/cycle rules, edge node refs, edge adapter registry-ref checks, node schema checks, and public port/value validation entry points; `retry-policy.ts` owns workflow/node retry policy diagnostics, backoff kind checks, delay bounds, and retryOn validation.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: pending final commit hash.
+- Commit: `1e5c20cf46340be26f0466c3dabcd0a1d0c5218a` (`refactor(workflows): extract retry policy validators`).
 - Blockers: none.
 - Exact next step: Consider extracting workflow loop and cycle validation from `packages/workflows/src/validation/index.ts` into a focused graph-cycles module; preserve the existing bounded loop and unbounded cycle tests in `packages/workflows/src/testing/validation.test.ts` as the safety net.
 
