@@ -56,7 +56,8 @@
 - `packages/workflows/src/runtime/time.ts` now owns runtime timestamp factories, wait-token expiry calculation, duration-to-milliseconds conversion, ISO-8601 duration parsing, and timestamp comparison. Existing human-node runtime tests cover minute-based expiry and wait-token persistence/resume paths; add direct tests before changing duration parsing semantics.
 - `packages/workflows/src/runtime/prompts.ts` now owns agent prompt construction: prompt template rendering, registered prompt builder resolution/execution, prompt builder state/edge readers, and final recorded-prompt metadata. Existing `runtime-agent-node.test.ts`, `runtime-prompt-workflows.test.ts`, and one-node workflow tests cover prompt templates, prompt builders, transferred edge payloads, metadata recording, and routed execution.
 - `packages/workflows/src/runtime/edge-payloads.ts` is a tiny shared runtime helper for edge payload readers used by code-node handlers and prompt builders. Keep it focused; do not grow it into a generic runtime utility module.
-- Candidate next runtime seams in `runtime/index.ts`: failure/result builders, persistence/event-store helpers, and other pure bottom-of-file helpers. Prefer analysis or tests before extracting dispatch orchestration.
+- `packages/workflows/src/runtime/persistence.ts` now owns runtime persistence/event-store helpers: event emission with optional persistence, optional store capability guards, run/node-attempt/edge-transfer writes, wait wakeup/node-attempt read guards, and workflow event record creation. Existing node-attempt persistence, workflow persistence validation, runtime human-node, edge-transfer, and one-node runtime tests cover this seam.
+- Candidate next runtime seams in `runtime/index.ts`: failure/result builders and other pure bottom-of-file helpers. Prefer analysis or tests before extracting dispatch orchestration.
 
 ## Commit policy
 

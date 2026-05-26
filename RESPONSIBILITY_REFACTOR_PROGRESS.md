@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow runtime agent prompt-building helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/prompts.ts`, with shared edge payload reader creation in `packages/workflows/src/runtime/edge-payloads.ts`.
-- Result: `runtime/index.ts` is down from 3,542 to 3,225 LOC; prompt template rendering, prompt builder resolution/execution, recorded prompt metadata, and prompt-builder state/edge readers now live behind a focused runtime prompt module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-agent-node.test.ts src/testing/runtime-prompt-workflows.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the prompt workflow path through the public package entrypoint, registered prompt builders, transferred edge payloads, persisted node prompt metadata, and routed one-node workflow tests.
-- Commit: `b443c259709b975070d47e28112de081813c3839` (`refactor(workflows): extract runtime prompt helpers`).
+- Last batch: Extracted workflow runtime persistence/event-store helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/persistence.ts`.
+- Result: `runtime/index.ts` is down from 3,225 to 3,124 LOC; event emission, optional store capability guards, run/node-attempt/edge-transfer persistence, and workflow event record creation now live behind a focused runtime persistence module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/node-attempt-persistence.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/runtime-human-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the persisted runtime path through SQLite-backed workflow runs, node attempts, events, edge transfers, wait tokens, and human wakeups covered by the workflow package tests.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with failure/result builder extraction analysis, or extract persistence/event-store helpers if a small test-backed seam is clearer.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with failure/result builder extraction analysis, or extract another small test-backed runtime helper seam if one is clearer.
 
 ## Progress log
 
@@ -87,3 +87,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow runtime state scoping/read/patch helpers into `packages/workflows/src/runtime/state.ts`; focused code-node test command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime timestamp/wait-token expiry helpers into `packages/workflows/src/runtime/time.ts`; focused human-node runtime test command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime agent prompt-building helpers into `packages/workflows/src/runtime/prompts.ts` plus shared edge payload reader creation in `packages/workflows/src/runtime/edge-payloads.ts`; focused prompt/agent command, full workflow package tests, and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow runtime persistence/event-store helpers into `packages/workflows/src/runtime/persistence.ts`; focused persistence/human-node command, full workflow package tests, and root typecheck passed in Docker.
