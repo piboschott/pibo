@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow edge and adapter port compatibility validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/graph-ports.ts`.
-- Result: `validation/index.ts` is down from 737 to 679 LOC and keeps workflow validation orchestration, retry/loop/cycle rules, edge node refs, edge adapter registry-ref checks, and public port/value validation entry points; `graph-ports.ts` owns direct port compatibility plus direct-edge and edge-adapter output compatibility diagnostics.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `8466288245ba16dc04460b01c040c1e9f8ef56a7` (`refactor(workflows): extract graph port validators`).
+- Last batch: Extracted workflow retry/backoff policy validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/retry-policy.ts`.
+- Result: `validation/index.ts` is down from 679 to 530 LOC and now keeps workflow validation orchestration, loop/cycle rules, edge node refs, edge adapter registry-ref checks, node schema checks, and public port/value validation entry points; `retry-policy.ts` owns workflow/node retry policy diagnostics, backoff kind checks, delay bounds, and retryOn validation.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
+- Commit: pending final commit hash.
 - Blockers: none.
-- Exact next step: Consider extracting retry/backoff policy validation from `packages/workflows/src/validation/index.ts` into a focused retry-policy validation module, covered by the existing invalid retry policy tests.
+- Exact next step: Consider extracting workflow loop and cycle validation from `packages/workflows/src/validation/index.ts` into a focused graph-cycles module; preserve the existing bounded loop and unbounded cycle tests in `packages/workflows/src/testing/validation.test.ts` as the safety net.
 
 ## Progress log
 
@@ -79,3 +79,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow registry-reference validators into `packages/workflows/src/validation/registry-refs.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow state access/write-conflict validators into `packages/workflows/src/validation/state-access.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow graph port compatibility validators into `packages/workflows/src/validation/graph-ports.ts`; focused workflow package tests and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow retry/backoff policy validators into `packages/workflows/src/validation/retry-policy.ts`; focused workflow package tests and root typecheck passed in Docker.
