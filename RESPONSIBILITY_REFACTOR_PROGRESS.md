@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow nested workflow node dispatch types/functions into `packages/workflows/src/runtime/nested-workflow-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
 - Result: `runtime/index.ts` is down from 753 to 422 LOC; child workflow registry resolution, parent/child input validation, nested executor handoff, child run status/output validation, completion/failure persistence, and nested executor error summarization now live in a focused runtime module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-nested-workflow-node.test.ts src/testing/runtime-mixed-node-workflow.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for nested workflow dispatch plus mixed code/agent/human/adapter/nested workflow execution.
-- Commit: pending.
+- Commit: `940b7b16ff03b4505cc82de22d37e25269219a31` (`refactor(workflows): extract nested workflow runtime`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` by extracting the remaining agent node dispatch into `packages/workflows/src/runtime/agent-node.ts`; existing agent-node, prompt-workflow, mixed workflow, one-node, and routing-adjacent tests cover profile resolution, prompt building, executor invocation, output validation, and persistence-adjacent behavior.
 
