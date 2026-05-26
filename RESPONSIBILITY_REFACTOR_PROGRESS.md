@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow registry-reference validators from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/registry-refs.ts`.
-- Result: `validation/index.ts` now keeps workflow graph/state/port orchestration while `registry-refs.ts` owns guard/profile/prompt-builder/code-handler/adapter/human-action registry reference validation and the `WorkflowValidationOptions` type re-exported by `index.ts`.
+- Last batch: Extracted workflow state access and global write-conflict validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/state-access.ts`.
+- Result: `validation/index.ts` is down to 737 LOC and keeps top-level workflow validation orchestration, port/value validation, graph cycle checks, retry/loop checks, and edge compatibility checks; `state-access.ts` owns node state reads/writes, scoped state path parsing, edge-write rejection, unknown global state paths, and ambiguous global write diagnostics.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: current batch commit `refactor(workflows): extract registry ref validators`; final session report records the exact hash.
+- Commit: current batch commit `refactor(workflows): extract state access validators`; final session report records the exact hash.
 - Blockers: none.
-- Exact next step: Consider extracting workflow state access/write-conflict validation from `packages/workflows/src/validation/index.ts` into a focused state validation submodule, protected by existing workflow validation tests.
+- Exact next step: Consider extracting edge/adapter port compatibility helpers from `packages/workflows/src/validation/index.ts` into a focused graph-ports submodule, protected by existing workflow validation tests for incompatible direct edges and adapter output compatibility.
 
 ## Progress log
 
@@ -77,3 +77,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Tightened Ralph prompt to broaden scope from responsibility-only refactoring to code-quality refactoring/analysis, require reading progress/insights and git history at run start, and allow analysis, naming, boundary, test-safety, and architecture-cleanup batches.
 - 2026-05-26: Extracted pure workflow JSON Schema validation/equality helpers into `packages/workflows/src/validation/json-schema.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow registry-reference validators into `packages/workflows/src/validation/registry-refs.ts`; focused workflow package tests and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow state access/write-conflict validators into `packages/workflows/src/validation/state-access.ts`; focused workflow package tests and root typecheck passed in Docker.
