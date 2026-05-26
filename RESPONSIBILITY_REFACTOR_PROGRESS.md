@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow runtime node-dispatch failure helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/dispatch-failures.ts`.
 - Result: `runtime/index.ts` is down from 3,124 to 2,912 LOC; node dispatch failure result shaping, shared failed-at state mutation, `node.failed` event emission, and failed attempt/run persistence now live behind a focused runtime failure module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-agent-node.test.ts src/testing/runtime-code-node.test.ts src/testing/runtime-human-node.test.ts src/testing/runtime-nested-workflow-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the routed one-node workflow and mixed workflow runtime paths covered by the workflow package tests, including failed agent/code/human/nested/adapter dispatch paths and persisted runtime facts.
-- Commit: pending.
+- Commit: `5f5d3ef560c2f3ac0f5433a1bcd6a352960c986b` (`refactor(workflows): extract dispatch failure helpers`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` with another small test-backed seam such as one-node workflow completion/failure helpers or Pibo session routing helper extraction; avoid moving the central dispatch orchestration until more behavior is isolated.
 
