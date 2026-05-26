@@ -48,6 +48,12 @@
 - `packages/workflows/src/validation/schema-declarations.ts` now owns authored schema declaration validation: workflow/node/edge-adapter ports, human node response schemas, and global state field schemas. `validateWorkflowPort` remains a public export from `validation/index.ts` via re-export, so runtime and tests keep the same import surface.
 - `packages/workflows/src/validation/index.ts` is now a smaller orchestration/public validation entry point plus runtime value validation helpers and delegation to focused workflow validation modules. Further splitting this file has diminishing returns; the next higher-value workflow seam is likely `packages/workflows/src/runtime/index.ts`, but it should start with analysis or focused tests because dispatch/runtime behavior is broader and riskier than pure validation.
 
+## Workflow runtime seams
+
+- `packages/workflows/src/runtime/retry.ts` now owns workflow node retry policy resolution, retry/exhaustion decisions, scheduled retry attempt cloning, and retry backoff delay calculation. `runtime/index.ts` preserves the public retry helper/type exports via re-export, and the existing `runtime-retry-policy.test.ts` and state-loop integration tests cover this seam.
+- `packages/workflows/src/runtime/ids.ts` owns the shared runtime id generation helper used by `runtime/index.ts` and retry scheduling. Keep this small and runtime-specific; avoid turning it into a generic utilities module.
+- Candidate next runtime seams in `runtime/index.ts`: wait-token expiry/time helpers near the bottom of the file, state read/patch helpers around `createStateReader`/`applyCodeNodePatches`, and failure/result builders. Prefer pure helpers with existing tests before extracting dispatch functions.
+
 ## Commit policy
 
 - Commit only passing, coherent refactor batches.

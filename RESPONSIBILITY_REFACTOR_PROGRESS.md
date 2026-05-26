@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow schema declaration validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/schema-declarations.ts`.
-- Result: `validation/index.ts` is down from 318 to 273 LOC and now delegates workflow/node/edge-adapter/global-state schema declaration checks while keeping public exports stable.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `07551fe2a7f168aeab85847eccd140dad75a7650` (`refactor(workflows): extract schema declaration validators`).
+- Last batch: Extracted workflow runtime retry decision/scheduling helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/retry.ts`.
+- Result: `runtime/index.ts` is down from 3,909 to 3,784 LOC and now re-exports the public retry helpers/types from a focused module; shared runtime id generation lives in `packages/workflows/src/runtime/ids.ts`.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-retry-policy.test.ts'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Pause further `packages/workflows/src/validation/index.ts` splitting unless new seams appear; next high-value workflow target is a test-backed extraction from `packages/workflows/src/runtime/index.ts`, starting with analysis of runtime boundary helpers and dispatch seams.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with a test-backed extraction of another pure seam, likely wait-token/time helpers or state patch/read helpers, before touching larger dispatch orchestration.
 
 ## Progress log
 
@@ -83,3 +83,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow loop/cycle validators into `packages/workflows/src/validation/graph-cycles.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow edge structural validators into `packages/workflows/src/validation/graph-edges.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow schema declaration validators into `packages/workflows/src/validation/schema-declarations.ts`; focused workflow package tests and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow runtime retry decision/scheduling helpers into `packages/workflows/src/runtime/retry.ts` plus shared runtime id generation in `packages/workflows/src/runtime/ids.ts`; focused retry tests, full workflow package tests, and root typecheck passed in Docker.

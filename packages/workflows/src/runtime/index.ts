@@ -18,8 +18,6 @@ import type {
   PromptBuilderRef,
   PromptBuilderResult,
   RecordedAgentPrompt,
-  RetryBackoffPolicy,
-  RetryPolicy,
   RegistryRefId,
   RuntimeSelectionMetadata,
   ScopedStatePath,
@@ -73,6 +71,14 @@ import {
   validateWorkflowOutput,
   validateWorkflowPortValue,
 } from "../validation/index.js";
+import { createWorkflowRuntimeId as createId } from "./ids.js";
+
+export {
+  createRetryScheduledNodeAttempt,
+  decideWorkflowNodeRetry,
+  resolveWorkflowRetryPolicy,
+} from "./retry.js";
+export type { WorkflowNodeRetryDecision, WorkflowNodeRetryDecisionOptions } from "./retry.js";
 
 export type ResolvedAgentProfile = {
   id: string;
@@ -230,108 +236,6 @@ export type OneNodeAgentExecutorResult = {
 export type OneNodeAgentExecutor = (
   context: OneNodeAgentExecutorContext,
 ) => Promise<OneNodeAgentExecutorResult> | OneNodeAgentExecutorResult;
-
-export type WorkflowNodeRetryDecision =
-  | {
-      kind: "retry";
-      policy: RetryPolicy;
-      currentAttempt: number;
-      nextAttempt: number;
-      maxAttempts: number;
-      availableAt: string;
-      delayMs: number;
-    }
-  | {
-      kind: "exhausted";
-      policy: RetryPolicy;
-      currentAttempt: number;
-      maxAttempts: number;
-      error: WorkflowErrorSummary;
-    }
-  | {
-      kind: "none";
-      reason: "no_policy" | "not_retryable" | "retry_on_mismatch";
-    };
-
-export type WorkflowNodeRetryDecisionOptions = {
-  workflow: Pick<WorkflowDefinition, "retry">;
-  node: WorkflowDefinition["nodes"][string];
-  nodeAttempt: Pick<NodeAttempt, "attempt">;
-  error: WorkflowErrorSummary;
-  now?: () => Date | string;
-};
-
-export function resolveWorkflowRetryPolicy(
-  workflow: Pick<WorkflowDefinition, "retry">,
-  node: WorkflowDefinition["nodes"][string],
-): RetryPolicy | undefined {
-  return node.retry ?? workflow.retry;
-}
-
-export function decideWorkflowNodeRetry(options: WorkflowNodeRetryDecisionOptions): WorkflowNodeRetryDecision {
-  const policy = resolveWorkflowRetryPolicy(options.workflow, options.node);
-  if (!policy) {
-    return { kind: "none", reason: "no_policy" };
-  }
-
-  if (options.error.retryable === false) {
-    return { kind: "none", reason: "not_retryable" };
-  }
-
-  if (policy.retryOn && !policy.retryOn.includes(options.error.code)) {
-    return { kind: "none", reason: "retry_on_mismatch" };
-  }
-
-  const currentAttempt = options.nodeAttempt.attempt;
-  if (currentAttempt >= policy.maxAttempts) {
-    return {
-      kind: "exhausted",
-      policy,
-      currentAttempt,
-      maxAttempts: policy.maxAttempts,
-      error: {
-        code: "WorkflowRetryExhaustedError.maxAttemptsExceeded",
-        message: `Workflow node retry policy exhausted after ${currentAttempt} attempt${currentAttempt === 1 ? "" : "s"} (maxAttempts: ${policy.maxAttempts}).`,
-        retryable: false,
-        details: { originalCode: options.error.code, maxAttempts: policy.maxAttempts },
-      },
-    };
-  }
-
-  const nextAttempt = currentAttempt + 1;
-  const delayMs = calculateRetryDelayMs(policy.backoff, nextAttempt);
-  const availableAt = new Date(timestampToMillis(options.now?.() ?? new Date()) + delayMs).toISOString();
-
-  return {
-    kind: "retry",
-    policy,
-    currentAttempt,
-    nextAttempt,
-    maxAttempts: policy.maxAttempts,
-    availableAt,
-    delayMs,
-  };
-}
-
-export function createRetryScheduledNodeAttempt(
-  previousAttempt: NodeAttempt,
-  decision: Extract<WorkflowNodeRetryDecision, { kind: "retry" }>,
-  options: { id?: NodeAttemptId; error?: WorkflowErrorSummary } = {},
-): NodeAttempt {
-  return {
-    ...previousAttempt,
-    id: options.id ?? createId("wna"),
-    attempt: decision.nextAttempt,
-    status: "retry_scheduled",
-    error: options.error ?? previousAttempt.error,
-    availableAt: decision.availableAt,
-    startedAt: undefined,
-    heartbeatAt: undefined,
-    completedAt: undefined,
-    failedAt: undefined,
-    lease: undefined,
-  };
-}
 
 export type OneNodeAgentWorkflowOptions = {
   registry?: Pick<WorkflowRegistry, "promptBuilders">;
@@ -3812,37 +3716,8 @@ function parseIso8601DurationMilliseconds(value: string): number | undefined {
   return ((hours * 60 + minutes) * 60 + seconds) * 1000;
 }
 
-function calculateRetryDelayMs(backoff: RetryBackoffPolicy | undefined, nextAttempt: number): number {
-  if (!backoff || backoff.kind === "none") {
-    return 0;
-  }
-
-  if (backoff.kind === "fixed") {
-    return backoff.delayMs;
-  }
-
-  if (backoff.kind === "linear") {
-    return capRetryDelay(backoff.initialMs + Math.max(0, nextAttempt - 2) * backoff.stepMs, backoff.maxMs);
-  }
-
-  const factor = backoff.factor ?? 2;
-  return capRetryDelay(backoff.initialMs * factor ** Math.max(0, nextAttempt - 2), backoff.maxMs);
-}
-
-function capRetryDelay(delayMs: number, maxMs: number | undefined): number {
-  if (maxMs === undefined) {
-    return delayMs;
-  }
-
-  return Math.min(delayMs, maxMs);
-}
-
 function timestampToMillis(value: Date | string): number {
   return typeof value === "string" ? new Date(value).getTime() : value.getTime();
-}
-
-function createId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function errorSummaryFromCaught(caught: unknown): WorkflowErrorSummary {
