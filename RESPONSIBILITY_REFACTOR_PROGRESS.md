@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow runtime wait-token/time helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/time.ts`.
-- Result: `runtime/index.ts` is down from 3,594 to 3,542 LOC; timestamp factory creation, wait-token expiry resolution, duration conversion, ISO-8601 duration parsing, and timestamp comparison now live behind a focused runtime time module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-human-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the human-node workflow test path through the public package entrypoint, SQLite wait-token persistence, and action expiry/resume helpers.
-- Commit: `a63d20b37a30a1dfbceb816a185f1338b6783ad9` (`refactor(workflows): extract runtime time helpers`).
+- Last batch: Extracted workflow runtime agent prompt-building helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/prompts.ts`, with shared edge payload reader creation in `packages/workflows/src/runtime/edge-payloads.ts`.
+- Result: `runtime/index.ts` is down from 3,542 to 3,225 LOC; prompt template rendering, prompt builder resolution/execution, recorded prompt metadata, and prompt-builder state/edge readers now live behind a focused runtime prompt module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-agent-node.test.ts src/testing/runtime-prompt-workflows.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the prompt workflow path through the public package entrypoint, registered prompt builders, transferred edge payloads, persisted node prompt metadata, and routed one-node workflow tests.
+- Commit: `b443c259709b975070d47e28112de081813c3839` (`refactor(workflows): extract runtime prompt helpers`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with failure/result builder extraction analysis, or extract a very small pure helper only if existing tests clearly cover the seam.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with failure/result builder extraction analysis, or extract persistence/event-store helpers if a small test-backed seam is clearer.
 
 ## Progress log
 
@@ -86,3 +86,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow runtime retry decision/scheduling helpers into `packages/workflows/src/runtime/retry.ts` plus shared runtime id generation in `packages/workflows/src/runtime/ids.ts`; focused retry tests, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime state scoping/read/patch helpers into `packages/workflows/src/runtime/state.ts`; focused code-node test command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime timestamp/wait-token expiry helpers into `packages/workflows/src/runtime/time.ts`; focused human-node runtime test command, full workflow package tests, and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow runtime agent prompt-building helpers into `packages/workflows/src/runtime/prompts.ts` plus shared edge payload reader creation in `packages/workflows/src/runtime/edge-payloads.ts`; focused prompt/agent command, full workflow package tests, and root typecheck passed in Docker.
