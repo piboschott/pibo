@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow human action application types/functions into `packages/workflows/src/runtime/human-action.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
 - Result: `runtime/index.ts` is down from 1,735 to 1,422 LOC; wait-token lookup, human action validation, action persistence, wait resume/cancel mutation, wakeup scheduling, and apply-result shaping now live behind a focused runtime module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-human-node.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-store-facts.test.ts'` passed (the package test script also executed all workflow tests: 138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is the workflow package coverage for human wait creation, registered approve/resume/cancel application, durable wait/action/wakeup persistence, and SQLite restart recovery.
-- Commit: pending.
+- Commit: `8975a613507b16567f60152d11662a574b5fbbea` (`refactor(workflows): extract human action runtime`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` with another small test-backed seam, likely extracting human node dispatch or adapter node dispatch after confirming its existing tests cover success/failure/persistence paths; avoid central dispatch orchestration until there is a focused safety test for the candidate seam.
 
