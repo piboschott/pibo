@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow edge and adapter port compatibility validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/graph-ports.ts`.
 - Result: `validation/index.ts` is down from 737 to 679 LOC and keeps workflow validation orchestration, retry/loop/cycle rules, edge node refs, edge adapter registry-ref checks, and public port/value validation entry points; `graph-ports.ts` owns direct port compatibility plus direct-edge and edge-adapter output compatibility diagnostics.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: pending; final session report records the exact hash.
+- Commit: `8466288245ba16dc04460b01c040c1e9f8ef56a7` (`refactor(workflows): extract graph port validators`).
 - Blockers: none.
 - Exact next step: Consider extracting retry/backoff policy validation from `packages/workflows/src/validation/index.ts` into a focused retry-policy validation module, covered by the existing invalid retry policy tests.
 
