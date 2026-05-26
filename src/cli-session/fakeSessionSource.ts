@@ -455,7 +455,6 @@ function defaultRooms(): CliRoomSummary[] {
 function defaultAgents(): CliAgentSummary[] {
 	return [
 		{ id: "pibo-agent", name: "Pibo Agent", description: "Default Pibo coding agent", profileName: "pibo-agent" },
-		{ id: "codex-compat-openai-web", name: "Codex Compat", description: "Compatibility profile", profileName: "codex-compat-openai-web" },
 	];
 }
 

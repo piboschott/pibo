@@ -47,7 +47,7 @@ async function execute(tool, params = {}) {
 	return result;
 }
 
-test("default registry catalogs Web Annotation tools without selecting them in codex profile", () => {
+test("default registry catalogs Web Annotation tools without selecting them in a built-in profile", () => {
 	const registry = createDefaultPiboPluginRegistry();
 	const catalog = registry.getCapabilityCatalog();
 	const packageInfo = catalog.packages.find((pkg) => pkg.name === "web-annotation-agent-tools");
@@ -64,10 +64,7 @@ test("default registry catalogs Web Annotation tools without selecting them in c
 		assert.equal(toolInfo.hasDefinition, true);
 	}
 
-	const codex = registry.createProfile("codex");
-	for (const name of WEB_ANNOTATION_TOOL_NAMES) {
-		assert.equal(codex.tools.some((tool) => tool.name === name), false, `${name} should not be selected by default`);
-	}
+	assert.deepEqual(registry.getProfileNames(), []);
 });
 
 test("selected profile exposes Web Annotation tools during runtime assembly", async () => {

@@ -9395,7 +9395,7 @@ function createChatHtml(): string {
 }
 
 export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
-	const defaultProfile = options.defaultProfile ?? "codex-compat-openai-web";
+	const defaultProfile = options.defaultProfile ?? "pibo-agent";
 	const dataStore = createDataStore(options);
 	const state: ChatWebAppState = {
 		sessionQuery: new ChatSessionQueryService(dataStore),

@@ -634,14 +634,14 @@ test("local routed TUI renderer delegates messages to Pi components", async () =
 	assert.equal(executionLines.some((line) => line.includes("status: ok")), true);
 });
 
-test("local routed TUI client creates a profile-scoped local Pibo session", async () => {
-	const client = createLocalRoutedTuiClient({ profile: "codex", persistSession: false, thinkingLevel: "high" });
+test("local routed TUI client creates a default local Pibo session", async () => {
+	const client = createLocalRoutedTuiClient({ persistSession: false, thinkingLevel: "high" });
 
 	try {
 		assert.match(client.piboSession.id, /^ps_[0-9a-f-]{36}$/);
 		assert.equal(client.piboSession.channel, "local-tui");
 		assert.equal(client.piboSession.kind, "local");
-		assert.equal(client.piboSession.profile, "codex-compat-openai-web");
+		assert.equal(client.piboSession.profile, "pibo-agent");
 		assert.equal(client.piboSession.title, "default");
 		assert.equal(client.router.options.thinkingLevel, "high");
 		assert.ok(client.capabilities.actions.some((action) => action.name === "status"));

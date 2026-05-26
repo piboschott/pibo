@@ -640,7 +640,7 @@ test("chat web app maps authenticated users to chat sessions", async () => {
 		assert.match(session.session.id, /^ps_[0-9a-f-]{36}$/);
 		assert.equal(session.session.channel, "pibo.chat-web");
 		assert.equal(session.session.kind, "chat");
-		assert.equal(session.session.profile, "codex-compat-openai-web");
+		assert.equal(session.session.profile, "pibo-agent");
 		assert.equal(session.session.ownerScope, "user:user-1");
 
 		const message = await fetch(`${baseURL}/api/chat/message`, {
@@ -6289,7 +6289,7 @@ test("chat web app accepts same-origin mutations behind a local reverse proxy", 
 				"x-forwarded-proto": "http",
 				"x-test-user": "user-1",
 			},
-			body: JSON.stringify({ profile: "codex-compat-openai-web" }),
+			body: JSON.stringify({ profile: "pibo-agent" }),
 		});
 		assert.equal(response.status, 201);
 		const payload = await response.json();

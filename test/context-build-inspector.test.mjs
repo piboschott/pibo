@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { InitialSessionContext } from "../dist/core/profiles.js";
 import { inspectPiboContextBuild } from "../dist/core/context-build.js";
-import { createDefaultPiboPluginRegistry } from "../dist/plugins/builtin.js";
+import { createDefaultPiboProfile } from "../dist/plugins/builtin.js";
 import { createWebSearchToolProfile } from "../dist/tools/web-search.js";
 
 function findNode(nodes, predicate) {
@@ -17,8 +17,8 @@ function findNode(nodes, predicate) {
 	return undefined;
 }
 
-test("codex context build includes compact Pibo native tooling context", async () => {
-	const snapshot = await inspectPiboContextBuild({ profile: createDefaultPiboPluginRegistry().createProfile("codex") });
+test("default context build includes compact Pibo native tooling context", async () => {
+	const snapshot = await inspectPiboContextBuild({ profile: createDefaultPiboProfile() });
 	const nativeTooling = findNode(snapshot.nodes, (node) => node.path?.endsWith("context/pibo-native-tooling.md"));
 
 	assert.ok(nativeTooling, "native tooling context file should exist");

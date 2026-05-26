@@ -16,10 +16,12 @@ import { createRuntimeToolProfile } from "../tools/runtime/tool.js";
 import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } from "../auth/login-actions.js";
 import { loadModelCatalog } from "../apps/chat/model-catalog.js";
 import { piboCodexCompatPlugin } from "./codex-compat.js";
-import { addPiboNativeToolingContext, registerPiboNativeTooling } from "./native-tooling.js";
+import { addPiboNativeToolingContext, PIBO_NATIVE_TOOLING_CONTEXT_FILE_KEY, PIBO_NATIVE_TOOLING_CONTEXT_FILE_PATH, registerPiboNativeTooling } from "./native-tooling.js";
 import { piboWebAnnotationsPlugin } from "./web-annotations.js";
 import { definePiboPlugin, PiboPluginRegistry } from "./registry.js";
 import type { PiboPlugin, PiboProfileBuildContext } from "./types.js";
+
+export const DEFAULT_PIBO_PROFILE_NAME = "pibo-agent";
 
 const GATEWAY_PROFILE_TOOLS = ["pibo_gateway_send"] as const;
 const PIBO_PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -178,16 +180,6 @@ export const piboCorePlugin = definePiboPlugin({
 		api.registerTool(createWebSearchToolProfile());
 		api.registerTool(createRuntimeToolProfile());
 		registerPiboNativeTooling(api);
-		api.registerProfile({
-			name: "pibo-kimi-coding",
-			aliases: ["kimi", "kimi-coding"],
-			description: "Pibo profile pinned to Kimi For Coding. Requires KIMI_API_KEY or configured kimi-coding auth.",
-			create(context) {
-				return createBaseProfileBuilder("pibo-kimi-coding", context)
-					.withModel({ provider: "kimi-coding", id: "kimi-for-coding" })
-					.createSession();
-			},
-		});
 		api.registerGatewayAction({
 			name: "status",
 			description: "Return current session status with context usage quota.",
@@ -457,8 +449,42 @@ export function createDefaultPiboPluginRegistry(): PiboPluginRegistry {
 	return PiboPluginRegistry.create({ plugins: createDefaultPiboPlugins() });
 }
 
+export function selectDefaultPiboProfileName(registry: PiboPluginRegistry): string {
+	const names = registry.getProfileNames();
+	return names.includes(DEFAULT_PIBO_PROFILE_NAME) ? DEFAULT_PIBO_PROFILE_NAME : names[0] ?? DEFAULT_PIBO_PROFILE_NAME;
+}
+
 export function createDefaultPiboProfile(): InitialSessionContext {
-	return createDefaultPiboPluginRegistry().createProfile("codex-compat-openai-web");
+	return new InitialSessionContextBuilder(DEFAULT_PIBO_PROFILE_NAME)
+		.addSkill({
+			name: "pi-agent-harness",
+			path: builtinSkillPath("pi-agent-harness"),
+			kind: "builtin",
+		})
+		.addContextFile({
+			key: PIBO_NATIVE_TOOLING_CONTEXT_FILE_KEY,
+			label: "Pibo Native Tooling",
+			path: PIBO_NATIVE_TOOLING_CONTEXT_FILE_PATH,
+		})
+		.createSession();
+}
+
+export function resolvePiboProfileNameFromRegistryOrDefault(registry: PiboPluginRegistry, profileName?: string): string {
+	const requestedProfileName = profileName ?? selectDefaultPiboProfileName(registry);
+	try {
+		return registry.resolveProfileName(requestedProfileName);
+	} catch (error) {
+		if (requestedProfileName === DEFAULT_PIBO_PROFILE_NAME) return DEFAULT_PIBO_PROFILE_NAME;
+		throw error;
+	}
+}
+
+export function createPiboProfileFromRegistryOrDefault(registry: PiboPluginRegistry, profileName?: string): InitialSessionContext {
+	const resolvedProfileName = resolvePiboProfileNameFromRegistryOrDefault(registry, profileName);
+	if (resolvedProfileName === DEFAULT_PIBO_PROFILE_NAME && !registry.getProfileNames().includes(DEFAULT_PIBO_PROFILE_NAME)) {
+		return createDefaultPiboProfile();
+	}
+	return registry.createProfile(resolvedProfileName);
 }
 
 export function createGatewayProducerPiboProfile(): InitialSessionContext {
