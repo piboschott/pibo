@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow runtime retry decision/scheduling helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/retry.ts`.
-- Result: `runtime/index.ts` is down from 3,909 to 3,784 LOC and now re-exports the public retry helpers/types from a focused module; shared runtime id generation lives in `packages/workflows/src/runtime/ids.ts`.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-retry-policy.test.ts'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `4aa060d5630cfb1f2a5aac408ee8b3a7e493673d` (`refactor(workflows): extract runtime retry helpers`).
+- Last batch: Extracted workflow runtime state/view/patch helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/state.ts`.
+- Result: `runtime/index.ts` is down from 3,784 to 3,594 LOC; state scoping, state readers, code-node patch validation/application, and `WorkflowStateAccessViolation` now live behind a focused runtime state module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-code-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
+- Commit: pending (`refactor(workflows): extract runtime state helpers`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with a test-backed extraction of another pure seam, likely wait-token/time helpers or state patch/read helpers, before touching larger dispatch orchestration.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with the wait-token/time helper extraction, or analyze failure/result builder extraction before touching dispatch orchestration.
 
 ## Progress log
 
@@ -84,3 +84,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow edge structural validators into `packages/workflows/src/validation/graph-edges.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow schema declaration validators into `packages/workflows/src/validation/schema-declarations.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime retry decision/scheduling helpers into `packages/workflows/src/runtime/retry.ts` plus shared runtime id generation in `packages/workflows/src/runtime/ids.ts`; focused retry tests, full workflow package tests, and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow runtime state scoping/read/patch helpers into `packages/workflows/src/runtime/state.ts`; focused code-node test command, full workflow package tests, and root typecheck passed in Docker.
