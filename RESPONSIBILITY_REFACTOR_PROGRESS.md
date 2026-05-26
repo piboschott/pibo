@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow state access and global write-conflict validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/state-access.ts`.
-- Result: `validation/index.ts` is down to 737 LOC and keeps top-level workflow validation orchestration, port/value validation, graph cycle checks, retry/loop checks, and edge compatibility checks; `state-access.ts` owns node state reads/writes, scoped state path parsing, edge-write rejection, unknown global state paths, and ambiguous global write diagnostics.
+- Last batch: Extracted workflow edge and adapter port compatibility validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/graph-ports.ts`.
+- Result: `validation/index.ts` is down from 737 to 679 LOC and keeps workflow validation orchestration, retry/loop/cycle rules, edge node refs, edge adapter registry-ref checks, and public port/value validation entry points; `graph-ports.ts` owns direct port compatibility plus direct-edge and edge-adapter output compatibility diagnostics.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: current batch commit `refactor(workflows): extract state access validators`; final session report records the exact hash.
+- Commit: pending; final session report records the exact hash.
 - Blockers: none.
-- Exact next step: Consider extracting edge/adapter port compatibility helpers from `packages/workflows/src/validation/index.ts` into a focused graph-ports submodule, protected by existing workflow validation tests for incompatible direct edges and adapter output compatibility.
+- Exact next step: Consider extracting retry/backoff policy validation from `packages/workflows/src/validation/index.ts` into a focused retry-policy validation module, covered by the existing invalid retry policy tests.
 
 ## Progress log
 
@@ -78,3 +78,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted pure workflow JSON Schema validation/equality helpers into `packages/workflows/src/validation/json-schema.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow registry-reference validators into `packages/workflows/src/validation/registry-refs.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow state access/write-conflict validators into `packages/workflows/src/validation/state-access.ts`; focused workflow package tests and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow graph port compatibility validators into `packages/workflows/src/validation/graph-ports.ts`; focused workflow package tests and root typecheck passed in Docker.

@@ -1,9 +1,14 @@
 export * from "./diagnostics.js";
+export { areWorkflowPortsDirectlyCompatible } from "./graph-ports.js";
 export { validateJsonSchemaSubset, validateJsonValueAgainstSchema } from "./json-schema.js";
 export type { JsonSchemaSubsetValidationOptions, WorkflowValueValidationOptions } from "./json-schema.js";
 export type { WorkflowValidationOptions } from "./registry-refs.js";
 
-import { semanticJsonSchemasEqual, validateJsonSchemaSubset, validateJsonValueAgainstSchema } from "./json-schema.js";
+import {
+  validateWorkflowEdgeAdapterOutputCompatibility,
+  validateWorkflowEdgePortCompatibility,
+} from "./graph-ports.js";
+import { validateJsonSchemaSubset, validateJsonValueAgainstSchema } from "./json-schema.js";
 import type { WorkflowValueValidationOptions } from "./json-schema.js";
 import {
   isRegisteredAdapterRef,
@@ -38,22 +43,6 @@ export function validateWorkflow(definition: WorkflowDefinition, options: Workfl
   return validateWorkflowDefinitionSchemas(definition, options);
 }
 
-export function areWorkflowPortsDirectlyCompatible(source: WorkflowPort, target: WorkflowPort): boolean {
-  if (source.kind !== target.kind) {
-    return false;
-  }
-
-  if (source.kind === "text" && target.kind === "text") {
-    return true;
-  }
-
-  if (source.kind === "json" && target.kind === "json") {
-    return semanticJsonSchemasEqual(source.schema, target.schema);
-  }
-
-  return false;
-}
-
 export function validateWorkflowDefinitionSchemas(
   definition: WorkflowDefinition,
   options: WorkflowValidationOptions = {},
@@ -83,7 +72,8 @@ export function validateWorkflowDefinitionSchemas(
   for (const [edgeId, edge] of Object.entries(definition.edges)) {
     validateWorkflowEdgeNodeRefs(definition, edgeId, edge, diagnostics);
     validateWorkflowEdgeGuardRef(edgeId, edge, diagnostics, options);
-    validateWorkflowEdgeAdapterRef(definition, edgeId, edge, diagnostics, options);
+    validateWorkflowEdgeAdapterRef(edgeId, edge, diagnostics, options);
+    validateWorkflowEdgeAdapterOutputCompatibility(definition, edgeId, edge, diagnostics);
     validateWorkflowEdgePortCompatibility(definition, edgeId, edge, diagnostics);
 
     if (edge.adapter) {
@@ -623,7 +613,6 @@ function validateWorkflowEdgeNodeRefs(
 }
 
 function validateWorkflowEdgeAdapterRef(
-  definition: Pick<WorkflowDefinition, "nodes">,
   edgeId: string,
   edge: WorkflowEdgeDefinition,
   diagnostics: WorkflowDiagnostic[],
@@ -649,54 +638,6 @@ function validateWorkflowEdgeAdapterRef(
       ownerLabel: `Workflow edge '${edgeId}'`,
     });
   }
-
-  const targetNode = definition.nodes[edge.to.nodeId];
-  if (!targetNode?.input) {
-    return;
-  }
-
-  if (areWorkflowPortsDirectlyCompatible(edge.adapter.output, targetNode.input)) {
-    return;
-  }
-
-  diagnostics.push({
-    code: "WorkflowGraphError.incompatibleEdgeAdapterOutput",
-    message: `Workflow edge '${edgeId}' declares an adapter output that is incompatible with the target input port.`,
-    severity: "error",
-    edgeId,
-    path: `$.edges.${edgeId}.adapter.output`,
-    hint: "Set the edgeAdapter output port to the exact target input contract, or insert a visible adapter node whose output matches the downstream node.",
-  });
-}
-
-function validateWorkflowEdgePortCompatibility(
-  definition: Pick<WorkflowDefinition, "nodes">,
-  edgeId: string,
-  edge: WorkflowEdgeDefinition,
-  diagnostics: WorkflowDiagnostic[],
-): void {
-  if (edge.adapter) {
-    return;
-  }
-
-  const sourceNode = definition.nodes[edge.from.nodeId];
-  const targetNode = definition.nodes[edge.to.nodeId];
-  if (!sourceNode || !targetNode || !sourceNode.output || !targetNode.input) {
-    return;
-  }
-
-  if (areWorkflowPortsDirectlyCompatible(sourceNode.output, targetNode.input)) {
-    return;
-  }
-
-  diagnostics.push({
-    code: "WorkflowGraphError.incompatibleEdgePorts",
-    message: `Workflow edge '${edgeId}' connects incompatible source output and target input ports.`,
-    severity: "error",
-    edgeId,
-    path: `$.edges.${edgeId}`,
-    hint: "Use matching text ports, use JSON ports with the same schema contract, or add an explicit edgeAdapter/adapter node to transform the payload.",
-  });
 }
 
 function validateNodeSchemas(
