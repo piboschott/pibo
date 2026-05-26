@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow code node dispatch types/functions into `packages/workflows/src/runtime/code-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
 - Result: `runtime/index.ts` is down from 1,037 to 753 LOC; code node handler resolution, scoped state/edge readers, command collection/emission, patch validation/application, output validation, event persistence, and code-handler error summarization now live in a focused runtime module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-code-node.test.ts'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed (138 passing); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for code-node dispatch plus mixed code/agent/human/adapter/nested workflow execution.
-- Commit: pending this run (`refactor(workflows): extract code node runtime`).
+- Commit: `5dc1f1735f0692351d4653f0c487152ec3986c58` (`refactor(workflows): extract code node runtime`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/runtime/index.ts` by extracting nested workflow node dispatch into `packages/workflows/src/runtime/nested-workflow-node.ts`; existing nested workflow and mixed workflow tests cover registered child execution, missing child refs, incomplete child runs, child output validation, and persistence-adjacent behavior.
 
