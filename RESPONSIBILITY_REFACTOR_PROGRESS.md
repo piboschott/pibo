@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow loop/cycle validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/graph-cycles.ts`.
 - Result: `validation/index.ts` is down from 530 to 379 LOC and now delegates loop policy guard checks, bounded back-edge detection, and unbounded cycle traversal diagnostics to `graph-cycles.ts`.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `082528f978ff7dcec523837a338799d0073d8a35` (`refactor(workflows): extract graph cycle validators`).
+- Commit: `a3b6ed2444e153d2da602384f0bc43add2888612` (`refactor(workflows): extract graph cycle validators`).
 - Blockers: none.
 - Exact next step: Consider extracting edge structural validation from `packages/workflows/src/validation/index.ts` into a focused graph-edges module: edge source/target node references plus edge adapter registry-ref checks, keeping existing unknown edge/node and adapter-ref tests as the safety net.
 
