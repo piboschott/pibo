@@ -3,6 +3,7 @@ export { areWorkflowPortsDirectlyCompatible } from "./graph-ports.js";
 export { validateJsonSchemaSubset, validateJsonValueAgainstSchema } from "./json-schema.js";
 export type { JsonSchemaSubsetValidationOptions, WorkflowValueValidationOptions } from "./json-schema.js";
 export type { WorkflowValidationOptions } from "./registry-refs.js";
+export { validateWorkflowPort } from "./schema-declarations.js";
 
 import { validateWorkflowGraphCycles } from "./graph-cycles.js";
 import { validateWorkflowEdgeAdapterRef, validateWorkflowEdgeNodeRefs } from "./graph-edges.js";
@@ -10,7 +11,7 @@ import {
   validateWorkflowEdgeAdapterOutputCompatibility,
   validateWorkflowEdgePortCompatibility,
 } from "./graph-ports.js";
-import { validateJsonSchemaSubset, validateJsonValueAgainstSchema } from "./json-schema.js";
+import { validateJsonValueAgainstSchema } from "./json-schema.js";
 import type { WorkflowValueValidationOptions } from "./json-schema.js";
 import {
   validateWorkflowAdapterNodeRef,
@@ -23,6 +24,11 @@ import {
 import type { WorkflowValidationOptions } from "./registry-refs.js";
 import { validateWorkflowRetryPolicy } from "./retry-policy.js";
 import {
+  validateWorkflowGlobalStateSchemaDeclarations,
+  validateWorkflowNodeSchemaDeclarations,
+  validateWorkflowPort,
+} from "./schema-declarations.js";
+import {
   validateWorkflowGlobalStateWriteConflicts,
   validateWorkflowNodeStateAccess,
 } from "./state-access.js";
@@ -31,7 +37,6 @@ import type {
   ValidationResult,
   WorkflowDefinition,
   WorkflowDiagnostic,
-  WorkflowNodeDefinition,
   WorkflowPort,
 } from "../types/index.js";
 
@@ -51,7 +56,7 @@ export function validateWorkflowDefinitionSchemas(
   validateWorkflowRetryPolicy(definition.retry, "$.retry", diagnostics);
 
   for (const [nodeId, node] of Object.entries(definition.nodes)) {
-    validateNodeSchemas(nodeId, node, diagnostics);
+    validateWorkflowNodeSchemaDeclarations(nodeId, node, diagnostics);
     validateWorkflowRetryPolicy(node.retry, `$.nodes.${nodeId}.retry`, diagnostics, { nodeId });
     validateWorkflowAgentNodeRuntimeSelection(nodeId, node, diagnostics, options);
     validateWorkflowAgentNodePromptBuilderRef(nodeId, node, diagnostics, options);
@@ -76,38 +81,11 @@ export function validateWorkflowDefinitionSchemas(
     }
   }
 
-  if (definition.state?.global) {
-    for (const [path, field] of Object.entries(definition.state.global)) {
-      diagnostics.push(
-        ...validateJsonSchemaSubset(field.schema, {
-          path: `$.state.global.${path}.schema`,
-          requireObjectRoot: false,
-        }),
-      );
-    }
-  }
+  validateWorkflowGlobalStateSchemaDeclarations(definition, diagnostics);
 
   return diagnostics.some((diagnostic) => diagnostic.severity === "error")
     ? { ok: false, diagnostics }
     : { ok: true, diagnostics };
-}
-
-export function validateWorkflowPort(
-  port: WorkflowPort,
-  path: string,
-  diagnostics: WorkflowDiagnostic[],
-  target: Pick<WorkflowDiagnostic, "nodeId" | "edgeId"> = {},
-): void {
-  if (port.kind !== "json") {
-    return;
-  }
-
-  diagnostics.push(
-    ...validateJsonSchemaSubset(port.schema, {
-      path: `${path}.schema`,
-      requireObjectRoot: true,
-    }).map((diagnostic) => ({ ...diagnostic, ...target })),
-  );
 }
 
 export function validateWorkflowInput(
@@ -282,29 +260,6 @@ export function validateWorkflowPortValue(
   return diagnostics.some((diagnostic) => diagnostic.severity === "error")
     ? { ok: false, diagnostics }
     : { ok: true, diagnostics };
-}
-
-function validateNodeSchemas(
-  nodeId: string,
-  node: WorkflowNodeDefinition,
-  diagnostics: WorkflowDiagnostic[],
-): void {
-  if (node.input) {
-    validateWorkflowPort(node.input, `$.nodes.${nodeId}.input`, diagnostics, { nodeId });
-  }
-
-  if (node.output) {
-    validateWorkflowPort(node.output, `$.nodes.${nodeId}.output`, diagnostics, { nodeId });
-  }
-
-  if (node.kind === "human" && node.schema) {
-    diagnostics.push(
-      ...validateJsonSchemaSubset(node.schema, {
-        path: `$.nodes.${nodeId}.schema`,
-        requireObjectRoot: true,
-      }).map((diagnostic) => ({ ...diagnostic, nodeId })),
-    );
-  }
 }
 
 function withDiagnosticTarget(

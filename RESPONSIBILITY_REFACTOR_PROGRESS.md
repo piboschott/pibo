@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow edge structural validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/graph-edges.ts`.
-- Result: `validation/index.ts` is down from 379 to 318 LOC and now delegates edge source/target node reference checks plus edge adapter transform ref validation to `graph-edges.ts`.
+- Last batch: Extracted workflow schema declaration validation from `packages/workflows/src/validation/index.ts` into `packages/workflows/src/validation/schema-declarations.ts`.
+- Result: `validation/index.ts` is down from 318 to 273 LOC and now delegates workflow/node/edge-adapter/global-state schema declaration checks while keeping public exports stable.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `029cf955fcb0c2a3763de215c7c1cd19fd57e978` (`refactor(workflows): extract graph edge validators`).
+- Commit: pending until this batch is committed.
 - Blockers: none.
-- Exact next step: Consider extracting the remaining node schema validation from `packages/workflows/src/validation/index.ts` into a focused node-schema module, or pause workflow validation splitting and move to the next higher-value large-file seam if review prefers fewer validation modules.
+- Exact next step: Pause further `packages/workflows/src/validation/index.ts` splitting unless new seams appear; next high-value workflow target is a test-backed extraction from `packages/workflows/src/runtime/index.ts`, starting with analysis of runtime boundary helpers and dispatch seams.
 
 ## Progress log
 
@@ -82,3 +82,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow retry/backoff policy validators into `packages/workflows/src/validation/retry-policy.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow loop/cycle validators into `packages/workflows/src/validation/graph-cycles.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow edge structural validators into `packages/workflows/src/validation/graph-edges.ts`; focused workflow package tests and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow schema declaration validators into `packages/workflows/src/validation/schema-declarations.ts`; focused workflow package tests and root typecheck passed in Docker.
