@@ -53,7 +53,8 @@
 - `packages/workflows/src/runtime/retry.ts` now owns workflow node retry policy resolution, retry/exhaustion decisions, scheduled retry attempt cloning, and retry backoff delay calculation. `runtime/index.ts` preserves the public retry helper/type exports via re-export, and the existing `runtime-retry-policy.test.ts` and state-loop integration tests cover this seam.
 - `packages/workflows/src/runtime/ids.ts` owns the shared runtime id generation helper used by `runtime/index.ts` and retry scheduling. Keep this small and runtime-specific; avoid turning it into a generic utilities module.
 - `packages/workflows/src/runtime/state.ts` now owns runtime state scoping/view helpers, local-state snapshots, declared state readers, code-node patch validation/application, and `WorkflowStateAccessViolation`. Existing code-node, one-node, mixed runtime, state-loop, and persistence tests cover this seam.
-- Candidate next runtime seams in `runtime/index.ts`: wait-token expiry/time helpers near the bottom of the file and failure/result builders. Prefer pure helpers with existing tests before extracting dispatch functions.
+- `packages/workflows/src/runtime/time.ts` now owns runtime timestamp factories, wait-token expiry calculation, duration-to-milliseconds conversion, ISO-8601 duration parsing, and timestamp comparison. Existing human-node runtime tests cover minute-based expiry and wait-token persistence/resume paths; add direct tests before changing duration parsing semantics.
+- Candidate next runtime seams in `runtime/index.ts`: failure/result builders and other pure bottom-of-file helpers. Prefer analysis or tests before extracting dispatch orchestration.
 
 ## Commit policy
 

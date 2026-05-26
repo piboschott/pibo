@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow runtime state/view/patch helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/state.ts`.
-- Result: `runtime/index.ts` is down from 3,784 to 3,594 LOC; state scoping, state readers, code-node patch validation/application, and `WorkflowStateAccessViolation` now live behind a focused runtime state module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-code-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed.
-- Commit: `feef0bef52568d2ebd19817bbb789b705758f916` (`refactor(workflows): extract runtime state helpers`).
+- Last batch: Extracted workflow runtime wait-token/time helpers from `packages/workflows/src/runtime/index.ts` into `packages/workflows/src/runtime/time.ts`.
+- Result: `runtime/index.ts` is down from 3,594 to 3,542 LOC; timestamp factory creation, wait-token expiry resolution, duration conversion, ISO-8601 duration parsing, and timestamp comparison now live behind a focused runtime time module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-human-node.test.ts'` passed (package script ran all 138 workflow tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E was the human-node workflow test path through the public package entrypoint, SQLite wait-token persistence, and action expiry/resume helpers.
+- Commit: `11ab6287a8304052dcdaab0d6494faaa917cadae` (`refactor(workflows): extract runtime time helpers`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with the wait-token/time helper extraction, or analyze failure/result builder extraction before touching dispatch orchestration.
+- Exact next step: Continue `packages/workflows/src/runtime/index.ts` with failure/result builder extraction analysis, or extract a very small pure helper only if existing tests clearly cover the seam.
 
 ## Progress log
 
@@ -85,3 +85,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow schema declaration validators into `packages/workflows/src/validation/schema-declarations.ts`; focused workflow package tests and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime retry decision/scheduling helpers into `packages/workflows/src/runtime/retry.ts` plus shared runtime id generation in `packages/workflows/src/runtime/ids.ts`; focused retry tests, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow runtime state scoping/read/patch helpers into `packages/workflows/src/runtime/state.ts`; focused code-node test command, full workflow package tests, and root typecheck passed in Docker.
+- 2026-05-26: Extracted workflow runtime timestamp/wait-token expiry helpers into `packages/workflows/src/runtime/time.ts`; focused human-node runtime test command, full workflow package tests, and root typecheck passed in Docker.
