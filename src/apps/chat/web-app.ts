@@ -241,6 +241,11 @@ import {
 	withoutRawWorkflowIrParseDiagnostic,
 	type WorkflowDraftPatchBody,
 } from "./workflow-validation-helpers.js";
+import {
+	validateNoHiddenLlmCoercion,
+	validateNoInlineExecutableCode,
+	validateWorkflowDefinitionSecurityBoundary,
+} from "./workflow-v2-security-validation.js";
 
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
@@ -2559,21 +2564,6 @@ function validateWorkflowDefinitionForV2(
 	return sanitizeWorkflowDiagnostics(diagnostics);
 }
 
-function validateWorkflowDefinitionSecurityBoundary(definition: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
-	validateNoInlineExecutableCode(definition, "$", diagnostics, {});
-	validateNoHiddenLlmCoercion(definition, "$", diagnostics, {});
-	for (const key of Object.keys(definition)) {
-		if (!RAW_XSTATE_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
-		diagnostics.push({
-			code: "WorkflowSecurityError.rawXStateAuthoring",
-			message: `Workflow definition declares raw XState field '${key}', which is projection-only and not editable in Workflow UI Authoring V2.`,
-			severity: "error",
-			path: `$.${key}`,
-			hint: "Edit and publish Pibo Workflow IR only; XState is generated as a visualization/projection from workflow run records.",
-		});
-	}
-}
-
 function validateWorkflowInitialLike(value: unknown, nodeIds: ReadonlySet<string>, diagnostics: WorkflowDraftDiagnostic[]): void {
 	const initialNodes = typeof value === "string"
 		? [value]
@@ -2829,93 +2819,6 @@ function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodes: P
 	if (value.guard !== undefined) validateWorkflowGuardRefLike(edgeId, value.guard, diagnostics);
 	if (value.adapter !== undefined) validateWorkflowEdgeAdapterLike(edgeId, value.adapter, nodes, value, diagnostics);
 	else validateWorkflowEdgeDirectCompatibility(edgeId, value, nodes, diagnostics);
-}
-
-const INLINE_EXECUTABLE_FIELD_NAMES = new Set([
-	"code",
-	"script",
-	"command",
-	"eval",
-	"javascript",
-	"shell",
-	"typescript",
-	"inlinecode",
-	"inlinehandler",
-	"inlinetypescript",
-	"inlinejavascript",
-	"inlineshell",
-	"handlersource",
-	"sourcecode",
-]);
-
-const HIDDEN_LLM_COERCION_FIELD_NAMES = new Set([
-	"llmcoercion",
-	"coercewithllm",
-	"hiddenllmcoercion",
-	"autocoerce",
-	"llmadapter",
-]);
-
-const RAW_XSTATE_FIELD_NAMES = new Set([
-	"xstate",
-	"xstatemachine",
-	"xstatesource",
-	"xstatejson",
-]);
-
-function validateNoInlineExecutableCode(
-	value: PiboJsonObject,
-	path: string,
-	diagnostics: WorkflowDraftDiagnostic[],
-	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
-): void {
-	for (const key of Object.keys(value)) {
-		if (!INLINE_EXECUTABLE_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
-		diagnostics.push({
-			code: "WorkflowSecurityError.inlineExecutableCode",
-			message: `${workflowDiagnosticOwnerLabel(target)} declares inline executable field '${key}', which is not allowed in Workflow UI Authoring V2.`,
-			severity: "error",
-			path: `${path}.${key}`,
-			...target,
-			hint: "Use registered handler, adapter, guard, prompt asset, or human action refs selected from V2 pickers instead of inline JavaScript, TypeScript, shell, eval, or arbitrary executable code.",
-		});
-	}
-}
-
-function validateNoHiddenLlmCoercion(
-	value: PiboJsonObject,
-	path: string,
-	diagnostics: WorkflowDraftDiagnostic[],
-	target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">,
-): void {
-	for (const key of Object.keys(value)) {
-		if (!HIDDEN_LLM_COERCION_FIELD_NAMES.has(key.replace(/[^a-zA-Z0-9]/g, "").toLowerCase())) continue;
-		diagnostics.push({
-			code: "WorkflowSecurityError.hiddenLlmCoercion",
-			message: `${workflowDiagnosticOwnerLabel(target)} declares hidden LLM coercion field '${key}', which is not allowed in Workflow UI Authoring V2.`,
-			severity: "error",
-			path: `${path}.${key}`,
-			...target,
-			hint: "Use a visible registered adapter node or edge adapter when schemas are incompatible.",
-		});
-	}
-	const kind = typeof value.kind === "string" ? value.kind.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() : "";
-	if (kind === "llm" || kind === "llmadapter" || kind === "llmcoercion") {
-		diagnostics.push({
-			code: "WorkflowSecurityError.hiddenLlmCoercion",
-			message: `${workflowDiagnosticOwnerLabel(target)} uses LLM coercion kind '${value.kind}', which is not allowed in Workflow UI Authoring V2.`,
-			severity: "error",
-			path: `${path}.kind`,
-			...target,
-			hint: "Use deterministic registered adapters instead of hidden LLM coercion.",
-		});
-	}
-}
-
-function workflowDiagnosticOwnerLabel(target: Pick<WorkflowDraftDiagnostic, "nodeId" | "edgeId">): string {
-	if (target.nodeId) return `Workflow node '${target.nodeId}'`;
-	if (target.edgeId) return `Workflow edge '${target.edgeId}'`;
-	return "Workflow definition";
 }
 
 function validateWorkflowPromptAssetRefLike(
