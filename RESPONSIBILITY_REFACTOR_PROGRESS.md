@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted Workflow Builder settings/prompt-asset pure model helpers into `src/apps/chat-ui/src/workflows/workflow-settings-model.ts` and added `test/chat-ui-workflow-settings-model.test.mjs`.
-- Result: `WorkflowsArea.tsx` no longer owns settings form shaping/application, global state field serialization, metadata list parsing, prompt asset ref reading, or prompt asset pin metadata updates.
-- Evidence: `WorkflowsArea.tsx` dropped from 2,847 to 2,659 LOC; the new `workflow-settings-model.ts` is 211 LOC with focused coverage for settings round trips and prompt-asset pin updates.
-- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-workflow-settings-model.test.mjs` passed; Docker Workflow Builder helper group `node --test test/chat-ui-workflow-settings-model.test.mjs test/chat-ui-workflow-node-defaults.test.mjs test/chat-ui-workflow-graph-model.test.mjs test/chat-ui-workflow-edge-adapters.test.mjs test/chat-ui-workflow-inspector-forms.test.mjs test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `ea66253` (`refactor(chat-ui): extract workflow settings model`).
-- Blockers: worker Chat Web server on port 4802 remains unavailable for route smoke checks; not blocking this pure model extraction because focused tests and typechecks passed.
-- Exact next step: Continue shrinking `WorkflowsArea.tsx`; the next safe seams are either graph canvas component/callback extraction (backed by `workflow-graph-model` tests) or a focused picker/ref display extraction for Agent/Code/Adapter/Workflow node editor cards.
+- Last batch: Extracted Workflow Builder graph canvas/controller into `src/apps/chat-ui/src/workflows/WorkflowGraphCanvas.tsx` and shared picker label helpers into `src/apps/chat-ui/src/workflows/workflow-picker-labels.ts`.
+- Result: `WorkflowsArea.tsx` no longer owns React Flow imports, graph edit state/callbacks, graph node-card rendering, selected-element descriptions, graph picker loading, or layout-save orchestration; it keeps Workflow Builder inspector rendering behind the explicit `WorkflowGraphInspectorSlotProps` render slot.
+- Evidence: `WorkflowsArea.tsx` dropped from 2,659 to 2,166 LOC; the new `WorkflowGraphCanvas.tsx` is 511 LOC and keeps the canvas/controller below the 1,000 LOC target.
+- Validation: host `git diff --check` passed; Docker Workflow Builder helper group `node --test test/chat-ui-workflow-settings-model.test.mjs test/chat-ui-workflow-node-defaults.test.mjs test/chat-ui-workflow-graph-model.test.mjs test/chat-ui-workflow-edge-adapters.test.mjs test/chat-ui-workflow-inspector-forms.test.mjs test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 remains unavailable for route smoke checks; not blocking this component extraction because focused tests and typechecks passed.
+- Exact next step: Continue shrinking `WorkflowsArea.tsx`; the next safe seams are the focused node/edge inspector React rendering modules, or the prompt-asset editor UI/effect boundary now that graph canvas ownership is isolated.
 
 ## Progress log
 
+- 2026-05-27: Extracted Workflow Builder graph canvas/controller into `src/apps/chat-ui/src/workflows/WorkflowGraphCanvas.tsx` with an inspector render slot and shared workflow picker label helpers; host `git diff --check`, Docker Workflow Builder helper tests, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.
 - 2026-05-26: Prepared dedicated upstream/dev-based worktree, Docker dev worker, Ralph room, tracking files, and stopped Ralph job `ralph_08b432d8-b80f-49b2-bd25-da1c84cfc16e` with only `max-iterations=200` as stop condition.
 - 2026-05-26: Tightened Ralph prompt to broaden scope from responsibility-only refactoring to code-quality refactoring/analysis, require reading progress/insights and git history at run start, and allow analysis, naming, boundary, test-safety, and architecture-cleanup batches.
 - 2026-05-26: Extracted pure workflow JSON Schema validation/equality helpers into `packages/workflows/src/validation/json-schema.ts`; focused workflow package tests and root typecheck passed in Docker.
