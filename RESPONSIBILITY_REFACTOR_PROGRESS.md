@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the remaining `SessionTracePane` web-annotation entry/list presentation into `src/apps/chat-ui/src/web-annotations.tsx`.
-- Result: `App.tsx` now imports `WebAnnotationsEntryPoints`, `WebAnnotationsSessionPanel`, and the shared `compactWebAnnotationError` formatter from the dedicated web-annotations module. Web annotation API transport remains in `api-web-annotations.ts`; state/query ownership remains in `use-session-web-annotations.ts`. `App.tsx` fell from 4,821 LOC to 4,443 LOC; the new component module is 425 LOC.
-- Evidence: Docker source sanity confirmed the new module exists, `App.tsx` imports from `./web-annotations`, and the new module exports the two web-annotation components/error formatter. `wc -l` reports 4,443 LOC for `App.tsx` and 425 LOC for `web-annotations.tsx`.
+- Last batch: Extracted `SessionTracePane` header/session-view controls into `src/apps/chat-ui/src/session-trace-header.tsx`.
+- Result: `App.tsx` now delegates the session title/room metadata, copy-session-id state, web-annotation entry button, session-view toggles, raw-event toggle, thinking toggle, and expand-thinking toggle to `SessionTraceHeader`. `SessionTracePane` keeps trace queries, trace rendering, panels, and composer orchestration. `App.tsx` fell from 4,443 LOC to 4,332 LOC; the new header module is 190 LOC.
+- Evidence: Docker source/import sanity confirmed `App.tsx` imports `SessionTraceHeader`, and the new module owns `WebAnnotationsEntryPoints`/`WorkflowHeaderMeta` rendering. `wc -l` reports 4,332 LOC for `App.tsx` and 190 LOC for `session-trace-header.tsx`.
 - Validation: `git diff --check` passed; Docker source/import sanity passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: `1fac25b` (`refactor(chat-ui): extract web annotation components`).
+- Commit: pending.
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
-- Exact next step: Continue `SessionTracePane` modularization with a lower-risk header/session-view controls extraction, or add a focused test-safety batch around Composer send orchestration before moving it.
+- Exact next step: Add a focused test-safety batch around Composer send orchestration before moving it, or extract the raw-events sidebar/load-older controls if a smaller presentational seam is preferred.
 
 ## Progress log
 
@@ -145,3 +145,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted `SessionTracePane` upload attachment selection state into `src/apps/chat-ui/src/chat-upload-attachments.ts` and added `test/chat-ui-upload-attachments.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` web-annotation selection/query/panel state into `src/apps/chat-ui/src/use-session-web-annotations.ts`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted remaining web-annotation entry/list presentation into `src/apps/chat-ui/src/web-annotations.tsx`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted `SessionTracePane` header/session-view controls into `src/apps/chat-ui/src/session-trace-header.tsx`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.

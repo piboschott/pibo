@@ -7,10 +7,7 @@ import {
 	BookOpenText,
 	Brain,
 	Bug,
-	ChevronsDown,
-	ChevronsUp,
 	Copy,
-	EyeOff,
 	Layers,
 	LogOut,
 	List,
@@ -79,7 +76,8 @@ import {
 	writeStoredSelection,
 	writeStoredSessionView,
 } from "./app-storage";
-import { compactWebAnnotationError, WebAnnotationsEntryPoints, WebAnnotationsSessionPanel } from "./web-annotations";
+import { compactWebAnnotationError, WebAnnotationsSessionPanel } from "./web-annotations";
+import { SessionTraceHeader } from "./session-trace-header";
 import {
 	DEFAULT_RAW_EVENTS_LIMIT,
 	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
@@ -132,7 +130,6 @@ import {
 } from "./projects/ProjectsAreaModel";
 import {
 	PROJECT_SESSION_VIEW_ALLOWED_IDS,
-	WorkflowHeaderMeta,
 	createWorkflowHeaderSummary,
 	isConfiguredWorkflowSessionPending,
 	isWorkflowBackedProjectSession,
@@ -2449,8 +2446,6 @@ function SessionTracePane({
 	const [traceEventLimit, setTraceEventLimit] = useState(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
 	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
 	const [baseTraceView, setBaseTraceView] = useState<PiboSessionTraceView | null>(null);
-	const [copiedHeaderPiboSessionId, setCopiedHeaderPiboSessionId] = useState<string | null>(null);
-	const copyHeaderPiboSessionTimeout = useRef<number | undefined>(undefined);
 	const traceSummaryQueryKey = useMemo(
 		() => selectedPiboSessionId ? chatTraceSummaryQueryKey(selectedPiboSessionId) : null,
 		[selectedPiboSessionId],
@@ -2671,25 +2666,10 @@ function SessionTracePane({
 		return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
 	}, [currentTraceView]);
 
-	useEffect(() => {
-		return () => {
-			if (copyHeaderPiboSessionTimeout.current) window.clearTimeout(copyHeaderPiboSessionTimeout.current);
-		};
-	}, []);
-
 	const headerPiboSessionId = currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? "";
-	const headerPiboSessionCopied = copiedHeaderPiboSessionId === headerPiboSessionId;
 	const workflowHeader = workflowProjectSession && isWorkflowBackedProjectSession(workflowProjectSession)
 		? createWorkflowHeaderSummary(workflowProjectSession, selectedSessionStatus)
 		: null;
-	const allowedSessionViewIdSet = useMemo(() => allowedSessionViewIds ? new Set(allowedSessionViewIds) : null, [allowedSessionViewIds]);
-	const copyHeaderPiboSessionId = () => {
-		if (!headerPiboSessionId) return;
-		void copyTextToClipboard(headerPiboSessionId).catch(() => undefined);
-		setCopiedHeaderPiboSessionId(headerPiboSessionId);
-		if (copyHeaderPiboSessionTimeout.current) window.clearTimeout(copyHeaderPiboSessionTimeout.current);
-		copyHeaderPiboSessionTimeout.current = window.setTimeout(() => setCopiedHeaderPiboSessionId(null), 900);
-	};
 
 	const handleComposerSend = async (text: string) => {
 		if (!selectedPiboSessionId) return;
@@ -2736,91 +2716,30 @@ function SessionTracePane({
 				data-pibo-state={loadingTrace ? "loading" : traceError ? "error" : selectedPiboSessionId ? "ready" : "empty"}
 				className="min-h-0 flex flex-col"
 			>
-				<div className="h-14 px-4 bg-[#151f24] border-b border-slate-800 flex items-center justify-between max-[980px]:h-auto max-[980px]:flex-wrap max-[980px]:py-2 max-[980px]:gap-2">
-					<div className="min-w-0">
-						<h1 className="text-base font-semibold truncate">
-							{currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
-						</h1>
-						<div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-slate-500">
-							<span className="truncate">{bootstrap.room?.name ?? selectedRoomId ?? "Room"}</span>
-							{headerPiboSessionId ? (
-								<>
-									<span className="text-slate-600">·</span>
-									<button
-										type="button"
-										onMouseDown={(event) => event.preventDefault()}
-										onClick={() => void copyHeaderPiboSessionId()}
-										title={headerPiboSessionCopied ? "Copied Pibo session ID" : "Copy Pibo session ID"}
-										aria-label={headerPiboSessionCopied ? "Copied Pibo session ID" : "Copy Pibo session ID"}
-										className={`min-w-0 max-w-48 truncate rounded-sm px-1 font-mono underline-offset-2 transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-[#11a4d4] ${headerPiboSessionCopied ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/50" : "text-slate-400 hover:text-[#11a4d4] hover:underline"}`}
-									>
-										{headerPiboSessionId}
-									</button>
-								</>
-							) : null}
-							{workflowHeader ? <WorkflowHeaderMeta summary={workflowHeader} /> : null}
-						</div>
-					</div>
-					<div className="flex items-center gap-2">
-						<WebAnnotationsEntryPoints
-							piboSessionId={selectedPiboSessionId}
-							piboRoomId={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
-							disabled={!selectedPiboSessionId || selectedRoomArchived}
-							panelVisible={webAnnotationsPanelRendered}
-							onShowPanel={() => setWebAnnotationsPanelVisible(true)}
-							onHidePanel={() => setWebAnnotationsPanelVisible(false)}
-							onError={onError}
-						/>
-						<div className="flex items-center rounded-sm border border-slate-700 bg-[#0e1116] p-0.5">
-							{sessionViews.map((view) => {
-								const disabledByRouting = Boolean(allowedSessionViewIdSet && !allowedSessionViewIdSet.has(view.id));
-								return (
-									<button
-										key={view.id}
-										type="button"
-										onClick={() => { if (!disabledByRouting) onSelectSessionView(view.id); }}
-										disabled={disabledByRouting}
-										title={disabledByRouting ? `Project session routing uses the ${currentSessionView.label} view for this session kind.` : view.description ?? view.label}
-										aria-label={disabledByRouting ? `${view.label} view unavailable for this Project session kind` : `Switch to ${view.label} view`}
-										className={`min-w-20 px-2.5 py-1 text-[11px] font-bold tracking-wide max-[980px]:min-w-0 max-[980px]:px-1.5 disabled:cursor-not-allowed disabled:text-slate-600 ${
-											sessionViewId === view.id
-												? "bg-[#11a4d4]/10 text-[#11a4d4]"
-												: "text-slate-400 hover:text-[#11a4d4] disabled:hover:text-slate-600"
-										}`}
-									>
-										{view.label}
-									</button>
-								);
-							})}
-						</div>
-						<HeaderIconButton
-							onClick={onToggleRawEvents}
-							title={showRawEvents ? "Hide Raw Events" : "Show Raw Events"}
-							ariaLabel={showRawEvents ? "Hide Raw Events" : "Show Raw Events"}
-							active={showRawEvents}
-						>
-							<Bug size={14} />
-						</HeaderIconButton>
-						<HeaderIconButton
-							onClick={onToggleThinking}
-							title={showThinking ? "Hide Thinking" : "Show Thinking"}
-							ariaLabel={showThinking ? "Hide Thinking" : "Show Thinking"}
-							active={showThinking}
-						>
-							{showThinking ? <Brain size={14} /> : <EyeOff size={14} />}
-						</HeaderIconButton>
-						{showThinking ? (
-							<HeaderIconButton
-								onClick={onToggleExpandThinking}
-								title={expandThinking ? "Collapse Thinking" : "Expand Thinking"}
-								ariaLabel={expandThinking ? "Collapse Thinking" : "Expand Thinking"}
-								active={expandThinking}
-							>
-								{expandThinking ? <ChevronsDown size={14} /> : <ChevronsUp size={14} />}
-							</HeaderIconButton>
-						) : null}
-					</div>
-				</div>
+				<SessionTraceHeader
+					title={currentTraceView?.title ?? selectedPiboSessionId ?? bootstrap.room?.name ?? selectedRoomId}
+					roomLabel={bootstrap.room?.name ?? selectedRoomId ?? "Room"}
+					headerPiboSessionId={headerPiboSessionId}
+					piboSessionId={selectedPiboSessionId}
+					piboRoomId={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
+					webAnnotationsDisabled={!selectedPiboSessionId || selectedRoomArchived}
+					webAnnotationsPanelRendered={webAnnotationsPanelRendered}
+					workflowHeader={workflowHeader}
+					sessionViewId={sessionViewId}
+					sessionViews={sessionViews}
+					currentSessionView={currentSessionView}
+					allowedSessionViewIds={allowedSessionViewIds}
+					showRawEvents={showRawEvents}
+					showThinking={showThinking}
+					expandThinking={expandThinking}
+					onShowWebAnnotationsPanel={() => setWebAnnotationsPanelVisible(true)}
+					onHideWebAnnotationsPanel={() => setWebAnnotationsPanelVisible(false)}
+					onSelectSessionView={onSelectSessionView}
+					onToggleRawEvents={onToggleRawEvents}
+					onToggleThinking={onToggleThinking}
+					onToggleExpandThinking={onToggleExpandThinking}
+					onError={onError}
+				/>
 				{projectSessionCreatePanel ? (
 					<div className="border-b border-slate-800 bg-[#101d22] px-4 py-3">
 						{projectSessionCreatePanel}
@@ -3215,36 +3134,6 @@ function SignedOut({ message }: { message: string }) {
 				</button>
 			</div>
 		</div>
-	);
-}
-
-function HeaderIconButton({
-	title,
-	ariaLabel,
-	active,
-	onClick,
-	children,
-}: {
-	title: string;
-	ariaLabel: string;
-	active: boolean;
-	onClick: () => void;
-	children: ReactNode;
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			title={title}
-			aria-label={ariaLabel}
-			className={`h-8 w-8 inline-flex items-center justify-center border rounded-sm transition-colors ${
-				active
-					? "border-[#11a4d4] bg-[#11a4d4]/10 text-[#11a4d4]"
-					: "border-slate-700 text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"
-			}`}
-		>
-			{children}
-		</button>
 	);
 }
 
