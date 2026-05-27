@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates per-session selected annotation persistence, visible/open annotation filtering, overlay-install synchronization, saved-annotation refresh, panel collapse state, attach/detach/clear callbacks, and visible-annotation dismissal to `useSessionWebAnnotations`. `App.tsx` fell from 4,943 LOC to 4,821 LOC; the new hook is 190 LOC.
 - Evidence: `wc -l` reports 4,821 LOC for `App.tsx` and 190 LOC for `use-session-web-annotations.ts`; source sanity confirmed the new hook import/reference exists in both files.
 - Validation: `git diff --check` passed; Docker source/import sanity passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending (`refactor(chat-ui): extract web annotation state hook`).
+- Commit: `abef26c` (`refactor(chat-ui): extract web annotation state hook`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue `SessionTracePane` modularization by extracting header/session-view controls or Composer send orchestration, or extract `WebAnnotationsEntryPoints`/`WebAnnotationsSessionPanel` into a web-annotations component module now that state/query ownership is isolated.
 
