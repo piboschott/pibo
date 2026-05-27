@@ -171,7 +171,6 @@ import {
 	compareWorkflowSemver,
 	hashPromptAssetMarkdown,
 	hashWorkflowDefinitionJson,
-	normalizeForCanonicalJson,
 	normalizeWorkflowPromptAssetLabel,
 	parseWorkflowSemver,
 	sanitizeWorkflowDiagnostics,
@@ -241,6 +240,10 @@ import {
 	withoutRawWorkflowIrParseDiagnostic,
 	type WorkflowDraftPatchBody,
 } from "./workflow-validation-helpers.js";
+import {
+	validateWorkflowEdgeAdapterOutputCompatibilityLike,
+	validateWorkflowEdgeDirectCompatibilityLike,
+} from "./workflow-edge-compatibility.js";
 import { validateJsonSchemaObjectLike } from "./workflow-json-schema-validation.js";
 import { validateWorkflowRegisteredRefParamsLike } from "./workflow-registered-ref-params.js";
 import {
@@ -2820,7 +2823,7 @@ function validateWorkflowEdgeLike(edgeId: string, value: PiboJsonValue, nodes: P
 	validateWorkflowEdgeEndpoint(edgeId, "to", value.to, nodeIds, diagnostics);
 	if (value.guard !== undefined) validateWorkflowGuardRefLike(edgeId, value.guard, diagnostics);
 	if (value.adapter !== undefined) validateWorkflowEdgeAdapterLike(edgeId, value.adapter, nodes, value, diagnostics);
-	else validateWorkflowEdgeDirectCompatibility(edgeId, value, nodes, diagnostics);
+	else validateWorkflowEdgeDirectCompatibilityLike(edgeId, value, nodes, diagnostics);
 }
 
 function validateWorkflowPromptAssetRefLike(
@@ -3077,53 +3080,7 @@ function validateWorkflowEdgeAdapterLike(
 		ownerLabel: `Workflow edge '${edgeId}'`,
 	});
 	validateWorkflowPortLike(value.output, `${path}.output`, diagnostics, { edgeId });
-	const targetPort = readEdgeTargetInputPort(edge, nodes);
-	if (targetPort && isJsonObject(value.output) && !areWorkflowPortsDirectlyCompatible(value.output, targetPort)) {
-		diagnostics.push({
-			code: "WorkflowGraphError.incompatibleEdgeAdapterOutput",
-			message: `Workflow edge '${edgeId}' adapter output is incompatible with the target input port.`,
-			severity: "error",
-			path: `${path}.output`,
-			edgeId,
-			hint: "Set the registered adapter output port to the target input contract; do not use hidden LLM coercion.",
-		});
-	}
-}
-
-function validateWorkflowEdgeDirectCompatibility(edgeId: string, edge: PiboJsonObject, nodes: PiboJsonObject, diagnostics: WorkflowDraftDiagnostic[]): void {
-	const sourcePort = readEdgeSourceOutputPort(edge, nodes);
-	const targetPort = readEdgeTargetInputPort(edge, nodes);
-	if (!sourcePort || !targetPort || areWorkflowPortsDirectlyCompatible(sourcePort, targetPort)) return;
-	diagnostics.push({
-		code: "WorkflowGraphError.incompatibleEdgePorts",
-		message: `Workflow edge '${edgeId}' connects incompatible source output and target input ports without a registered adapter.`,
-		severity: "error",
-		path: `$.edges.${edgeId}`,
-		edgeId,
-		hint: "Add a visible registered edge adapter or adapter node. Hidden LLM coercion is not allowed in V2.",
-	});
-}
-
-function readEdgeSourceOutputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
-	const node = readWorkflowEdgeNode(edge.from, nodes);
-	return node && isJsonObject(node.output) ? node.output : undefined;
-}
-
-function readEdgeTargetInputPort(edge: PiboJsonObject, nodes: PiboJsonObject): PiboJsonObject | undefined {
-	const node = readWorkflowEdgeNode(edge.to, nodes);
-	return node && isJsonObject(node.input) ? node.input : undefined;
-}
-
-function readWorkflowEdgeNode(endpoint: unknown, nodes: PiboJsonObject): PiboJsonObject | undefined {
-	const nodeId = isJsonObject(endpoint) && typeof endpoint.nodeId === "string" ? endpoint.nodeId.trim() : undefined;
-	const node = nodeId ? nodes[nodeId] : undefined;
-	return isJsonObject(node) ? node : undefined;
-}
-
-function areWorkflowPortsDirectlyCompatible(left: PiboJsonObject, right: PiboJsonObject): boolean {
-	if (left.kind === "text" && right.kind === "text") return true;
-	if (left.kind !== "json" || right.kind !== "json") return false;
-	return JSON.stringify(normalizeForCanonicalJson(left.schema)) === JSON.stringify(normalizeForCanonicalJson(right.schema));
+	validateWorkflowEdgeAdapterOutputCompatibilityLike(edgeId, value.output, edge, nodes, diagnostics);
 }
 
 function validateWorkflowEdgeEndpoint(
