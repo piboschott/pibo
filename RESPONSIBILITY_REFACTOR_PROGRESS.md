@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-catalog.ts` for workflow catalog response/projection types, static/published/draft catalog projection, picker/version-history responses, catalog list/inspect/version resources, editability/action derivation, missing-ref aggregation, and static runnable workflow definition creation. `web-app.ts` now keeps thin service wrappers that inject validation/serialization side effects.
 - Evidence: `web-app.ts` is now 8,303 LOC (down from 8,993); new `workflow-catalog.ts` is 815 LOC and keeps the extracted catalog boundary below the 1,000 LOC target.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused because the worker web server was not listening; no restart was performed.
-- Commit: pending.
+- Commit: `1416543` (`refactor(chat): extract workflow catalog helpers`).
 - Blockers: none.
 - Exact next step: Extract or analyze Chat Web project workflow session/run/human-action orchestration (`resolveProjectWorkflowSelection` through `/projects/.../workflow-sessions` handlers) only after identifying focused coverage in `test/web-channel.test.mjs`, because it touches project-service mutation and workflow-run startup behavior.
 
