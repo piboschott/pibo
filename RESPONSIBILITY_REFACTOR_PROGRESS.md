@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now keeps trace state/composition and optimistic send wiring, while the new hook owns live stream lifecycle and overlay event ingestion. `App.tsx` fell from 5,255 LOC to 4,978 LOC; the new hook is 339 LOC.
 - Evidence: `wc -l` reports 4,978 LOC for `App.tsx` and 339 LOC for `use-session-trace-live-stream.ts`; source sanity confirmed `App.tsx` wires the hook and the hook owns `EventSource` plus `applyTraceLiveEvents`.
 - Validation: `git diff --check` passed; Docker source/import sanity check passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending.
+- Commit: `7b416cd` (`refactor(chat-ui): extract session trace live stream hook`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue `SessionTracePane` modularization with a lower-risk web annotation or upload attachment state hook, or add focused live-stream hook tests if future edits need behavior changes.
 
