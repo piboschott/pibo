@@ -4,6 +4,12 @@ const LAST_SELECTION_STORAGE_KEY = "pibo.chat.lastSelection";
 const SESSION_VIEW_STORAGE_KEY = "pibo.chat.sessionView";
 const COMPOSER_DRAFT_STORAGE_PREFIX = "pibo.chat.composerDraft.";
 const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
+const SHOW_THINKING_STORAGE_KEY = "pibo.chat.showThinking";
+const EXPAND_THINKING_STORAGE_KEY = "pibo.chat.expandThinking";
+const SHOW_RAW_EVENTS_STORAGE_KEY = "pibo.chat.showRawEvents";
+const SHOW_ARCHIVED_SESSIONS_STORAGE_KEY = "pibo.chat.showArchived";
+const SHOW_ARCHIVED_ROOMS_STORAGE_KEY = "pibo.chat.showArchivedRooms";
+const NEW_SESSION_PROFILE_STORAGE_KEY = "pibo.chat.newSessionProfile";
 const COMPOSER_HISTORY_LIMIT = 100;
 
 export type StoredSelection = {
@@ -135,9 +141,84 @@ export function writeStoredSessionView(viewId: ChatSessionViewId): void {
 	}
 }
 
+export function readStoredShowThinking(): boolean {
+	return readStoredBoolean(SHOW_THINKING_STORAGE_KEY, true);
+}
+
+export function writeStoredShowThinking(value: boolean): void {
+	writeStoredBoolean(SHOW_THINKING_STORAGE_KEY, value);
+}
+
+export function readStoredExpandThinking(): boolean {
+	return readStoredBoolean(EXPAND_THINKING_STORAGE_KEY, true);
+}
+
+export function writeStoredExpandThinking(value: boolean): void {
+	writeStoredBoolean(EXPAND_THINKING_STORAGE_KEY, value);
+}
+
+export function readStoredShowRawEvents(): boolean {
+	return readStoredBoolean(SHOW_RAW_EVENTS_STORAGE_KEY, false);
+}
+
+export function writeStoredShowRawEvents(value: boolean): void {
+	writeStoredBoolean(SHOW_RAW_EVENTS_STORAGE_KEY, value);
+}
+
+export function readStoredShowArchivedSessions(): boolean {
+	return readStoredBoolean(SHOW_ARCHIVED_SESSIONS_STORAGE_KEY, false);
+}
+
+export function writeStoredShowArchivedSessions(value: boolean): void {
+	writeStoredBoolean(SHOW_ARCHIVED_SESSIONS_STORAGE_KEY, value);
+}
+
+export function readStoredShowArchivedRooms(): boolean {
+	return readStoredBoolean(SHOW_ARCHIVED_ROOMS_STORAGE_KEY, false);
+}
+
+export function writeStoredShowArchivedRooms(value: boolean): void {
+	writeStoredBoolean(SHOW_ARCHIVED_ROOMS_STORAGE_KEY, value);
+}
+
+export function readStoredNewSessionProfile(): string {
+	try {
+		return localStorage.getItem(NEW_SESSION_PROFILE_STORAGE_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
+
+export function writeStoredNewSessionProfile(profile: string): void {
+	try {
+		localStorage.setItem(NEW_SESSION_PROFILE_STORAGE_KEY, profile);
+	} catch {
+		// Browser storage can be unavailable in private or locked-down contexts.
+	}
+}
+
 export function clearStoredSelection(): void {
 	try {
 		localStorage.removeItem(LAST_SELECTION_STORAGE_KEY);
+	} catch {
+		// Browser storage can be unavailable in private or locked-down contexts.
+	}
+}
+
+function readStoredBoolean(key: string, defaultValue: boolean): boolean {
+	try {
+		const stored = localStorage.getItem(key);
+		if (stored === "true") return true;
+		if (stored === "false") return false;
+		return defaultValue;
+	} catch {
+		return defaultValue;
+	}
+}
+
+function writeStoredBoolean(key: string, value: boolean): void {
+	try {
+		localStorage.setItem(key, String(value));
 	} catch {
 		// Browser storage can be unavailable in private or locked-down contexts.
 	}

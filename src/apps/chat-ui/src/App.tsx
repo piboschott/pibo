@@ -34,12 +34,24 @@ import type { ChatSessionViewId } from "./session-views/types";
 import {
 	clearStoredSelection,
 	readStoredComposerDraft,
+	readStoredExpandThinking,
+	readStoredNewSessionProfile,
 	readStoredSelection,
 	readStoredSessionView,
+	readStoredShowArchivedRooms,
+	readStoredShowArchivedSessions,
+	readStoredShowRawEvents,
+	readStoredShowThinking,
 	removeStoredRoomSelection,
 	writeStoredComposerDraft,
+	writeStoredExpandThinking,
+	writeStoredNewSessionProfile,
 	writeStoredSelection,
 	writeStoredSessionView,
+	writeStoredShowArchivedRooms,
+	writeStoredShowArchivedSessions,
+	writeStoredShowRawEvents,
+	writeStoredShowThinking,
 } from "./app-storage";
 import {
 	addRoomToBootstrap,
@@ -180,12 +192,12 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [selectedPiboSessionId, setSelectedPiboSessionId] = useState<string | null>(null);
 	const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [showThinking, setShowThinking] = useState(() => localStorage.getItem("pibo.chat.showThinking") !== "false");
-	const [expandThinking, setExpandThinking] = useState(() => localStorage.getItem("pibo.chat.expandThinking") !== "false");
-	const [showRawEvents, setShowRawEvents] = useState(() => localStorage.getItem("pibo.chat.showRawEvents") === "true");
-	const [showArchived, setShowArchived] = useState(() => localStorage.getItem("pibo.chat.showArchived") === "true");
-	const [showArchivedRooms, setShowArchivedRooms] = useState(() => localStorage.getItem("pibo.chat.showArchivedRooms") === "true");
-	const [newSessionProfile, setNewSessionProfile] = useState(() => localStorage.getItem("pibo.chat.newSessionProfile") ?? "");
+	const [showThinking, setShowThinking] = useState(readStoredShowThinking);
+	const [expandThinking, setExpandThinking] = useState(readStoredExpandThinking);
+	const [showRawEvents, setShowRawEvents] = useState(readStoredShowRawEvents);
+	const [showArchived, setShowArchived] = useState(readStoredShowArchivedSessions);
+	const [showArchivedRooms, setShowArchivedRooms] = useState(readStoredShowArchivedRooms);
+	const [newSessionProfile, setNewSessionProfile] = useState(readStoredNewSessionProfile);
 	const [sessionViewId, setSessionViewId] = useState<ChatSessionViewId>(() => routeSessionViewId ?? readStoredSessionView());
 	const [composerText, setComposerText] = useState("");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
@@ -662,18 +674,18 @@ export function App({ route }: { route: ChatAppRoute }) {
 		if (matchedProfile) {
 			if (newSessionProfile !== matchedProfile.name) {
 				setNewSessionProfile(matchedProfile.name);
-				localStorage.setItem("pibo.chat.newSessionProfile", matchedProfile.name);
+				writeStoredNewSessionProfile(matchedProfile.name);
 			}
 			return;
 		}
 		const fallbackProfile = findAgentProfile(bootstrap.agents, sessionProfile)?.name ?? bootstrap.agents[0].name;
 		setNewSessionProfile(fallbackProfile);
-		localStorage.setItem("pibo.chat.newSessionProfile", fallbackProfile);
+		writeStoredNewSessionProfile(fallbackProfile);
 	}, [bootstrap, newSessionProfile]);
 
 	const setPreferredNewSessionProfile = useCallback((profile: string) => {
 		setNewSessionProfile(profile);
-		localStorage.setItem("pibo.chat.newSessionProfile", profile);
+		writeStoredNewSessionProfile(profile);
 	}, []);
 
 	const refreshTrace = useCallback(async (piboSessionId: string) => {
@@ -889,7 +901,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const toggleArchivedSessions = async () => {
 		const next = !showArchived;
 		setShowArchived(next);
-		localStorage.setItem("pibo.chat.showArchived", String(next));
+		writeStoredShowArchivedSessions(next);
 
 		if (!next) {
 			setLoadingArchivedSessions(false);
@@ -1042,7 +1054,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
 		if (archived) {
 			setShowArchivedRooms(true);
-			localStorage.setItem("pibo.chat.showArchivedRooms", "true");
+			writeStoredShowArchivedRooms(true);
 		}
 		updateBootstrapCache((data) => updateRoomInBootstrap(data, roomId, (room) => roomWithArchivedState(room, archived)));
 		try {
@@ -1105,7 +1117,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		if (command.action === "thinking-show") {
 			const next = !showThinking;
 			setShowThinking(next);
-			localStorage.setItem("pibo.chat.showThinking", String(next));
+			writeStoredShowThinking(next);
 			return true;
 		}
 		if (command.action === "download") {
@@ -1337,17 +1349,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onToggleRawEvents={() => {
 							const next = !showRawEvents;
 							setShowRawEvents(next);
-							localStorage.setItem("pibo.chat.showRawEvents", String(next));
+							writeStoredShowRawEvents(next);
 						}}
 						onToggleThinking={() => {
 							const next = !showThinking;
 							setShowThinking(next);
-							localStorage.setItem("pibo.chat.showThinking", String(next));
+							writeStoredShowThinking(next);
 						}}
 						onToggleExpandThinking={() => {
 							const next = !expandThinking;
 							setExpandThinking(next);
-							localStorage.setItem("pibo.chat.expandThinking", String(next));
+							writeStoredExpandThinking(next);
 						}}
 						onThinkingLevelChange={(level) => void postAction(routePiboSessionId ?? "", "thinking", { level })}
 						onError={setError}
@@ -1410,7 +1422,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 							onToggleArchivedRooms={() => {
 								const next = !showArchivedRooms;
 								setShowArchivedRooms(next);
-								localStorage.setItem("pibo.chat.showArchivedRooms", String(next));
+								writeStoredShowArchivedRooms(next);
 							}}
 							creatingRoom={creatingRoom}
 							onCreateRoom={() => createRoom()}
@@ -1489,17 +1501,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onToggleRawEvents={() => {
 							const next = !showRawEvents;
 							setShowRawEvents(next);
-							localStorage.setItem("pibo.chat.showRawEvents", String(next));
+							writeStoredShowRawEvents(next);
 						}}
 						onToggleThinking={() => {
 							const next = !showThinking;
 							setShowThinking(next);
-							localStorage.setItem("pibo.chat.showThinking", String(next));
+							writeStoredShowThinking(next);
 						}}
 						onToggleExpandThinking={() => {
 							const next = !expandThinking;
 							setExpandThinking(next);
-							localStorage.setItem("pibo.chat.expandThinking", String(next));
+							writeStoredExpandThinking(next);
 						}}
 						onSessionAgentProfileChange={(profile) => void updateSelectedSessionProfile(profile)}
 						onFork={forkFrom}

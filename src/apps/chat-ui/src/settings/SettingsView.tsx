@@ -20,6 +20,7 @@ import { createUserSkill, deletePiPackage, deleteUserSkill, getUserSkill, instal
 import { getUserSettings, patchModelDefaults, patchUserSettings } from "../api-settings";
 import { piPackageMeta, type PiPackageCatalogItem } from "../agents/agent-designer-model";
 import { AgentRuntimeOptions, DesignerPanel, EmptyCatalog, InlineCheckboxToggle, PiPackageDetails } from "../agents/designer-ui";
+import { writeStoredExpandThinking, writeStoredShowThinking } from "../app-storage";
 import type { ModelCatalog, ModelDefaults, ModelProfile, UserSkill } from "../types";
 import {
 	DEFAULT_WEB_ANNOTATIONS_TOGGLE_SHORTCUT,
@@ -128,7 +129,7 @@ export function SettingsView({
 					onToggle={() => {
 						const next = !showThinking;
 						setShowThinking(next);
-						localStorage.setItem("pibo.chat.showThinking", String(next));
+						writeStoredShowThinking(next);
 					}}
 				/>
 				<InlineCheckboxToggle
@@ -138,7 +139,7 @@ export function SettingsView({
 					onToggle={() => {
 						const next = !expandThinking;
 						setExpandThinking(next);
-						localStorage.setItem("pibo.chat.expandThinking", String(next));
+						writeStoredExpandThinking(next);
 					}}
 				/>
 				<ModelDefaultsSettings
