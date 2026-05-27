@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted the Cron Chat UI API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-cron.ts`.
 - Result: `CronArea` now imports Cron client functions and input types directly from the focused module, while `api.ts` re-exports them for existing compatibility. `api.ts` no longer imports Cron-specific types and dropped from 1,643 LOC to 1,573 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/workflow-v2-lifecycle-checklist.test.mjs'` (6 tests), `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure client module extraction with preserved exported names and request paths.
-- Commit: `ea17f3eef096e45c1c738fc12deaeb063931b042` (`refactor(chat-ui): extract cron api client`).
+- Commit: `19a0e9eb3dc2381ee738eb6df5b7266a81c4c8ac` (`refactor(chat-ui): extract cron api client`).
 - Blockers: none.
 - Exact next step: Continue the Chat UI API boundary by extracting the next clearly clustered feature client from `src/apps/chat-ui/src/api.ts` (likely context-file, settings, or project/session clients), or do an API grouping analysis first if the next seam is not obvious.
 
