@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: ranked the settings/capability-management route cluster as the best next Chat Web refactor area, with prompt/settings routes as the safest first implementation slice, Pi-package/MCP route helpers second, and user-skill route extraction gated behind web-route test-safety coverage.
 - Evidence: Docker inspection reported `web-app.ts` at 5,302 LOC, `chat-request-normalizers.ts` at 773 LOC, and `chat-api-routes.ts` at 275 LOC. The top-level Chat Web API route dispatch is still concentrated around lines 3,704-5,302; the settings/capability-management cluster spans about lines 4,482-4,717. Existing coverage includes `test/base-prompt-web.test.mjs` for base-prompt routes and `test/web-channel.test.mjs` for Pi-package/MCP route behavior; user-skill web routes need focused coverage before extraction.
 - Validation: Docker source-structure/line-count inspection passed; host `git diff --check` passed.
-- Commit: `6f678ec` (`docs(refactor): rank chat web route seams`).
+- Commit: `0152e65` (`docs(refactor): rank chat web route seams`).
 - Blockers: none.
 - Exact next step: Extract a small Chat Web prompt/settings route helper for model defaults, user settings, base prompt, and compaction prompt; if user-settings patch shaping moves, add or reuse focused web-route coverage for timezone/shortcut validation. Run `test/base-prompt-web.test.mjs`, `test/web-channel.test.mjs` or the closest new focused test, `npm run build`, and `npm run typecheck`.
 
