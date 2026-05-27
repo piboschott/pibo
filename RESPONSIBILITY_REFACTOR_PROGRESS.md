@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Moved `SessionTracePane` out of `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/session-trace-pane.tsx` now that its layout, trace, live-stream, composer, upload, and web-annotation seams are focused imports.
-- Result: `App.tsx` now imports the route-level trace pane instead of owning its orchestration; shared slash-command typing moved to `chat-commands.ts`, and shared thrown-value formatting moved to `error-message.ts` so App and the pane do not import from each other.
-- Evidence: `App.tsx` dropped from 3,060 LOC to 2,758 LOC; the new `session-trace-pane.tsx` is 301 LOC, `chat-commands.ts` is 5 LOC, and `error-message.ts` is 3 LOC.
-- Validation: `git diff --check` passed; Docker source/import sanity check with `grep` passed; Docker focused `node --test test/chat-ui-current-trace-view.test.mjs test/chat-ui-trace-page-merge.test.mjs test/chat-ui-session-trace-view-props.test.mjs test/chat-ui-composer-send.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `b5f82ac` (`refactor(chat-ui): extract session trace pane`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving module move because focused tests and typechecks passed.
-- Exact next step: Continue App modularization by extracting a Projects route side-effect hook or moving `ProjectsArea` only after breaking remaining App-local helper dependencies; alternatively run an App seam analysis to rank the next safe extraction now that `SessionTracePane` is module-owned.
+- Last batch: Moved the `ProjectsArea` route component out of `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/projects/ProjectsArea.tsx` now that the trace pane and project helper dependencies are module-owned.
+- Result: `App.tsx` now imports the Projects route feature module instead of owning its load/create/start/archive side effects and project-session trace-pane wiring; the unused ProjectsArea `sessionViewId` prop was removed during the move.
+- Evidence: `App.tsx` dropped from 2,758 LOC to 2,339 LOC; new `projects/ProjectsArea.tsx` is 437 LOC and keeps Projects route orchestration below the 1,000 LOC target.
+- Validation: Docker source/import sanity check passed; `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving module move because focused source checks and typechecks passed.
+- Exact next step: Continue reducing `App.tsx` by extracting a focused non-route seam such as context sidebar presentation or delete-room/delete-session modal components, unless a fresh App seam analysis identifies a better lower-risk boundary.
 
 ## Progress log
 
@@ -159,3 +159,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted `SessionTracePane` current trace composition/debug/snapshot hook into `src/apps/chat-ui/src/tracing/use-current-session-trace.ts`; `git diff --check`, Docker source/import sanity, focused current-trace and trace-page tests, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` shell/layout JSX into `src/apps/chat-ui/src/session-trace-layout.tsx`; `git diff --check`, Docker source/import sanity, focused current-trace/trace-page/session-view-props/composer-send tests, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Moved `SessionTracePane` orchestration into `src/apps/chat-ui/src/session-trace-pane.tsx` with shared `chat-commands.ts` and `error-message.ts`; `git diff --check`, Docker source/import sanity, focused current-trace/trace-page/session-view-props/composer-send tests, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Moved the Projects route component into `src/apps/chat-ui/src/projects/ProjectsArea.tsx`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
