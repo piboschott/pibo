@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted pure Projects route orchestration helpers from `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/projects/ProjectsAreaModel.ts` as a low-risk step toward a future route/module extraction.
-- Result: `App.tsx` now delegates project archive splitting, selected project-session lookup, workflow-backed project-session listing, trace-bootstrap shaping, workflow picker defaulting, missing-workflow diagnostics, and workflow start-message formatting to a projects module. `App.tsx` fell from 5,638 LOC to 5,632 LOC; the new helper module is 68 LOC.
-- Evidence: Docker source/import sanity check found `ProjectsAreaModel.ts` and confirmed `App.tsx` imports/uses `findSelectedWorkflowVersionOption` and `createProjectsTraceBootstrap`; `wc -l` reports 5,632 LOC for `App.tsx` and 68 LOC for `ProjectsAreaModel.ts`.
+- Last batch: Extracted Chat UI live stream event/cursor helpers from `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/tracing/chat-stream-events.ts` as a focused tracing seam for `SessionTracePane` and the app-level live-navigation subscriber.
+- Result: `App.tsx` now imports the parsed chat stream event union, live cursor recording, first-content flush tracking, navigation/trace-refresh predicates, overlay update predicate, and live status mapping from the tracing module. `App.tsx` fell from 5,633 LOC to 5,463 LOC; the new module is 185 LOC.
+- Evidence: Source/import sanity check found the new `chat-stream-events.ts` exports and confirmed `App.tsx` imports from `./tracing/chat-stream-events`; `wc -l` reports 5,463 LOC for `App.tsx` and 185 LOC for the new module.
 - Validation: `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: `206a13b` (`refactor(chat-ui): extract projects area model helpers`).
+- Commit: `3539fad` (`refactor(chat-ui): extract chat stream event helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
-- Exact next step: Continue Projects route modularization with a focused side-effect hook for load/create/start operations, or do a test-safety batch for `SessionTracePane` before moving it/extracting live trace and web-annotation hooks. Avoid moving `ProjectsArea` into its own file while it would need to import `SessionTracePane` from `App.tsx`.
+- Exact next step: Continue `SessionTracePane` test-safety/refactoring with pure helpers around raw-event compaction/fork-entry annotation or a small `useSessionTraceLiveStream` hook only after identifying existing trace reducer coverage; avoid moving `SessionTracePane` wholesale until its live stream, web annotation, upload, and composer responsibilities are split.
 
 ## Progress log
 
@@ -136,3 +136,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the Projects route sidebar and project-workflow presentation helpers into `src/apps/chat-ui/src/projects/ProjectsSidebar.tsx` and `src/apps/chat-ui/src/projects/project-session-workflow.tsx`; source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned HTTP 000 without restarting services.
 - 2026-05-27: Extracted the Project workflow create/start panels and diagnostics helpers into `src/apps/chat-ui/src/projects/ProjectWorkflowPanels.tsx`; source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted pure Projects route orchestration helpers into `src/apps/chat-ui/src/projects/ProjectsAreaModel.ts`; Docker source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Chat UI live stream event/cursor helpers into `src/apps/chat-ui/src/tracing/chat-stream-events.ts`; source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
