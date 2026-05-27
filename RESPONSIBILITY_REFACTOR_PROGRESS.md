@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted App-owned room/session destructive confirmation modals into `src/apps/chat-ui/src/delete-confirmation-modals.tsx`.
-- Result: `App.tsx` still owns delete state, API calls, navigation, and optimistic cache mutations, while modal presentation and confirmation copy live in a focused component module.
-- Evidence: `App.tsx` dropped from 2,217 LOC to 2,070 LOC; the new `delete-confirmation-modals.tsx` is 150 LOC.
+- Last batch: Extracted App shell/chrome presentation into `src/apps/chat-ui/src/app-chrome.tsx`.
+- Result: `App.tsx` no longer owns the fallback gateway banner, top navigation/header chrome, signed-out screen, error banner, mobile unread badge formatting, or the orphaned local modal helper.
+- Evidence: `App.tsx` dropped from 2,070 LOC to 1,932 LOC; the new `app-chrome.tsx` is 163 LOC.
 - Validation: Docker source/import sanity check passed; `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `8d7d342` (`refactor(chat-ui): extract delete confirmation modals`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving presentation extraction because focused source checks and typechecks passed.
-- Exact next step: Continue reducing `App.tsx` by extracting another low-risk presentation seam, such as the signed-out/error/mobile badge helpers, or do an analysis pass to rank the remaining App state/effect seams before further extraction.
+- Commit: `325495a` (`refactor(chat-ui): extract app chrome`).
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving presentation extraction because source checks and typechecks passed.
+- Exact next step: Continue reducing `App.tsx` below 1,900 LOC by extracting another low-risk seam such as the sidebar shell wrapper/refresh controls or pure signal-status bootstrap patch helpers.
 
 ## Progress log
 
@@ -162,3 +162,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Moved the Projects route component into `src/apps/chat-ui/src/projects/ProjectsArea.tsx`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted the Context sidebar presentation into `src/apps/chat-ui/src/context/ContextSidebar.tsx` and moved `ContextPanel` into `src/apps/chat-ui/src/context/types.ts`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted App-owned room/session destructive confirmation modals into `src/apps/chat-ui/src/delete-confirmation-modals.tsx`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted App shell/chrome presentation into `src/apps/chat-ui/src/app-chrome.tsx` and removed the orphaned local modal helper from `App.tsx`; Docker source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
