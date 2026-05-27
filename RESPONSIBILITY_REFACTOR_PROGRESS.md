@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the Chat UI auth API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-auth.ts`.
-- Result: `signOut` and `signInWithGoogle` now live in `api-auth.ts`; `App.tsx` imports the auth client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 303 LOC to 281 LOC.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-auth.ts && grep -q "export \\* from \"./api-auth\"" src/apps/chat-ui/src/api.ts && grep -q "./api-auth" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function signOut|export async function signInWithGoogle" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). A best-effort route smoke check with `curl -fsS -I http://127.0.0.1:4802/apps/chat` inside the Docker worker could not connect because the worker web server was not running; no service restart was performed for this pure module extraction.
-- Commit: `11aa573` (`refactor(chat-ui): extract auth api client`).
+- Last batch: Extracted the remaining Chat UI navigation/projects/rooms/sessions/message API client functions from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-chat-sessions.ts`.
+- Result: `App.tsx` now imports the chat-session client boundary directly, while `api.ts` remains a compatibility barrel for older imports plus shared `SaveState`/`ProductEvent` types. `api.ts` dropped from 281 LOC to 28 LOC; the extracted client module is 251 LOC.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-chat-sessions.ts && grep -q "export \\* from \"./api-chat-sessions\"" src/apps/chat-ui/src/api.ts && grep -q "./api-chat-sessions" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function getBootstrap|export async function postMessage|function normalizeBootstrap" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). Best-effort route smoke check `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl -fsS -I http://127.0.0.1:4802/apps/chat'` could not connect because the worker web server was not running; no service restart was performed for this pure client extraction.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue shrinking the remaining Chat UI API boundary with a larger `api-chat-sessions.ts` extraction for navigation/bootstrap/projects/sessions, or pivot to `src/apps/chat-ui/src/App.tsx` component/hook seams if another API split would create too much import churn.
+- Exact next step: Pivot from Chat UI API splitting to `src/apps/chat-ui/src/App.tsx` analysis or a small hook/component extraction, because `api.ts` is now only a compatibility barrel plus shared editor/event types.
 
 ## Progress log
 
@@ -121,3 +121,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the trace/signal Chat UI API client seam into `src/apps/chat-ui/src/api-trace-signals.ts`; source/import sanity check, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the chat file upload/download Chat UI API client seam into `src/apps/chat-ui/src/api-chat-files.ts`; source/import sanity check, build, and root typecheck passed in Docker. A route smoke check found the worker web server was not listening, so no service restart/browser check was performed for this pure extraction.
 - 2026-05-27: Extracted the auth Chat UI API client seam into `src/apps/chat-ui/src/api-auth.ts`; source/import sanity check, build, and root typecheck passed in Docker. A route smoke check found the worker web server was not listening, so no service restart/browser check was performed for this pure extraction.
+- 2026-05-27: Extracted the navigation/projects/rooms/sessions/message Chat UI API client seam into `src/apps/chat-ui/src/api-chat-sessions.ts`; source/import sanity check, build, and root typecheck passed in Docker. A route smoke check found the worker web server was not listening, so no service restart/browser check was performed for this pure extraction.
