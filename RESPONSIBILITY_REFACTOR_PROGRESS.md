@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns slash-command construction or session/profile-aware skill filtering; it now wires the resulting command/skill arrays into route components.
 - Evidence: `App.tsx` dropped from 1,693 LOC to 1,642 LOC; the new `app-command-catalog.ts` is 58 LOC.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-command-catalog.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending for this batch.
+- Commit: `fa79dc6` (`refactor(chat-ui): extract app command catalog helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving pure helper extraction because focused tests and typechecks passed.
 - Exact next step: Continue reducing `App.tsx` by extracting another pure or low-risk orchestration seam; the best candidates are route navigation path planning, local-storage-backed display toggles, or room/session selection flows after a small analysis pass.
 
