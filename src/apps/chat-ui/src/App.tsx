@@ -3,27 +3,21 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
 import {
-	Archive,
-	ArchiveRestore,
 	AlertTriangle,
 	BookA,
 	BookOpenText,
 	Brain,
 	Bug,
-	Check,
 	ChevronsDown,
 	ChevronsUp,
 	Copy,
-	Edit3,
 	EyeOff,
-	FolderPlus,
 	Layers,
 	Loader2,
 	Lock,
 	LogOut,
 	List,
 	Menu,
-	MoreVertical,
 	Plus,
 	Power,
 	RefreshCw,
@@ -65,7 +59,6 @@ import { WorkflowsArea } from "./WorkflowsArea";
 import type { PiPackageCatalogItem } from "./agents/agent-designer-model";
 import { AgentsView } from "./agents/AgentsView";
 import { copyTextToClipboard } from "./clipboard";
-import { SessionNode } from "./session-node";
 import { SessionSidebar } from "./session-sidebar";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import type { ChatSessionViewId } from "./session-views/types";
@@ -134,6 +127,15 @@ import {
 import { SettingsSidebar } from "./settings/SettingsSidebar";
 import { SettingsView } from "./settings/SettingsView";
 import type { SettingsPanel } from "./settings/types";
+import { ProjectsSidebar } from "./projects/ProjectsSidebar";
+import {
+	PROJECT_SESSION_VIEW_ALLOWED_IDS,
+	WorkflowHeaderMeta,
+	createWorkflowHeaderSummary,
+	isConfiguredWorkflowSessionPending,
+	isWorkflowBackedProjectSession,
+	resolveProjectSessionViewRouting,
+} from "./projects/project-session-workflow";
 
 type Area = "sessions" | "projects" | "workflows" | "cron" | "ralph" | "agents" | "context" | "settings";
 type ContextPanel = "context-files" | "base-prompt" | "compaction-prompt" | "pibo-tools" | "mcp-tools" | "build-context";
@@ -184,12 +186,6 @@ const HIDDEN_STREAM_FLUSH_DELAY_MS = 100;
 const SIGNAL_TREE_ERROR_RECOVERY_DELAY_MS = 750;
 const SESSION_PAGE_SIZE = 120;
 const ARCHIVED_SESSION_PAGE_SIZE = 60;
-const PROJECT_ROUTING_UNKNOWN_TIMESTAMP = "1970-01-01T00:00:00.000Z";
-const PROJECT_SESSION_VIEW_ALLOWED_IDS: Record<ChatSessionViewId, readonly ChatSessionViewId[]> = {
-	terminal: ["terminal"],
-	workflow: ["workflow"],
-};
-
 const EMPTY_SESSION_PATH_IDS = new Set<string>();
 
 async function loadBootstrapQueryData(
@@ -2264,60 +2260,46 @@ function ProjectsArea({
 				}`}
 				onClick={onCloseMobileSidebar}
 			/>
-			<aside
-				className={`min-h-0 overflow-auto bg-[#1a262b] border-r border-slate-800 max-[980px]:fixed max-[980px]:left-0 max-[980px]:top-0 max-[980px]:bottom-0 max-[980px]:z-40 max-[980px]:w-[280px] max-[980px]:transition-transform max-[980px]:duration-200 ${
-					mobileSidebarOpen ? "max-[980px]:translate-x-0" : "max-[980px]:-translate-x-full"
-				}`}
-			>
-				<div className="h-11 px-3 border-b border-slate-800 flex items-center justify-between text-xs font-bold uppercase tracking-wider max-[980px]:h-auto max-[980px]:py-2">
-					<span>projects</span>
-					<div className="flex items-center gap-1">
-						<button type="button" onClick={() => void load()} title="Refresh" aria-label="Refresh" className="p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><RefreshCw size={13} /></button>
-						<button type="button" onClick={onCloseMobileSidebar} title="Close sidebar" aria-label="Close sidebar" className="min-[981px]:hidden p-1 border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
-					</div>
-				</div>
-				<div className="p-2 space-y-3">
-					<div>
-						<div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Personal Chat</div>
-						<ProjectRow project={data!.personalProject} selected={selectedProject?.id === data!.personalProject.id} onSelect={() => onNavigate(data!.personalProject.id, undefined)} />
-					</div>
-					<div>
-						<div className="flex items-center justify-between gap-2 px-1 pb-1">
-							<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Projects</div>
-							<div className="flex items-center gap-1">
-								<button type="button" onClick={() => void createProject()} title="New Project" aria-label="New Project" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Plus size={14} /></button>
-								<button type="button" onClick={() => { const next = !showArchivedProjects; setShowArchivedProjects(next); localStorage.setItem("pibo.chat.projects.showArchivedProjects", String(next)); }} title="Archived Projects" aria-label="Archived Projects" className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedProjects ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedProjects ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
-							</div>
-						</div>
-						{activeProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, true)} />)}
-						{activeProjects.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No projects</div> : null}
-						{showArchivedProjects ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Projects</div>{archivedProjects.map((project) => <ProjectRow key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => onNavigate(project.id, undefined)} onRename={(name) => void renameProject(project, name)} onArchive={() => void setProjectArchived(project, false)} onDelete={() => void deleteArchivedProject(project)} archived />)}</div> : null}
-					</div>
-					{workflowProjectSessions.length > 0 ? (
-						<WorkflowRunsPanel
-							projectSessions={workflowProjectSessions}
-							sessionNodes={data!.sessions}
-							selectedPiboSessionId={selectedPiboSessionId}
-							onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)}
-						/>
-					) : null}
-					<div>
-						<div className="flex items-center justify-between gap-2 px-1 pb-1">
-							<div>
-								<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Project Sessions</div>
-								<div className="text-[10px] text-slate-500">{selectedProjectSession ? workflowSessionLabel(selectedProjectSession) : "Workflow: simple-chat"}</div>
-							</div>
-							<div className="flex items-center gap-1">
-								<button type="button" onClick={() => void createProjectSession()} disabled={creatingSession || !selectedProject} title="New Project Session" aria-label="New Project Session" className="h-6 w-6 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"><Plus size={14} /></button>
-								<button type="button" onClick={() => { const next = !showArchivedSessions; setShowArchivedSessions(next); localStorage.setItem("pibo.chat.projects.showArchivedSessions", String(next)); }} title={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} aria-label={showArchivedSessions ? "Hide Archived Project Sessions" : "Show Archived Project Sessions"} className={`h-6 w-6 inline-flex items-center justify-center border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedSessions ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}>{showArchivedSessions ? <ArchiveRestore size={14} /> : <Archive size={14} />}</button>
-							</div>
-						</div>
-						{sessionGroups.active.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} autoRename={autoRenameSessionId === session.piboSessionId} onAutoRenameConsumed={() => setAutoRenameSessionId(null)} showWorkflowSessionKindMarkers />)}
-						{sessionGroups.active.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No active project sessions</div> : null}
-						{showArchivedSessions ? <div className="mt-3"><div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Archived Project Sessions</div>{sessionGroups.archived.map((session) => <SessionNode key={session.piboSessionId} node={session} signalNow={Date.now()} selectedPiboSessionId={selectedPiboSessionId} selectedSessionPathIds={selectedSessionPathIds} onSelect={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)} onRename={(piboSessionId, title) => void renameSession(piboSessionId, title)} onArchive={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))} onDelete={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))} onViewContext={onViewContext} loadingPiboSessionId={null} showWorkflowSessionKindMarkers />)}{sessionGroups.archived.length === 0 ? <div className="px-2 py-3 text-xs text-slate-500 border border-dashed border-slate-700 rounded-sm">No archived project sessions</div> : null}</div> : null}
-					</div>
-				</div>
-			</aside>
+			<ProjectsSidebar
+				data={data!}
+				selectedProject={selectedProject}
+				selectedPiboSessionId={selectedPiboSessionId}
+				selectedProjectSession={selectedProjectSession}
+				workflowProjectSessions={workflowProjectSessions}
+				activeProjects={activeProjects}
+				archivedProjects={archivedProjects}
+				sessionGroups={sessionGroups}
+				selectedSessionPathIds={selectedSessionPathIds}
+				autoRenameSessionId={autoRenameSessionId}
+				creatingSession={creatingSession}
+				showArchivedProjects={showArchivedProjects}
+				showArchivedSessions={showArchivedSessions}
+				mobileSidebarOpen={mobileSidebarOpen}
+				onRefresh={() => void load()}
+				onCloseMobileSidebar={onCloseMobileSidebar}
+				onCreateProject={() => void createProject()}
+				onToggleArchivedProjects={() => {
+					const next = !showArchivedProjects;
+					setShowArchivedProjects(next);
+					localStorage.setItem("pibo.chat.projects.showArchivedProjects", String(next));
+				}}
+				onSelectProject={(projectId) => onNavigate(projectId, undefined)}
+				onRenameProject={(project, name) => void renameProject(project, name)}
+				onSetProjectArchived={(project, archived) => void setProjectArchived(project, archived)}
+				onDeleteArchivedProject={(project) => void deleteArchivedProject(project)}
+				onCreateProjectSession={() => void createProjectSession()}
+				onToggleArchivedSessions={() => {
+					const next = !showArchivedSessions;
+					setShowArchivedSessions(next);
+					localStorage.setItem("pibo.chat.projects.showArchivedSessions", String(next));
+				}}
+				onSelectSession={(piboSessionId) => onNavigate(selectedProject?.id, piboSessionId)}
+				onRenameSession={(piboSessionId, title) => void renameSession(piboSessionId, title)}
+				onArchiveSession={(piboSessionId, archived) => void patchProjectSession(piboSessionId, { archived }).then(() => load({ projectId: selectedProject?.id }))}
+				onDeleteSession={(node) => void patchProjectSession(node.piboSessionId, { archived: true }).then(() => load({ projectId: selectedProject?.id }))}
+				onViewContext={onViewContext}
+				onAutoRenameConsumed={() => setAutoRenameSessionId(null)}
+			/>
 			<SessionTracePane
 				bootstrap={traceBootstrap}
 				selectedPiboSessionId={selectedPiboSessionId}
@@ -2671,310 +2653,6 @@ function workflowVersionOptionKey(option: WorkflowVersionPickerOption): string {
 
 function workflowVersionOptionLabel(option: WorkflowVersionPickerOption): string {
 	return `${option.title} (${option.id}@${option.version})`;
-}
-
-function WorkflowRunsPanel({
-	projectSessions,
-	sessionNodes,
-	selectedPiboSessionId,
-	onSelect,
-}: {
-	projectSessions: PiboProjectSession[];
-	sessionNodes: PiboWebSessionNode[];
-	selectedPiboSessionId: string | null;
-	onSelect: (piboSessionId: string) => void;
-}) {
-	return (
-		<div>
-			<div className="flex items-center justify-between gap-2 px-1 pb-1">
-				<div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Workflow Runs</div>
-				<div className="text-[10px] text-slate-500">{projectSessions.length}</div>
-			</div>
-			<div className="space-y-1">
-				{projectSessions.map((projectSession) => {
-					const sessionNode = findSessionNode(sessionNodes, projectSession.piboSessionId);
-					const title = sessionNode ? sessionNodeTitle(sessionNode) : projectSession.title ?? projectSession.piboSessionId;
-					const selected = projectSession.piboSessionId === selectedPiboSessionId;
-					const stateLabel = workflowStateLabel(projectSession, sessionNode?.status);
-					return (
-						<button
-							key={`${projectSession.workflowRunId ?? projectSession.piboSessionId}:${projectSession.piboSessionId}`}
-							type="button"
-							onClick={() => onSelect(projectSession.piboSessionId)}
-							className={`w-full text-left rounded-sm border px-2 py-2 transition-colors ${selected ? "border-[#11a4d4] bg-[#11a4d4]/10" : "border-slate-800 hover:border-slate-700 hover:bg-slate-800/40"}`}
-							title={projectSession.workflowRunId ?? projectSession.workflowId}
-						>
-							<span className="flex items-center justify-between gap-2">
-								<span className="min-w-0 text-xs font-medium text-slate-200 truncate">{title}</span>
-								<span className={workflowStateBadgeClass(projectSession, sessionNode?.status)}>{stateLabel}</span>
-							</span>
-							<span className="mt-1 block text-[10px] text-slate-500 truncate">{projectSession.workflowId}</span>
-							{projectSession.workflowRunId ? <span className="block text-[10px] font-mono text-slate-500 truncate">run {shortWorkflowId(projectSession.workflowRunId)}</span> : null}
-						</button>
-					);
-				})}
-			</div>
-		</div>
-	);
-}
-
-function isWorkflowBackedProjectSession(projectSession: PiboProjectSession): boolean {
-	return Boolean(projectSession.workflowRunId) || projectSession.state === "workflow" || projectSession.workflowId !== "simple-chat";
-}
-
-function isConfiguredWorkflowSessionPending(projectSession: PiboProjectSession): boolean {
-	return isWorkflowBackedProjectSession(projectSession) && projectSession.state === "configured" && !projectSession.workflowRunId;
-}
-
-type ProjectSessionViewRouting = {
-	viewId: ChatSessionViewId;
-	workflowProjectSession?: PiboProjectSession;
-};
-
-function resolveProjectSessionViewRouting(input: {
-	selectedSessionNode?: PiboWebSessionNode;
-	selectedProjectSession?: PiboProjectSession;
-	selectedSession?: PiboSession;
-	selectedProject?: PiboProject;
-}): ProjectSessionViewRouting {
-	const workflowSessionKind = input.selectedSessionNode?.workflowSessionKind ?? workflowSessionKindFromProjectMetadata(input.selectedSession?.metadata);
-	if (workflowSessionKind === "main_workflow" || workflowSessionKind === "nested_workflow") {
-		if (input.selectedProjectSession && !isWorkflowBackedProjectSession(input.selectedProjectSession)) {
-			return { viewId: "terminal" };
-		}
-		if (!input.selectedProjectSession && workflowSessionKind === "main_workflow" && selectedMetadataWorkflowId(input.selectedSession?.metadata) === "simple-chat") {
-			return { viewId: "terminal" };
-		}
-		const workflowProjectSession = input.selectedProjectSession && isWorkflowBackedProjectSession(input.selectedProjectSession)
-			? input.selectedProjectSession
-			: createWorkflowViewProjectSession({
-				selectedSessionNode: input.selectedSessionNode,
-				selectedSession: input.selectedSession,
-				selectedProject: input.selectedProject,
-				workflowSessionKind,
-			});
-		return { viewId: "workflow", ...(workflowProjectSession ? { workflowProjectSession } : {}) };
-	}
-	if (workflowSessionKind === "agent_node" || workflowSessionKind === "subagent") {
-		return { viewId: "terminal" };
-	}
-	if (input.selectedProjectSession && isWorkflowBackedProjectSession(input.selectedProjectSession)) {
-		return { viewId: "workflow", workflowProjectSession: input.selectedProjectSession };
-	}
-	return { viewId: "terminal" };
-}
-
-function workflowSessionKindFromProjectMetadata(metadata: PiboSession["metadata"] | undefined): PiboWebSessionNode["workflowSessionKind"] {
-	const kind = metadataString(metadata, "workflowSessionKind");
-	if (kind === "main_workflow" || kind === "nested_workflow" || kind === "agent_node" || kind === "subagent") return kind;
-	if (metadataString(metadata, "projectSessionKind") === "main") return "main_workflow";
-	return undefined;
-}
-
-function selectedMetadataWorkflowId(metadata: PiboSession["metadata"] | undefined): string | undefined {
-	return metadataString(metadata, "projectWorkflowId") ?? metadataString(metadata, "workflowId");
-}
-
-function createWorkflowViewProjectSession(input: {
-	selectedSessionNode?: PiboWebSessionNode;
-	selectedSession?: PiboSession;
-	selectedProject?: PiboProject;
-	workflowSessionKind: "main_workflow" | "nested_workflow";
-}): PiboProjectSession | undefined {
-	const piboSessionId = input.selectedSessionNode?.piboSessionId ?? input.selectedSession?.id;
-	if (!piboSessionId) return undefined;
-	const metadata = input.selectedSession?.metadata;
-	const workflowId = selectedMetadataWorkflowId(metadata)
-		?? (input.workflowSessionKind === "nested_workflow" ? "nested-workflow-session" : "workflow-session");
-	const workflowVersion = metadataString(metadata, "projectWorkflowVersion") ?? metadataString(metadata, "workflowVersion");
-	const workflowRunId = metadataString(metadata, "workflowRunId");
-	return {
-		projectId: input.selectedProject?.id ?? metadataString(metadata, "projectId") ?? "project",
-		piboSessionId,
-		kind: input.workflowSessionKind === "nested_workflow" ? "sub" : "main",
-		workflowId,
-		...(workflowVersion ? { workflowVersion } : {}),
-		...(workflowRunId ? { workflowRunId } : {}),
-		...(input.selectedSessionNode?.parentId ? { parentMainSessionId: input.selectedSessionNode.parentId } : {}),
-		...(input.selectedSessionNode?.title || input.selectedSession?.title ? { title: input.selectedSessionNode?.title ?? input.selectedSession?.title } : {}),
-		state: workflowStateFromSessionNode(input.selectedSessionNode, workflowRunId),
-		...(input.selectedSessionNode?.archived !== undefined ? { archived: input.selectedSessionNode.archived } : {}),
-		createdAt: input.selectedSession?.createdAt ?? PROJECT_ROUTING_UNKNOWN_TIMESTAMP,
-		updatedAt: input.selectedSession?.updatedAt ?? input.selectedSessionNode?.lastActivityAt ?? PROJECT_ROUTING_UNKNOWN_TIMESTAMP,
-	};
-}
-
-function workflowStateFromSessionNode(sessionNode: PiboWebSessionNode | undefined, workflowRunId: string | undefined): PiboProjectSession["state"] {
-	if (sessionNode?.status === "error") return "failed";
-	if (sessionNode?.status === "running") return "running";
-	return workflowRunId ? "workflow" : "configured";
-}
-
-function metadataString(metadata: PiboSession["metadata"] | undefined, key: string): string | undefined {
-	const value = metadata?.[key];
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function workflowSessionLabel(projectSession: PiboProjectSession): string {
-	if (!isWorkflowBackedProjectSession(projectSession)) return `Workflow: ${projectSession.workflowId}`;
-	const run = projectSession.workflowRunId ? ` · run ${shortWorkflowId(projectSession.workflowRunId)}` : "";
-	return `Workflow: ${projectSession.workflowId}${run} · ${workflowStateLabel(projectSession)}`;
-}
-
-type WorkflowHeaderSummary = {
-	workflowId: string;
-	state: string;
-	workflowRunId?: string;
-};
-
-function createWorkflowHeaderSummary(projectSession: PiboProjectSession, selectedSessionStatus: PiboWebSessionStatus | undefined): WorkflowHeaderSummary {
-	return {
-		workflowId: projectSession.workflowId,
-		state: workflowStateLabel(projectSession, selectedSessionStatus),
-		...(projectSession.workflowRunId ? { workflowRunId: projectSession.workflowRunId } : {}),
-	};
-}
-
-function WorkflowHeaderMeta({ summary }: { summary: WorkflowHeaderSummary }) {
-	return (
-		<>
-			<span className="text-slate-600">·</span>
-			<span className="min-w-0 max-w-52 truncate rounded border border-[#11a4d4]/35 bg-[#11a4d4]/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[#11a4d4]" title={summary.workflowId}>
-				workflow {summary.workflowId}
-			</span>
-			<span className={workflowStateBadgeClassFromLabel(summary.state)}>state {summary.state}</span>
-			{summary.workflowRunId ? (
-				<span className="min-w-0 max-w-40 truncate rounded border border-slate-700 bg-slate-900/40 px-1.5 py-0.5 text-[10px] text-slate-400" title={summary.workflowRunId}>
-					run {shortWorkflowId(summary.workflowRunId)}
-				</span>
-			) : null}
-		</>
-	);
-}
-
-function workflowStateLabel(projectSession: PiboProjectSession, selectedSessionStatus?: PiboWebSessionStatus): string {
-	if (projectSession.archived) return "archived";
-	if (projectSession.state && projectSession.state !== "workflow") return projectSession.state.replace(/_/g, " ");
-	if (selectedSessionStatus === "running") return "running";
-	if (selectedSessionStatus === "error") return "failed";
-	if (projectSession.state) return projectSession.state.replace(/_/g, " ");
-	return projectSession.workflowRunId ? "workflow" : projectSession.kind;
-}
-
-function workflowStateBadgeClass(projectSession: PiboProjectSession, selectedSessionStatus?: PiboWebSessionStatus): string {
-	return workflowStateBadgeClassFromLabel(workflowStateLabel(projectSession, selectedSessionStatus), projectSession.archived);
-}
-
-function workflowStateBadgeClassFromLabel(stateLabel: string, archived = false): string {
-	const state = stateLabel.toLowerCase();
-	const base = "shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide";
-	if (archived) return `${base} border-slate-700 text-slate-500`;
-	if (state.includes("failed") || state.includes("error")) return `${base} border-red-500/40 text-red-300 bg-red-500/10`;
-	if (state.includes("waiting")) return `${base} border-amber-500/40 text-amber-300 bg-amber-500/10`;
-	if (state.includes("complete") || state.includes("done")) return `${base} border-emerald-500/40 text-emerald-300 bg-emerald-500/10`;
-	return `${base} border-[#11a4d4]/40 text-[#11a4d4] bg-[#11a4d4]/10`;
-}
-
-function shortWorkflowId(value: string): string {
-	return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
-}
-
-function ProjectRow({ project, selected, archived, onSelect, onRename, onArchive, onDelete }: { project: PiboProject; selected: boolean; archived?: boolean; onSelect: () => void; onRename?: (name: string) => void; onArchive?: () => void; onDelete?: () => void }) {
-	const personal = project.metadata?.personal === true;
-	const [editing, setEditing] = useState(false);
-	const [draftName, setDraftName] = useState(project.name);
-	const [menuOpen, setMenuOpen] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
-	const menuRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (!editing) setDraftName(project.name);
-	}, [editing, project.name]);
-
-	useEffect(() => {
-		if (!menuOpen) return;
-		const handle = (event: MouseEvent) => {
-			if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
-		};
-		document.addEventListener("mousedown", handle);
-		return () => document.removeEventListener("mousedown", handle);
-	}, [menuOpen]);
-
-	useLayoutEffect(() => {
-		if (!editing) return;
-		inputRef.current?.focus();
-		inputRef.current?.select();
-	}, [editing]);
-
-	const submitRename = () => {
-		const name = draftName.trim();
-		if (name && name !== project.name) onRename?.(name);
-		setEditing(false);
-	};
-
-	return (
-		<div className={`group flex items-center gap-2 rounded-sm border px-2 py-2 text-sm ${
-			personal
-				? selected
-					? "border-[#0bda57] bg-[#0bda57]/10 text-green-100"
-					: "border-[#0bda57]/50 bg-[#0bda57]/5 text-slate-300 hover:border-[#0bda57]"
-				: selected
-					? "border-[#11a4d4] bg-[#11a4d4]/10 text-sky-100"
-					: "border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-900/40"
-		}`}>
-			<span className={`h-6 w-6 shrink-0 inline-flex items-center justify-center rounded-sm ${personal ? "bg-[#0bda57]/15 text-[#0bda57]" : archived ? "bg-[#f59e0b]/15 text-[#f59e0b]" : "bg-[#151f24] text-slate-500"}`}>
-				{personal ? <Lock size={13} /> : archived ? <Archive size={13} /> : <FolderPlus size={13} />}
-			</span>
-			{editing ? (
-				<form
-					className="min-w-0 flex-1 grid grid-cols-[1fr_auto_auto] gap-1"
-					onSubmit={(event) => {
-						event.preventDefault();
-						submitRename();
-					}}
-				>
-					<input
-						ref={inputRef}
-						value={draftName}
-						onChange={(event) => setDraftName(event.target.value)}
-						onKeyDown={(event) => {
-							if (event.key === "Escape") {
-								event.preventDefault();
-								setEditing(false);
-								setDraftName(project.name);
-							}
-						}}
-						className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-2 py-1 text-sm outline-none focus:border-[#11a4d4]"
-					/>
-					<button type="submit" title="Save Project Name" aria-label="Save Project Name" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><Check size={13} /></button>
-					<button type="button" onClick={() => { setEditing(false); setDraftName(project.name); }} title="Cancel Rename" aria-label="Cancel Rename" className="h-7 w-7 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]"><X size={13} /></button>
-				</form>
-			) : (
-				<button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
-					<span className="block truncate font-medium">{project.name}</span>
-					<span className="block truncate text-[11px] text-slate-500">{personal ? "locked personal project chat" : project.projectFolder}</span>
-				</button>
-			)}
-			{personal ? (
-				<span title="Personal Chat is locked" aria-label="Personal Chat is locked" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-[#0bda57]/50 rounded-sm text-[#0bda57]">
-					<Lock size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
-				</span>
-			) : editing ? null : (
-				<div className="relative opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-[980px]:opacity-100" ref={menuRef}>
-					<button type="button" onClick={() => setMenuOpen((value) => !value)} title="Project actions" aria-label="Project actions" className="h-7 w-7 max-[980px]:h-9 max-[980px]:w-9 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4]">
-						<MoreVertical size={24} className="w-3.5 h-3.5 max-[980px]:w-5 max-[980px]:h-5" />
-					</button>
-					{menuOpen ? (
-						<div className="absolute right-0 top-full z-50 mt-1 w-48 bg-[#1a262b] border border-slate-700 rounded-sm shadow-lg py-1">
-							{onRename ? <button type="button" onClick={() => { setMenuOpen(false); setEditing(true); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2"><Edit3 size={16} /> Rename Project</button> : null}
-							{onArchive ? <button type="button" onClick={() => { setMenuOpen(false); onArchive(); }} className="w-full text-left px-3 py-2.5 text-sm text-slate-300 hover:bg-[#11a4d4]/10 hover:text-[#11a4d4] flex items-center gap-2">{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />} {archived ? "Restore Project" : "Archive Project"}</button> : null}
-							{onDelete ? <button type="button" onClick={() => { setMenuOpen(false); onDelete(); }} className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button> : null}
-						</div>
-					) : null}
-				</div>
-			)}
-		</div>
-	);
 }
 
 function AppErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
