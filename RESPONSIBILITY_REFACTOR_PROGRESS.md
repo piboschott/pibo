@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `src/shared/trace-engine.ts` dropped from 1,636 LOC to 1,541 LOC; legacy notification parsing, yielded-run node creation, notification summary/status calculation, and single-run id projection now live in a 102 LOC focused helper module.
 - Evidence: The extraction is behavior-preserving: transcript and service-event notification paths still call the same parser/node factory semantics, and new tests pin multi-run error summaries plus single running-run id/status projection through `buildTraceViewFromEvents`.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `9f7f708` (`refactor(trace): extract run notification helpers`).
+- Commit: `75a4cca` (`refactor(trace): extract run notification helpers`).
 - Blockers: none.
 - Exact next step: Continue `src/shared/trace-engine.ts` only with another test-backed seam; likely next candidates are event-to-node projection helpers or async agent/subagent linking, but do a short seam review first because remaining responsibilities are more intertwined.
 
