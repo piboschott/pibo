@@ -101,6 +101,12 @@ import {
 	resolveSessionActiveModelLabel,
 } from "./app-session-model";
 import { availableSkillsForSession, buildSlashCommands } from "./app-command-catalog";
+import {
+	hasExplicitSessionsRouteSelection,
+	routeSelectionRequest,
+	sessionsRouteCanonicalSelection,
+	shouldSkipRouteSelectionLoad,
+} from "./app-route-selection";
 import { errorMessage } from "./error-message";
 import { SettingsSidebar } from "./settings/SettingsSidebar";
 import { SettingsView } from "./settings/SettingsView";
@@ -477,42 +483,15 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 	useEffect(() => {
 		const stored = readStoredSelection();
-		const storedPiboSessionId = routeRoomId ? stored.sessionsByRoom?.[routeRoomId] : stored.piboSessionId;
-		const requestedRoomId = route.area === "sessions"
-			? (routeRoomId ?? (!routePiboSessionId ? stored.roomId : undefined))
-			: route.area === "context" && routePiboSessionId
-				? undefined
-				: stored.roomId;
-		const requestedPiboSessionId = route.area === "sessions"
-			? (routePiboSessionId ?? (!routePiboSessionId ? storedPiboSessionId : undefined))
-			: route.area === "context"
-				? routePiboSessionId
-				: stored.piboSessionId;
+		const { requestedRoomId, requestedPiboSessionId } = routeSelectionRequest(route, stored);
 
 		const canonicalizeSessionsRoute = (data: BootstrapData, replace = true) => {
-			if (route.area !== "sessions") return;
-			if (!data.selectedPiboSessionId) return;
-			if (route.roomId === data.selectedRoomId && route.piboSessionId === data.selectedPiboSessionId) return;
-			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, replace);
+			const selection = sessionsRouteCanonicalSelection(route, data);
+			if (!selection) return;
+			navigateToSelectedSession(selection.selectedRoomId, selection.selectedPiboSessionId, replace);
 		};
 
-		if (bootstrap && route.area !== "sessions") {
-			if (route.area !== "context" || !routePiboSessionId || bootstrap.selectedPiboSessionId === routePiboSessionId) return;
-		}
-
-		if (creatingSessionRef.current) {
-			return;
-		}
-
-		if (
-			bootstrap &&
-			route.area === "sessions" &&
-			route.piboSessionId &&
-			bootstrap.selectedPiboSessionId === route.piboSessionId &&
-			bootstrap.selectedRoomId === route.roomId
-		) {
-			return;
-		}
+		if (shouldSkipRouteSelectionLoad({ bootstrap, creatingSession: creatingSessionRef.current, route })) return;
 
 		const loadRouteData = bootstrap ? loadNavigation : loadBootstrap;
 		loadRouteData(requestedPiboSessionId, showArchivedRef.current, requestedRoomId)
@@ -533,7 +512,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						);
 					return;
 				}
-				const explicitRouteSelection = route.area === "sessions" && Boolean(routeRoomId || routePiboSessionId);
+				const explicitRouteSelection = hasExplicitSessionsRouteSelection(route);
 				if (explicitRouteSelection || (!requestedPiboSessionId && !requestedRoomId)) {
 					setError(caught instanceof Error ? caught.message : String(caught));
 					return;
