@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted the remaining Chat UI navigation/projects/rooms/sessions/message API client functions from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-chat-sessions.ts`.
 - Result: `App.tsx` now imports the chat-session client boundary directly, while `api.ts` remains a compatibility barrel for older imports plus shared `SaveState`/`ProductEvent` types. `api.ts` dropped from 281 LOC to 28 LOC; the extracted client module is 251 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-chat-sessions.ts && grep -q "export \\* from \"./api-chat-sessions\"" src/apps/chat-ui/src/api.ts && grep -q "./api-chat-sessions" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function getBootstrap|export async function postMessage|function normalizeBootstrap" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). Best-effort route smoke check `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl -fsS -I http://127.0.0.1:4802/apps/chat'` could not connect because the worker web server was not running; no service restart was performed for this pure client extraction.
-- Commit: pending.
+- Commit: `4b3c3b5` (`refactor(chat-ui): extract chat session api client`).
 - Blockers: none.
 - Exact next step: Pivot from Chat UI API splitting to `src/apps/chat-ui/src/App.tsx` analysis or a small hook/component extraction, because `api.ts` is now only a compatibility barrel plus shared editor/event types.
 
