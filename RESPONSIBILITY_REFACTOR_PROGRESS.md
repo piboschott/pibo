@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts` while preserving the public `src/data/telemetry.ts` export surface.
 - Result: `src/data/telemetry.ts` dropped from 1,129 to 933 LOC; list limits, session summaries/details, turn timelines, provider-event paging, stale-work shaping, and debug next-command hints now live in a focused read-model/query module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/telemetry-store.test.mjs test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs'`, and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure telemetry persistence/query helper extraction without user-facing route changes.
-- Commit: pending implementation commit (`refactor(telemetry): extract query helpers`).
+- Commit: `0bef05189b8aee00ebbc89d5e4be08e1f0f1777d` (`refactor(telemetry): extract query helpers`).
 - Blockers: none.
 - Exact next step: Telemetry entry point is now under the 1,000 LOC target; pivot to another high-value large target such as `src/shared/trace-engine.ts` or start with an analysis/test-safety batch for `src/apps/chat-ui/src/api.ts` rather than continuing low-value telemetry splitting.
 
