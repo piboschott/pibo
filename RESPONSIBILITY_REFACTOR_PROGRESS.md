@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `web-app.ts` now delegates user-skill route matching, request parsing, built-in/catalog conflict checks, manager create/install/read/update/delete calls, skill registry sync, bootstrap catalog invalidation, and response shaping to `chat-user-skill-routes.ts`; the app entry keeps route auth and same-origin checks visible.
 - Evidence: line counts after extraction: `web-app.ts` 5,052 LOC, `chat-user-skill-routes.ts` 193 LOC. `test/web-channel.test.mjs` now covers user-skill create/list/read/update/delete, registry register/unregister sync on create/rename/disable, and built-in name conflicts on create/update.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs` passed (86 tests); Docker `npm run typecheck` passed; worker route smoke `curl http://127.0.0.1:4802/apps/chat` returned exit 7/HTTP 000 connection refused without restarting services.
-- Commit: pending.
+- Commit: `4de24b4` (`refactor(chat): extract user skill routes`).
 - Blockers: none.
 - Exact next step: Re-rank the remaining `web-app.ts` route-dispatch seams; likely next candidates are a test-safety/analysis pass for custom-agent route handling or project workflow-session orchestration rather than another settings/capability slice.
 
