@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns optimistic session/room bootstrap cache mutation helpers, session/room subtree id collection, optimistic node/room factories, or session-node conversion for mutations; it imports that boundary instead.
 - Evidence: `App.tsx` dropped from 3,577 LOC to 3,335 LOC; the new 272 LOC support module covers the mutation boundary without pulling React components or route state into the helper file.
 - Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-app-bootstrap-mutations.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: pending.
+- Commit: `5451b64` (`refactor(chat-ui): extract app bootstrap mutations`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure extraction because typecheck and focused source-import tests passed.
 - Exact next step: Continue reducing `App.tsx` by extracting the shared session tree/navigation model helpers (`findSessionNode`, `findSessionPath`, selected-session active-model fallback) into a focused support module with tests, or run a small analysis first if route extraction looks safer.
 
