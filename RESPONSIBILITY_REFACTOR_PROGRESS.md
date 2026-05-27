@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns default profile/identity fallback, session tree lookup/path traversal, active model label resolution, or client transaction id creation; `session-trace-view-props.ts` also reuses the shared tree helpers instead of carrying duplicate recursive lookup code.
 - Evidence: `App.tsx` dropped from 3,335 LOC to 3,280 LOC; `session-trace-view-props.ts` dropped from 206 LOC to 184 LOC; the new support module is 63 LOC and has direct source-import tests for fallback semantics.
 - Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-app-session-model.test.mjs test/chat-ui-session-trace-view-props.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: `c9324f4` (`refactor(chat-ui): extract app session model helpers`).
+- Commit: `9944ced` (`refactor(chat-ui): extract app session model helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure extraction because typecheck and focused source-import tests passed.
 - Exact next step: Continue reducing `App.tsx` by extracting the remaining `SessionTracePane` query/page-state orchestration into a focused hook only after identifying a small seam, or do a test-safety batch around trace page merging before that extraction.
 
