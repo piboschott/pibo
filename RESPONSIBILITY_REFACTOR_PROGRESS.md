@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `WorkflowsArea.tsx` no longer owns edge-adapter port detail projection, edge-adapter ref reading, edge adapter selection writes, visible adapter-node insertion, edge adapter compatibility checks, adapter split edge id collision handling, or midpoint/fallback placement for inserted adapter nodes.
 - Evidence: `WorkflowsArea.tsx` dropped from 4,198 to 4,078 LOC; the new 169 LOC `workflow-edge-adapters.ts` owns the edge adapter seam; the new focused test covers edge adapter selection, output cloning, visible adapter-node insertion, guard preservation, position placement, fallback text ports, and collision-safe edge ids.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-workflow-edge-adapters.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending (`refactor(chat-ui): extract workflow edge adapter helpers`).
+- Commit: `e8dcd13` (`refactor(chat-ui): extract workflow edge adapter helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure/tested Workflow Builder model extraction because focused tests and typechecks passed.
 - Exact next step: Continue `WorkflowsArea.tsx` with a route-local analysis/refactor slice for Workflow Builder inspector/form helpers (`createWorkflowNodeInspectorFormState`, `applyWorkflowNodeInspectorForm`, `createWorkflowEdgeInspectorFormState`, `applyWorkflowEdgeInspectorForm`) because adapter-edge graph writes are now isolated and tested.
 
