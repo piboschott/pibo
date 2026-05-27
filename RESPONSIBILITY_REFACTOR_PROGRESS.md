@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted App shell/chrome presentation into `src/apps/chat-ui/src/app-chrome.tsx`.
-- Result: `App.tsx` no longer owns the fallback gateway banner, top navigation/header chrome, signed-out screen, error banner, mobile unread badge formatting, or the orphaned local modal helper.
-- Evidence: `App.tsx` dropped from 2,070 LOC to 1,932 LOC; the new `app-chrome.tsx` is 163 LOC.
-- Validation: Docker source/import sanity check passed; `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `3878d77` (`refactor(chat-ui): extract app chrome`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving presentation extraction because source checks and typechecks passed.
-- Exact next step: Continue reducing `App.tsx` below 1,900 LOC by extracting another low-risk seam such as the sidebar shell wrapper/refresh controls or pure signal-status bootstrap patch helpers.
+- Last batch: Extracted Chat UI App signal-status/bootstrap patch helpers into `src/apps/chat-ui/src/app-signal-status.ts` with focused tests.
+- Result: `App.tsx` no longer owns signal snapshot-to-bootstrap status reconciliation, signal patch application, legacy signal-status mapping, timestamp selection, or signal snapshot node/session map merging.
+- Evidence: `App.tsx` dropped from 1,932 LOC to 1,837 LOC; the new `app-signal-status.ts` is 97 LOC.
+- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-signal-status.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: pending implementation commit for this batch.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving pure helper extraction because focused tests and typechecks passed.
+- Exact next step: Continue reducing `App.tsx` with another low-risk pure seam, preferably the navigation/bootstrap merge helpers near the top of `App.tsx` (`mergeNavigationIntoBootstrap`, unread-count preservation, room unread merge, and `appendSessionRoots`) with focused tests before moving more route/effect logic.
 
 ## Progress log
 
@@ -163,3 +163,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the Context sidebar presentation into `src/apps/chat-ui/src/context/ContextSidebar.tsx` and moved `ContextPanel` into `src/apps/chat-ui/src/context/types.ts`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted App-owned room/session destructive confirmation modals into `src/apps/chat-ui/src/delete-confirmation-modals.tsx`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted App shell/chrome presentation into `src/apps/chat-ui/src/app-chrome.tsx` and removed the orphaned local modal helper from `App.tsx`; Docker source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Chat UI App signal-status/bootstrap patch helpers into `src/apps/chat-ui/src/app-signal-status.ts` and added `test/chat-ui-app-signal-status.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
