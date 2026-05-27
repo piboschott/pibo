@@ -87,7 +87,7 @@ import {
 	identityFromBootstrap,
 	resolveSessionActiveModelLabel,
 } from "./app-session-model";
-import type { SlashCommand } from "./chat-commands";
+import { availableSkillsForSession, buildSlashCommands } from "./app-command-catalog";
 import { errorMessage } from "./error-message";
 import { SettingsSidebar } from "./settings/SettingsSidebar";
 import { SettingsView } from "./settings/SettingsView";
@@ -830,59 +830,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 		}
 	}, [area, bootstrap, loadBootstrap, navigateToSelectedSession, refreshTrace, selectedPiboSessionId, selectedRoomId, setPreferredNewSessionProfile]);
 
-	const slashCommands = useMemo<SlashCommand[]>(() => {
-		const actions = bootstrap?.capabilities.actions ?? [];
-		const commands = actions.flatMap((action): SlashCommand[] =>
-			action.slashCommands
-				.filter((command) => command !== "tree")
-				.map((command): SlashCommand => ({
-					slash: `/${command}`,
-					action: action.name,
-					description: action.name === "thinking" && command === "thinking"
-						? "Show thinking level or use /thinking <level>."
-						: action.description ?? action.name,
-				})),
-		);
-		commands.push(
-			{
-				slash: "/download",
-				action: "download",
-				description: "Download a file by absolute path or relative to the current working directory.",
-			},
-			{
-				slash: "/upload",
-				action: "upload",
-				description: "Upload one or more files to ~/.pibo/uploads.",
-			},
-			{
-				slash: "/thinking-show",
-				action: "thinking-show",
-				description: "Toggle historical thinking display in this browser.",
-			},
-		);
-		return commands;
-	}, [bootstrap]);
-
-	const skills = useMemo(() => {
-		if (!bootstrap) return [];
-		const catalogSkills = bootstrap.agentCatalog?.skills ?? [];
-		const userSkills = bootstrap.agentCatalog?.userSkills ?? [];
-		const allSkills = [...catalogSkills, ...userSkills];
-
-		const fallbackProfile = defaultProfileFromBootstrap(bootstrap);
-		const selectedSessionProfile = selectedPiboSessionId
-			? findSessionNode(bootstrap.sessions, selectedPiboSessionId)?.profile ?? fallbackProfile
-			: fallbackProfile;
-
-		const agentSkills = [
-			...bootstrap.agents.map((agent) => ({ name: agent.name, skills: agent.skills })),
-			...bootstrap.customAgents.map((agent) => ({ name: agent.profileName, skills: agent.skills })),
-		];
-		const currentAgent = agentSkills.find((agent) => agent.name === selectedSessionProfile);
-		const allowedSkillNames = new Set(currentAgent?.skills ?? []);
-
-		return allSkills.filter((skill) => allowedSkillNames.has(skill.name));
-	}, [bootstrap, selectedPiboSessionId]);
+	const slashCommands = useMemo(() => buildSlashCommands(bootstrap?.capabilities.actions ?? []), [bootstrap]);
+	const skills = useMemo(() => availableSkillsForSession(bootstrap, selectedPiboSessionId), [bootstrap, selectedPiboSessionId]);
 
 	const selectSession = useCallback(async (piboSessionId: string) => {
 		flushSync(() => {
