@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow store write-side SQLite parameter serialization into `packages/workflows/src/store/write-values.ts`.
 - Result: `packages/workflows/src/store/index.ts` is down from 1,052 to 885 LOC. The store class keeps SQL/read/write orchestration, while JSON serialization, null coercion, output-present flags, checkpoint pending payload shaping, and canonical published-version definition JSON for writes live in one store-local helper module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package store/persistence coverage across SQLite restarts because this batch preserves the store public API and database behavior.
-- Commit: pending.
+- Commit: `06f40b51c4dc43f9fb2b23323a1883ef213d53f5` (`refactor(workflows): extract store write values`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/store/index.ts` by inspecting whether the remaining catalog/draft write conflict and identity-update logic has a safe named helper boundary, or pivot to the next large target because the store entry point is now under 1,000 LOC.
 
