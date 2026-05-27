@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-json-schema-validation.ts` for JSON Schema subset validation, local `$defs`/`$ref` handling, object-root/Structured Outputs constraints, and schema diagnostics. Updated the security-boundary source audit test to follow the extracted schema module for the Zod-exclusion copy. `web-app.ts` now imports this boundary and keeps workflow shape validation, registered-ref params validation, catalog-backed checks, route dispatch, store writes, lifecycle events, and validation response assembly local.
 - Evidence: `web-app.ts` is now 6,050 LOC (down from 6,417); new `workflow-json-schema-validation.ts` is 390 LOC.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed (87 tests); Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused; no restart was performed.
-- Commit: pending.
+- Commit: `f9cd1c7` (`refactor(chat): extract workflow json schema validation`).
 - Blockers: none.
 - Exact next step: Inspect the remaining Chat Web workflow V2 validator for a focused registered-ref params validation extraction before moving route handlers.
 
