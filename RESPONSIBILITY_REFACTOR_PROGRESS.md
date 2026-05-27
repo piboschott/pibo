@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns navigation refresh unread preservation, read-subtree unread clearing, selected-room unread merge, or paged root-session append semantics.
 - Evidence: `App.tsx` dropped from 1,837 LOC to 1,728 LOC; the new `app-navigation-merge.ts` is 111 LOC.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-navigation-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `1f3803a` (`refactor(chat-ui): extract app navigation merge helpers`).
+- Commit: `a55a695` (`refactor(chat-ui): extract app navigation merge helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving pure helper extraction because focused tests and typechecks passed.
 - Exact next step: Continue reducing `App.tsx` with another low-risk pure seam: extract App-owned agent catalog bootstrap mutation helpers (`updateMcpServerInBootstrap`, Pi package upsert/remove, user-skill upsert/remove) into an `app-agent-catalog-mutations` module with focused tests before moving broader route/effect logic.
 
