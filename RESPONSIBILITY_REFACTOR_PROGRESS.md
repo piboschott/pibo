@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted the Chat UI auth API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-auth.ts`.
 - Result: `signOut` and `signInWithGoogle` now live in `api-auth.ts`; `App.tsx` imports the auth client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 303 LOC to 281 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-auth.ts && grep -q "export \\* from \"./api-auth\"" src/apps/chat-ui/src/api.ts && grep -q "./api-auth" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function signOut|export async function signInWithGoogle" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). A best-effort route smoke check with `curl -fsS -I http://127.0.0.1:4802/apps/chat` inside the Docker worker could not connect because the worker web server was not running; no service restart was performed for this pure module extraction.
-- Commit: pending.
+- Commit: `11aa573` (`refactor(chat-ui): extract auth api client`).
 - Blockers: none.
 - Exact next step: Continue shrinking the remaining Chat UI API boundary with a larger `api-chat-sessions.ts` extraction for navigation/bootstrap/projects/sessions, or pivot to `src/apps/chat-ui/src/App.tsx` component/hook seams if another API split would create too much import churn.
 
