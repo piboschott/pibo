@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Identified three high-value, low-to-medium-risk extraction candidates: static asset/legacy shell serving, workflow web-store persistence classes/row mappers, and project/workflow session API orchestration; recorded lower-priority route/normalizer and EventSource seams.
 - Evidence: `src/apps/chat/web-app.ts` is 11,096 LOC; `createChatWebApp` route dispatch spans ~1,701 LOC; `createChatHtml` fallback shell spans ~857 LOC; workflow store classes plus row mappers occupy roughly lines 851-1664; existing coverage includes `test/web-channel.test.mjs`, `test/base-prompt-web.test.mjs`, `test/chat-signals-api.test.mjs`, and workflow V2 checklist/source tests that mention `web-app.ts`.
 - Validation: host `git diff --check` passed for this tracking-only analysis artifact.
-- Commit: pending.
+- Commit: `c6296c5` (`docs(refactor): analyze chat web seams`).
 - Blockers: none.
 - Exact next step: Extract static asset and legacy fallback shell serving from `src/apps/chat/web-app.ts` into a focused module (for example `src/apps/chat/static-assets.ts`), then run Docker `npm run build`, focused `node --test test/web-channel.test.mjs`, root `npm run typecheck`, and a built-shell/static-asset smoke if the worker web server is reachable.
 
