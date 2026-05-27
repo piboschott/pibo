@@ -6,6 +6,12 @@ export function workflowVersionSelectionKey(workflowId: string, workflowVersion:
 	return `${workflowId}@${workflowVersion}`;
 }
 
+export function parseWorkflowVersionKey(value: string): WorkflowVersionSelection | undefined {
+	const atIndex = value.lastIndexOf("@");
+	if (atIndex <= 0 || atIndex === value.length - 1) return undefined;
+	return { workflowId: value.slice(0, atIndex), workflowVersion: value.slice(atIndex + 1) };
+}
+
 export function workflowVersionViewerPath(workflowId: string, workflowVersion: string): string {
 	return `/apps/chat/workflows/view/${encodeURIComponent(workflowId)}/${encodeURIComponent(workflowVersion)}`;
 }
