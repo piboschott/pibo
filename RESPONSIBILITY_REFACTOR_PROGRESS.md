@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted Workflow Library version-history model helpers into `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts`.
-- Result: `WorkflowsArea.tsx` no longer owns version-history grouping, status copy, action label text, or action availability checks; the helper seam now has focused unit coverage.
-- Evidence: `WorkflowsArea.tsx` dropped from 4,513 to 4,465 LOC; the new model module is 60 LOC and `test/chat-ui-workflow-version-history-model.test.mjs` covers grouping, published-row title/source promotion, status descriptions, action labels, and action checks.
-- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `4165cc7` (`refactor(chat-ui): extract workflow history model`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure model extraction because focused tests and typechecks passed.
-- Exact next step: Continue `WorkflowsArea.tsx` by extracting the Workflow Library panel side-effect hook/component boundary, or extract graph projection/model helpers after adding focused tests around node/edge projection semantics.
+- Last batch: Extracted Workflows graph projection/read-model helpers into `src/apps/chat-ui/src/workflows/workflow-graph-model.ts`.
+- Result: `WorkflowsArea.tsx` no longer owns React Flow projection, workflow node/edge object readers, saved/auto position calculation, initial-node normalization, or selected-element presence checks; the new graph model seam has focused coverage.
+- Evidence: `WorkflowsArea.tsx` dropped from 4,465 to 4,311 LOC; the new graph model module is 172 LOC and `test/chat-ui-workflow-graph-model.test.mjs` covers node filtering, saved/node UI/auto positions, diagnostics counts, initial flags, invalid-edge dropping, graph element detection, readers, fallback labels, and next-node positioning.
+- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-workflow-graph-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure graph model extraction because focused tests and typechecks passed.
+- Exact next step: Continue `WorkflowsArea.tsx` by extracting graph mutation/write helpers (`addWorkflowGraph*`, edge insertion/deletion, position writes) into the same graph model seam with focused tests for id generation, initial-node normalization, edge cleanup, and adapter insertion behavior.
 
 ## Progress log
 
@@ -174,3 +174,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted Chat UI App destructive delete planning helpers into `src/apps/chat-ui/src/app-delete-flow.ts` and added `test/chat-ui-app-delete-flow.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI App destructive-delete side-effect orchestration into `src/apps/chat-ui/src/app-delete-actions.ts`; source/import sanity, host `git diff --check`, Docker focused delete-flow test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Workflow Library version-history model helpers into `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts` and added `test/chat-ui-workflow-version-history-model.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Workflows graph projection/read-model helpers into `src/apps/chat-ui/src/workflows/workflow-graph-model.ts` and added `test/chat-ui-workflow-graph-model.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.

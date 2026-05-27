@@ -94,7 +94,9 @@
 
 - `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts` now owns Workflow Library version-history grouping and catalog copy helpers: grouping rows by workflow id, promoting published row title/source for mixed archived/published history, status-description text, action labels, and action availability checks.
 - `test/chat-ui-workflow-version-history-model.test.mjs` covers this seam. Re-run it before changing Workflow Library version-history grouping, status copy, or catalog action labels.
-- `src/apps/chat-ui/src/WorkflowsArea.tsx` remains large (~4,465 LOC) and still mixes Workflow Library side effects, raw IR editing, graph canvas projection/mutations, inspectors, node editors, and version viewing. Next high-value seams are the Workflow Library panel hook/component boundary or graph projection/model helpers with focused tests.
+- `src/apps/chat-ui/src/workflows/workflow-graph-model.ts` now owns the Workflow Builder graph read/projection seam: workflow node/edge object filtering, node labels/kinds, saved workflow/node UI positions, auto/next graph positions, initial node ids, endpoint node-id reading, React Flow node/edge projection, diagnostic counts, and selected-element presence checks.
+- `test/chat-ui-workflow-graph-model.test.mjs` covers graph projection behavior, invalid edge dropping, diagnostic counts, position precedence, fallback labels, read helpers, and next-node positioning. Re-run it before changing graph canvas projection, saved position semantics, or graph reader filtering.
+- `src/apps/chat-ui/src/WorkflowsArea.tsx` remains large (~4,311 LOC) and still mixes Workflow Library side effects, raw IR editing, graph canvas mutation/write helpers, inspectors, node editors, and version viewing. Next high-value seam is extracting graph mutation/write helpers (`addWorkflowGraph*`, edge insertion/deletion, position writes) into the graph model with focused tests, or extracting the Workflow Library panel side-effect hook/component boundary.
 
 ## Chat UI API client seams
 

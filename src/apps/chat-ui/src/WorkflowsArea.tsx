@@ -11,9 +11,7 @@ import {
 	applyEdgeChanges,
 	applyNodeChanges,
 	type Connection,
-	type Edge,
 	type EdgeChange,
-	type Node,
 	type NodeChange,
 	type NodeProps,
 } from "@xyflow/react";
@@ -61,6 +59,24 @@ import {
 } from "./api-workflows";
 import { MarkdownEditor } from "./context/MarkdownEditor";
 import {
+	createWorkflowGraphProjection,
+	isWorkflowJsonObject,
+	nextGraphNodePosition,
+	projectionHasElement,
+	readEdgeEndpointNodeId,
+	readWorkflowEdgeDefinitions,
+	readWorkflowNodeDefinitions,
+	readWorkflowPositions,
+	workflowInitialNodeIds,
+	workflowNodeKind,
+	workflowNodeLabel,
+	type GraphPosition,
+	type SelectedGraphElement,
+	type WorkflowGraphFlowEdge,
+	type WorkflowGraphFlowNode,
+	type WorkflowJsonObject,
+} from "./workflows/workflow-graph-model";
+import {
 	groupWorkflowVersionHistory,
 	hasWorkflowCatalogAction,
 	workflowCatalogActionLabel,
@@ -76,33 +92,6 @@ const DEFAULT_EDGE_STATE_PATHS = ["payload", "previous", "resume"];
 const DEFAULT_WRITE_STATE_SCOPES: WorkflowStateScope[] = ["global", "local"];
 const STARTER_DRAFT_ID = "v2-starter-draft";
 const RAW_IR_PARSE_DIAGNOSTIC_CODE = "WorkflowBuilderWarning.invalidRawIrText";
-
-const DEFAULT_GRAPH_POSITION = { x: 80, y: 80 };
-const GRAPH_COLUMN_GAP = 260;
-const GRAPH_ROW_GAP = 150;
-
-type WorkflowJsonObject = Record<string, unknown>;
-type GraphPosition = { x: number; y: number };
-type WorkflowGraphNodeData = Record<string, unknown> & {
-	nodeId: string;
-	label: string;
-	kind: string;
-	validationCount: number;
-	isInitial: boolean;
-};
-type WorkflowGraphFlowNode = Node<WorkflowGraphNodeData, "workflowNode">;
-type WorkflowGraphEdgeData = Record<string, unknown> & {
-	edgeId: string;
-	kind: string;
-};
-type WorkflowGraphFlowEdge = Edge<WorkflowGraphEdgeData, "smoothstep">;
-type SelectedGraphElement = { type: "node" | "edge"; id: string } | undefined;
-type WorkflowGraphProjection = {
-	nodes: WorkflowGraphFlowNode[];
-	edges: WorkflowGraphFlowEdge[];
-	usedAutoLayout: boolean;
-	missingPositionCount: number;
-};
 type WorkflowVersionSelection = { workflowId: string; workflowVersion: string };
 type WorkflowPortKindSelection = "text" | "json";
 type OptionalWorkflowPortKindSelection = "none" | WorkflowPortKindSelection;
@@ -3179,149 +3168,6 @@ function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNo
 const WORKFLOW_GRAPH_NODE_TYPES = {
 	workflowNode: WorkflowGraphNodeCard,
 };
-
-function createWorkflowGraphProjection(definition: WorkflowDraftDefinition, diagnostics: WorkflowDraftDiagnostic[]): WorkflowGraphProjection {
-	const nodeDefinitions = readWorkflowNodeDefinitions(definition);
-	const nodeEntries = Object.entries(nodeDefinitions);
-	const workflowPositions = readWorkflowPositions(definition);
-	const nodeIds = new Set(nodeEntries.map(([nodeId]) => nodeId));
-	let missingPositionCount = 0;
-	const nodes: WorkflowGraphFlowNode[] = nodeEntries.map(([nodeId, nodeDefinition], index) => {
-		const savedPosition = workflowPositions[nodeId] ?? readNodeUiPosition(nodeDefinition);
-		const position = savedPosition ?? autoLayoutPosition(index, nodeEntries.length);
-		if (!savedPosition) missingPositionCount += 1;
-		return {
-			id: nodeId,
-			type: "workflowNode",
-			position,
-			data: {
-				nodeId,
-				label: workflowNodeLabel(nodeId, nodeDefinition),
-				kind: workflowNodeKind(nodeDefinition),
-				validationCount: countNodeDiagnostics(diagnostics, nodeId),
-				isInitial: workflowInitialNodeIds(definition).includes(nodeId),
-			},
-		};
-	});
-
-	const edges: WorkflowGraphFlowEdge[] = Object.entries(readWorkflowEdgeDefinitions(definition)).flatMap(([edgeId, edgeDefinition]) => {
-		const source = readEdgeEndpointNodeId(edgeDefinition.from);
-		const target = readEdgeEndpointNodeId(edgeDefinition.to);
-		if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) return [];
-		const kind = typeof edgeDefinition.kind === "string" ? edgeDefinition.kind : "data";
-		return [{
-			id: edgeId,
-			source,
-			target,
-			type: "smoothstep",
-			label: kind,
-			data: { edgeId, kind },
-			markerEnd: { type: MarkerType.ArrowClosed, color: "#38bdf8" },
-			style: { stroke: "#38bdf8", strokeWidth: 1.5 },
-		}];
-	});
-
-	return {
-		nodes,
-		edges,
-		usedAutoLayout: missingPositionCount > 0,
-		missingPositionCount,
-	};
-}
-
-function projectionHasElement(projection: WorkflowGraphProjection, selected: Exclude<SelectedGraphElement, undefined>): boolean {
-	return selected.type === "node"
-		? projection.nodes.some((node) => node.id === selected.id)
-		: projection.edges.some((edge) => edge.id === selected.id);
-}
-
-function isWorkflowJsonObject(value: unknown): value is WorkflowJsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readWorkflowNodeDefinitions(definition: WorkflowDraftDefinition): Record<string, WorkflowJsonObject> {
-	return readWorkflowObjectMap(definition.nodes);
-}
-
-function readWorkflowEdgeDefinitions(definition: WorkflowDraftDefinition): Record<string, WorkflowJsonObject> {
-	return readWorkflowObjectMap(definition.edges);
-}
-
-function readWorkflowObjectMap(value: unknown): Record<string, WorkflowJsonObject> {
-	if (!isWorkflowJsonObject(value)) return {};
-	const result: Record<string, WorkflowJsonObject> = {};
-	for (const [key, entry] of Object.entries(value)) {
-		if (isWorkflowJsonObject(entry)) result[key] = entry;
-	}
-	return result;
-}
-
-function workflowNodeKind(nodeDefinition: WorkflowJsonObject): string {
-	return typeof nodeDefinition.kind === "string" ? nodeDefinition.kind : "node";
-}
-
-function workflowNodeLabel(nodeId: string, nodeDefinition: WorkflowJsonObject): string {
-	return typeof nodeDefinition.label === "string" && nodeDefinition.label.trim()
-		? nodeDefinition.label.trim()
-		: `${capitalizeWorkflowLabel(workflowNodeKind(nodeDefinition))} ${nodeId}`;
-}
-
-function capitalizeWorkflowLabel(value: string): string {
-	return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function readWorkflowPositions(definition: WorkflowDraftDefinition): Record<string, GraphPosition> {
-	const ui = isWorkflowJsonObject(definition.ui) ? definition.ui : undefined;
-	const rawPositions = ui && isWorkflowJsonObject(ui.positions) ? ui.positions : undefined;
-	if (!rawPositions) return {};
-	const positions: Record<string, GraphPosition> = {};
-	for (const [nodeId, value] of Object.entries(rawPositions)) {
-		const position = readPosition(value);
-		if (position) positions[nodeId] = position;
-	}
-	return positions;
-}
-
-function readNodeUiPosition(nodeDefinition: WorkflowJsonObject): GraphPosition | undefined {
-	const ui = isWorkflowJsonObject(nodeDefinition.ui) ? nodeDefinition.ui : undefined;
-	return ui ? readPosition(ui.position) : undefined;
-}
-
-function readPosition(value: unknown): GraphPosition | undefined {
-	if (!isWorkflowJsonObject(value)) return undefined;
-	const { x, y } = value;
-	return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y) ? { x, y } : undefined;
-}
-
-function autoLayoutPosition(index: number, total: number): GraphPosition {
-	if (total <= 0) return DEFAULT_GRAPH_POSITION;
-	const columns = Math.max(1, Math.ceil(Math.sqrt(total)));
-	return {
-		x: DEFAULT_GRAPH_POSITION.x + (index % columns) * GRAPH_COLUMN_GAP,
-		y: DEFAULT_GRAPH_POSITION.y + Math.floor(index / columns) * GRAPH_ROW_GAP,
-	};
-}
-
-function nextGraphNodePosition(nodes: WorkflowGraphFlowNode[]): GraphPosition {
-	if (!nodes.length) return DEFAULT_GRAPH_POSITION;
-	return {
-		x: DEFAULT_GRAPH_POSITION.x + (nodes.length % 3) * GRAPH_COLUMN_GAP,
-		y: DEFAULT_GRAPH_POSITION.y + Math.floor(nodes.length / 3) * GRAPH_ROW_GAP,
-	};
-}
-
-function workflowInitialNodeIds(definition: WorkflowDraftDefinition): string[] {
-	if (typeof definition.initial === "string") return [definition.initial];
-	return Array.isArray(definition.initial) ? definition.initial.filter((entry): entry is string => typeof entry === "string") : [];
-}
-
-function countNodeDiagnostics(diagnostics: WorkflowDraftDiagnostic[], nodeId: string): number {
-	return diagnostics.filter((diagnostic) => diagnostic.nodeId === nodeId || diagnostic.path?.startsWith(`$.nodes.${nodeId}`)).length;
-}
-
-function readEdgeEndpointNodeId(value: unknown): string | undefined {
-	return isWorkflowJsonObject(value) && typeof value.nodeId === "string" && value.nodeId.trim() ? value.nodeId.trim() : undefined;
-}
 
 function nextWorkflowNodeId(definition: WorkflowDraftDefinition, prefix: string): string {
 	const nodes = readWorkflowNodeDefinitions(definition);
