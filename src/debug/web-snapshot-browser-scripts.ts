@@ -318,4 +318,3 @@ async function runWatch(options) {
 }
 `;
 }
-

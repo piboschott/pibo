@@ -587,4 +587,3 @@ function HandlerOptionCard({ option }: { option: WorkflowHandlerPickerOption }) 
 		</div>
 	);
 }
-

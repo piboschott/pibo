@@ -1,3 +1,7 @@
+# Code Quality Refactoring Ralph Insights — 2026-05-27
+
+This report preserves durable findings from the Ralph code-quality refactoring loop. It replaces the root-level `RESPONSIBILITY_REFACTOR_INSIGHTS.md` tracking file so the repository keeps useful architectural context under `docs/reports/`.
+
 # Code Quality Refactoring Insights
 
 ## Durable context

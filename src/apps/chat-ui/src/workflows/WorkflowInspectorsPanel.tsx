@@ -973,4 +973,3 @@ function WorkflowParamsEditor({ label, schema, value, onChange }: { label: strin
 		</div>
 	);
 }
-

@@ -359,4 +359,3 @@ export function agentDesignerUnavailableMessage(): string {
 export function isNotFoundError(message: string): boolean {
 	return message.toLowerCase().includes("not found") || message.includes("404");
 }
-
