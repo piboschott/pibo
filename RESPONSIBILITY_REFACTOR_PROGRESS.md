@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App` now imports navigation helpers for room splitting/lookup/archive detection, session archive splitting/visible limit selection, session row labels/tooltips/signals, and unread counts from a focused helper module. The SessionSidebar JSX and row components remain in `App` for a future module move.
 - Evidence: `git diff --check` passed; `wc -l src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/session-sidebar-helpers.ts` reports 9,934 LOC for `App.tsx` and 148 LOC for the helper module.
 - Validation: Docker source/import sanity check passed with `grep`; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `http://127.0.0.1:4802/apps/chat` returned `URLError: <urlopen error [Errno 111] Connection refused>`, so no browser validation was possible without restarting worker services.
-- Commit: pending for current batch.
+- Commit: `f73d50c` (`refactor(chat-ui): extract session sidebar helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Move the `SessionSidebar` row-component cluster to a dedicated sessions module now that its pure helper imports are separated, or pivot to the lower-risk `AgentsView`/Agent Designer feature-module extraction if the row-component prop boundary still looks too wide.
 
