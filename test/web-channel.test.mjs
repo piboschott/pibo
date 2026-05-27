@@ -270,6 +270,52 @@ test("chat web app uploads multipart files to the Pibo uploads directory", async
 	}
 });
 
+test("chat web app downloads files relative to the selected session workspace", async () => {
+	const { channel, baseURL } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+	});
+	const workspace = mkdtempSync(join(tmpdir(), "pibo-chat-download-"));
+	writeFileSync(join(workspace, "report.txt"), "download body");
+
+	try {
+		const roomResponse = await fetch(`${baseURL}/api/chat/rooms`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ name: "Download Room", workspace }),
+		});
+		assert.equal(roomResponse.status, 201);
+		const roomPayload = await roomResponse.json();
+
+		const sessionResponse = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ roomId: roomPayload.room.id }),
+		});
+		assert.equal(sessionResponse.status, 201);
+		const sessionPayload = await sessionResponse.json();
+
+		const response = await fetch(
+			`${baseURL}/api/chat/download?path=${encodeURIComponent("report.txt")}&piboSessionId=${encodeURIComponent(sessionPayload.session.id)}`,
+			{ headers: { "x-test-user": "user-1" } },
+		);
+		assert.equal(response.status, 200);
+		assert.match(response.headers.get("content-type") ?? "", /^text\/plain/);
+		assert.match(response.headers.get("content-disposition") ?? "", /report\.txt/);
+		assert.equal(await response.text(), "download body");
+	} finally {
+		rmSync(workspace, { recursive: true, force: true });
+		await channel.stop?.();
+	}
+});
+
 test("web host redirects app links to the canonical auth origin", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		web: { canonicalBaseURL: "http://pibo.example.test:4788" },
