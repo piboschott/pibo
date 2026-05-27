@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Ranked the next seams: (1) extract snapshot/watch browser expression generation and the injected DOM observer library; (2) extract CLI option parsing/defaults/preset validation after preserving current pre-CDP validation behavior; (3) keep CDP target connection and command orchestration in `web.ts` for now; (4) defer hosted-compare env-file helpers unless they are moved with option parsing.
 - Evidence: `src/debug/web.ts` is 1,183 LOC; the browser snapshot/watch script block spans roughly lines 632-937 and is self-contained behind `buildSnapshotExpression`/`buildWatchExpression`; `parseOptions` and validators span roughly lines 939-1109 and are covered by many `test/debug-cli.test.mjs` pre-target-discovery rejection tests; command handlers still interleave CDP connection, validation, navigation, and artifact/report calls.
 - Validation: host `git diff --check` passed for the tracking-only diff.
-- Commit: pending for this analysis artifact.
+- Commit: `d4e6ddb` (`docs(refactor): analyze debug web seams`).
 - Blockers: none.
 - Exact next step: Implement the low-risk extraction of snapshot/watch browser scripts into `src/debug/web-snapshot-browser-scripts.ts`, exporting `buildSnapshotExpression` and `buildWatchExpression`, then run host `git diff --check`, Docker `npm run build`, Docker focused `node --test test/debug-cli.test.mjs`, Docker root `npm run typecheck`, and CLI smoke for `node dist/bin/pibo.js debug web snapshot --help` plus `watch --help`.
 
