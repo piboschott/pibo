@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the Chat UI Web Annotation API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-web-annotations.ts`.
-- Result: Web annotation target/binding/overlay/message types and list/patch/target/binding/inject client functions now live in `api-web-annotations.ts`; `App.tsx` imports that focused client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 573 LOC to 452 LOC.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-web-annotations.ts && grep -q "export \\* from \"./api-web-annotations\"" src/apps/chat-ui/src/api.ts && grep -q "./api-web-annotations" src/apps/chat-ui/src/App.tsx && ! grep -E "export type WebAnnotation|listWebAnnotations|patchWebAnnotation|createWebAnnotationBinding|injectWebAnnotationBinding|listWebAnnotationTargets|compactObject" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: `56ffa0a` (`refactor(chat-ui): extract web annotation api client`).
+- Last batch: Extracted the Chat UI trace/signal polling and EventSource API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-trace-signals.ts`.
+- Result: Trace summary/detail clients, signal snapshot/tree clients, the signal EventSource subscription helper, and ETag helpers now live in `api-trace-signals.ts`; `App.tsx` imports that focused client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 452 LOC to 360 LOC.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-trace-signals.ts && grep -q "export \\* from \"./api-trace-signals\"" src/apps/chat-ui/src/api.ts && grep -q "./api-trace-signals" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function getTraceSummary|export async function getTrace\\(|fetchSessionSignals|fetchSignalTree|subscribeSignalTree|function toEtag|function fromEtag" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue shrinking the Chat UI API boundary with another cohesive request family from `api.ts`, likely auth/upload/download helpers, trace/signal polling, or room/session messaging APIs.
+- Exact next step: Continue shrinking the Chat UI API boundary with another cohesive request family from `api.ts`, likely file upload/download plus download filename helpers, auth helpers, or a larger chat session/room API split if import churn is acceptable.
 
 ## Progress log
 
@@ -118,3 +118,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the prompt/settings Chat UI API client seam into `src/apps/chat-ui/src/api-settings.ts`; source sanity check, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Agent Designer/capability-management Chat UI API client seam into `src/apps/chat-ui/src/api-agent-designer.ts`; source sanity check, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Web Annotation Chat UI API client seam into `src/apps/chat-ui/src/api-web-annotations.ts`; source/import sanity check, build, and root typecheck passed in Docker.
+- 2026-05-27: Extracted the trace/signal Chat UI API client seam into `src/apps/chat-ui/src/api-trace-signals.ts`; source/import sanity check, build, and root typecheck passed in Docker.
