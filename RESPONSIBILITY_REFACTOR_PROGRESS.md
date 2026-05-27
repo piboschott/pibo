@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the `pibo debug web` snapshot/watch browser-expression seam from `src/debug/web.ts` into `src/debug/web-snapshot-browser-scripts.ts`.
-- Result: `src/debug/web.ts` dropped from 1,183 LOC to 877 LOC and now imports the browser expression builders, while the new 321 LOC module owns `buildSnapshotExpression`, `buildWatchExpression`, typed builder options, and the injected DOM observer/snapshot library.
-- Evidence: The extraction is behavior-preserving: the generated browser library text was moved unchanged, with only the TypeScript builder signatures named through exported option types.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke for `node dist/bin/pibo.js debug web snapshot --help` and `watch --help` passed (13 lines each).
-- Commit: `d7b9b94` (`refactor(debug): extract web snapshot browser scripts`).
+- Last batch: Extracted the `pibo debug web` option parsing/defaults/preset/compare-target seam from `src/debug/web.ts` into `src/debug/web-options.ts`.
+- Result: `src/debug/web.ts` dropped from 877 LOC to 600 LOC and now delegates option parsing, render preset resolution, streaming fixture/default validation, negative-profile expansion, compare URL shaping, and hosted compare env resolution to the new 282 LOC module.
+- Evidence: The extraction is behavior-preserving: parser branches, validation messages, defaults, negative regression presets, compare URL rules, and `.env.developer-host` parsing moved unchanged while `web.ts` keeps command dispatch, CDP target selection, browser evaluation, artifact/report orchestration, and public re-export compatibility.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke for `snapshot --help`, `watch --help`, and invalid `scenario streaming-benchmark --fixture-profile burst` pre-CDP validation passed.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Extract the remaining debug-web option parsing/defaults/preset validation seam into a focused module only after preserving current pre-CDP validation/error ordering with `test/debug-cli.test.mjs`.
+- Exact next step: Pivot away from `src/debug/web.ts` unless a specific CDP/orchestration seam gets stronger test coverage; next high-value candidate is a test-backed `src/shared/trace-engine.ts` seam or an analysis batch to re-rank remaining App/trace targets.
 
 ## Progress log
 
+- 2026-05-27: Extracted debug web option parsing/defaults/preset/compare-target helpers into `src/debug/web-options.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and CLI smoke checks for help plus invalid streaming pre-CDP validation passed.
 - 2026-05-27: Extracted debug web snapshot/watch browser expression generation and DOM observer library into `src/debug/web-snapshot-browser-scripts.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and `snapshot --help`/`watch --help` CLI smoke checks passed.
 - 2026-05-27: Completed analysis-only review of remaining `src/debug/web.ts` seams; ranked snapshot/watch browser script extraction as the safest next implementation slice, option parsing/validation as the next likely seam, and CDP command orchestration as too coupled for immediate extraction; host `git diff --check` passed for the tracking-only diff.
 - 2026-05-27: Extracted debug web artifact/output I/O helpers into `src/debug/web-artifacts.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and `node dist/bin/pibo.js debug web report --help` smoke passed.
