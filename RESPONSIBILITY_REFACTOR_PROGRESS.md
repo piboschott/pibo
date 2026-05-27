@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: New `test/chat-ui-session-trace-view-props.test.mjs` covers empty-link behavior, nested breadcrumb labels, origin and derived session links, profile/trace/runtime model badge fallback precedence, missing-model output, and `createSessionTraceViewProps` callback assembly/order.
 - Evidence: The focused test imports `createSessionTraceViewLinks`, `resolveSessionTraceModelBadge`, and `createSessionTraceViewProps` through the existing Chat UI `tsx` source-import test pattern.
 - Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-session-trace-view-props.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. No browser/manual check was needed because this batch changed tests and tracking only.
-- Commit: `71eb6ae` (`test(chat-ui): cover session trace view props`).
+- Commit: `e32263c` (`test(chat-ui): cover session trace view props`).
 - Blockers: worker Chat Web server on port 4802 has been unreliable in prior UI smoke checks; not relevant to this test-safety-only batch.
 - Exact next step: Pivot to extracting App bootstrap mutation helpers (`BootstrapMutationSnapshot`, optimistic session/room update helpers, and session-node conversion helpers) into a focused App support module, or first run a small analysis to map those helpers and tests.
 
