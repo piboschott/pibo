@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted `SessionTracePane` web-annotation selection/query/panel state into `src/apps/chat-ui/src/use-session-web-annotations.ts`.
-- Result: `App.tsx` now delegates per-session selected annotation persistence, visible/open annotation filtering, overlay-install synchronization, saved-annotation refresh, panel collapse state, attach/detach/clear callbacks, and visible-annotation dismissal to `useSessionWebAnnotations`. `App.tsx` fell from 4,943 LOC to 4,821 LOC; the new hook is 190 LOC.
-- Evidence: `wc -l` reports 4,821 LOC for `App.tsx` and 190 LOC for `use-session-web-annotations.ts`; source sanity confirmed the new hook import/reference exists in both files.
+- Last batch: Extracted the remaining `SessionTracePane` web-annotation entry/list presentation into `src/apps/chat-ui/src/web-annotations.tsx`.
+- Result: `App.tsx` now imports `WebAnnotationsEntryPoints`, `WebAnnotationsSessionPanel`, and the shared `compactWebAnnotationError` formatter from the dedicated web-annotations module. Web annotation API transport remains in `api-web-annotations.ts`; state/query ownership remains in `use-session-web-annotations.ts`. `App.tsx` fell from 4,821 LOC to 4,443 LOC; the new component module is 425 LOC.
+- Evidence: Docker source sanity confirmed the new module exists, `App.tsx` imports from `./web-annotations`, and the new module exports the two web-annotation components/error formatter. `wc -l` reports 4,443 LOC for `App.tsx` and 425 LOC for `web-annotations.tsx`.
 - Validation: `git diff --check` passed; Docker source/import sanity passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: `abef26c` (`refactor(chat-ui): extract web annotation state hook`).
+- Commit: pending.
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
-- Exact next step: Continue `SessionTracePane` modularization by extracting header/session-view controls or Composer send orchestration, or extract `WebAnnotationsEntryPoints`/`WebAnnotationsSessionPanel` into a web-annotations component module now that state/query ownership is isolated.
+- Exact next step: Continue `SessionTracePane` modularization with a lower-risk header/session-view controls extraction, or add a focused test-safety batch around Composer send orchestration before moving it.
 
 ## Progress log
 
@@ -144,3 +144,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted `SessionTracePane` live stream lifecycle and pending overlay event ingestion into `src/apps/chat-ui/src/tracing/use-session-trace-live-stream.ts`; `git diff --check`, Docker source sanity, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` upload attachment selection state into `src/apps/chat-ui/src/chat-upload-attachments.ts` and added `test/chat-ui-upload-attachments.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` web-annotation selection/query/panel state into `src/apps/chat-ui/src/use-session-web-annotations.ts`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted remaining web-annotation entry/list presentation into `src/apps/chat-ui/src/web-annotations.tsx`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
