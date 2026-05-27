@@ -53,10 +53,9 @@ import { loadPiboUserSettings } from "../../core/user-settings.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
-import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
+import { listMcpServerInfos } from "../../mcp/agent-context.js";
 import { getDefaultPiboWorkspace } from "../../core/workspace.js";
-import { inspectPiPackageSource } from "../../pi-packages/metadata.js";
-import { findPiPackage, listPiPackages, removePiPackage, setPiPackageEnabled, upsertPiPackage } from "../../pi-packages/store.js";
+import { findPiPackage, listPiPackages } from "../../pi-packages/store.js";
 import { UserSkillManager } from "../../user-skills/manager.js";
 import { listUserSkills } from "../../user-skills/store.js";
 import { ChatDataIngestService } from "../../data/ingest-service.js";
@@ -83,10 +82,13 @@ import {
 	handleChatSettingsRoute,
 } from "./chat-settings-routes.js";
 import {
+	chatCapabilityRoute,
+	chatCapabilityRouteRequiresSameOrigin,
+	handleChatCapabilityRoute,
+} from "./chat-capability-routes.js";
+import {
 	CHAT_WEB_API_PREFIX,
 	agentResourceId,
-	mcpServerResourceName,
-	piPackageResourceId,
 	projectResourcePath,
 	projectSessionResourceId,
 	projectWorkflowHumanActionsResource,
@@ -115,10 +117,8 @@ import {
 	createSessionUpdate,
 	normalizeAgentArchived,
 	normalizeClientTxnId,
-	normalizeMcpServerDescriptionBody,
 	normalizeMessageText,
 	normalizeParentRoomId,
-	normalizePiPackageWebSource,
 	normalizeProjectArchived,
 	normalizeProjectDescription,
 	normalizeProjectPath,
@@ -146,9 +146,6 @@ import {
 	resolveCreateSessionProfile,
 	type ChatAgentBody,
 	type ChatMessageBody,
-	type ChatMcpServerDescriptionBody,
-	type ChatPiPackageBody,
-	type ChatPiPackagePatchBody,
 	type ChatProjectCreateBody,
 	type ChatProjectDeleteBody,
 	type ChatProjectPatchBody,
@@ -4481,69 +4478,17 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return response;
 			}
 
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/pi-packages` && request.method === "GET") {
+			const capabilityRoute = chatCapabilityRoute(url.pathname, request.method);
+			if (capabilityRoute) {
+				if (chatCapabilityRouteRequiresSameOrigin(capabilityRoute)) requireSameOriginJsonRequest(request);
 				await requireSession(request, context);
-				return responseJson({ packages: listPiPackages() });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/pi-packages` && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatPiPackageBody>(request);
-				const source = normalizePiPackageWebSource(body.source);
-				const pkg = upsertPiPackage(await inspectPiPackageSource(source, process.cwd()), process.cwd());
-				invalidateBootstrapCatalogCache(state);
-				return responseJson({ package: pkg }, { status: 201 });
-			}
-
-			const piPackageId = piPackageResourceId(url.pathname);
-			if (piPackageId && request.method === "GET") {
-				await requireSession(request, context);
-				const pkg = findPiPackage(piPackageId);
-				if (!pkg) throw new PiboWebHttpError("Pi package is not registered", 404);
-				return responseJson({ package: pkg });
-			}
-
-			if (piPackageId && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const existing = findPiPackage(piPackageId);
-				if (!existing) throw new PiboWebHttpError("Pi package is not registered", 404);
-				const body = await readJsonBody<ChatPiPackagePatchBody>(request);
-				let pkg = existing;
-				let changed = false;
-				if (body.source !== undefined) {
-					const source = normalizePiPackageWebSource(body.source);
-					pkg = upsertPiPackage(await inspectPiPackageSource(source, process.cwd()), process.cwd());
-					changed = true;
-				}
-				if (body.enabled !== undefined) {
-					if (typeof body.enabled !== "boolean") throw new PiboWebHttpError("enabled must be a boolean", 400);
-					const updated = setPiPackageEnabled(pkg.id, body.enabled);
-					if (!updated) throw new PiboWebHttpError("Pi package is not registered", 404);
-					pkg = updated;
-					changed = true;
-				}
-				if (!changed) throw new PiboWebHttpError("No Pi package update fields provided", 400);
-				invalidateBootstrapCatalogCache(state);
-				return responseJson({ package: pkg });
-			}
-
-			if (piPackageId && request.method === "DELETE") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const existing = findPiPackage(piPackageId);
-				if (!existing) throw new PiboWebHttpError("Pi package is not registered", 404);
-				const affectedAgents = agentsSelectingPiPackage(state, piPackageId);
-				if (affectedAgents.length > 0) {
-					throw new PiboWebHttpError(
-						`Pi package is selected by custom agents: ${affectedAgents.map((agent) => agent.profileName).join(", ")}`,
-						409,
-					);
-				}
-				const removed = removePiPackage(piPackageId);
-				invalidateBootstrapCatalogCache(state);
-				return responseJson({ removedPackage: removed });
+				return handleChatCapabilityRoute({
+					route: capabilityRoute,
+					request,
+					cwd: process.cwd(),
+					invalidateBootstrapCatalogCache: () => invalidateBootstrapCatalogCache(state),
+					agentsSelectingPiPackage: (packageId) => agentsSelectingPiPackage(state, packageId),
+				});
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-skills` && request.method === "GET") {
@@ -4636,19 +4581,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				syncUserSkills(state, context);
 				invalidateBootstrapCatalogCache(state);
 				return responseJson({ removedSkillId: existing.id });
-			}
-
-			const mcpServerName = mcpServerResourceName(url.pathname);
-			if (mcpServerName && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatMcpServerDescriptionBody>(request);
-				const server = await setMcpServerDescription(
-					mcpServerName,
-					normalizeMcpServerDescriptionBody(body.description),
-				);
-				invalidateBootstrapCatalogCache(state);
-				return responseJson({ server });
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/agents` && request.method === "GET") {
