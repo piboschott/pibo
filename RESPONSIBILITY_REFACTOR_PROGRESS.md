@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `web-artifacts.ts` now owns last-snapshot persistence, baseline snapshot artifact reads, timestamped artifact/report output writes, compact target shaping, and stdout budget limiting. `web.ts` keeps CLI command dispatch, CDP navigation/evaluation, fixture/probe preparation, hosted compare URL resolution, and snapshot/watch browser scripts.
 - Evidence: `src/debug/web.ts` dropped from 1,247 to 1,183 LOC. The new artifact/output module is 70 LOC and keeps filesystem path creation out of the debug-web command orchestrator.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug web report --help` printed help successfully.
-- Commit: `32e8d50` (`refactor(debug): extract web artifact helpers`).
+- Commit: `9dd9388` (`refactor(debug): extract web artifact helpers`).
 - Blockers: none for this batch.
 - Exact next step: Run a short analysis batch on the remaining `src/debug/web.ts` responsibilities before extracting more. The next likely seams are option parsing/validation or browser snapshot/watch script generation, but CDP navigation/evaluation orchestration should stay put until a clearer boundary and focused validation target are recorded.
 
