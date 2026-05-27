@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the Ralph Chat UI API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-ralph.ts`, and moved the shared JSON request helper into `src/apps/chat-ui/src/api-http.ts`.
-- Result: `RalphArea` now imports Ralph client functions directly from the focused module, while `api.ts` re-exports them for existing callers. `api.ts` no longer imports Ralph-specific types and remains the compatibility barrel for the broader Chat UI API client.
+- Last batch: Extracted the Cron Chat UI API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-cron.ts`.
+- Result: `CronArea` now imports Cron client functions and input types directly from the focused module, while `api.ts` re-exports them for existing compatibility. `api.ts` no longer imports Cron-specific types and dropped from 1,643 LOC to 1,573 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/workflow-v2-lifecycle-checklist.test.mjs'` (6 tests), `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure client module extraction with preserved exported names and request paths.
-- Commit: `e57ec21aeef45f209820276480e554e7524d102f` (`refactor(chat-ui): extract ralph api client`).
+- Commit: `ea17f3eef096e45c1c738fc12deaeb063931b042` (`refactor(chat-ui): extract cron api client`).
 - Blockers: none.
-- Exact next step: Continue the Chat UI API boundary by extracting the similarly focused Cron client functions from `src/apps/chat-ui/src/api.ts`, or do a quick analysis pass first if a broader API grouping is more valuable.
+- Exact next step: Continue the Chat UI API boundary by extracting the next clearly clustered feature client from `src/apps/chat-ui/src/api.ts` (likely context-file, settings, or project/session clients), or do an API grouping analysis first if the next seam is not obvious.
 
 ## Progress log
 
@@ -112,3 +112,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted trace node sorting/tree helpers into `src/shared/trace-nodes.ts`; build, focused trace/debug tests, and root typecheck passed in Docker.
 - 2026-05-27: Extracted trace live-patch structural sharing helpers into `src/shared/trace-patch-nodes.ts`; build, focused trace/debug tests, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Ralph Chat UI API client seam into `src/apps/chat-ui/src/api-ralph.ts` and shared request helper into `src/apps/chat-ui/src/api-http.ts`; workflow API source checklist, build, and root typecheck passed in Docker.
+- 2026-05-27: Extracted the Cron Chat UI API client seam into `src/apps/chat-ui/src/api-cron.ts`; workflow API source checklist, build, and root typecheck passed in Docker.

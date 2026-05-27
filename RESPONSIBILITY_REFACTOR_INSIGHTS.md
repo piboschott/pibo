@@ -94,7 +94,8 @@
 
 - `src/apps/chat-ui/src/api-http.ts` now owns the shared Chat UI `requestJson` helper and error-shaping contract used by feature-specific API modules. Keep response parsing/error handling here rather than duplicating it in each extracted client module.
 - `src/apps/chat-ui/src/api-ralph.ts` now owns Ralph job/run/status/condition/template API client functions and `RalphJobInput`. `src/apps/chat-ui/src/api.ts` re-exports this module for compatibility, while `RalphArea` imports it directly to make the feature boundary explicit.
-- `src/apps/chat-ui/src/api.ts` remains large and still mixes workflow, project, Cron, session, context-file, agent, room, annotation, auth, and download concerns. The next low-risk seam is likely Cron API extraction because its request functions and input type are clustered and use the same `requestJson` helper.
+- `src/apps/chat-ui/src/api.ts` remains large and still mixes workflow, project, session, context-file, agent, room, annotation, auth, and download concerns. Cron and Ralph are now extracted into focused feature clients, so the next low-risk seam should be chosen from another clustered request family rather than splitting individual functions.
+- `src/apps/chat-ui/src/api-cron.ts` now owns Cron job/run/status API client functions plus `CronJobInput` and `CronScheduleInput`. `src/apps/chat-ui/src/api.ts` re-exports this module for compatibility, while `CronArea` imports it directly to make the Cron feature boundary explicit.
 
 ## Telemetry data seams
 
