@@ -123,7 +123,7 @@ const WORKFLOW_STATIC_PROMPT_ASSET_MARKDOWN: Record<string, string> = {
 
 type WorkflowPromptAssetStoreReader = Pick<ChatWorkflowPromptAssetStore, "listAssets" | "getAsset" | "getActiveRevision">;
 
-type WorkflowPromptAssetPickerState = {
+export type WorkflowPromptAssetPickerState = {
 	workflowPromptAssetStore: WorkflowPromptAssetStoreReader;
 };
 
