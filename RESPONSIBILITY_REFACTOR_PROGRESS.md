@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `web-render-analysis.ts` now owns snapshot/watch types, snapshot formatting/diffing, watch formatting, and flicker inference; `web.ts` keeps command orchestration, CDP capture/evaluation, streaming benchmark, telemetry, and artifact responsibilities while re-exporting the existing `formatWatch`/`inferWatchFlickers` API.
 - Evidence: `src/debug/web.ts` dropped from 4,456 to 4,129 LOC; the new focused render-analysis module is 341 LOC. Existing debug CLI tests still import the public helpers from `dist/debug/web.js`, proving compatibility through the old entry point.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug web --help` printed the progressive `pibo debug web` command list.
-- Commit: `aa56ed6` (`refactor(debug): extract web render analysis`).
+- Commit: `e4d6dbd` (`refactor(debug): extract web render analysis`).
 - Blockers: none for this batch.
 - Exact next step: Continue `src/debug/web.ts` with an analysis or test-backed extraction of another clear seam, preferably streaming benchmark report/summary formatting or provider telemetry collection; avoid moving CDP command orchestration until a narrower seam is proven.
 
