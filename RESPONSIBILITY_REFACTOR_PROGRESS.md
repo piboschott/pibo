@@ -65,15 +65,17 @@ Initial high-priority candidates from line-count scan:
 ## Current state
 
 - Last batch: Extracted Chat Web user-skill route handling from `src/apps/chat/web-app.ts` into `src/apps/chat/chat-user-skill-routes.ts` after adding focused web-route test coverage.
-- Selected batch and planned validation: User-skill route helper for list/create/install/read/update/delete routes while keeping same-origin enforcement and session auth explicit in `web-app.ts`; validation planned as focused web-channel tests, `npm run build`, `npm run typecheck`, host `git diff --check`, and a worker route smoke.
-- Result: `web-app.ts` now delegates user-skill route matching, request parsing, built-in/catalog conflict checks, manager create/install/read/update/delete calls, skill registry sync, bootstrap catalog invalidation, and response shaping to `chat-user-skill-routes.ts`; the app entry keeps route auth and same-origin checks visible.
-- Evidence: line counts after extraction: `web-app.ts` 5,052 LOC, `chat-user-skill-routes.ts` 193 LOC. `test/web-channel.test.mjs` now covers user-skill create/list/read/update/delete, registry register/unregister sync on create/rename/disable, and built-in name conflicts on create/update.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs` passed (86 tests); Docker `npm run typecheck` passed; worker route smoke `curl http://127.0.0.1:4802/apps/chat` returned exit 7/HTTP 000 connection refused without restarting services.
-- Commit: `4de24b4` (`refactor(chat): extract user skill routes`).
+- Selected batch and planned validation: Test-safety batch for custom-agent route handling before any extraction; add web-channel coverage for create/rename/archive/permanent-delete behavior, profile registration/removal, and session subtree cleanup. Planned validation: focused `test/web-channel.test.mjs`, `npm run build`, `npm run typecheck`, host `git diff --check`, and a worker route smoke.
+- Result: Added focused custom-agent web-route coverage for renaming a custom agent, removing the old profile from session creation, creating a session with the renamed profile, archiving the renamed agent, permanently deleting it, and deleting the renamed-profile session subtree.
+- Evidence: `test/web-channel.test.mjs` now has 87 tests and includes `chat web app deletes renamed custom agents with their session subtrees`, complementing existing archive/delete, profile-name validation, alias canonicalization, Pi-package selection, and broken-context-file custom-agent coverage.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs` passed (87 tests); Docker `npm run typecheck` passed; worker route smoke `curl http://127.0.0.1:4802/apps/chat` returned exit 7/HTTP 000 connection refused without restarting services.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Re-rank the remaining `web-app.ts` route-dispatch seams; likely next candidates are a test-safety/analysis pass for custom-agent route handling or project workflow-session orchestration rather than another settings/capability slice.
+- Exact next step: Extract the `/api/chat/agents` list/create/update/delete handler into a focused route helper while keeping same-origin enforcement and session auth visible in `web-app.ts`; include renamed-profile deletion coverage in the focused validation set.
 
 ## Progress log
+
+- 2026-05-27: Added test-safety coverage for Chat Web custom-agent route handling: create/rename old-profile removal, renamed-profile session creation, archive/delete, and renamed-profile session subtree cleanup. Host `git diff --check`, Docker `npm run build`, Docker `node --test test/web-channel.test.mjs` (87 tests), and Docker `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 connection refused without restarting services.
 
 - 2026-05-27: Added focused user-skill web-route coverage and extracted user-skill list/create/install/read/update/delete handling into `src/apps/chat/chat-user-skill-routes.ts`; `web-app.ts` now keeps route auth/same-origin checks visible while delegating request parsing, manager mutations, built-in/catalog conflict checks, user-skill registry sync, bootstrap catalog invalidation, and response shaping. Host `git diff --check`, Docker `npm run build`, Docker `node --test test/web-channel.test.mjs` (86 tests), and Docker `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 connection refused without restarting services.
 

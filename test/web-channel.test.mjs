@@ -2393,6 +2393,114 @@ test("chat web app creates custom agents from the native capability catalog", as
 	}
 });
 
+test("chat web app deletes renamed custom agents with their session subtrees", async () => {
+	const { channel, baseURL, sessions } = await startWebHostChannel({
+		auth: createFakeAuthService(),
+		profiles: [{ name: "base", aliases: ["default"] }],
+	});
+
+	try {
+		const createdAgent = await fetch(`${baseURL}/api/chat/agents`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({
+				displayName: "disposable-agent",
+				description: "Will be archived and deleted.",
+				skills: ["pi-agent-harness"],
+			}),
+		});
+		assert.equal(createdAgent.status, 201);
+		const createdPayload = await createdAgent.json();
+		assert.equal(createdPayload.agent.profileName, "disposable-agent");
+
+		const renamedAgent = await fetch(`${baseURL}/api/chat/agents/${encodeURIComponent(createdPayload.agent.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ displayName: "renamed-agent" }),
+		});
+		assert.equal(renamedAgent.status, 200);
+		const renamedPayload = await renamedAgent.json();
+		assert.equal(renamedPayload.agent.profileName, "renamed-agent");
+
+		const oldProfileSession = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ profile: "disposable-agent" }),
+		});
+		assert.equal(oldProfileSession.status, 400);
+
+		const sessionResponse = await fetch(`${baseURL}/api/chat/sessions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ profile: "renamed-agent" }),
+		});
+		assert.equal(sessionResponse.status, 201);
+		const sessionPayload = await sessionResponse.json();
+		assert.equal(sessionPayload.session.profile, "renamed-agent");
+		const child = sessions.create({
+			channel: "pibo.subagents",
+			kind: "subagent",
+			profile: "renamed-agent",
+			ownerScope: sessionPayload.session.ownerScope,
+			parentId: sessionPayload.session.id,
+		});
+
+		const archivedAgent = await fetch(`${baseURL}/api/chat/agents/${encodeURIComponent(createdPayload.agent.id)}`, {
+			method: "PATCH",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ archived: true }),
+		});
+		assert.equal(archivedAgent.status, 200);
+		const archivedPayload = await archivedAgent.json();
+		assert.equal(typeof archivedPayload.agent.archivedAt, "string");
+
+		const deletedAgent = await fetch(`${baseURL}/api/chat/agents/${encodeURIComponent(createdPayload.agent.id)}`, {
+			method: "DELETE",
+			headers: {
+				"content-type": "application/json",
+				origin: baseURL,
+				"x-test-user": "user-1",
+			},
+			body: JSON.stringify({ confirmName: "renamed-agent" }),
+		});
+		assert.equal(deletedAgent.status, 200);
+		const deletedPayload = await deletedAgent.json();
+		assert.equal(deletedPayload.deletedAgentId, createdPayload.agent.id);
+		assert.deepEqual(new Set(deletedPayload.deletedSessionIds), new Set([sessionPayload.session.id, child.id]));
+		assert.equal(sessions.get(sessionPayload.session.id), undefined);
+		assert.equal(sessions.get(child.id), undefined);
+
+		const listed = await fetch(`${baseURL}/api/chat/agents?includeArchived=true`, {
+			headers: { "x-test-user": "user-1" },
+		});
+		assert.equal(listed.status, 200);
+		const listedPayload = await listed.json();
+		assert.deepEqual(listedPayload.agents, []);
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("workflow profile picker excludes archived custom agents and reports archived refs", async () => {
 	const { channel, baseURL } = await startWebHostChannel({
 		auth: createFakeAuthService(),
