@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the `SessionTracePane` live EventSource, reconnect, pending-stream flush, cursor, and running-session polling responsibilities into `src/apps/chat-ui/src/tracing/use-session-trace-live-stream.ts`.
-- Result: `App.tsx` now keeps trace state/composition and optimistic send wiring, while the new hook owns live stream lifecycle and overlay event ingestion. `App.tsx` fell from 5,255 LOC to 4,978 LOC; the new hook is 339 LOC.
-- Evidence: `wc -l` reports 4,978 LOC for `App.tsx` and 339 LOC for `use-session-trace-live-stream.ts`; source sanity confirmed `App.tsx` wires the hook and the hook owns `EventSource` plus `applyTraceLiveEvents`.
-- Validation: `git diff --check` passed; Docker source/import sanity check passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: `7b416cd` (`refactor(chat-ui): extract session trace live stream hook`).
+- Last batch: Extracted `SessionTracePane` upload attachment selection state into `src/apps/chat-ui/src/chat-upload-attachments.ts`, with focused pure helper coverage in `test/chat-ui-upload-attachments.test.mjs`.
+- Result: `App.tsx` now delegates per-session upload attachment add/detach/clear behavior to `useSessionUploadAttachments`; the new module owns the selected-upload attachment type, cap, per-session map, and pure state transitions. `App.tsx` fell from 4,978 LOC to 4,943 LOC; the new hook/helper module is 78 LOC.
+- Evidence: `wc -l` reports 4,943 LOC for `App.tsx` and 78 LOC for `chat-upload-attachments.ts`; the focused test covers no-session no-op, duplicate existing path filtering, blank path filtering, per-session isolation, cap-at-10 behavior, detach no-op, and clear no-op.
+- Validation: `git diff --check` passed; Docker `node --test test/chat-ui-upload-attachments.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
+- Commit: pending.
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
-- Exact next step: Continue `SessionTracePane` modularization with a lower-risk web annotation or upload attachment state hook, or add focused live-stream hook tests if future edits need behavior changes.
+- Exact next step: Continue `SessionTracePane` modularization with a web annotation state/query hook, or extract the header/session view controls if a lower-risk UI-only batch is preferred.
 
 ## Progress log
 
@@ -142,3 +142,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted Chat UI live-overlay trimming/confirmation-key helpers into `src/apps/chat-ui/src/tracing/live-overlay.ts` and added `test/chat-ui-live-overlay.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI current trace-view composition into `src/apps/chat-ui/src/tracing/current-trace-view.ts` and added `test/chat-ui-current-trace-view.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` live stream lifecycle and pending overlay event ingestion into `src/apps/chat-ui/src/tracing/use-session-trace-live-stream.ts`; `git diff --check`, Docker source sanity, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted `SessionTracePane` upload attachment selection state into `src/apps/chat-ui/src/chat-upload-attachments.ts` and added `test/chat-ui-upload-attachments.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.

@@ -65,6 +65,7 @@ import { WorkflowsArea } from "./WorkflowsArea";
 import type { PiPackageCatalogItem } from "./agents/agent-designer-model";
 import { AgentsView } from "./agents/AgentsView";
 import { copyTextToClipboard } from "./clipboard";
+import { useSessionUploadAttachments, type UploadedChatAttachment } from "./chat-upload-attachments";
 import { SessionSidebar } from "./session-sidebar";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
 import type { ChatSessionViewId } from "./session-views/types";
@@ -179,10 +180,6 @@ type SlashCommand = {
 	slash: string;
 	action: string;
 	description: string;
-};
-
-type UploadedChatAttachment = ChatUploadedFile & {
-	id: string;
 };
 
 type LoadBootstrapOptions = {
@@ -2474,7 +2471,6 @@ function SessionTracePane({
 	const [rawEventLimit, setRawEventLimit] = useState(DEFAULT_RAW_EVENTS_LIMIT);
 	const [baseTraceView, setBaseTraceView] = useState<PiboSessionTraceView | null>(null);
 	const [selectedWebAnnotationIds, setSelectedWebAnnotationIds] = useState<string[]>([]);
-	const [selectedUploadAttachmentsBySession, setSelectedUploadAttachmentsBySession] = useState<Record<string, UploadedChatAttachment[]>>({});
 	const [webAnnotationsPanelVisible, setWebAnnotationsPanelVisible] = useState(false);
 	const [webAnnotationOverlayState, setWebAnnotationOverlayState] = useState<WebAnnotationOverlayPanelState | null>(() => selectedPiboSessionId ? readStoredWebAnnotationOverlayState(selectedPiboSessionId) : null);
 	const [webAnnotationsPanelCollapsed, setWebAnnotationsPanelCollapsed] = useState(() => readStoredWebAnnotationsPanelCollapsed());
@@ -2557,10 +2553,13 @@ function SessionTracePane({
 			.filter((annotation): annotation is WebAnnotationMessageAttachment => Boolean(annotation)),
 		[selectedWebAnnotationIds, visibleWebAnnotations],
 	);
-	const selectedUploadAttachments = useMemo(
-		() => selectedPiboSessionId ? selectedUploadAttachmentsBySession[selectedPiboSessionId] ?? [] : [],
-		[selectedPiboSessionId, selectedUploadAttachmentsBySession],
-	);
+	const createUploadAttachmentId = useCallback(() => `upload-${createClientTxnId()}`, []);
+	const {
+		selectedUploadAttachments,
+		attachUploadedFiles,
+		detachUploadAttachment,
+		clearSelectedUploadAttachments,
+	} = useSessionUploadAttachments(selectedPiboSessionId, createUploadAttachmentId);
 
 	useEffect(() => {
 		setTraceEventLimit(DEFAULT_TRACE_EVENTS_PAGE_SIZE);
@@ -2803,40 +2802,6 @@ function SessionTracePane({
 	};
 
 	const clearSelectedWebAnnotationAttachments = () => updateSelectedWebAnnotationIds(() => []);
-
-	const attachUploadedFiles = useCallback((files: readonly ChatUploadedFile[]) => {
-		if (!selectedPiboSessionId || !files.length) return;
-		setSelectedUploadAttachmentsBySession((current) => {
-			const existing = current[selectedPiboSessionId] ?? [];
-			const existingPaths = new Set(existing.map((file) => file.path));
-			const additions = files
-				.filter((file) => file.path && !existingPaths.has(file.path))
-				.map((file): UploadedChatAttachment => ({ ...file, id: `upload-${createClientTxnId()}` }));
-			if (!additions.length) return current;
-			return {
-				...current,
-				[selectedPiboSessionId]: [...existing, ...additions].slice(0, 10),
-			};
-		});
-	}, [selectedPiboSessionId]);
-
-	const detachUploadAttachment = (attachmentId: string) => {
-		if (!selectedPiboSessionId) return;
-		setSelectedUploadAttachmentsBySession((current) => {
-			const existing = current[selectedPiboSessionId] ?? [];
-			const next = existing.filter((attachment) => attachment.id !== attachmentId);
-			if (next.length === existing.length) return current;
-			return { ...current, [selectedPiboSessionId]: next };
-		});
-	};
-
-	const clearSelectedUploadAttachments = () => {
-		if (!selectedPiboSessionId) return;
-		setSelectedUploadAttachmentsBySession((current) => {
-			if (!(current[selectedPiboSessionId]?.length)) return current;
-			return { ...current, [selectedPiboSessionId]: [] };
-		});
-	};
 
 	const toggleWebAnnotationsPanelCollapsed = () => {
 		setWebAnnotationsPanelCollapsed((current) => {
