@@ -64,16 +64,18 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted event-log projection from `src/shared/trace-engine.ts` into `src/shared/trace-event-projection.ts`.
-- Result: `trace-engine.ts` is now a small trace-view build/patch orchestrator (~187 LOC), while `trace-event-projection.ts` owns event-to-node shaping, event dedupe/latest-stream helpers, content-delta patch ids, transcript echo filtering, and event node id/order/stable-key helpers.
-- Evidence: The public `trace-engine.ts` re-export surface is preserved for existing callers/tests, including trace node helpers and event id/dedupe helpers.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed (23 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `3b9920c` (`refactor(trace): extract event projection helpers`).
+- Last batch: Completed an analysis-only responsibility review of `src/apps/chat/web-app.ts` before changing that very large server module.
+- Selected batch and planned validation: rank safe Chat Web server/API seams using file outline, line counts, existing extracted modules, and nearby web-channel/source-check tests; validate the tracking-only change with host `git diff --check`.
+- Result: Identified three high-value, low-to-medium-risk extraction candidates: static asset/legacy shell serving, workflow web-store persistence classes/row mappers, and project/workflow session API orchestration; recorded lower-priority route/normalizer and EventSource seams.
+- Evidence: `src/apps/chat/web-app.ts` is 11,096 LOC; `createChatWebApp` route dispatch spans ~1,701 LOC; `createChatHtml` fallback shell spans ~857 LOC; workflow store classes plus row mappers occupy roughly lines 851-1664; existing coverage includes `test/web-channel.test.mjs`, `test/base-prompt-web.test.mjs`, `test/chat-signals-api.test.mjs`, and workflow V2 checklist/source tests that mention `web-app.ts`.
+- Validation: host `git diff --check` passed for this tracking-only analysis artifact.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Pivot away from trace-engine unless a specific trace bug appears; run an analysis batch on `src/apps/chat/web-app.ts` to rank safe server/API responsibility seams before extracting from that very large module.
+- Exact next step: Extract static asset and legacy fallback shell serving from `src/apps/chat/web-app.ts` into a focused module (for example `src/apps/chat/static-assets.ts`), then run Docker `npm run build`, focused `node --test test/web-channel.test.mjs`, root `npm run typecheck`, and a built-shell/static-asset smoke if the worker web server is reachable.
 
 ## Progress log
 
+- 2026-05-27: Completed analysis-only review of `src/apps/chat/web-app.ts` server/API responsibility seams; ranked static asset/legacy shell serving as the safest first extraction, workflow web-store persistence as the largest clear backend seam, and project/workflow session API orchestration as valuable but requiring web-channel coverage. Host `git diff --check` passed for the tracking-only artifact.
 - 2026-05-27: Extracted trace event-log projection into `src/shared/trace-event-projection.ts`: event-to-node shaping, transcript echo filtering, delta/final merge helpers, event id/order/stable-key helpers, event dedupe, latest-stream tracking, and patch content-delta id helpers; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Added test-safety coverage for trace event-log projection: turn/reasoning/assistant nesting and status merging, tool lifecycle merging, and compaction lifecycle merging; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts`, consolidated `pibo_subagent_*` helper use across event/transcript/async-agent projection, and added materialization coverage for child-link lookup by tool/thread metadata; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
