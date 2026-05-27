@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the cohesive Chat UI Workflow API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-workflows.ts`.
-- Result: `WorkflowsArea.tsx` and the project workflow creation/start call sites in `App.tsx` now import workflow client functions and types directly from the focused module, while `api.ts` re-exports the module for compatibility. `api.ts` dropped from 1,415 LOC to 868 LOC.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-workflows.ts && grep -R "api-workflows" src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/WorkflowsArea.tsx && ! grep -E "getWorkflowVersionPicker|postProjectWorkflowSession|postProjectWorkflowSessionStart" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: `4e7f555` (`refactor(chat-ui): extract workflow api client`).
+- Last batch: Extracted the Chat UI prompt/settings API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-settings.ts`.
+- Result: Base prompt, compaction prompt, model-defaults, and user-settings types/functions now live in `api-settings.ts`; `App.tsx`, `BasePromptView.tsx`, and `CompactionPromptView.tsx` import that focused client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 868 LOC to 768 LOC.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-settings.ts && grep -R "api-settings" src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/context/BasePromptView.tsx src/apps/chat-ui/src/context/CompactionPromptView.tsx && ! grep -E "getBasePrompt|setBasePromptMode|saveCustomBasePrompt|getCompactionPrompt|setCompactionPromptMode|saveCustomCompactionPrompt|getUserSettings|patchUserSettings|patchModelDefaults|type BasePromptMode|type CompactionPromptMode|type UserSettings|type BasePromptSnapshot|type CompactionPromptSnapshot" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
+- Commit: `a338694` (`refactor(chat-ui): extract settings api client`).
 - Blockers: none.
-- Exact next step: Continue the Chat UI API boundary by extracting another cohesive request family from `src/apps/chat-ui/src/api.ts`, likely prompt/settings, agent-designer capability management, or room/session messaging APIs, with direct imports at owning UI call sites and compatibility re-exports from `api.ts`.
+- Exact next step: Continue the Chat UI API boundary with another cohesive request family from `api.ts`, likely agent-designer capability management or room/session messaging APIs.
 
 ## Progress log
 
@@ -115,3 +115,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the Cron Chat UI API client seam into `src/apps/chat-ui/src/api-cron.ts`; workflow API source checklist, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Context Files Chat UI API client seam into `src/apps/chat-ui/src/api-context-files.ts`; context-files web tests, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Workflow Chat UI API client seam into `src/apps/chat-ui/src/api-workflows.ts`; source sanity check, build, and root typecheck passed in Docker.
+- 2026-05-27: Extracted the prompt/settings Chat UI API client seam into `src/apps/chat-ui/src/api-settings.ts`; source sanity check, build, and root typecheck passed in Docker.

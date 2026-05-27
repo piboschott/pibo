@@ -1,5 +1,5 @@
 import { requestJson } from "./api-http";
-import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelDefaults, ModelProfile, NavigationData, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
+import type { AgentCatalog, BootstrapData, ChatSessionPage, CreateSessionData, CustomAgent, ModelProfile, NavigationData, PiboProject, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, UserSkill, PiboSignalPatch, PiboSignalSnapshot } from "./types";
 
 const DOWNLOAD_FILENAME_RE = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i;
 
@@ -93,47 +93,6 @@ export type ProductEvent = {
 		version?: string;
 		updatedAt?: string;
 		[name: string]: unknown;
-	};
-};
-
-export type BasePromptMode = "library" | "custom";
-
-export type BasePromptSnapshot = {
-	mode: BasePromptMode;
-	effectiveMode: BasePromptMode;
-	library: {
-		path: string;
-		markdown: string;
-	};
-	custom: {
-		path: string;
-		markdown: string;
-		exists: boolean;
-		updatedAt?: string;
-	};
-};
-
-export type CompactionPromptMode = "library" | "custom";
-
-export type UserSettings = {
-	timezone: string;
-	shortcuts: {
-		webAnnotationsToggle: string;
-	};
-};
-
-export type CompactionPromptSnapshot = {
-	mode: CompactionPromptMode;
-	effectiveMode: CompactionPromptMode;
-	library: {
-		path: string;
-		markdown: string;
-	};
-	custom: {
-		path: string;
-		markdown: string;
-		exists: boolean;
-		updatedAt?: string;
 	};
 };
 
@@ -405,46 +364,6 @@ export async function getContextBuild(input: { piboSessionId: string }): Promise
 	return (await requestJson<{ snapshot: ContextBuildSnapshot }>(`/api/chat/context-build?${params.toString()}`)).snapshot;
 }
 
-export async function getBasePrompt(): Promise<BasePromptSnapshot> {
-	return (await requestJson<{ basePrompt: BasePromptSnapshot }>("/api/chat/base-prompt")).basePrompt;
-}
-
-export async function setBasePromptMode(mode: BasePromptMode): Promise<BasePromptSnapshot> {
-	return (await requestJson<{ basePrompt: BasePromptSnapshot }>("/api/chat/base-prompt", {
-		method: "PATCH",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ mode }),
-	})).basePrompt;
-}
-
-export async function saveCustomBasePrompt(markdown: string): Promise<BasePromptSnapshot> {
-	return (await requestJson<{ basePrompt: BasePromptSnapshot }>("/api/chat/base-prompt/custom", {
-		method: "PUT",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ markdown }),
-	})).basePrompt;
-}
-
-export async function getCompactionPrompt(): Promise<CompactionPromptSnapshot> {
-	return (await requestJson<{ compactionPrompt: CompactionPromptSnapshot }>("/api/chat/compaction-prompt")).compactionPrompt;
-}
-
-export async function setCompactionPromptMode(mode: CompactionPromptMode): Promise<CompactionPromptSnapshot> {
-	return (await requestJson<{ compactionPrompt: CompactionPromptSnapshot }>("/api/chat/compaction-prompt", {
-		method: "PATCH",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ mode }),
-	})).compactionPrompt;
-}
-
-export async function saveCustomCompactionPrompt(markdown: string): Promise<CompactionPromptSnapshot> {
-	return (await requestJson<{ compactionPrompt: CompactionPromptSnapshot }>("/api/chat/compaction-prompt/custom", {
-		method: "PUT",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ markdown }),
-	})).compactionPrompt;
-}
-
 export type SaveCustomAgentInput = {
 	displayName: string;
 	description?: string;
@@ -485,26 +404,6 @@ export async function patchCustomAgent(
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(input),
 	});
-}
-
-export async function patchModelDefaults(input: ModelDefaults): Promise<ModelDefaults> {
-	return (await requestJson<{ modelDefaults: ModelDefaults }>("/api/chat/model-defaults", {
-		method: "PATCH",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(input),
-	})).modelDefaults;
-}
-
-export async function getUserSettings(): Promise<UserSettings> {
-	return (await requestJson<{ userSettings: UserSettings }>("/api/chat/user-settings")).userSettings;
-}
-
-export async function patchUserSettings(input: Partial<UserSettings>): Promise<UserSettings> {
-	return (await requestJson<{ userSettings: UserSettings }>("/api/chat/user-settings", {
-		method: "PATCH",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify(input),
-	})).userSettings;
 }
 
 export async function deleteCustomAgent(id: string, confirmName: string): Promise<{ deletedAgentId: string; deletedSessionIds: string[] }> {
@@ -865,4 +764,5 @@ function fromEtag(value: string | null): string | undefined {
 export * from "./api-context-files";
 export * from "./api-cron";
 export * from "./api-ralph";
+export * from "./api-settings";
 export * from "./api-workflows";

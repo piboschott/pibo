@@ -98,6 +98,7 @@
 - `src/apps/chat-ui/src/api-cron.ts` now owns Cron job/run/status API client functions plus `CronJobInput` and `CronScheduleInput`. `src/apps/chat-ui/src/api.ts` re-exports this module for compatibility, while `CronArea` imports it directly to make the Cron feature boundary explicit.
 - `src/apps/chat-ui/src/api-context-files.ts` now owns Context Files API document/revision/diff types and create/list/read/update/delete/source-adoption/revision client functions. `src/apps/chat-ui/src/api.ts` re-exports this module for compatibility, while `ContextFilesView` and the App context upload path import it directly to make the context-file boundary explicit.
 - `src/apps/chat-ui/src/api-workflows.ts` now owns Workflow/project-workflow client contracts and requests: project workflow session creation/start/human-action APIs, workflow registry pickers, prompt assets, catalog/version/draft lifecycle, validation, archive, and delete calls. `WorkflowsArea` imports workflow APIs directly, and `App.tsx` imports the project workflow creation/start picker seam directly; `api.ts` re-exports for compatibility.
+- `src/apps/chat-ui/src/api-settings.ts` now owns prompt/settings client contracts and requests: base prompt snapshots/mode/custom save, compaction prompt snapshots/mode/custom save, model defaults patching, and user settings reads/patches. `App.tsx`, `BasePromptView.tsx`, and `CompactionPromptView.tsx` import this module directly, while `api.ts` re-exports it for compatibility.
 
 ## Telemetry data seams
 
