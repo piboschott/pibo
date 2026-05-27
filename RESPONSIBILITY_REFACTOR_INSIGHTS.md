@@ -109,8 +109,9 @@
 
 ## Chat UI App seams
 
-- `src/apps/chat-ui/src/app-storage.ts` now owns browser-local persistence for selected room/session, per-session composer drafts, composer history, and chat session-view preference. Keep this module limited to generic Chat UI storage preferences; Web Annotation storage remains in `App.tsx` for now because it includes annotation-specific overlay/binding state and may deserve a feature-local annotation storage module.
-- `src/apps/chat-ui/src/App.tsx` remains very large (~10k LOC after the storage extraction). Safe next seams are small browser-storage/utility extractions or an analysis batch that ranks larger component/hook moves before extracting feature-heavy UI such as session sidebar, trace pane, or Agent Designer internals.
+- `src/apps/chat-ui/src/app-storage.ts` now owns browser-local persistence for selected room/session, per-session composer drafts, composer history, and chat session-view preference. Keep this module limited to generic Chat UI storage preferences.
+- `src/apps/chat-ui/src/web-annotation-storage.ts` now owns Web Annotation browser-local persistence and shortcut helpers: CDP URL storage, selected annotation attachment ids, overlay-state parsing/keying, panel-collapse state, shortcut normalization, and overlay shortcut-change notification. Keep this module feature-local; do not merge it into generic `app-storage.ts` because annotation overlay state has its own browser-event contract.
+- `src/apps/chat-ui/src/App.tsx` remains very large (~9,946 LOC after the Web Annotation storage extraction). The safest next step is an App seam analysis that ranks larger component/hook moves before extracting feature-heavy UI such as session sidebar, session trace pane, settings, or Agent Designer internals.
 
 ## Telemetry data seams
 
