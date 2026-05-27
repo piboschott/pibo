@@ -3,6 +3,14 @@ import type { DatabaseSync } from "node:sqlite";
 import type { PiboJsonObject } from "../core/events.js";
 import type { TelemetryCaptureMode, TelemetryPreviewUnavailableResult } from "./telemetry-preview.js";
 import {
+	getTelemetryRetentionStats,
+	pruneTelemetryRetention,
+	type TelemetryPruneInput,
+	type TelemetryPruneResult,
+	type TelemetryRetentionClass,
+	type TelemetryRetentionStats,
+} from "./telemetry-retention.js";
+import {
 	phaseFromRow,
 	providerEventFromRow,
 	providerRequestFromRow,
@@ -17,8 +25,7 @@ import {
 
 export { createTelemetryBoundedPreview, telemetrySafeJsonObject, telemetrySafeTopLevelKeys } from "./telemetry-preview.js";
 export type { TelemetryBoundedPreview, TelemetryCaptureMode, TelemetryPreviewInput, TelemetryPreviewUnavailableResult } from "./telemetry-preview.js";
-
-export type TelemetryRetentionClass = "live" | "diagnostic" | "provider_event" | "payload_preview" | "incident";
+export type { TelemetryPruneInput, TelemetryPruneResult, TelemetryRetentionClass, TelemetryRetentionStats, TelemetryRetentionStatsRow } from "./telemetry-retention.js";
 export type TelemetryTurnSource = "user" | "ui" | "rpc" | "system";
 export type TelemetryTurnStatus = "queued" | "running" | "ok" | "error" | "aborted" | "timeout";
 export type TelemetryPhaseStatus = "open" | "ok" | "error" | "aborted" | "timeout";
@@ -93,34 +100,6 @@ export type TelemetryStaleWorkItem = {
 	thresholdMs: number;
 	queueDepth?: number;
 	nextCommands: string[];
-};
-
-export type TelemetryRetentionStatsRow = {
-	retentionClass: TelemetryRetentionClass;
-	table: "turns" | "phases" | "provider_requests" | "provider_events" | "tool_calls";
-	rowCount: number;
-	byteCount: number;
-};
-
-export type TelemetryRetentionStats = {
-	rows: TelemetryRetentionStatsRow[];
-	totalRows: number;
-	totalBytes: number;
-};
-
-export type TelemetryPruneInput = {
-	retentionClass: TelemetryRetentionClass;
-	before: string;
-	apply?: boolean;
-};
-
-export type TelemetryPruneResult = {
-	retentionClass: TelemetryRetentionClass;
-	before: string;
-	applied: boolean;
-	rowsMatched: number;
-	bytesMatched: number;
-	rowsDeleted: number;
 };
 
 export type StoredTelemetryTurn = {
@@ -442,7 +421,6 @@ export type TelemetryToolCallUpsertInput = {
 const DEFAULT_TELEMETRY_LIST_LIMIT = 20;
 const MAX_TELEMETRY_LIST_LIMIT = 200;
 const DEFAULT_STALE_THRESHOLD_MS = 5 * 60 * 1000;
-const RETENTION_CLASSES: TelemetryRetentionClass[] = ["live", "diagnostic", "provider_event", "incident", "payload_preview"];
 
 export class TelemetryStore {
 	constructor(private readonly db: DatabaseSync) {}
@@ -560,33 +538,11 @@ export class TelemetryStore {
 	}
 
 	getStats(): TelemetryRetentionStats {
-		const rows: TelemetryRetentionStatsRow[] = [];
-		for (const retentionClass of RETENTION_CLASSES) {
-			rows.push(this.statsForTable("turns", "telemetry_turns", "updated_at", "0", retentionClass));
-			rows.push(this.statsForTable("phases", "telemetry_phases", "updated_at", "0", retentionClass));
-			rows.push(this.statsForTable("provider_requests", "telemetry_provider_requests", "updated_at", "COALESCE(bytes_received, 0)", retentionClass));
-			rows.push(this.statsForTable("provider_events", "telemetry_provider_events", "received_at", "byte_size", retentionClass));
-			rows.push(this.statsForTable("tool_calls", "telemetry_tool_calls", "updated_at", "0", retentionClass));
-		}
-		const presentRows = rows.filter((row) => row.rowCount > 0 || row.retentionClass === "payload_preview");
-		return {
-			rows: presentRows,
-			totalRows: presentRows.reduce((sum, row) => sum + row.rowCount, 0),
-			totalBytes: presentRows.reduce((sum, row) => sum + row.byteCount, 0),
-		};
+		return getTelemetryRetentionStats(this.db);
 	}
 
 	prune(input: TelemetryPruneInput): TelemetryPruneResult {
-		const plan = this.prunePlan(input.retentionClass, input.before);
-		if (!input.apply) {
-			return { retentionClass: input.retentionClass, before: input.before, applied: false, rowsMatched: plan.rows, bytesMatched: plan.bytes, rowsDeleted: 0 };
-		}
-		let rowsDeleted = 0;
-		for (const spec of PRUNE_TABLES) {
-			const result = this.db.prepare(`DELETE FROM ${spec.table} WHERE retention_class = ? AND ${spec.cutoffColumn} < ?`).run(input.retentionClass, input.before);
-			rowsDeleted += Number(result.changes ?? 0);
-		}
-		return { retentionClass: input.retentionClass, before: input.before, applied: true, rowsMatched: plan.rows, bytesMatched: plan.bytes, rowsDeleted };
+		return pruneTelemetryRetention(this.db, input);
 	}
 
 	upsertTurn(input: TelemetryTurnUpsertInput): StoredTelemetryTurn {
@@ -1065,22 +1021,6 @@ export class TelemetryStore {
 		};
 	}
 
-	private statsForTable(table: TelemetryRetentionStatsRow["table"], sqlTable: string, _cutoffColumn: string, byteExpression: string, retentionClass: TelemetryRetentionClass): TelemetryRetentionStatsRow {
-		const row = this.db.prepare(`SELECT COUNT(*) AS row_count, COALESCE(SUM(${byteExpression}), 0) AS byte_count FROM ${sqlTable} WHERE retention_class = ?`).get(retentionClass) as { row_count: number; byte_count: number };
-		return { retentionClass, table, rowCount: Number(row.row_count ?? 0), byteCount: Number(row.byte_count ?? 0) };
-	}
-
-	private prunePlan(retentionClass: TelemetryRetentionClass, before: string): { rows: number; bytes: number } {
-		let rows = 0;
-		let bytes = 0;
-		for (const spec of PRUNE_TABLES) {
-			const row = this.db.prepare(`SELECT COUNT(*) AS row_count, COALESCE(SUM(${spec.byteExpression}), 0) AS byte_count FROM ${spec.table} WHERE retention_class = ? AND ${spec.cutoffColumn} < ?`).get(retentionClass, before) as { row_count: number; byte_count: number };
-			rows += Number(row.row_count ?? 0);
-			bytes += Number(row.byte_count ?? 0);
-		}
-		return { rows, bytes };
-	}
-
 	private nextProviderEventSequence(providerRequestId: string): number {
 		const row = this.db.prepare("SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM telemetry_provider_events WHERE provider_request_id = ?").get(providerRequestId) as { next_sequence: number };
 		return row.next_sequence;
@@ -1155,14 +1095,6 @@ export class BestEffortTelemetryService {
 		}
 	}
 }
-
-const PRUNE_TABLES = [
-	{ table: "telemetry_provider_events", cutoffColumn: "received_at", byteExpression: "byte_size" },
-	{ table: "telemetry_tool_calls", cutoffColumn: "updated_at", byteExpression: "0" },
-	{ table: "telemetry_provider_requests", cutoffColumn: "updated_at", byteExpression: "COALESCE(bytes_received, 0)" },
-	{ table: "telemetry_phases", cutoffColumn: "updated_at", byteExpression: "0" },
-	{ table: "telemetry_turns", cutoffColumn: "updated_at", byteExpression: "0" },
-] as const;
 
 function telemetryNextCommands(input: {
 	piboSessionId?: string;
