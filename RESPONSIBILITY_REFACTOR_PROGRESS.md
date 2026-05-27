@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-validation-helpers.ts` for low-risk workflow validation request/response helpers. `web-app.ts` now imports this boundary and keeps `runWorkflowDraftValidation`, `validatePublishedWorkflowBoundary`, and the V2 definition validator orchestration local.
 - Evidence: `web-app.ts` is now 6,514 LOC (down from 6,624); new `workflow-validation-helpers.ts` is 130 LOC.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 56/HTTP 000 connection reset; no restart was performed.
-- Commit: pending.
+- Commit: `6387de9` (`refactor(chat): extract workflow validation helpers`).
 - Blockers: none.
 - Exact next step: Inspect the remaining Chat Web workflow V2 definition validator block for a safe pure extraction boundary (likely security/shape diagnostics or catalog-backed node-ref checks) before moving any route handlers.
 
