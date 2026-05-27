@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted pure Chat UI App route-selection planning helpers into `src/apps/chat-ui/src/app-route-selection.ts`.
-- Result: `App.tsx` delegates stored-selection resolution, route load skip checks, sessions-route canonicalization, and explicit sessions-route detection to the focused helper module. `App.tsx` is down to ~1,540 LOC.
-- Evidence: Added `test/chat-ui-app-route-selection.test.mjs` covering stored per-room selection, explicit session routes, context/settings fallback selection, bootstrap-load skip rules, canonical sessions-route targeting, and explicit route detection.
-- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-route-selection.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `7e433e6` (`refactor(chat-ui): extract app route selection helpers`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure route-selection extraction because focused tests and typechecks passed.
-- Exact next step: Continue with a small App seam, preferably extracting command action response parsing/download command helpers from the bottom of `App.tsx` or adding test safety around room/session destructive flow before moving more side-effect code.
+- Last batch: Extracted Chat UI App slash-command action helpers into `src/apps/chat-ui/src/app-command-actions.ts`.
+- Result: `App.tsx` now delegates download path normalization, command action parameter shaping, derived session id extraction, and fork action response parsing to the focused helper module. `App.tsx` is down to ~1,503 LOC.
+- Evidence: Added `test/chat-ui-app-command-actions.test.mjs` covering quoted/unquoted download paths, thinking/compact action params, derived-session response parsing, and fork response parsing.
+- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-command-actions.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure helper extraction because focused tests and typechecks passed.
+- Exact next step: Continue with App side-effect safety, preferably adding focused tests around room/session destructive flow before extracting delete orchestration, or pivot to `WorkflowsArea.tsx` if App seams become too side-effect-heavy.
 
 ## Progress log
 
@@ -170,3 +170,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted Chat UI App display/profile preference storage helpers into `src/apps/chat-ui/src/app-storage.ts` and added `test/chat-ui-app-storage.test.mjs`; host `git diff --check`, Docker focused test, Docker source import sanity for storage/settings modules, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI route contracts/location parsing/navigation request planning into `src/apps/chat-ui/src/app-routes.ts` and added `test/chat-ui-app-routes.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI App route-selection planning helpers into `src/apps/chat-ui/src/app-route-selection.ts` and added `test/chat-ui-app-route-selection.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Chat UI App slash-command action helpers into `src/apps/chat-ui/src/app-command-actions.ts` and added `test/chat-ui-app-command-actions.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.

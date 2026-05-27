@@ -100,6 +100,12 @@ import {
 	identityFromBootstrap,
 	resolveSessionActiveModelLabel,
 } from "./app-session-model";
+import {
+	commandActionParams,
+	getResultPiboSessionId,
+	normalizeDownloadCommandPath,
+	parseForkActionResponse,
+} from "./app-command-actions";
 import { availableSkillsForSession, buildSlashCommands } from "./app-command-catalog";
 import {
 	hasExplicitSessionsRouteSelection,
@@ -125,14 +131,6 @@ import {
 } from "./app-agent-catalog-mutations";
 
 export type { ChatAppRoute } from "./app-routes";
-
-type ForkActionResponse = {
-	result: {
-		piboSessionId?: string;
-		cancelled?: boolean;
-		selectedText?: string;
-	};
-};
 
 type LoadBootstrapOptions = {
 	selectSession?: boolean;
@@ -1023,12 +1021,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			}
 			return true;
 		}
-		const commandArgs = text.slice(commandText.length).trim();
-		const params = command.action === "thinking" && commandArgs
-			? { level: commandArgs.split(/\s+/, 1)[0] }
-			: command.action === "compact" && commandArgs
-				? { customInstructions: commandArgs }
-				: undefined;
+		const params = commandActionParams(command.action, text.slice(commandText.length).trim());
 		const result = await postAction(selectedPiboSessionId, command.action, params);
 		const derivedPiboSessionId = getResultPiboSessionId(result);
 		if ((command.action === "session.clone" || command.action === "session.fork") && derivedPiboSessionId) {
@@ -1511,30 +1504,4 @@ function findAgentProfile(profiles: BootstrapData["agents"], name: string): Boot
 
 function profileExists(profiles: BootstrapData["agents"], name: string): boolean {
 	return Boolean(findAgentProfile(profiles, name));
-}
-
-function normalizeDownloadCommandPath(value: string): string {
-	const path = value.trim();
-	if (path.length >= 2) {
-		const first = path[0];
-		const last = path[path.length - 1];
-		if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-			return path.slice(1, -1).trim();
-		}
-	}
-	return path;
-}
-
-function parseForkActionResponse(value: unknown): ForkActionResponse | null {
-	if (!isRecord(value) || !isRecord(value.result)) return null;
-	return value as ForkActionResponse;
-}
-
-function getResultPiboSessionId(value: unknown): string | undefined {
-	if (!isRecord(value) || !isRecord(value.result)) return undefined;
-	return typeof value.result.piboSessionId === "string" ? value.result.piboSessionId : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
