@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `WorkflowsArea.tsx` no longer owns workflow version viewer loading/error state or the shared published-workflow summary/card/diagnostics presentation used by the nested-workflow editor.
 - Evidence: `WorkflowsArea.tsx` dropped from 3,473 to 3,346 LOC; the new 135 LOC `WorkflowVersionViewer.tsx` owns viewer metadata loading plus reusable version summary/card/diagnostic components.
 - Validation: host `git diff --check` passed; Docker source/import sanity confirmed `WorkflowsArea.tsx` imports the extracted viewer module; Docker focused `node --test test/chat-ui-workflow-node-defaults.test.mjs test/chat-ui-workflow-graph-model.test.mjs test/chat-ui-workflow-edge-adapters.test.mjs test/chat-ui-workflow-inspector-forms.test.mjs test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending.
+- Commit: `ec6723e` (`refactor(chat-ui): extract workflow version viewer`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure UI extraction because focused tests and typechecks passed.
 - Exact next step: Re-rank remaining `WorkflowsArea.tsx` seams (library side effects, graph canvas callbacks, inspector React rendering, and remaining builder section editors); prefer a test-safety or small component extraction rather than moving heavier React state without coverage.
 
