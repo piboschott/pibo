@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates download path normalization, command action parameter shaping, derived session id extraction, and fork action response parsing to the focused helper module. `App.tsx` is down to ~1,503 LOC.
 - Evidence: Added `test/chat-ui-app-command-actions.test.mjs` covering quoted/unquoted download paths, thinking/compact action params, derived-session response parsing, and fork response parsing.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-command-actions.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending.
+- Commit: `49128e5` (`refactor(chat-ui): extract app command action helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure helper extraction because focused tests and typechecks passed.
 - Exact next step: Continue with App side-effect safety, preferably adding focused tests around room/session destructive flow before extracting delete orchestration, or pivot to `WorkflowsArea.tsx` if App seams become too side-effect-heavy.
 
