@@ -83,8 +83,8 @@ import { handleChatCronApiRequest } from "./cron-api.js";
 import { handleChatRalphApiRequest } from "./ralph-api.js";
 import { prepareWebAnnotationMessageAttachments, type PreparedWebAnnotationAttachments } from "../../web-annotations/attachments.js";
 import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "../../web-annotations/store.js";
-import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } from "../../auth/login-actions.js";
 import { CHAT_WEB_MOUNT_PATH, isChatAppPath, responseBuiltChatAsset, responseBuiltChatPublicFile, responseChatAppShell } from "./static-assets.js";
+import { executeProviderAuthAction, isProviderAuthAction, providerAuthActionResponse } from "./provider-auth-actions.js";
 import { prepareChatFileAttachments, resolveDownloadPath, responseChatFileDownload, saveUploadedChatFiles } from "./chat-files.js";
 import {
 	CHAT_WEB_API_PREFIX,
@@ -597,39 +597,6 @@ function requireSameOriginJsonRequest(request: Request): void {
 
 function requireSameOriginMultipartRequest(request: Request): void {
 	requireSameOriginRequest(request, "multipart/form-data");
-}
-
-function isProviderAuthAction(action: string): boolean {
-	return action === "login.status" || action === "login.start" || action === "login.complete" || action === "login.apikey" || action === "logout";
-}
-
-async function executeProviderAuthAction(action: string, params: unknown): Promise<unknown> {
-	const input = isJsonObject(params) ? params : {};
-	const provider = typeof input.provider === "string" ? input.provider : undefined;
-	if (action === "login.status") return { providers: getLoginStatus(provider) };
-	if (!provider) throw new PiboWebHttpError(`${action} requires params.provider`, 400);
-	if (action === "login.start") return await startLogin(provider);
-	if (action === "login.complete") {
-		if (input.code !== undefined && typeof input.code !== "string") throw new PiboWebHttpError("login.complete params.code must be a string when provided", 400);
-		if (typeof input.state !== "string" || input.state.length === 0) throw new PiboWebHttpError("login.complete requires params.state", 400);
-		return await completeLogin(provider, input.code, input.state);
-	}
-	if (action === "login.apikey") {
-		if (typeof input.apiKey !== "string" || input.apiKey.length === 0) throw new PiboWebHttpError("login.apikey requires params.apiKey", 400);
-		return setApiKey(provider, input.apiKey);
-	}
-	if (action === "logout") return removeLogin(provider);
-	throw new PiboWebHttpError(`Unsupported provider auth action ${action}`, 400);
-}
-
-function providerAuthActionResponse(input: { piboSessionId?: string; action: string; result: unknown }): Response {
-	return responseJson({
-		type: "execution_result",
-		piboSessionId: input.piboSessionId ?? "",
-		eventId: randomUUID(),
-		action: input.action,
-		result: input.result,
-	});
 }
 
 function requireSameOriginRequest(request: Request, expectedContentType: string): void {
