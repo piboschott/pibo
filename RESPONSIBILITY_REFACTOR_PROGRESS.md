@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted Chat UI App signal-status/bootstrap patch helpers into `src/apps/chat-ui/src/app-signal-status.ts` with focused tests.
-- Result: `App.tsx` no longer owns signal snapshot-to-bootstrap status reconciliation, signal patch application, legacy signal-status mapping, timestamp selection, or signal snapshot node/session map merging.
-- Evidence: `App.tsx` dropped from 1,932 LOC to 1,837 LOC; the new `app-signal-status.ts` is 97 LOC.
-- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-signal-status.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `ab697db` (`refactor(chat-ui): extract app signal status helpers`).
+- Last batch: Extracted Chat UI App navigation/bootstrap merge helpers into `src/apps/chat-ui/src/app-navigation-merge.ts` with focused tests.
+- Result: `App.tsx` no longer owns navigation refresh unread preservation, read-subtree unread clearing, selected-room unread merge, or paged root-session append semantics.
+- Evidence: `App.tsx` dropped from 1,837 LOC to 1,728 LOC; the new `app-navigation-merge.ts` is 111 LOC.
+- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-navigation-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: `1f3803a` (`refactor(chat-ui): extract app navigation merge helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving pure helper extraction because focused tests and typechecks passed.
-- Exact next step: Continue reducing `App.tsx` with another low-risk pure seam, preferably the navigation/bootstrap merge helpers near the top of `App.tsx` (`mergeNavigationIntoBootstrap`, unread-count preservation, room unread merge, and `appendSessionRoots`) with focused tests before moving more route/effect logic.
+- Exact next step: Continue reducing `App.tsx` with another low-risk pure seam: extract App-owned agent catalog bootstrap mutation helpers (`updateMcpServerInBootstrap`, Pi package upsert/remove, user-skill upsert/remove) into an `app-agent-catalog-mutations` module with focused tests before moving broader route/effect logic.
 
 ## Progress log
 
@@ -164,3 +164,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted App-owned room/session destructive confirmation modals into `src/apps/chat-ui/src/delete-confirmation-modals.tsx`; Docker source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted App shell/chrome presentation into `src/apps/chat-ui/src/app-chrome.tsx` and removed the orphaned local modal helper from `App.tsx`; Docker source/import sanity check, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI App signal-status/bootstrap patch helpers into `src/apps/chat-ui/src/app-signal-status.ts` and added `test/chat-ui-app-signal-status.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Chat UI App navigation/bootstrap merge helpers into `src/apps/chat-ui/src/app-navigation-merge.ts` and added `test/chat-ui-app-navigation-merge.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
