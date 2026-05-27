@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted Web Annotation browser-storage and shortcut persistence helpers from `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/web-annotation-storage.ts`.
 - Result: `App.tsx` now imports annotation CDP URL persistence, selected-annotation attachment persistence, overlay-state parsing/keying, panel-collapse persistence, and shortcut normalization/notification from a focused feature-local module. `App.tsx` dropped from 10,067 LOC to 9,946 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/web-annotation-storage.ts && grep -q "from \\"./web-annotation-storage\\"" src/apps/chat-ui/src/App.tsx && ! grep -E "const WEB_ANNOTATIONS_|function readStoredWebAnnotationsCdpUrl|function writeStoredWebAnnotationToggleShortcut|function parseWebAnnotationOverlayState|function readStoredSelectedWebAnnotationIds" src/apps/chat-ui/src/App.tsx && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). Best-effort route smoke check `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl -fsS -I http://127.0.0.1:4802/apps/chat'` could not connect because the worker web server was not running; no service restart was performed for this pure extraction.
-- Commit: pending.
+- Commit: `2aa6bf6` (`refactor(chat-ui): extract web annotation storage helpers`).
 - Blockers: none.
 - Exact next step: Continue `src/apps/chat-ui/src/App.tsx` responsibility reduction with an App seam analysis that ranks larger hook/component extractions (session trace pane, session sidebar, settings, or Agent Designer) before moving feature-heavy UI blocks.
 
