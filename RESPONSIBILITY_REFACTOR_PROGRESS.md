@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow agent node dispatch types/functions into `packages/workflows/src/runtime/agent-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
-- Result: `runtime/index.ts` is down from 416 to 107 LOC and is now a focused runtime public barrel; Pibo Runtime profile resolution, prompt building, executor invocation, output validation, metadata/session linkage, persistence, and dispatch failure handling for agent nodes now live in a dedicated runtime module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-agent-node.test.ts src/testing/runtime-prompt-workflows.test.ts src/testing/runtime-mixed-node-workflow.test.ts src/testing/runtime-one-node-agent.test.ts src/testing/runtime-pibo-routing.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for agent node dispatch, routed one-node agent execution, prompt workflows, mixed workflows, and Pibo routing.
-- Commit: `2b05ce7f69d0db1f8203f26f68f890b6a7f70eaf` (`refactor(workflows): extract agent node runtime`).
+- Last batch: Extracted workflow store SQLite row types, row-to-domain mappers, and row JSON parsing into `packages/workflows/src/store/row-mappers.ts`.
+- Result: `packages/workflows/src/store/index.ts` is down from 2,109 to 1,707 LOC and keeps the SQLite store interfaces, schema setup, write methods, query methods, list-limit handling, and write-side JSON serialization; row hydration now has a named module boundary.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package persistence/schema/inspection coverage across SQLite restarts.
+- Commit: `8f8a11588e3d41a2b5d36a3c195ac063407eecb9` (`refactor(workflows): extract store row mappers`).
 - Blockers: none.
-- Exact next step: Shift from workflow runtime to `packages/workflows/src/store/index.ts`; start with a small analysis or test-safety batch around SQLite row mappers/schema boundaries before extracting store responsibilities from the 2,109 LOC store module.
+- Exact next step: Continue `packages/workflows/src/store/index.ts` with a focused schema-boundary extraction: move SQLite table/schema creation and schema metadata constants into a store-owned schema module, keeping public constants re-exported from the store entry point.
 
 ## Progress log
 
@@ -98,3 +98,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow code node dispatch runtime/types into `packages/workflows/src/runtime/code-node.ts`; focused code-node command, full workflow package tests, and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow nested workflow node dispatch runtime/types into `packages/workflows/src/runtime/nested-workflow-node.ts`; focused nested/mixed command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow agent node dispatch runtime/types into `packages/workflows/src/runtime/agent-node.ts`; focused agent/prompt/mixed/one-node/routing command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
+- 2026-05-27: Extracted workflow store row types/mappers into `packages/workflows/src/store/row-mappers.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.

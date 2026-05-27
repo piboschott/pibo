@@ -72,9 +72,10 @@
 
 ## Workflow store seams
 
-- `packages/workflows/src/store/index.ts` remains a high-responsibility module (~2,109 LOC) combining SQLite constants/schema creation, public store interfaces, UI/published-record assertions, one large `SqliteWorkflowRunStore` class, row-to-domain mappers, JSON serialization helpers, and list-limit handling.
-- Likely safe first extraction: bottom row mappers (`workflowRunFromRow`, `workflowEventFromRow`, wait/node/edge/checkpoint/wakeup/human-action mappers) plus `parseJson`/optional JSON helpers into a store-owned row mapping module, but inspect mapper usage and tests first because private row types currently live in `store/index.ts`.
-- Existing workflow store/persistence tests (`workflow-store-facts`, `workflow-persistence-validation`, `workflow-run-inspection`, `workflow-sqlite-schema`, catalog/published version tests) provide broad coverage for store refactors; add focused mapper tests only if extraction changes mapper visibility or null/optional handling.
+- `packages/workflows/src/store/row-mappers.ts` now owns SQLite row types and row-to-domain hydration for definition snapshots, identities, drafts, archive/tombstone records, published versions, runs, events, waits, node attempts, edge transfers, checkpoints, wakeups, and human actions. It also keeps read-side JSON parsing private to that module.
+- `packages/workflows/src/store/index.ts` remains a high-responsibility module (~1,707 LOC) combining SQLite constants/schema creation, public store interfaces, UI/published-record assertions, one large `SqliteWorkflowRunStore` class, write-side JSON serialization helpers, query/list methods, and list-limit handling.
+- Existing workflow store/persistence tests (`workflow-store-facts`, `workflow-persistence-validation`, `workflow-run-inspection`, `workflow-sqlite-schema`, node-attempt persistence, catalog/published version tests) provide broad coverage for store refactors; add focused mapper tests only if extraction changes mapper visibility or null/optional handling.
+- Next likely safe store extraction: move SQLite schema/table creation details and schema metadata constants from `store/index.ts` into a store-owned schema module, with `store/index.ts` importing install/create helpers and re-exporting any public constants. Keep write-side serialization and list-limit helpers in `store/index.ts` unless they gain multiple consumers.
 
 ## Commit policy
 
