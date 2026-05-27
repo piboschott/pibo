@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns trace summary/page query keys, bounded page fetching, base-trace replacement, raw-event/trace-page limits, older-page fetch/merge, or the trace-page-ready flag for the live-stream hook.
 - Evidence: `App.tsx` dropped from 3,254 LOC to 3,132 LOC; the new trace-page hook is 154 LOC and the reusable trace-output helper is 21 LOC. The hook reuses `mergeOlderTracePage`, keeps live-overlay trimming colocated with base-trace replacement, and preserves existing query cache keys and stale/gc settings.
 - Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-trace-page-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: `68ce83a` (`refactor(chat-ui): extract session trace page hook`).
+- Commit: `6062cac` (`refactor(chat-ui): extract session trace page hook`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this hook extraction because typecheck and focused trace-page merge tests passed.
 - Exact next step: Continue reducing `SessionTracePane` by extracting its remaining trace composition/debug hook or pivot to a Projects route side-effect hook if trace composition feels too intertwined.
 
