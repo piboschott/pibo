@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `DesignerPanel`, catalog grid/toggle chrome, Pi package card/details, checkbox toggles, empty catalog messaging, and shared runtime model/thinking selectors now live in `agents/designer-ui.tsx`. `App.tsx` imports those UI primitives and fell from 8,614 LOC to 8,068 LOC.
 - Evidence: source sanity check confirmed `App.tsx` imports `./agents/designer-ui` and no longer defines the extracted designer UI functions; `wc -l src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/agents/designer-ui.tsx` reports 8,068 / 562 LOC; `git diff --check` passed.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `curl --max-time 5 http://127.0.0.1:4802/apps/chat` returned HTTP 000 / `Recv failure: Connection reset by peer`, so no browser validation was possible without restarting worker services.
-- Commit: pending final hash for this batch.
+- Commit: `e62dd2e` (`refactor(chat-ui): extract agent designer UI chrome`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Move the now prop-isolated `AgentsView` subtree into `src/apps/chat-ui/src/agents/AgentsView.tsx`, importing shared model helpers from `agent-designer-model.ts` and shared chrome from `designer-ui.tsx`; keep stateful sub-designers either with `AgentsView` or in focused agent modules if the move is too large for one safe batch.
 
