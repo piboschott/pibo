@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Agent draft conversion/copy/name validation, catalog grouping, built-in tool defaults, package-selection helpers, Agent Designer error text, and related types now live in a non-JSX `agents/agent-designer-model.ts` module. `App.tsx` imports that model seam and fell from 8,944 LOC to 8,614 LOC.
 - Evidence: source sanity check confirmed `App.tsx` imports `./agents/agent-designer-model` and the new model module contains no React/JSX component code; `wc -l src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/agents/agent-designer-model.ts` reports 8,614 / 362 LOC; `git diff --check` passed.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `http://127.0.0.1:4802/apps/chat` returned `ConnectionResetError: [Errno 104] Connection reset by peer`, so no browser validation was possible without restarting worker services.
-- Commit: pending.
+- Commit: `d3b2e09` (`refactor(chat-ui): extract agent designer model helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Extract shared designer chrome (`DesignerPanel`, `InlineCheckboxToggle`, `SelectionCheckbox`, `AgentRuntimeOptions`, and package/catalog card components as needed) into a small `src/apps/chat-ui/src/agents/designer-ui.tsx` or similarly named module, then move `AgentsView` into `src/apps/chat-ui/src/agents/AgentsView.tsx` once App and Settings can import the shared chrome directly.
 
