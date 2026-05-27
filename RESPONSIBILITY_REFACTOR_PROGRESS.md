@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `web-streaming-browser-scripts.ts` now owns streaming fixture/profile types, the EventSource probe script, fixture HTML, and CDP benchmark expression assembly; `web-streaming-browser-library.ts` owns the large in-page benchmark runner library. `web.ts` keeps CLI orchestration, CDP navigation/evaluation, benchmark scoring/regression analysis, provider/live-pipeline summarization, artifact I/O, and snapshot/watch scripts.
 - Evidence: `src/debug/web.ts` dropped from 3,028 to 1,855 LOC. The extracted browser script modules are 248 LOC and 928 LOC, keeping the large browser-side JavaScript below the 1,000 LOC target instead of creating a new oversized module.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug web scenario --help` printed the streaming-benchmark guidance.
-- Commit: pending until commit is created for this batch.
+- Commit: `480b4ec` (`refactor(debug): extract web streaming browser scripts`).
 - Blockers: none for this batch.
 - Exact next step: Continue `src/debug/web.ts` with a focused extraction of streaming benchmark scoring/regression summarization, or run an analysis batch to rank remaining debug-web seams. Avoid moving CDP navigation/evaluation orchestration until browser-script, report, and provider seams remain stable under review.
 
