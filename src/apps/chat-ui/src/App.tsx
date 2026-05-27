@@ -97,6 +97,13 @@ import { DeleteRoomModal, DeleteSessionModal } from "./delete-confirmation-modal
 import { AppErrorBanner, AppHeader, FallbackGatewayBanner, SignedOut, type AppArea as Area } from "./app-chrome";
 import { applySignalPatch, applySignalPatchToBootstrap, applySignalSnapshotToBootstrap, signalLegacyStatus } from "./app-signal-status";
 import { appendSessionRoots, mergeNavigationIntoBootstrap } from "./app-navigation-merge";
+import {
+	removeAgentCatalogPiPackage,
+	removeAgentCatalogUserSkill,
+	updateAgentCatalogMcpServer,
+	upsertAgentCatalogPiPackage,
+	upsertAgentCatalogUserSkill,
+} from "./app-agent-catalog-mutations";
 
 export type ChatAppRoute =
 	| { area: "sessions"; roomId?: string; piboSessionId?: string; sessionViewId?: ChatSessionViewId }
@@ -457,69 +464,27 @@ export function App({ route }: { route: ChatAppRoute }) {
 	}, [navigateToRoute]);
 
 	const updateMcpServerInBootstrap = useCallback((server: AgentCatalog["mcpServers"][number]) => {
-		setBootstrap((current) => current ? {
-			...current,
-			agentCatalog: current.agentCatalog ? {
-				...current.agentCatalog,
-				mcpServers: current.agentCatalog.mcpServers.map((candidate) => candidate.name === server.name ? server : candidate),
-			} : current.agentCatalog,
-		} : current);
+		setBootstrap((current) => current ? updateAgentCatalogMcpServer(current, server) : current);
 	}, []);
 
 	const upsertPiPackageInBootstrap = useCallback((pkg: PiPackageCatalogItem) => {
-		const applyPackage = (current: BootstrapData | null | undefined) => {
-			if (!current?.agentCatalog) return current;
-			const others = current.agentCatalog.piPackages.filter((candidate) => candidate.id !== pkg.id);
-			return {
-				...current,
-				agentCatalog: {
-					...current.agentCatalog,
-					piPackages: [...others, pkg].sort((left, right) => left.name.localeCompare(right.name)),
-				},
-			};
-		};
-		setBootstrap((current) => applyPackage(current) ?? null);
-		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applyPackage(current) ?? undefined);
+		setBootstrap((current) => current ? upsertAgentCatalogPiPackage(current, pkg) : current);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => current ? upsertAgentCatalogPiPackage(current, pkg) : current);
 	}, [queryClient]);
 
 	const removePiPackageFromBootstrap = useCallback((pkg: PiPackageCatalogItem) => {
-		const applyRemoval = (current: BootstrapData | null | undefined) => current?.agentCatalog ? {
-			...current,
-			agentCatalog: {
-				...current.agentCatalog,
-				piPackages: current.agentCatalog.piPackages.filter((candidate) => candidate.id !== pkg.id),
-			},
-		} : current;
-		setBootstrap((current) => applyRemoval(current) ?? null);
-		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applyRemoval(current) ?? undefined);
+		setBootstrap((current) => current ? removeAgentCatalogPiPackage(current, pkg.id) : current);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => current ? removeAgentCatalogPiPackage(current, pkg.id) : current);
 	}, [queryClient]);
 
 	const upsertUserSkillInBootstrap = useCallback((skill: UserSkill) => {
-		const applySkill = (current: BootstrapData | null | undefined) => {
-			if (!current?.agentCatalog) return current;
-			const others = current.agentCatalog.userSkills.filter((candidate) => candidate.id !== skill.id);
-			return {
-				...current,
-				agentCatalog: {
-					...current.agentCatalog,
-					userSkills: [...others, skill].sort((left, right) => left.name.localeCompare(right.name)),
-				},
-			};
-		};
-		setBootstrap((current) => applySkill(current) ?? null);
-		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applySkill(current) ?? undefined);
+		setBootstrap((current) => current ? upsertAgentCatalogUserSkill(current, skill) : current);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => current ? upsertAgentCatalogUserSkill(current, skill) : current);
 	}, [queryClient]);
 
 	const removeUserSkillFromBootstrap = useCallback((skillId: string) => {
-		const applyRemoval = (current: BootstrapData | null | undefined) => current?.agentCatalog ? {
-			...current,
-			agentCatalog: {
-				...current.agentCatalog,
-				userSkills: current.agentCatalog.userSkills.filter((candidate) => candidate.id !== skillId),
-			},
-		} : current;
-		setBootstrap((current) => applyRemoval(current) ?? null);
-		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => applyRemoval(current) ?? undefined);
+		setBootstrap((current) => current ? removeAgentCatalogUserSkill(current, skillId) : current);
+		queryClient.setQueriesData<BootstrapData>({ queryKey: ["chat", "bootstrap"] }, (current) => current ? removeAgentCatalogUserSkill(current, skillId) : current);
 	}, [queryClient]);
 
 	const loadBootstrap = useCallback(async (
