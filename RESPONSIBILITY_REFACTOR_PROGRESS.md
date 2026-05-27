@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns trace-page node/raw-event dedupe or pagination metadata merge rules; the seam is now test-backed before a later query/page-state hook extraction.
 - Evidence: `App.tsx` dropped from 3,280 LOC to 3,254 LOC; the new tracing helper is 28 LOC and the focused test covers node ordering/dedupe, raw-event id and fallback-key dedupe, metadata propagation, event-limit fallback, and mismatched-session no-op behavior.
 - Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-trace-page-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: pending.
+- Commit: `745b939` (`refactor(chat-ui): extract trace page merge helper`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure extraction because typecheck and focused source-import tests passed.
 - Exact next step: Extract a narrow `SessionTracePane` trace page/query-state hook that owns `tracePageQueryKey`, base-trace replacement, and older-page loading, reusing the new `mergeOlderTracePage` test seam.
 
