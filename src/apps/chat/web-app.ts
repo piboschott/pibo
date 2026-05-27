@@ -85,6 +85,7 @@ import {
 	projectWorkflowHumanActionsResource,
 	projectWorkflowSessionStartResource,
 	roomResourcePath,
+	sessionActionResource,
 	sessionResourceId,
 	signalResource,
 	userSkillResourceId,
@@ -5089,16 +5090,11 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return responseJson({ ok: true, roomId: room.id, readSessionIds: roomSessions.map((session) => session.id) });
 			}
 
-			const sessionReadPrefix = `${CHAT_WEB_API_PREFIX}/sessions/`;
-			if (url.pathname.startsWith(sessionReadPrefix) && url.pathname.endsWith("/read") && request.method === "POST") {
+			const sessionAction = sessionActionResource(url.pathname);
+			if (sessionAction?.action === "read" && request.method === "POST") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				const encodedId = url.pathname.slice(sessionReadPrefix.length, -5);
-				if (!encodedId || encodedId.includes("/")) {
-					throw new PiboWebHttpError("Invalid session id", 400);
-				}
-				const readSessionId = decodeURIComponent(encodedId);
-				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, readSessionId);
+				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, sessionAction.piboSessionId);
 				markSessionsRead(state, sessionSubtree(listOwnedSessions(context, webSession), selectedSession.id), principalIdFor(webSession));
 				return responseJson({ ok: true, piboSessionId: selectedSession.id });
 			}
@@ -5151,39 +5147,15 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return responseJson({ deletedSessionIds });
 			}
 
-			const sessionKillPrefix = `${CHAT_WEB_API_PREFIX}/sessions/`;
-			if (url.pathname.startsWith(sessionKillPrefix) && url.pathname.endsWith("/kill") && request.method === "POST") {
+			if ((sessionAction?.action === "kill" || sessionAction?.action === "kill-all") && request.method === "POST") {
 				requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				const encodedId = url.pathname.slice(sessionKillPrefix.length, -5);
-				if (!encodedId || encodedId.includes("/")) {
-					throw new PiboWebHttpError("Invalid session id", 400);
-				}
-				const killSessionId = decodeURIComponent(encodedId);
-				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, killSessionId);
+				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, sessionAction.piboSessionId);
 				const output = await context.channelContext.emit({
 					type: "execution",
 					piboSessionId: selectedSession.id,
 					id: randomUUID(),
-					action: "kill",
-				});
-				return responseJson(output);
-			}
-
-			if (url.pathname.startsWith(sessionKillPrefix) && url.pathname.endsWith("/kill-all") && request.method === "POST") {
-				requireSameOriginJsonRequest(request);
-				const webSession = await requireSession(request, context);
-				const encodedId = url.pathname.slice(sessionKillPrefix.length, -9);
-				if (!encodedId || encodedId.includes("/")) {
-					throw new PiboWebHttpError("Invalid session id", 400);
-				}
-				const killAllSessionId = decodeURIComponent(encodedId);
-				const selectedSession = resolveRequestedSession(state, context, webSession, defaultProfile, killAllSessionId);
-				const output = await context.channelContext.emit({
-					type: "execution",
-					piboSessionId: selectedSession.id,
-					id: randomUUID(),
-					action: "kill_all",
+					action: sessionAction.action === "kill" ? "kill" : "kill_all",
 				});
 				return responseJson(output);
 			}

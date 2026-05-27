@@ -7,6 +7,7 @@ export type WorkflowDraftActionResource = { draftId: string; action: "validate" 
 export type WorkflowVersionResource = { workflowId: string; version?: string };
 export type ProjectResourcePath = { projectId: string; child?: string };
 export type ProjectWorkflowSessionResource = { projectId: string; piboSessionId: string };
+export type SessionActionResource = { piboSessionId: string; action: "read" | "kill" | "kill-all" };
 export type SignalResource = { kind: "session" | "tree"; piboSessionId: string };
 
 export function roomResourcePath(pathname: string): RoomResourcePath | undefined {
@@ -242,6 +243,20 @@ export function sessionResourceId(pathname: string): string | undefined {
 	if (!encodedId || encodedId.includes("/")) return undefined;
 	try {
 		return decodeURIComponent(encodedId);
+	} catch {
+		throw new PiboWebHttpError("Invalid session id", 400);
+	}
+}
+
+export function sessionActionResource(pathname: string): SessionActionResource | undefined {
+	const prefix = `${CHAT_WEB_API_PREFIX}/sessions/`;
+	if (!pathname.startsWith(prefix)) return undefined;
+	const parts = pathname.slice(prefix.length).split("/");
+	if (parts.length !== 2 || !parts[0]) return undefined;
+	const action = parts[1];
+	if (action !== "read" && action !== "kill" && action !== "kill-all") return undefined;
+	try {
+		return { piboSessionId: decodeURIComponent(parts[0]), action };
 	} catch {
 		throw new PiboWebHttpError("Invalid session id", 400);
 	}
