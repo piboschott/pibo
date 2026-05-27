@@ -76,7 +76,19 @@ import { CronArea } from "./CronArea";
 import { RalphArea } from "./RalphArea";
 import { WorkflowsArea } from "./WorkflowsArea";
 import { getChatSessionView, listChatSessionViews } from "./session-views/registry";
-import { DEFAULT_CHAT_SESSION_VIEW_ID, type ChatSessionViewId } from "./session-views/types";
+import type { ChatSessionViewId } from "./session-views/types";
+import {
+	appendStoredComposerHistory,
+	clearStoredSelection,
+	readStoredComposerDraft,
+	readStoredComposerHistory,
+	readStoredSelection,
+	readStoredSessionView,
+	removeStoredRoomSelection,
+	writeStoredComposerDraft,
+	writeStoredSelection,
+	writeStoredSessionView,
+} from "./app-storage";
 import {
 	DEFAULT_RAW_EVENTS_LIMIT,
 	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
@@ -148,17 +160,12 @@ type NavigationOptions = {
 	closeMobileSidebar?: boolean;
 };
 
-const LAST_SELECTION_STORAGE_KEY = "pibo.chat.lastSelection";
-const SESSION_VIEW_STORAGE_KEY = "pibo.chat.sessionView";
-const COMPOSER_DRAFT_STORAGE_PREFIX = "pibo.chat.composerDraft.";
-const COMPOSER_HISTORY_STORAGE_KEY = "pibo.chat.composerHistory";
 const WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY = "pibo.chat.webAnnotations.cdpUrl";
 const WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX = "pibo.chat.webAnnotations.selected.";
 const WEB_ANNOTATIONS_OVERLAY_STORAGE_PREFIX = "pibo.chat.webAnnotations.overlay.";
 const WEB_ANNOTATIONS_PANEL_COLLAPSED_STORAGE_KEY = "pibo.chat.webAnnotations.panelCollapsed";
 const WEB_ANNOTATIONS_TOGGLE_SHORTCUT_STORAGE_KEY = "pibo.chat.shortcuts.webAnnotationsToggle";
 const DEFAULT_WEB_ANNOTATIONS_TOGGLE_SHORTCUT = "Alt+Shift+A";
-const COMPOSER_HISTORY_LIMIT = 100;
 const SESSION_DELETE_CONFIRM_TEXT = "Delete this session";
 const RECENT_SESSION_ACTIVITY_SIGNAL_MS = 3_000;
 const LIVE_STREAM_RECONNECT_BASE_DELAY_MS = 500;
@@ -184,12 +191,6 @@ type WebAnnotationOverlayPanelState = {
 	mode?: string;
 	reason?: string;
 	updatedAt?: string;
-};
-
-type StoredSelection = {
-	roomId?: string;
-	piboSessionId?: string;
-	sessionsByRoom?: Record<string, string>;
 };
 
 const EMPTY_SESSION_PATH_IDS = new Set<string>();
@@ -9850,137 +9851,6 @@ function findAgentProfile(profiles: BootstrapData["agents"], name: string): Boot
 
 function profileExists(profiles: BootstrapData["agents"], name: string): boolean {
 	return Boolean(findAgentProfile(profiles, name));
-}
-
-function readStoredSelection(): StoredSelection {
-	try {
-		const raw = localStorage.getItem(LAST_SELECTION_STORAGE_KEY);
-		if (!raw) return {};
-		const value = JSON.parse(raw);
-		if (!isRecord(value)) return {};
-		const sessionsByRoom = isRecord(value.sessionsByRoom)
-			? Object.fromEntries(
-					Object.entries(value.sessionsByRoom).filter(
-						(entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string" && Boolean(entry[1]),
-					),
-				)
-			: undefined;
-		return {
-			roomId: typeof value.roomId === "string" && value.roomId ? value.roomId : undefined,
-			piboSessionId: typeof value.piboSessionId === "string" && value.piboSessionId ? value.piboSessionId : undefined,
-			...(sessionsByRoom && Object.keys(sessionsByRoom).length ? { sessionsByRoom } : {}),
-		};
-	} catch {
-		return {};
-	}
-}
-
-function writeStoredSelection(selection: StoredSelection): void {
-	try {
-		const previous = readStoredSelection();
-		const sessionsByRoom = { ...(previous.sessionsByRoom ?? {}), ...(selection.sessionsByRoom ?? {}) };
-		if (selection.roomId && selection.piboSessionId) sessionsByRoom[selection.roomId] = selection.piboSessionId;
-		localStorage.setItem(
-			LAST_SELECTION_STORAGE_KEY,
-			JSON.stringify({
-				roomId: selection.roomId,
-				piboSessionId: selection.piboSessionId,
-				...(Object.keys(sessionsByRoom).length ? { sessionsByRoom } : {}),
-			}),
-		);
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
-}
-
-function removeStoredRoomSelection(roomId: string): void {
-	try {
-		const stored = readStoredSelection();
-		if (!stored.sessionsByRoom?.[roomId]) return;
-		const { [roomId]: _removed, ...sessionsByRoom } = stored.sessionsByRoom;
-		localStorage.setItem(
-			LAST_SELECTION_STORAGE_KEY,
-			JSON.stringify({
-				roomId: stored.roomId,
-				piboSessionId: stored.piboSessionId,
-				...(Object.keys(sessionsByRoom).length ? { sessionsByRoom } : {}),
-			}),
-		);
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
-}
-
-function readStoredComposerDraft(piboSessionId: string): string {
-	try {
-		return localStorage.getItem(COMPOSER_DRAFT_STORAGE_PREFIX + piboSessionId) ?? "";
-	} catch {
-		return "";
-	}
-}
-
-function writeStoredComposerDraft(piboSessionId: string, text: string): void {
-	try {
-		const key = COMPOSER_DRAFT_STORAGE_PREFIX + piboSessionId;
-		if (text) {
-			localStorage.setItem(key, text);
-		} else {
-			localStorage.removeItem(key);
-		}
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
-}
-
-function readStoredComposerHistory(): string[] {
-	try {
-		const raw = localStorage.getItem(COMPOSER_HISTORY_STORAGE_KEY);
-		if (!raw) return [];
-		const parsed: unknown = JSON.parse(raw);
-		if (!Array.isArray(parsed)) return [];
-		return parsed
-			.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-			.slice(-COMPOSER_HISTORY_LIMIT);
-	} catch {
-		return [];
-	}
-}
-
-function appendStoredComposerHistory(text: string): void {
-	const entry = text.trim();
-	if (!entry) return;
-	const entries = readStoredComposerHistory();
-	if (entries.at(-1) === entry) return;
-	try {
-		localStorage.setItem(COMPOSER_HISTORY_STORAGE_KEY, JSON.stringify([...entries, entry].slice(-COMPOSER_HISTORY_LIMIT)));
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
-}
-
-function readStoredSessionView(): ChatSessionViewId {
-	try {
-		const stored = localStorage.getItem(SESSION_VIEW_STORAGE_KEY);
-		return stored === "terminal" ? "terminal" : DEFAULT_CHAT_SESSION_VIEW_ID;
-	} catch {
-		return DEFAULT_CHAT_SESSION_VIEW_ID;
-	}
-}
-
-function writeStoredSessionView(viewId: ChatSessionViewId): void {
-	try {
-		localStorage.setItem(SESSION_VIEW_STORAGE_KEY, viewId);
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
-}
-
-function clearStoredSelection(): void {
-	try {
-		localStorage.removeItem(LAST_SELECTION_STORAGE_KEY);
-	} catch {
-		// Browser storage can be unavailable in private or locked-down contexts.
-	}
 }
 
 function canMergeRawDelta(left: RawEvent, right: RawEvent): boolean {

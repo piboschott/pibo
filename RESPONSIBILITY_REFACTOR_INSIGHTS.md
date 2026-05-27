@@ -107,6 +107,11 @@
 - `src/apps/chat-ui/src/api-chat-sessions.ts` now owns the core Chat Web navigation/project/room/session/message client boundary: bootstrap/navigation normalization, project bootstrap and CRUD, project-session creation/mutation/messaging, session paging/read/create/mutate/delete, room CRUD/read, and chat action/message posting. `App.tsx` imports this module directly, while `api.ts` re-exports it for compatibility.
 - Chat UI API extraction is effectively complete: `api.ts` is ~28 LOC and only keeps re-export compatibility plus shared editor/event types. The next higher-value Chat UI target is `src/apps/chat-ui/src/App.tsx` state/effect/component seams, preferably after an analysis batch that ranks safe hooks/components by existing usage and validation path.
 
+## Chat UI App seams
+
+- `src/apps/chat-ui/src/app-storage.ts` now owns browser-local persistence for selected room/session, per-session composer drafts, composer history, and chat session-view preference. Keep this module limited to generic Chat UI storage preferences; Web Annotation storage remains in `App.tsx` for now because it includes annotation-specific overlay/binding state and may deserve a feature-local annotation storage module.
+- `src/apps/chat-ui/src/App.tsx` remains very large (~10k LOC after the storage extraction). Safe next seams are small browser-storage/utility extractions or an analysis batch that ranks larger component/hook moves before extracting feature-heavy UI such as session sidebar, trace pane, or Agent Designer internals.
+
 ## Telemetry data seams
 
 - `src/data/telemetry-rows.ts` now owns SQLite row shapes and row-to-domain hydration for telemetry turns, phases, provider requests, provider events, and tool calls. It also owns read-side JSON parsing for persisted telemetry metadata/counters/safe fields/argument-key arrays.
