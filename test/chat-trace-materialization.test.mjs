@@ -21,19 +21,23 @@ function session(overrides = {}) {
 }
 
 function storedEvent(sequence, text) {
+	return outputEvent(sequence, {
+		type: "message_queued",
+		eventId: `turn-${sequence}`,
+		piboSessionId: "ps_root",
+		source: "user",
+		text,
+	});
+}
+
+function outputEvent(sequence, payload) {
 	return {
 		id: `event-${sequence}`,
-		piboSessionId: "ps_root",
+		piboSessionId: payload.piboSessionId ?? "ps_root",
 		eventSequence: sequence,
-		type: "message_queued",
-		createdAt: `2026-01-01T00:00:0${sequence}.000Z`,
-		payload: {
-			type: "message_queued",
-			eventId: `turn-${sequence}`,
-			piboSessionId: "ps_root",
-			source: "user",
-			text,
-		},
+		type: payload.type,
+		createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, sequence)).toISOString(),
+		payload,
 	};
 }
 
@@ -148,6 +152,164 @@ test("subagent tool events link likely child sessions by tool name and thread ke
 	assert.equal(view.nodes.length, 1);
 	assert.equal(view.nodes[0].type, "agent.delegation");
 	assert.equal(view.nodes[0].linkedPiboSessionId, "ps_child");
+});
+
+test("event-log projection nests turn, reasoning, and assistant content with final statuses", () => {
+	const view = buildTraceViewFromEvents({
+		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
+		events: [
+			outputEvent(1, {
+				type: "message_queued",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				source: "user",
+				text: "hello",
+			}),
+			outputEvent(2, {
+				type: "message_started",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				text: "hello",
+			}),
+			outputEvent(3, {
+				type: "thinking_delta",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				thinkingIndex: 0,
+				text: "plan ",
+			}),
+			outputEvent(4, {
+				type: "thinking_delta",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				thinkingIndex: 0,
+				text: "answer",
+			}),
+			outputEvent(5, {
+				type: "thinking_finished",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				thinkingIndex: 0,
+				text: "plan answer",
+			}),
+			outputEvent(6, {
+				type: "assistant_delta",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				assistantIndex: 0,
+				text: "hel",
+			}),
+			outputEvent(7, {
+				type: "assistant_delta",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				assistantIndex: 0,
+				text: "lo",
+			}),
+			outputEvent(8, {
+				type: "assistant_message",
+				piboSessionId: "ps_root",
+				eventId: "turn-projection",
+				assistantIndex: 0,
+				text: "hello",
+			}),
+		],
+		status: "running",
+	});
+
+	assert.deepEqual(view.nodes.map((node) => node.type), ["user.message", "agent.turn"]);
+	const turn = view.nodes[1];
+	assert.equal(turn.id, "event:message:turn-projection");
+	assert.equal(turn.status, "done");
+	// The final assistant message merges into the live delta node, so the turn closes at
+	// the first assistant-token timestamp rather than the final message timestamp.
+	assert.equal(turn.completedAt, "2026-01-01T00:00:06.000Z");
+	assert.deepEqual(turn.children.map((node) => node.type), ["model.reasoning", "assistant.message"]);
+	assert.equal(turn.children[0].id, "event:thinking:turn-projection:thinking:0");
+	assert.equal(turn.children[0].status, "done");
+	assert.equal(turn.children[0].output, "plan answer");
+	assert.equal(turn.children[1].id, "event:assistant:turn-projection:assistant:0");
+	assert.equal(turn.children[1].status, "done");
+	assert.equal(turn.children[1].output, "hello");
+});
+
+test("event-log projection merges tool lifecycle updates and compaction lifecycle", () => {
+	const view = buildTraceViewFromEvents({
+		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
+		events: [
+			outputEvent(1, {
+				type: "message_started",
+				piboSessionId: "ps_root",
+				eventId: "turn-tools",
+				text: "run tool",
+			}),
+			outputEvent(2, {
+				type: "tool_call",
+				piboSessionId: "ps_root",
+				eventId: "turn-tools",
+				toolCallId: "tool-1",
+				toolName: "bash",
+				args: { command: "pwd" },
+				argsComplete: true,
+			}),
+			outputEvent(3, {
+				type: "tool_execution_started",
+				piboSessionId: "ps_root",
+				eventId: "turn-tools",
+				toolCallId: "tool-1",
+				toolName: "bash",
+				args: { command: "pwd" },
+			}),
+			outputEvent(4, {
+				type: "tool_execution_updated",
+				piboSessionId: "ps_root",
+				eventId: "turn-tools",
+				toolCallId: "tool-1",
+				toolName: "bash",
+				args: { command: "pwd" },
+				partialResult: "working",
+			}),
+			outputEvent(5, {
+				type: "tool_execution_finished",
+				piboSessionId: "ps_root",
+				eventId: "turn-tools",
+				toolCallId: "tool-1",
+				toolName: "bash",
+				result: { stderr: "boom" },
+				isError: true,
+			}),
+			outputEvent(6, {
+				type: "compaction_start",
+				piboSessionId: "ps_root",
+				reason: "manual",
+			}),
+			outputEvent(7, {
+				type: "compaction_end",
+				piboSessionId: "ps_root",
+				reason: "manual",
+				result: { removed: 2 },
+				aborted: false,
+			}),
+		],
+		status: "running",
+	});
+
+	assert.deepEqual(view.nodes.map((node) => node.type), ["agent.turn", "execution.compaction"]);
+	const tool = view.nodes[0].children[0];
+	assert.equal(tool.type, "tool.call");
+	assert.equal(tool.id, "tool:tool-1");
+	assert.equal(tool.status, "error");
+	assert.deepEqual(tool.input, { command: "pwd" });
+	assert.deepEqual(tool.output, { stderr: "boom" });
+	assert.equal(tool.error, '{"stderr":"boom"}');
+	assert.equal(tool.completedAt, "2026-01-01T00:00:05.000Z");
+
+	const compaction = view.nodes[1];
+	assert.equal(compaction.type, "execution.compaction");
+	assert.equal(compaction.status, "done");
+	assert.equal(compaction.summary, "Compacted");
+	assert.deepEqual(compaction.output, { removed: 2 });
+	assert.equal(compaction.completedAt, "2026-01-01T00:00:07.000Z");
 });
 
 test("v2 event mapper preserves session error details for trace rendering", () => {

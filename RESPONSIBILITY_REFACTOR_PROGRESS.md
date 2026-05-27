@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts` and reused the shared `pibo_subagent_*` tool-name helpers from trace event projection, transcript projection, and async-agent projection.
-- Result: `src/shared/trace-engine.ts` dropped from 1,049 LOC to 990 LOC; subagent child-session lookup by parent/tool/thread key and explicit `subagent_session` link mapping now live in a focused 73 LOC helper module.
-- Evidence: Added `test/chat-trace-materialization.test.mjs` coverage proving subagent tool events link likely child sessions by tool name and `threadKey` metadata.
+- Last batch: Added test-safety coverage for `src/shared/trace-engine.ts` event-to-node projection before extracting that seam.
+- Result: `test/chat-trace-materialization.test.mjs` now covers event-log turn nesting, reasoning delta/final merge, assistant delta/final merge, tool lifecycle merging, and compaction lifecycle merging.
+- Evidence: The tests lock existing projection behavior including final assistant messages merging into live delta nodes and preserving the first assistant-token timestamp for parent turn completion.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `05cd8d7` (`refactor(trace): extract subagent link helpers`).
+- Commit: pending (`test(trace): cover event projection seam`).
 - Blockers: none.
-- Exact next step: Re-rank the remaining `src/shared/trace-engine.ts` responsibilities now that it is below 1,000 LOC; the highest-value next trace seam is likely event-to-node projection, but do a focused test-safety batch first because it is intertwined with live patch merge semantics.
+- Exact next step: Extract the event-log projection seam from `src/shared/trace-engine.ts` into a focused helper module, starting with `traceNodeFromEvent`, event stable/id/order helpers, and merge helpers while preserving the newly covered materialization behavior.
 
 ## Progress log
 
+- 2026-05-27: Added test-safety coverage for trace event-log projection: turn/reasoning/assistant nesting and status merging, tool lifecycle merging, and compaction lifecycle merging; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts`, consolidated `pibo_subagent_*` helper use across event/transcript/async-agent projection, and added materialization coverage for child-link lookup by tool/thread metadata; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted transcript-entry projection into `src/shared/trace-transcript.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace async agent run child-node/status reconciliation into `src/shared/trace-async-agent-runs.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
