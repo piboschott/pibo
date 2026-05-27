@@ -25,18 +25,12 @@ import { fetchSignalTree, subscribeSignalTree } from "./api-trace-signals";
 import { listUserSkills } from "./api-agent-designer";
 import { getWorkflowVersionPicker, postProjectWorkflowSession, postProjectWorkflowSessionStart, type WorkflowVersionPickerOption } from "./api-workflows";
 import type { AgentCatalog, BootstrapData, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSignalPatch, PiboSignalSnapshot, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill, WorkflowLifecycleEventRecord } from "./types";
-import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { RawEventsSidebar } from "./tracing/RawEventsSidebar";
 import { TraceHistoryLoadMore } from "./tracing/TraceHistoryLoadMore";
-import {
-	collectPersistedUserMessageIndex,
-	reconcileOptimisticUserMessages,
-} from "./tracing/optimistic-user-messages";
 import type { LiveTraceOverlay } from "./tracing/live-overlay";
-import { computeCurrentTraceView } from "./tracing/current-trace-view";
+import { useCurrentSessionTrace } from "./tracing/use-current-session-trace";
 import { useSessionTracePage } from "./tracing/use-session-trace-page";
 import { useSessionTraceLiveStream } from "./tracing/use-session-trace-live-stream";
-import { traceAssistantOutputLength } from "./tracing/trace-output";
 import { countRender } from "./renderMetrics";
 import {
 	chatStreamEvent,
@@ -101,11 +95,8 @@ import {
 	traceSummaryQueriesForSession,
 } from "./cache";
 import {
-	isStreamingDebugEnabled,
-	recordStreamingDebugLiveTraceCompute,
 	recordStreamingDebugTraceRefreshEnd,
 	recordStreamingDebugTraceRefreshStart,
-	recordStreamingDebugTraceState,
 } from "./streamingDebug";
 import {
 	countUnreadRooms,
@@ -2473,37 +2464,12 @@ function SessionTracePane({
 		clearSelectedUploadAttachments,
 	} = useSessionUploadAttachments(selectedPiboSessionId, createUploadAttachmentId);
 
-	const reconciledBaseTraceView = useMemo(
-		() => baseTraceView ? reconcileOptimisticUserMessages(baseTraceView) : null,
-		[baseTraceView],
-	);
-
-	const persistedUserMessageIndexForBaseTrace = useMemo(
-		() => reconciledBaseTraceView ? collectPersistedUserMessageIndex(reconciledBaseTraceView.nodes) : new Map<string, string[]>(),
-		[reconciledBaseTraceView],
-	);
-
-	const currentTraceComputation = useMemo(() => computeCurrentTraceView({
+	const currentTraceView = useCurrentSessionTrace({
 		selectedPiboSessionId,
-		reconciledBaseTraceView,
+		baseTraceView,
 		liveTraceOverlay,
 		selectedSessionStatus,
-		persistedUserMessageIndexForBaseTrace,
-		now: isStreamingDebugEnabled() ? () => performance.now() : undefined,
-	}), [liveTraceOverlay, selectedPiboSessionId, selectedSessionStatus, reconciledBaseTraceView, persistedUserMessageIndexForBaseTrace]);
-	const currentTraceView = currentTraceComputation.traceView;
-
-	useEffect(() => {
-		if (!selectedPiboSessionId || !currentTraceView?.piboSessionId || !isStreamingDebugEnabled()) return;
-		recordStreamingDebugTraceState(currentTraceView.piboSessionId, {
-			overlayEventCount: liveTraceOverlay?.piboSessionId === currentTraceView.piboSessionId ? liveTraceOverlay.events.length : 0,
-			traceBaseOutputLength: traceAssistantOutputLength(baseTraceView),
-			currentOutputLength: traceAssistantOutputLength(currentTraceView),
-		});
-		if (currentTraceComputation.liveTraceComputeDurationMs !== undefined) {
-			recordStreamingDebugLiveTraceCompute(currentTraceView.piboSessionId, currentTraceComputation.liveTraceComputeDurationMs);
-		}
-	}, [baseTraceView, currentTraceComputation.liveTraceComputeDurationMs, currentTraceView, liveTraceOverlay, selectedPiboSessionId]);
+	});
 
 	useSessionTraceLiveStream({
 		selectedPiboSessionId,
@@ -2531,19 +2497,6 @@ function SessionTracePane({
 	);
 	const loadingTrace = Boolean(selectedPiboSessionId) && tracePageQuery.isFetching && !currentTraceView;
 	const traceError = tracePageQuery.error ? errorMessage(tracePageQuery.error) : traceSummaryQuery.error ? errorMessage(traceSummaryQuery.error) : null;
-
-	useEffect(() => {
-		const handleVisibilityChange = () => {
-			if (!currentTraceView?.piboSessionId || !isTraceSnapshotCollectionEnabled()) return;
-			collectBackendNodes(currentTraceView.piboSessionId, `tab:${document.visibilityState}`, currentTraceView.nodes, {
-				traceVersion: currentTraceView.version,
-				latestStreamId: currentTraceView.latestStreamId,
-				lastRawEventId: currentTraceView.rawEvents.at(-1)?.id,
-			});
-		};
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-		return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-	}, [currentTraceView]);
 
 	const headerPiboSessionId = currentTraceView?.piboSessionId ?? selectedPiboSessionId ?? "";
 	const workflowHeader = workflowProjectSession && isWorkflowBackedProjectSession(workflowProjectSession)

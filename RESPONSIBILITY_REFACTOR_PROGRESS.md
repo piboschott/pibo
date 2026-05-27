@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted `SessionTracePane` trace summary/page query state into `src/apps/chat-ui/src/tracing/use-session-trace-page.ts` and moved assistant-output debug length calculation to `src/apps/chat-ui/src/tracing/trace-output.ts`.
-- Result: `App.tsx` no longer owns trace summary/page query keys, bounded page fetching, base-trace replacement, raw-event/trace-page limits, older-page fetch/merge, or the trace-page-ready flag for the live-stream hook.
-- Evidence: `App.tsx` dropped from 3,254 LOC to 3,132 LOC; the new trace-page hook is 154 LOC and the reusable trace-output helper is 21 LOC. The hook reuses `mergeOlderTracePage`, keeps live-overlay trimming colocated with base-trace replacement, and preserves existing query cache keys and stale/gc settings.
-- Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-trace-page-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: `6062cac` (`refactor(chat-ui): extract session trace page hook`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this hook extraction because typecheck and focused trace-page merge tests passed.
-- Exact next step: Continue reducing `SessionTracePane` by extracting its remaining trace composition/debug hook or pivot to a Projects route side-effect hook if trace composition feels too intertwined.
+- Last batch: Extracted `SessionTracePane` current trace composition/debug/snapshot side effects into `src/apps/chat-ui/src/tracing/use-current-session-trace.ts`.
+- Result: `App.tsx` no longer owns current trace reconciliation/indexing, live trace computation timing instrumentation, streaming trace-state debug recording, or visibility-change backend-node snapshot collection.
+- Evidence: `App.tsx` dropped from 3,132 LOC to 3,085 LOC; the new hook is 74 LOC and keeps React/debug side effects separate from the pure `current-trace-view.ts` computation seam.
+- Validation: `git diff --check` passed; Docker source/import sanity check passed with `grep`; Docker focused `node --test test/chat-ui-current-trace-view.test.mjs test/chat-ui-trace-page-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure hook extraction because focused tests and typechecks passed.
+- Exact next step: Continue reducing `SessionTracePane` by extracting the remaining session-view/header/sidebar composition into a small component or pivot to a Projects route side-effect hook if `SessionTracePane` has diminishing returns.
 
 ## Progress log
 
@@ -156,3 +156,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted shared Chat UI App session model helpers into `src/apps/chat-ui/src/app-session-model.ts` and added `test/chat-ui-app-session-model.test.mjs`; focused helper/session trace prop tests, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` older trace-page merge rules into `src/apps/chat-ui/src/tracing/trace-page-merge.ts` and added `test/chat-ui-trace-page-merge.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` trace summary/page query state into `src/apps/chat-ui/src/tracing/use-session-trace-page.ts` and shared trace debug output sizing through `src/apps/chat-ui/src/tracing/trace-output.ts`; `git diff --check`, Docker focused trace-page merge test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
+- 2026-05-27: Extracted `SessionTracePane` current trace composition/debug/snapshot hook into `src/apps/chat-ui/src/tracing/use-current-session-trace.ts`; `git diff --check`, Docker source/import sanity, focused current-trace and trace-page tests, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
