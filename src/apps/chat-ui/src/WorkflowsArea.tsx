@@ -60,6 +60,13 @@ import {
 	type WorkflowVersionHistoryResponse,
 } from "./api-workflows";
 import { MarkdownEditor } from "./context/MarkdownEditor";
+import {
+	groupWorkflowVersionHistory,
+	hasWorkflowCatalogAction,
+	workflowCatalogActionLabel,
+	workflowHistoryStatusDescription,
+	type WorkflowVersionHistoryGroup,
+} from "./workflows/workflow-version-history-model";
 
 const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
 const DEFAULT_WORKFLOW_JSON_SCHEMA: WorkflowJsonObject = { type: "object", properties: {}, required: [], additionalProperties: false };
@@ -175,13 +182,6 @@ type WorkflowEdgePortDetails = {
 	directlyCompatible: boolean;
 };
 type WorkflowRawIrEditorSaveState = "idle" | "saving" | "saved" | "warning" | "error";
-
-type WorkflowVersionHistoryGroup = {
-	workflowId: string;
-	title: string;
-	source: WorkflowCatalogVersionRecord["source"];
-	records: WorkflowVersionHistoryOption[];
-};
 
 type WorkflowLifecycleConfirmationTarget = {
 	kind: "archive" | "delete";
@@ -3156,54 +3156,6 @@ function WorkflowVersionDiagnostics({ diagnostics, ariaLabel }: { diagnostics: W
 			))}
 		</div>
 	);
-}
-
-function groupWorkflowVersionHistory(rows: WorkflowVersionHistoryOption[]): WorkflowVersionHistoryGroup[] {
-	const groups = new Map<string, WorkflowVersionHistoryGroup>();
-	for (const row of rows) {
-		const existing = groups.get(row.id);
-		if (existing) {
-			existing.records.push(row);
-			if (row.status === "published" && existing.records[0]?.status !== "published") {
-				existing.title = row.title;
-				existing.source = row.source;
-			}
-			continue;
-		}
-		groups.set(row.id, {
-			workflowId: row.id,
-			title: row.title,
-			source: row.source,
-			records: [row],
-		});
-	}
-	return [...groups.values()];
-}
-
-function workflowHistoryStatusDescription(record: WorkflowCatalogVersionRecord): string {
-	if (record.status === "published") return "Published workflow version — selectable for Project sessions and safe to duplicate into UI drafts.";
-	if (record.status === "archived") return "Archived workflow version — shown for lifecycle history but hidden from default Project session creation choices.";
-	if (record.status === "deleted") return "Deleted workflow definition — historical runs must render from immutable snapshots instead of live catalog links.";
-	return "Draft workflow version — not published and unavailable for Project session creation.";
-}
-
-function hasWorkflowCatalogAction(record: { actions: WorkflowCatalogAction[] }, action: WorkflowCatalogAction): boolean {
-	return record.actions.includes(action);
-}
-
-function workflowCatalogActionLabel(action: WorkflowCatalogAction): string {
-	switch (action) {
-		case "view": return "View";
-		case "duplicate": return "Duplicate";
-		case "create_project_session": return "Create Project session";
-		case "edit_draft": return "Edit draft";
-		case "validate": return "Validate";
-		case "publish": return "Publish";
-		case "create_next_draft": return "Create next draft";
-		case "version_history": return "Version history";
-		case "archive": return "Archive";
-		case "delete": return "Delete";
-	}
 }
 
 function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNode>) {

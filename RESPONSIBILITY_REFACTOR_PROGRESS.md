@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted Chat UI App destructive-delete side-effect orchestration into `src/apps/chat-ui/src/app-delete-actions.ts`.
-- Result: `App.tsx` now delegates room/session delete modal state, optimistic cache removal, API deletion, rollback, post-delete bootstrap reload, navigation, and error/deleting-state cleanup to a focused hook while preserving the tested pure planning seam in `app-delete-flow.ts`.
-- Evidence: `App.tsx` dropped from 1,514 to 1,442 LOC; the new hook is 184 LOC and is the only place importing delete API calls plus delete planning helpers.
-- Validation: source/import sanity checks passed; host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-delete-flow.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `d3c5735` (`refactor(chat-ui): extract app delete actions`).
-- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this hook extraction because focused tests and typechecks passed.
-- Exact next step: Re-rank remaining `App.tsx` seams after delete orchestration extraction, or pivot to `WorkflowsArea.tsx` component/hook seam ranking for the next high-value route-level target.
+- Last batch: Extracted Workflow Library version-history model helpers into `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts`.
+- Result: `WorkflowsArea.tsx` no longer owns version-history grouping, status copy, action label text, or action availability checks; the helper seam now has focused unit coverage.
+- Evidence: `WorkflowsArea.tsx` dropped from 4,513 to 4,465 LOC; the new model module is 60 LOC and `test/chat-ui-workflow-version-history-model.test.mjs` covers grouping, published-row title/source promotion, status descriptions, action labels, and action checks.
+- Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
+- Commit: `b200868` (`refactor(chat-ui): extract workflow history model`).
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure model extraction because focused tests and typechecks passed.
+- Exact next step: Continue `WorkflowsArea.tsx` by extracting the Workflow Library panel side-effect hook/component boundary, or extract graph projection/model helpers after adding focused tests around node/edge projection semantics.
 
 ## Progress log
 
@@ -173,3 +173,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted Chat UI App slash-command action helpers into `src/apps/chat-ui/src/app-command-actions.ts` and added `test/chat-ui-app-command-actions.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI App destructive delete planning helpers into `src/apps/chat-ui/src/app-delete-flow.ts` and added `test/chat-ui-app-delete-flow.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted Chat UI App destructive-delete side-effect orchestration into `src/apps/chat-ui/src/app-delete-actions.ts`; source/import sanity, host `git diff --check`, Docker focused delete-flow test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.
+- 2026-05-27: Extracted Workflow Library version-history model helpers into `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts` and added `test/chat-ui-workflow-version-history-model.test.mjs`; host `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl exit 7/HTTP 000 without restarting services.

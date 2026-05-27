@@ -90,6 +90,12 @@
 - `src/shared/trace-engine.ts` still owns event/transcript projection, live patch orchestration, event dedupe/stream cursors, delta merging, subagent/yielded-run linking, and run-notification parsing. Further trace splitting now needs a clearly test-backed seam because the remaining responsibilities are more intertwined with event projection semantics.
 - Focused trace coverage is strong for future trace refactors: `test/chat-trace-materialization.test.mjs`, `test/chat-ui-integration.test.mjs`, `test/trace-live-reducer.test.mjs`, `test/trace-patch-identity.test.mjs`, and `test/debug-cli.test.mjs` exercise full trace materialization, incremental patch identity, live reducer dedupe, debug trace output, and CLI-adjacent trace behavior.
 
+## Chat UI Workflow seams
+
+- `src/apps/chat-ui/src/workflows/workflow-version-history-model.ts` now owns Workflow Library version-history grouping and catalog copy helpers: grouping rows by workflow id, promoting published row title/source for mixed archived/published history, status-description text, action labels, and action availability checks.
+- `test/chat-ui-workflow-version-history-model.test.mjs` covers this seam. Re-run it before changing Workflow Library version-history grouping, status copy, or catalog action labels.
+- `src/apps/chat-ui/src/WorkflowsArea.tsx` remains large (~4,465 LOC) and still mixes Workflow Library side effects, raw IR editing, graph canvas projection/mutations, inspectors, node editors, and version viewing. Next high-value seams are the Workflow Library panel hook/component boundary or graph projection/model helpers with focused tests.
+
 ## Chat UI API client seams
 
 - `src/apps/chat-ui/src/api-http.ts` now owns the shared Chat UI `requestJson` helper and error-shaping contract used by feature-specific API modules. Keep response parsing/error handling here rather than duplicating it in each extracted client module.
