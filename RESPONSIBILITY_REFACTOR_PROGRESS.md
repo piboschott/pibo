@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` delegates navigation planning to `app-routes.ts` and re-exports `ChatAppRoute` for compatibility; `main.tsx` delegates URL parsing to the same route module. `App.tsx` is down to ~1,561 LOC.
 - Evidence: Added `test/chat-ui-app-routes.test.mjs` covering location parsing and navigation request mapping for sessions, projects, context, settings, workflow-view parsing, `/apps/chat` prefix stripping, decoded path parts, and invalid session view fallback.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-routes.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `39bc2f9` (`refactor(chat-ui): extract app route helpers`).
+- Commit: `d13a48a` (`refactor(chat-ui): extract app route helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving route helper extraction because focused tests and typechecks passed.
 - Exact next step: Continue reducing `App.tsx` by extracting room/session selection flow helpers or do a short seam analysis of remaining App responsibilities before more extraction; avoid reworking route helpers unless new route behavior is needed.
 
