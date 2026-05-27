@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates history-strip presentation/copy/count formatting to a focused tracing component while retaining the trace-page fetch and state transitions in `SessionTracePane`. `App.tsx` fell from 3,678 LOC to 3,673 LOC; the new component is 28 LOC.
 - Evidence: Docker source/import sanity confirmed `App.tsx` imports `./tracing/TraceHistoryLoadMore`, while `TraceHistoryLoadMore.tsx` owns the `Load older trace history` button copy. `wc -l` reports 3,673 LOC for `App.tsx` and 28 LOC for `tracing/TraceHistoryLoadMore.tsx`.
 - Validation: `git diff --check` passed; Docker source/import sanity passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending.
+- Commit: `f6b2b4a` (`refactor(chat-ui): extract trace history load-more`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Extract the current session-view render props/object assembly from `SessionTracePane` into a focused helper/component, or pivot to App bootstrap mutation helpers if the render prop seam looks too coupled.
 
