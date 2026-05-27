@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now passes raw-event state/query status into a focused component and no longer owns raw-event compaction or JSON rendering. `App.tsx` fell from 3,702 LOC to 3,678 LOC; the new component is 54 LOC.
 - Evidence: Docker source/import sanity confirmed `App.tsx` imports `./tracing/RawEventsSidebar`, while `RawEventsSidebar.tsx` owns `compactRawEvents` and `JsonRenderer`. `wc -l` reports 3,678 LOC for `App.tsx` and 54 LOC for `tracing/RawEventsSidebar.tsx`.
 - Validation: `git diff --check` passed; Docker source/import sanity passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending (`refactor(chat-ui): extract raw events sidebar`).
+- Commit: `a102168` (`refactor(chat-ui): extract raw events sidebar`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue reducing `SessionTracePane` by extracting the load-older trace history strip or the current session-view render props into a focused helper/component.
 
