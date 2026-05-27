@@ -49,21 +49,11 @@ import {
 	type PiboModelDefaults,
 } from "../../core/model-defaults.js";
 import { inspectPiboContextBuild } from "../../core/context-build.js";
-import { loadPiboUserSettings, sanitizeShortcutSettings, sanitizeTimezone, updatePiboUserSettings } from "../../core/user-settings.js";
+import { loadPiboUserSettings } from "../../core/user-settings.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
 import { listMcpServerInfos, setMcpServerDescription } from "../../mcp/agent-context.js";
-import {
-	readPiboBasePrompt,
-	savePiboCustomBasePrompt,
-	setPiboBasePromptMode,
-} from "../../core/base-prompt.js";
-import {
-	readPiboCompactionPrompt,
-	savePiboCustomCompactionPrompt,
-	setPiboCompactionPromptMode,
-} from "../../core/compaction-prompt.js";
 import { getDefaultPiboWorkspace } from "../../core/workspace.js";
 import { inspectPiPackageSource } from "../../pi-packages/metadata.js";
 import { findPiPackage, listPiPackages, removePiPackage, setPiPackageEnabled, upsertPiPackage } from "../../pi-packages/store.js";
@@ -86,6 +76,12 @@ import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "../../
 import { CHAT_WEB_MOUNT_PATH, isChatAppPath, responseBuiltChatAsset, responseBuiltChatPublicFile, responseChatAppShell } from "./static-assets.js";
 import { executeProviderAuthAction, isProviderAuthAction, providerAuthActionResponse } from "./provider-auth-actions.js";
 import { prepareChatFileAttachments, resolveDownloadPath, responseChatFileDownload, saveUploadedChatFiles } from "./chat-files.js";
+import {
+	chatSettingsRoute,
+	chatSettingsRouteInvalidatesBootstrapCatalog,
+	chatSettingsRouteRequiresSameOrigin,
+	handleChatSettingsRoute,
+} from "./chat-settings-routes.js";
 import {
 	CHAT_WEB_API_PREFIX,
 	agentResourceId,
@@ -118,11 +114,7 @@ import {
 	createRoomUpdate,
 	createSessionUpdate,
 	normalizeAgentArchived,
-	normalizeBasePromptMarkdown,
-	normalizeBasePromptMode,
 	normalizeClientTxnId,
-	normalizeCompactionPromptMarkdown,
-	normalizeCompactionPromptMode,
 	normalizeMcpServerDescriptionBody,
 	normalizeMessageText,
 	normalizeParentRoomId,
@@ -152,12 +144,9 @@ import {
 	normalizeUserSkillName,
 	normalizeUserSkillUrl,
 	resolveCreateSessionProfile,
-	updateChatModelDefaults,
 	type ChatAgentBody,
-	type ChatBasePromptBody,
 	type ChatMessageBody,
 	type ChatMcpServerDescriptionBody,
-	type ChatModelDefaultsBody,
 	type ChatPiPackageBody,
 	type ChatPiPackagePatchBody,
 	type ChatProjectCreateBody,
@@ -170,7 +159,6 @@ import {
 	type ChatSessionCreateBody,
 	type ChatSessionDeleteBody,
 	type ChatStreamingFixtureBody,
-	type ChatUserSettingsBody,
 } from "./chat-request-normalizers.js";
 import {
 	ChatWorkflowArchiveStore,
@@ -4479,32 +4467,18 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				});
 			}
 
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/model-defaults` && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatModelDefaultsBody>(request);
-				const modelDefaults = updateChatModelDefaults(body, process.cwd());
-				invalidateBootstrapCatalogCache(state);
-				return responseJson({ modelDefaults });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-settings` && request.method === "GET") {
+			const settingsRoute = chatSettingsRoute(url.pathname, request.method);
+			if (settingsRoute) {
+				if (chatSettingsRouteRequiresSameOrigin(settingsRoute)) requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				return responseJson({ userSettings: loadPiboUserSettings(webSession.ownerScope) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/user-settings` && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				const webSession = await requireSession(request, context);
-				const body = await readJsonBody<ChatUserSettingsBody>(request);
-				const patch: Parameters<typeof updatePiboUserSettings>[1] = {};
-				if (body.timezone !== undefined) {
-					const timezone = sanitizeTimezone(body.timezone);
-					if (!timezone) throw new PiboWebHttpError("Invalid timezone", 400);
-					patch.timezone = timezone;
-				}
-				if (body.shortcuts !== undefined) patch.shortcuts = sanitizeShortcutSettings(body.shortcuts);
-				return responseJson({ userSettings: updatePiboUserSettings(webSession.ownerScope, patch) });
+				const response = await handleChatSettingsRoute({
+					route: settingsRoute,
+					request,
+					ownerScope: webSession.ownerScope,
+					cwd: process.cwd(),
+				});
+				if (chatSettingsRouteInvalidatesBootstrapCatalog(settingsRoute)) invalidateBootstrapCatalogCache(state);
+				return response;
 			}
 
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/pi-packages` && request.method === "GET") {
@@ -4662,44 +4636,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				syncUserSkills(state, context);
 				invalidateBootstrapCatalogCache(state);
 				return responseJson({ removedSkillId: existing.id });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/base-prompt` && request.method === "GET") {
-				await requireSession(request, context);
-				return responseJson({ basePrompt: await readPiboBasePrompt(process.cwd()) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/base-prompt` && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatBasePromptBody>(request);
-				return responseJson({ basePrompt: setPiboBasePromptMode(normalizeBasePromptMode(body.mode), process.cwd()) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/base-prompt/custom` && request.method === "PUT") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatBasePromptBody>(request);
-				return responseJson({ basePrompt: await savePiboCustomBasePrompt(normalizeBasePromptMarkdown(body.markdown), process.cwd()) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/compaction-prompt` && request.method === "GET") {
-				await requireSession(request, context);
-				return responseJson({ compactionPrompt: await readPiboCompactionPrompt(process.cwd()) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/compaction-prompt` && request.method === "PATCH") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatBasePromptBody>(request);
-				return responseJson({ compactionPrompt: setPiboCompactionPromptMode(normalizeCompactionPromptMode(body.mode), process.cwd()) });
-			}
-
-			if (url.pathname === `${CHAT_WEB_API_PREFIX}/compaction-prompt/custom` && request.method === "PUT") {
-				requireSameOriginJsonRequest(request);
-				await requireSession(request, context);
-				const body = await readJsonBody<ChatBasePromptBody>(request);
-				return responseJson({ compactionPrompt: await savePiboCustomCompactionPrompt(normalizeCompactionPromptMarkdown(body.markdown), process.cwd()) });
 			}
 
 			const mcpServerName = mcpServerResourceName(url.pathname);
