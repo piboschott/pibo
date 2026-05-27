@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `src/debug/web.ts` dropped from 1,183 LOC to 877 LOC and now imports the browser expression builders, while the new 321 LOC module owns `buildSnapshotExpression`, `buildWatchExpression`, typed builder options, and the injected DOM observer/snapshot library.
 - Evidence: The extraction is behavior-preserving: the generated browser library text was moved unchanged, with only the TypeScript builder signatures named through exported option types.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke for `node dist/bin/pibo.js debug web snapshot --help` and `watch --help` passed (13 lines each).
-- Commit: pending hash recording after commit.
+- Commit: `d7b9b94` (`refactor(debug): extract web snapshot browser scripts`).
 - Blockers: none.
 - Exact next step: Extract the remaining debug-web option parsing/defaults/preset validation seam into a focused module only after preserving current pre-CDP validation/error ordering with `test/debug-cli.test.mjs`.
 
