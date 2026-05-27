@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted workflow agent node dispatch types/functions into `packages/workflows/src/runtime/agent-node.ts`, preserving the public `runtime/index.ts` export surface through re-exports.
 - Result: `runtime/index.ts` is down from 416 to 107 LOC and is now a focused runtime public barrel; Pibo Runtime profile resolution, prompt building, executor invocation, output validation, metadata/session linkage, persistence, and dispatch failure handling for agent nodes now live in a dedicated runtime module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/runtime-agent-node.test.ts src/testing/runtime-prompt-workflows.test.ts src/testing/runtime-mixed-node-workflow.test.ts src/testing/runtime-one-node-agent.test.ts src/testing/runtime-pibo-routing.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical runtime E2E is workflow package coverage for agent node dispatch, routed one-node agent execution, prompt workflows, mixed workflows, and Pibo routing.
-- Commit: pending.
+- Commit: `2b05ce7f69d0db1f8203f26f68f890b6a7f70eaf` (`refactor(workflows): extract agent node runtime`).
 - Blockers: none.
 - Exact next step: Shift from workflow runtime to `packages/workflows/src/store/index.ts`; start with a small analysis or test-safety batch around SQLite row mappers/schema boundaries before extracting store responsibilities from the 2,109 LOC store module.
 
