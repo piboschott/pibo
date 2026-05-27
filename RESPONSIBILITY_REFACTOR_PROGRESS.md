@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Added test-safety coverage for `src/shared/trace-engine.ts` event-to-node projection before extracting that seam.
-- Result: `test/chat-trace-materialization.test.mjs` now covers event-log turn nesting, reasoning delta/final merge, assistant delta/final merge, tool lifecycle merging, and compaction lifecycle merging.
-- Evidence: The tests lock existing projection behavior including final assistant messages merging into live delta nodes and preserving the first assistant-token timestamp for parent turn completion.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `debcea6` (`test(trace): cover event projection seam`).
+- Last batch: Extracted event-log projection from `src/shared/trace-engine.ts` into `src/shared/trace-event-projection.ts`.
+- Result: `trace-engine.ts` is now a small trace-view build/patch orchestrator (~187 LOC), while `trace-event-projection.ts` owns event-to-node shaping, event dedupe/latest-stream helpers, content-delta patch ids, transcript echo filtering, and event node id/order/stable-key helpers.
+- Evidence: The public `trace-engine.ts` re-export surface is preserved for existing callers/tests, including trace node helpers and event id/dedupe helpers.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed (23 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Extract the event-log projection seam from `src/shared/trace-engine.ts` into a focused helper module, starting with `traceNodeFromEvent`, event stable/id/order helpers, and merge helpers while preserving the newly covered materialization behavior.
+- Exact next step: Pivot away from trace-engine unless a specific trace bug appears; run an analysis batch on `src/apps/chat/web-app.ts` to rank safe server/API responsibility seams before extracting from that very large module.
 
 ## Progress log
 
+- 2026-05-27: Extracted trace event-log projection into `src/shared/trace-event-projection.ts`: event-to-node shaping, transcript echo filtering, delta/final merge helpers, event id/order/stable-key helpers, event dedupe, latest-stream tracking, and patch content-delta id helpers; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Added test-safety coverage for trace event-log projection: turn/reasoning/assistant nesting and status merging, tool lifecycle merging, and compaction lifecycle merging; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts`, consolidated `pibo_subagent_*` helper use across event/transcript/async-agent projection, and added materialization coverage for child-link lookup by tool/thread metadata; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted transcript-entry projection into `src/shared/trace-transcript.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
