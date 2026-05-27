@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-edge-compatibility.ts` for V2 adapter-output compatibility, direct edge source/target port compatibility, endpoint node port lookup, and canonical JSON-schema port comparison. `web-app.ts` now imports this boundary and keeps edge object validation, inline-code/hidden-LLM rejection, guard/adapter registered-ref validation, output port shape validation, route dispatch, stores, lifecycle events, and validation response assembly local.
 - Evidence: `web-app.ts` is now 5,889 LOC (down from 5,932); new `workflow-edge-compatibility.ts` is 62 LOC.
 - Validation: host `git diff --check` passed; Docker source/import sanity passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused; no restart was performed.
-- Commit: pending.
+- Commit: `38acddd` (`refactor(chat): extract workflow edge compatibility`).
 - Blockers: none.
 - Exact next step: Inspect the remaining Chat Web workflow V2 validator for a final small pure helper seam, likely registered-ref option/picker diagnostics, before considering route-handler extraction.
 
