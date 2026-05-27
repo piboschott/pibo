@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-persistence.ts` for SQLite-backed workflow persistence stores and `src/apps/chat/workflow-persistence-model.ts` for shared workflow persistence contracts/sanitizers/hash helpers. `web-app.ts` now imports the persistence boundary while preserving workflow API response shapes.
 - Evidence: `web-app.ts` is now 8,993 LOC (down from 10,150); `workflow-persistence.ts` is 924 LOC and `workflow-persistence-model.ts` is 327 LOC. Updated `test/workflow-v2-security-boundary.test.mjs` so source checks follow diagnostic sanitization in the new model module.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs` passed; Docker `node --test test/workflow-v2-security-boundary.test.mjs` passed; Docker combined `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 56/HTTP 000 connection reset, so no browser assertion was possible without restarting worker services.
-- Commit: pending.
+- Commit: `b71e803` (`refactor(chat): extract workflow persistence stores`).
 - Blockers: none.
 - Exact next step: Extract Chat Web workflow catalog/projection helpers (`buildWorkflowCatalogList`, version-history/picker/inspect helpers, catalog action/editability logic) from `src/apps/chat/web-app.ts` into a focused workflow catalog module, keeping workflow persistence stores imported from the new boundary and running web-channel plus targeted source/security checks.
 
