@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow store SQLite row types, row-to-domain mappers, and row JSON parsing into `packages/workflows/src/store/row-mappers.ts`.
-- Result: `packages/workflows/src/store/index.ts` is down from 2,109 to 1,707 LOC and keeps the SQLite store interfaces, schema setup, write methods, query methods, list-limit handling, and write-side JSON serialization; row hydration now has a named module boundary.
+- Last batch: Extracted workflow store SQLite schema metadata, schema SQL, PRAGMA setup, and additive column migrations into `packages/workflows/src/store/schema.ts`.
+- Result: `packages/workflows/src/store/index.ts` is down from 1,707 to 1,380 LOC and now keeps store interfaces, catalog record invariants, the `SqliteWorkflowRunStore` API, write-side serialization, and query/list methods; schema ownership has a named module boundary and public schema constants remain re-exported from the store entry point.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package persistence/schema/inspection coverage across SQLite restarts.
-- Commit: `fdf1f17f53a0dea61be4b788079de2d97c09e7d6` (`refactor(workflows): extract store row mappers`).
+- Commit: `74d52d6e1e26965d997db37d9047db0c648c0e5a` (`refactor(workflows): extract store schema setup`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/store/index.ts` with a focused schema-boundary extraction: move SQLite table/schema creation and schema metadata constants into a store-owned schema module, keeping public constants re-exported from the store entry point.
+- Exact next step: Continue `packages/workflows/src/store/index.ts` by extracting the UI/catalog record source/status invariants and published-version record factory/assertions into a store-owned catalog record module, preserving public exports from the store entry point.
 
 ## Progress log
 
@@ -99,3 +99,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow nested workflow node dispatch runtime/types into `packages/workflows/src/runtime/nested-workflow-node.ts`; focused nested/mixed command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-26: Extracted workflow agent node dispatch runtime/types into `packages/workflows/src/runtime/agent-node.ts`; focused agent/prompt/mixed/one-node/routing command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store row types/mappers into `packages/workflows/src/store/row-mappers.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
+- 2026-05-27: Extracted workflow store schema metadata and install/migration setup into `packages/workflows/src/store/schema.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
