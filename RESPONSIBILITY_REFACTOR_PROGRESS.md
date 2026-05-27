@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns MCP server replacement, Pi package upsert/remove sorting, or user-skill upsert/remove sorting for the bootstrap agent catalog; route callbacks now only wire React state/query-cache updates to pure helpers.
 - Evidence: `App.tsx` dropped from 1,728 LOC to 1,693 LOC; the new `app-agent-catalog-mutations.ts` is 65 LOC.
 - Validation: host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-agent-catalog-mutations.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: `4622d61` (`refactor(chat-ui): extract app agent catalog mutations`).
+- Commit: `4cb8c64` (`refactor(chat-ui): extract app agent catalog mutations`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving pure helper extraction because focused tests and typechecks passed.
 - Exact next step: Re-rank the remaining `App.tsx` seams now that it is ~1.7k LOC, with special attention to route/navigation callbacks, bootstrap/session mutation wiring, and room/session selection flows before another extraction.
 
