@@ -87,6 +87,29 @@ import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "../../
 import { completeLogin, getLoginStatus, removeLogin, setApiKey, startLogin } from "../../auth/login-actions.js";
 import { CHAT_WEB_MOUNT_PATH, isChatAppPath, responseBuiltChatAsset, responseBuiltChatPublicFile, responseChatAppShell } from "./static-assets.js";
 import {
+	CHAT_WEB_API_PREFIX,
+	agentResourceId,
+	mcpServerResourceName,
+	piPackageResourceId,
+	projectResourcePath,
+	projectSessionResourceId,
+	projectWorkflowHumanActionsResource,
+	projectWorkflowSessionStartResource,
+	roomResourcePath,
+	sessionResourceId,
+	signalResource,
+	userSkillResourceId,
+	workflowArchiveResourceId,
+	workflowCatalogResourceId,
+	workflowDraftActionResource,
+	workflowDraftResourceId,
+	workflowDuplicateResourceId,
+	workflowNextDraftResourceId,
+	workflowPickerKind,
+	workflowPromptAssetResourceId,
+	workflowVersionResource,
+} from "./chat-api-routes.js";
+import {
 	ChatWorkflowArchiveStore,
 	ChatWorkflowDraftStore,
 	ChatWorkflowLifecycleEventStore,
@@ -162,7 +185,7 @@ import {
 export const CHAT_WEB_APP_NAME = "pibo.chat-web";
 export const CHAT_WEB_CHANNEL = "pibo.chat-web";
 export { CHAT_WEB_MOUNT_PATH } from "./static-assets.js";
-export const CHAT_WEB_API_PREFIX = "/api/chat";
+export { CHAT_WEB_API_PREFIX } from "./chat-api-routes.js";
 
 export type ChatWebAppOptions = {
 	defaultProfile?: string;
@@ -736,180 +759,6 @@ function recordWorkflowLifecycleEvent(
 	});
 }
 
-function roomResourcePath(pathname: string): { roomId: string; child?: "events" | "messages" | "read" } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/rooms/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname
-		.slice(prefix.length)
-		.split("/")
-		.filter((part) => part.length > 0);
-	if (parts.length < 1 || parts.length > 2) return undefined;
-	try {
-		const roomId = decodeURIComponent(parts[0]);
-		const child = parts[1] ? (decodeURIComponent(parts[1]) as "events" | "messages" | "read") : undefined;
-		if (child && child !== "events" && child !== "messages" && child !== "read") return undefined;
-		return { roomId, child };
-	} catch {
-		throw new PiboWebHttpError("Invalid room id", 400);
-	}
-}
-
-function agentResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/agents/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid agent id", 400);
-	}
-}
-
-function workflowPickerKind(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/pickers/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedKind = pathname.slice(prefix.length);
-	if (!encodedKind || encodedKind.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedKind);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow picker kind", 400);
-	}
-}
-
-function workflowPromptAssetResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/prompt-assets/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow prompt asset id", 400);
-	}
-}
-
-function workflowDraftResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/drafts/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow draft id", 400);
-	}
-}
-
-function workflowDraftActionResource(pathname: string): { draftId: string; action: "validate" | "publish" } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/drafts/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname.slice(prefix.length).split("/");
-	if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
-	try {
-		const action = decodeURIComponent(parts[1]);
-		if (action !== "validate" && action !== "publish") return undefined;
-		return { draftId: decodeURIComponent(parts[0]), action };
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow draft action", 400);
-	}
-}
-
-function workflowDuplicateResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
-	const suffix = "/duplicate";
-	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
-	const encodedId = pathname.slice(prefix.length, -suffix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow id", 400);
-	}
-}
-
-function workflowNextDraftResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
-	const suffix = "/drafts";
-	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
-	const encodedId = pathname.slice(prefix.length, -suffix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow id", 400);
-	}
-}
-
-function workflowArchiveResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
-	const suffix = "/archive";
-	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
-	const encodedId = pathname.slice(prefix.length, -suffix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow id", 400);
-	}
-}
-
-function workflowVersionResource(pathname: string): { workflowId: string; version?: string } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname.slice(prefix.length).split("/");
-	if (parts.length !== 2 && parts.length !== 3) return undefined;
-	if (!parts[0] || parts[1] !== "versions" || (parts.length === 3 && !parts[2])) return undefined;
-	try {
-		return {
-			workflowId: decodeURIComponent(parts[0]),
-			...(parts[2] ? { version: decodeURIComponent(parts[2]) } : {}),
-		};
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow version route", 400);
-	}
-}
-
-function workflowCatalogResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/workflows/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		const workflowId = decodeURIComponent(encodedId);
-		if (workflowId === "drafts" || workflowId === "pickers" || workflowId === "lifecycle-events") return undefined;
-		return workflowId;
-	} catch {
-		throw new PiboWebHttpError("Invalid workflow id", 400);
-	}
-}
-
-function piPackageResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/pi-packages/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid Pi package id", 400);
-	}
-}
-
-function mcpServerResourceName(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/mcp-servers/`;
-	const suffix = "/description";
-	if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
-	const encodedName = pathname.slice(prefix.length, -suffix.length);
-	if (!encodedName || encodedName.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedName);
-	} catch {
-		throw new PiboWebHttpError("Invalid MCP server name", 400);
-	}
-}
-
 function etagForVersion(version: string): string {
 	return `"${version}"`;
 }
@@ -1277,18 +1126,6 @@ function normalizeUserSkillUrl(value: unknown): string {
 		throw new PiboWebHttpError("Skill URL must be a valid URL or owner/repo shorthand", 400);
 	}
 	return url;
-}
-
-function userSkillResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/user-skills/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid user skill id", 400);
-	}
 }
 
 function normalizeAgentArchived(value: unknown): boolean | undefined {
@@ -2189,46 +2026,6 @@ function normalizeProjectSessionArchived(value: unknown): boolean | undefined {
 	return value;
 }
 
-function projectResourcePath(pathname: string): { projectId: string; child?: string } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname.slice(prefix.length).split("/").filter(Boolean).map((part) => decodeURIComponent(part));
-	if (!parts[0]) return undefined;
-	return { projectId: parts[0], ...(parts[1] ? { child: parts[1] } : {}) };
-}
-
-function projectWorkflowSessionStartResource(pathname: string): { projectId: string; piboSessionId: string } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname.slice(prefix.length).split("/");
-	if (parts.length !== 4 || !parts[0] || parts[1] !== "workflow-sessions" || !parts[2] || parts[3] !== "start") return undefined;
-	try {
-		return { projectId: decodeURIComponent(parts[0]), piboSessionId: decodeURIComponent(parts[2]) };
-	} catch {
-		throw new PiboWebHttpError("Invalid Project workflow session start path", 400);
-	}
-}
-
-function projectWorkflowHumanActionsResource(pathname: string): { projectId: string; piboSessionId: string } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/projects/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const parts = pathname.slice(prefix.length).split("/");
-	if (parts.length !== 4 || !parts[0] || parts[1] !== "workflow-sessions" || !parts[2] || parts[3] !== "human-actions") return undefined;
-	try {
-		return { projectId: decodeURIComponent(parts[0]), piboSessionId: decodeURIComponent(parts[2]) };
-	} catch {
-		throw new PiboWebHttpError("Invalid Project workflow human-action path", 400);
-	}
-}
-
-function projectSessionResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/project-sessions/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	return decodeURIComponent(encodedId);
-}
-
 function resolveDownloadPath(path: string, basePath: string): string {
 	return isAbsolute(path) ? resolve(path) : resolve(basePath, path);
 }
@@ -2341,18 +2138,6 @@ function parseOptionalPositiveIntSearchParam(url: URL, name: string): number | u
 	const parsed = Number.parseInt(raw, 10);
 	if (!Number.isFinite(parsed) || parsed <= 0) throw new PiboWebHttpError(`${name} must be a positive integer`, 400);
 	return parsed;
-}
-
-function sessionResourceId(pathname: string): string | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/sessions/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const encodedId = pathname.slice(prefix.length);
-	if (!encodedId || encodedId.includes("/")) return undefined;
-	try {
-		return decodeURIComponent(encodedId);
-	} catch {
-		throw new PiboWebHttpError("Invalid session id", 400);
-	}
 }
 
 function normalizeSessionTitle(value: unknown): string | null | undefined {
@@ -5101,18 +4886,6 @@ function requireOwnedSession(context: PiboWebAppContext, webSession: PiboWebSess
 		throw new PiboWebHttpError("Session is not available for this user", 404);
 	}
 	return canonicalizeSessionProfile(context, session);
-}
-
-function signalResource(pathname: string): { kind: "session" | "tree"; piboSessionId: string } | undefined {
-	const prefix = `${CHAT_WEB_API_PREFIX}/signals/`;
-	if (!pathname.startsWith(prefix)) return undefined;
-	const [kind, encodedId, extra] = pathname.slice(prefix.length).split("/");
-	if (extra || (kind !== "session" && kind !== "tree") || !encodedId) return undefined;
-	try {
-		return { kind, piboSessionId: decodeURIComponent(encodedId) };
-	} catch {
-		throw new PiboWebHttpError("Invalid session id", 400);
-	}
 }
 
 function resolveRequestedSession(
