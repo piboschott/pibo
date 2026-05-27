@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the sessions-route sidebar JSX from `App` into a focused `SessionSidebar` component in `src/apps/chat-ui/src/App.tsx`, leaving existing row components (`RoomNode`, `SessionNode`, archived lists, load-more button) in place.
-- Result: `App` now delegates the room/session navigation panel to `SessionSidebar`; sidebar-only derivations (`roomsSupported`, room groups, personal room, new-session profile options) moved with the component, while route-shell, refresh, context/settings sidebars, and trace pane orchestration remain in `App`.
-- Evidence: `git diff --check` passed; `wc -l src/apps/chat-ui/src/App.tsx` reports 10,078 LOC after the component extraction/tracking update.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `curl http://127.0.0.1:4802/apps/chat` returned `curl: (56) Recv failure: Connection reset by peer`/HTTP `000`, so no browser validation was possible without restarting worker services.
-- Commit: `777caa3` (`refactor(chat-ui): extract session sidebar component`).
-- Blockers: worker Chat Web server on port 4802 was not serving the route during smoke validation; no restart performed per operating rules.
-- Exact next step: Either move the `SessionSidebar` row-component cluster to a dedicated module once a clean dependency boundary is chosen, or take the lower-risk next App seam by extracting `AgentsView`/Agent Designer into a feature module.
+- Last batch: Extracted pure SessionSidebar room/session presentation helpers from `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/session-sidebar-helpers.ts`.
+- Result: `App` now imports navigation helpers for room splitting/lookup/archive detection, session archive splitting/visible limit selection, session row labels/tooltips/signals, and unread counts from a focused helper module. The SessionSidebar JSX and row components remain in `App` for a future module move.
+- Evidence: `git diff --check` passed; `wc -l src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/session-sidebar-helpers.ts` reports 9,934 LOC for `App.tsx` and 148 LOC for the helper module.
+- Validation: Docker source/import sanity check passed with `grep`; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `http://127.0.0.1:4802/apps/chat` returned `URLError: <urlopen error [Errno 111] Connection refused>`, so no browser validation was possible without restarting worker services.
+- Commit: pending for current batch.
+- Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
+- Exact next step: Move the `SessionSidebar` row-component cluster to a dedicated sessions module now that its pure helper imports are separated, or pivot to the lower-risk `AgentsView`/Agent Designer feature-module extraction if the row-component prop boundary still looks too wide.
 
 ## Progress log
 
@@ -127,3 +127,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted Web Annotation browser-storage and shortcut persistence helpers into `src/apps/chat-ui/src/web-annotation-storage.ts`; source/import sanity check, build, and root typecheck passed in Docker. A route smoke check found the worker web server was not listening, so no service restart/browser check was performed for this pure extraction.
 - 2026-05-27: Completed an analysis-only App seam ranking for `src/apps/chat-ui/src/App.tsx`; Docker source-structure inspection identified sessions sidebar as the best next extraction, followed by Agent Designer module extraction and trace-pane test-safety/hook work.
 - 2026-05-27: Extracted `SessionSidebar` from the sessions-route branch of `App` while keeping row components unchanged; Docker `npm run chat-ui:typecheck` and `npm run typecheck` passed, and a worker route smoke found port 4802 returning connection reset/HTTP 000 without restarting services.
+- 2026-05-27: Extracted pure SessionSidebar room/session presentation helpers into `src/apps/chat-ui/src/session-sidebar-helpers.ts`; Docker source/import sanity check, `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke found port 4802 connection refused without restarting services.
