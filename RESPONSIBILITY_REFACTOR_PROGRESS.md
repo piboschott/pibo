@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates per-session upload attachment add/detach/clear behavior to `useSessionUploadAttachments`; the new module owns the selected-upload attachment type, cap, per-session map, and pure state transitions. `App.tsx` fell from 4,978 LOC to 4,943 LOC; the new hook/helper module is 78 LOC.
 - Evidence: `wc -l` reports 4,943 LOC for `App.tsx` and 78 LOC for `chat-upload-attachments.ts`; the focused test covers no-session no-op, duplicate existing path filtering, blank path filtering, per-session isolation, cap-at-10 behavior, detach no-op, and clear no-op.
 - Validation: `git diff --check` passed; Docker `node --test test/chat-ui-upload-attachments.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending.
+- Commit: `aa0d238` (`refactor(chat-ui): extract upload attachment state`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue `SessionTracePane` modularization with a web annotation state/query hook, or extract the header/session view controls if a lower-risk UI-only batch is preferred.
 
