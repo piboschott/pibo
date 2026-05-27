@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the legacy yielded-run notification trace-node seam from `src/shared/trace-engine.ts` into `src/shared/trace-run-notifications.ts` and added focused trace materialization coverage for notification status/summary projection.
-- Result: `src/shared/trace-engine.ts` dropped from 1,636 LOC to 1,541 LOC; legacy notification parsing, yielded-run node creation, notification summary/status calculation, and single-run id projection now live in a 102 LOC focused helper module.
-- Evidence: The extraction is behavior-preserving: transcript and service-event notification paths still call the same parser/node factory semantics, and new tests pin multi-run error summaries plus single running-run id/status projection through `buildTraceViewFromEvents`.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `75a4cca` (`refactor(trace): extract run notification helpers`).
+- Last batch: Extracted async agent run child-node creation/status reconciliation from `src/shared/trace-engine.ts` into `src/shared/trace-async-agent-runs.ts`.
+- Result: `src/shared/trace-engine.ts` dropped from 1,541 LOC to 1,418 LOC; async run snapshot parsing, `agent.async` child creation, status reconciliation, and `isRunStartToolNode` compatibility export now live in a 145 LOC focused helper module.
+- Evidence: The extraction is behavior-preserving: transcript and event-log paths still call the same async run attachment/reconciliation semantics, while `trace-engine.ts` re-exports `isRunStartToolNode` for existing callers.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker focused `node --test test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue `src/shared/trace-engine.ts` only with another test-backed seam; likely next candidates are event-to-node projection helpers or async agent/subagent linking, but do a short seam review first because remaining responsibilities are more intertwined.
+- Exact next step: Continue `src/shared/trace-engine.ts` only after another short seam review; likely next candidates are transcript-entry projection or event-to-node projection, but both should be test-backed because remaining trace responsibilities are intertwined.
 
 ## Progress log
 
+- 2026-05-27: Extracted trace async agent run child-node/status reconciliation into `src/shared/trace-async-agent-runs.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace legacy yielded-run notification parsing/node creation into `src/shared/trace-run-notifications.ts` and added focused trace materialization tests for transcript and service-event notification projection; host `git diff --check`, Docker `npm run build`, focused trace tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted debug web option parsing/defaults/preset/compare-target helpers into `src/debug/web-options.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and CLI smoke checks for help plus invalid streaming pre-CDP validation passed.
 - 2026-05-27: Extracted debug web snapshot/watch browser expression generation and DOM observer library into `src/debug/web-snapshot-browser-scripts.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and `snapshot --help`/`watch --help` CLI smoke checks passed.
