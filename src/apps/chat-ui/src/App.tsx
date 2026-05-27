@@ -41,14 +41,12 @@ import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOri
 import { JsonRenderer } from "./tracing/JsonRenderer";
 import { compactRawEvents } from "./tracing/raw-events";
 import {
-	annotateLiveTraceForkEntryIds,
 	collectPersistedUserMessageIndex,
-	overlayIncludesOptimisticUserMessage,
 	reconcileOptimisticUserMessages,
 } from "./tracing/optimistic-user-messages";
 import { trimLiveOverlayForBaseTrace, type LiveTraceOverlay } from "./tracing/live-overlay";
+import { computeCurrentTraceView } from "./tracing/current-trace-view";
 import { countRender } from "./renderMetrics";
-import { patchTraceViewWithEvents } from "../../../shared/trace-engine.js";
 import { applyTraceLiveEvents } from "./traceLiveReducer";
 import {
 	chatStreamEvent,
@@ -2689,21 +2687,14 @@ function SessionTracePane({
 		[reconciledBaseTraceView],
 	);
 
-	const currentTraceComputation = useMemo((): { traceView: PiboSessionTraceView | null; liveTraceComputeDurationMs?: number } => {
-		if (!selectedPiboSessionId) return { traceView: null };
-		if (reconciledBaseTraceView?.piboSessionId !== selectedPiboSessionId) return { traceView: null };
-		const overlayEvents = liveTraceOverlay?.piboSessionId === selectedPiboSessionId
-			? liveTraceOverlay.events
-			: [];
-		if (!overlayEvents.length) return { traceView: reconciledBaseTraceView };
-		const measureCompute = isStreamingDebugEnabled();
-		const startedAt = measureCompute ? performance.now() : 0;
-		const liveTrace = patchTraceViewWithEvents(reconciledBaseTraceView, overlayEvents, selectedSessionStatus ?? "idle");
-		const hasOptimisticUserMessage = overlayIncludesOptimisticUserMessage(overlayEvents);
-		if (hasOptimisticUserMessage) annotateLiveTraceForkEntryIds(liveTrace.nodes, persistedUserMessageIndexForBaseTrace);
-		const traceView = hasOptimisticUserMessage ? reconcileOptimisticUserMessages(liveTrace) : liveTrace;
-		return { traceView, liveTraceComputeDurationMs: measureCompute ? performance.now() - startedAt : undefined };
-	}, [liveTraceOverlay, selectedPiboSessionId, selectedSessionStatus, reconciledBaseTraceView, persistedUserMessageIndexForBaseTrace]);
+	const currentTraceComputation = useMemo(() => computeCurrentTraceView({
+		selectedPiboSessionId,
+		reconciledBaseTraceView,
+		liveTraceOverlay,
+		selectedSessionStatus,
+		persistedUserMessageIndexForBaseTrace,
+		now: isStreamingDebugEnabled() ? () => performance.now() : undefined,
+	}), [liveTraceOverlay, selectedPiboSessionId, selectedSessionStatus, reconciledBaseTraceView, persistedUserMessageIndexForBaseTrace]);
 	const currentTraceView = currentTraceComputation.traceView;
 
 	useEffect(() => {
