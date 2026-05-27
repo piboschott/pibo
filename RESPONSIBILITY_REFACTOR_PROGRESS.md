@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow draft write side-effect helpers into `packages/workflows/src/store/draft-writes.ts`.
-- Result: `packages/workflows/src/store/index.ts` is down from 884 to 874 LOC. The store class still owns the draft upsert SQL, while active-draft conflict detection and identity current-draft side effects now have named store-local helper functions.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-catalog-entities.test.ts src/testing/workflow-store-facts.test.ts'` passed (package script runs the workflow test suite); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is workflow package store/catalog/persistence coverage because the public store API and SQLite behavior are preserved.
-- Commit: `66b5998b3b7197fa3a405ac79ec8dceb17c773eb` (`refactor(workflows): extract draft write helpers`).
+- Last batch: Extracted telemetry SQLite row types and row-to-domain mappers into `src/data/telemetry-rows.ts`.
+- Result: `src/data/telemetry.ts` dropped from 1,576 to 1,278 LOC and now delegates read-side row hydration to a focused telemetry data module; public telemetry store APIs are unchanged.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build && node --test test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs'` passed (20 tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a persistence mapper extraction without user-facing route changes.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Pivot to the next high-value large target, likely `src/shared/trace-engine.ts` or `src/data/telemetry.ts`, unless a store reviewer asks for more cleanup; `packages/workflows/src/store/index.ts` is below 1,000 LOC and further splitting has diminishing returns.
+- Exact next step: Continue reducing `src/data/telemetry.ts` by extracting either bounded preview/safe JSON helpers or prune/list-query helpers, or pivot to `src/shared/trace-engine.ts` if telemetry review prefers a pause.
 
 ## Progress log
 
@@ -105,3 +105,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted workflow store public contracts/list filters into `packages/workflows/src/store/contracts.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store write-side SQLite value serialization into `packages/workflows/src/store/write-values.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow draft conflict and identity current-draft side-effect helpers into `packages/workflows/src/store/draft-writes.ts`; focused store/catalog/persistence command and root typecheck passed in Docker.
+- 2026-05-27: Extracted telemetry SQLite row types and row-to-domain mappers into `src/data/telemetry-rows.ts`; focused runtime/validation telemetry tests and root typecheck passed in Docker.

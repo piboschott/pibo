@@ -83,6 +83,13 @@
 - Existing workflow store/persistence tests (`workflow-store-facts`, `workflow-persistence-validation`, `workflow-run-inspection`, `workflow-sqlite-schema`, node-attempt persistence, catalog/published version tests) provide broad coverage for store refactors; add focused mapper/schema/catalog/list-query/write-value/draft-write tests only if extraction changes visibility, null/optional handling, migration behavior, catalog immutability semantics, bind ordering, canonical-definition write behavior, active-draft conflicts, or current-draft identity updates.
 - Store entry point responsibility is much improved and under the target size. Further store splitting likely has diminishing returns; pivot to another high-value large target unless review identifies a specific store seam.
 
+## Telemetry data seams
+
+- `src/data/telemetry-rows.ts` now owns SQLite row shapes and row-to-domain hydration for telemetry turns, phases, provider requests, provider events, and tool calls. It also owns read-side JSON parsing for persisted telemetry metadata/counters/safe fields/argument-key arrays.
+- `src/data/telemetry.ts` still owns the concrete `TelemetryStore`, SQL statements, bounded preview helpers, safe JSON/key filtering helpers, stale/session timeline composition, prune table metadata, next-command hints, and `BestEffortTelemetryService`.
+- Existing focused coverage for this seam is `test/runtime-telemetry.test.mjs` plus `test/telemetry-validation-fixtures.test.mjs`; these exercise runtime/provider/tool-call persistence, debug drill-down output, stale work, retention stats/prune, bounded preview metadata, and secret omission.
+- Next telemetry refactors should keep SQL text close to the `TelemetryStore` methods unless the extraction names a clearer responsibility. Good candidates are bounded preview/safe JSON helpers (pure data-safety logic) or prune/list-query helpers; avoid moving CLI/debug output concerns into row hydration.
+
 ## Commit policy
 
 - Commit only passing, coherent refactor batches.
