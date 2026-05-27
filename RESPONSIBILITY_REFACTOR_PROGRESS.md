@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now imports the settings route/sidebar modules instead of carrying settings UI, Pi package management, user skill management, shortcut capture, timezone settings, provider settings routing, and settings-specific modals. `App.tsx` fell from 7,230 LOC to 6,251 LOC; the extracted files are 912 LOC (`SettingsView.tsx`) and 104 LOC (`SettingsSidebar.tsx`).
 - Evidence: source sanity check confirmed `src/apps/chat-ui/src/App.tsx` imports `./settings/SettingsSidebar` and `./settings/SettingsView`, `SettingsView.tsx` exports `SettingsView`, `SettingsSidebar.tsx` exports `SettingsSidebar`, and `wc -l` reports 6,251 / 912 / 104 LOC for the touched route files.
 - Validation: `git diff --check` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `curl --max-time 5 http://127.0.0.1:4802/apps/chat` returned HTTP 000 / connection refused, so no browser validation was possible without restarting worker services.
-- Commit: pending (`refactor(chat-ui): extract settings route`).
+- Commit: `6f27877` (`refactor(chat-ui): extract settings route`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue reducing `App.tsx` with a prop-isolated route/component seam such as `ProjectsArea`, or do a test-safety batch for `SessionTracePane` before extracting live trace/web-annotation hooks.
 
