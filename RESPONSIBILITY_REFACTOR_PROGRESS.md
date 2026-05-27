@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now imports the Projects route feature module instead of owning its load/create/start/archive side effects and project-session trace-pane wiring; the unused ProjectsArea `sessionViewId` prop was removed during the move.
 - Evidence: `App.tsx` dropped from 2,758 LOC to 2,339 LOC; new `projects/ProjectsArea.tsx` is 437 LOC and keeps Projects route orchestration below the 1,000 LOC target.
 - Validation: Docker source/import sanity check passed; `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending.
+- Commit: `4450dd0` (`refactor(chat-ui): extract projects route area`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this behavior-preserving module move because focused source checks and typechecks passed.
 - Exact next step: Continue reducing `App.tsx` by extracting a focused non-route seam such as context sidebar presentation or delete-room/delete-session modal components, unless a fresh App seam analysis identifies a better lower-risk boundary.
 
