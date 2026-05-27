@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` keeps trace/session orchestration hooks and prop assembly, while the new layout component owns chat-shell debug attributes, header/project-panel placement, trace-history strip, session-view render/error fallback, web-annotation panel slot, composer placement, and raw-events sidebar composition.
 - Evidence: `App.tsx` dropped from 3,085 LOC to 3,060 LOC; the new layout component is 104 LOC and imports the focused presentation pieces that `App.tsx` no longer renders directly.
 - Validation: `git diff --check` passed; Docker source/import sanity check passed with `grep`; Docker focused `node --test test/chat-ui-current-trace-view.test.mjs test/chat-ui-trace-page-merge.test.mjs test/chat-ui-session-trace-view-props.test.mjs test/chat-ui-composer-send.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: pending.
+- Commit: `8b2d4bf` (`refactor(chat-ui): extract session trace layout`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure component extraction because focused tests and typechecks passed.
 - Exact next step: Move `SessionTracePane` into a focused module once import boundaries are clean, or pivot to a Projects route side-effect hook if keeping pane orchestration in `App.tsx` is still useful for the next Projects extraction.
 
