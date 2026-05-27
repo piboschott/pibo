@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `test/chat-trace-materialization.test.mjs` now covers event-log turn nesting, reasoning delta/final merge, assistant delta/final merge, tool lifecycle merging, and compaction lifecycle merging.
 - Evidence: The tests lock existing projection behavior including final assistant messages merging into live delta nodes and preserving the first assistant-token timestamp for parent turn completion.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: pending (`test(trace): cover event projection seam`).
+- Commit: `debcea6` (`test(trace): cover event projection seam`).
 - Blockers: none.
 - Exact next step: Extract the event-log projection seam from `src/shared/trace-engine.ts` into a focused helper module, starting with `traceNodeFromEvent`, event stable/id/order helpers, and merge helpers while preserving the newly covered materialization behavior.
 
