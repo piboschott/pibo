@@ -1,4 +1,5 @@
 import type { WorkflowDraftDefinition } from "../api-workflows";
+import { createDefaultAdapterNodeDefinition } from "./workflow-node-defaults";
 import {
 	createWorkflowGraphProjection,
 	isWorkflowJsonObject,
@@ -127,17 +128,6 @@ function readEdgeTargetInputPort(definition: WorkflowDraftDefinition, edge: Work
 function readEdgeEndpointNode(definition: WorkflowDraftDefinition, endpoint: unknown): WorkflowJsonObject | undefined {
 	const nodeId = readEdgeEndpointNodeId(endpoint);
 	return nodeId ? readWorkflowNodeDefinitions(definition)[nodeId] : undefined;
-}
-
-function createDefaultAdapterNodeDefinition(nodeId: string, adapterRef: string, input: WorkflowJsonObject, output: WorkflowJsonObject): WorkflowJsonObject {
-	return {
-		kind: "adapter",
-		label: `Adapter ${nodeId}`,
-		mode: "deterministic",
-		handler: createRegisteredAdapterRef(adapterRef),
-		input: cloneWorkflowJsonObject(input),
-		output: cloneWorkflowJsonObject(output),
-	};
 }
 
 function createDefaultTextWorkflowPort(): WorkflowJsonObject {

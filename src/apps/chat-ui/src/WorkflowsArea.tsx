@@ -60,7 +60,6 @@ import {
 import { MarkdownEditor } from "./context/MarkdownEditor";
 import {
 	addWorkflowGraphEdge,
-	addWorkflowGraphNodeDefinition,
 	createWorkflowGraphProjection,
 	deleteWorkflowGraphEdge,
 	deleteWorkflowGraphNode,
@@ -75,7 +74,6 @@ import {
 	workflowNodeKind,
 	workflowNodeLabel,
 	writeWorkflowGraphPositions,
-	type GraphPosition,
 	type SelectedGraphElement,
 	type WorkflowGraphFlowEdge,
 	type WorkflowGraphFlowNode,
@@ -94,10 +92,7 @@ import {
 	WORKFLOW_STATE_SCOPES,
 	applyWorkflowEdgeInspectorForm,
 	applyWorkflowNodeInspectorForm,
-	cloneWorkflowJsonObject,
 	createHumanActionChoice,
-	createHumanActionObject,
-	createRegisteredAdapterRef,
 	createWorkflowEdgeInspectorFormState,
 	createWorkflowNodeInspectorFormState,
 	createWorkflowPort,
@@ -115,7 +110,6 @@ import {
 	writeOptionalString,
 	type OptionalWorkflowPortKindSelection,
 	type WorkflowEdgeInspectorFormState,
-	type WorkflowHumanActionFormChoice,
 	type WorkflowHumanTimeoutKind,
 	type WorkflowNodeInspectorFormState,
 	type WorkflowPortKindSelection,
@@ -123,14 +117,19 @@ import {
 	type WorkflowStateScope,
 } from "./workflows/workflow-inspector-forms";
 import {
+	DEFAULT_AGENT_PROMPT_TEMPLATE,
+	addWorkflowGraphAdapterNode,
+	addWorkflowGraphAgentNode,
+	addWorkflowGraphHumanNode,
+	addWorkflowGraphWorkflowNode,
+} from "./workflows/workflow-node-defaults";
+import {
 	groupWorkflowVersionHistory,
 	hasWorkflowCatalogAction,
 	workflowCatalogActionLabel,
 	workflowHistoryStatusDescription,
 	type WorkflowVersionHistoryGroup,
 } from "./workflows/workflow-version-history-model";
-
-const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
 const STARTER_DRAFT_ID = "v2-starter-draft";
 const RAW_IR_PARSE_DIAGNOSTIC_CODE = "WorkflowBuilderWarning.invalidRawIrText";
 type WorkflowVersionSelection = { workflowId: string; workflowVersion: string };
@@ -1166,7 +1165,7 @@ function WorkflowGraphCanvas({ draft, onDraftChange }: { draft: WorkflowDraftRec
 	const addAgentNode = () => {
 		const nodeId = nextWorkflowNodeId(draft.definition, "agent");
 		const position = nextGraphNodePosition(nodes);
-		const definition = addWorkflowGraphNode(draft.definition, nodeId, position, defaultAgentProfileId);
+		const definition = addWorkflowGraphAgentNode(draft.definition, nodeId, position, defaultAgentProfileId);
 		setSelectedElement({ type: "node", id: nodeId });
 		void saveDefinition(definition, `Added node ${nodeId}.`);
 	};
@@ -3154,66 +3153,6 @@ function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNo
 const WORKFLOW_GRAPH_NODE_TYPES = {
 	workflowNode: WorkflowGraphNodeCard,
 };
-
-function addWorkflowGraphNode(definition: WorkflowDraftDefinition, nodeId: string, position: GraphPosition, profileId: string): WorkflowDraftDefinition {
-	return addWorkflowGraphNodeDefinition(definition, nodeId, position, createDefaultAgentNodeDefinition(nodeId, profileId));
-}
-
-function addWorkflowGraphWorkflowNode(definition: WorkflowDraftDefinition, nodeId: string, position: GraphPosition, workflow: WorkflowVersionPickerOption): WorkflowDraftDefinition {
-	return addWorkflowGraphNodeDefinition(definition, nodeId, position, createDefaultWorkflowNodeDefinition(nodeId, workflow));
-}
-
-function createDefaultAgentNodeDefinition(nodeId: string, profileId: string): WorkflowJsonObject {
-	return {
-		kind: "agent",
-		runtime: "pibo",
-		label: `Agent ${nodeId}`,
-		profile: { kind: "fixed", id: profileId || "base" },
-		promptTemplate: DEFAULT_AGENT_PROMPT_TEMPLATE,
-		metadata: { sessionOverrides: { prompt: true } },
-	};
-}
-
-function createDefaultWorkflowNodeDefinition(nodeId: string, workflow: WorkflowVersionPickerOption): WorkflowJsonObject {
-	return {
-		kind: "workflow",
-		label: `Workflow ${nodeId}`,
-		workflowId: workflow.id,
-		workflowVersion: workflow.version,
-	};
-}
-
-function addWorkflowGraphAdapterNode(definition: WorkflowDraftDefinition, nodeId: string, position: GraphPosition, adapterRef: string): WorkflowDraftDefinition {
-	return addWorkflowGraphNodeDefinition(definition, nodeId, position, createDefaultAdapterNodeDefinition(nodeId, adapterRef));
-}
-
-function createDefaultAdapterNodeDefinition(nodeId: string, adapterRef: string, input?: WorkflowJsonObject, output?: WorkflowJsonObject): WorkflowJsonObject {
-	return {
-		kind: "adapter",
-		label: `Adapter ${nodeId}`,
-		mode: "deterministic",
-		handler: createRegisteredAdapterRef(adapterRef),
-		input: cloneWorkflowJsonObject(input ?? createWorkflowPort("text", "", undefined)),
-		output: cloneWorkflowJsonObject(output ?? createWorkflowPort("text", "", undefined)),
-	};
-}
-
-function addWorkflowGraphHumanNode(definition: WorkflowDraftDefinition, nodeId: string, position: GraphPosition, action: WorkflowHumanActionFormChoice): WorkflowDraftDefinition {
-	return addWorkflowGraphNodeDefinition(definition, nodeId, position, createDefaultHumanNodeDefinition(nodeId, action));
-}
-
-function createDefaultHumanNodeDefinition(nodeId: string, action: WorkflowHumanActionFormChoice): WorkflowJsonObject {
-	return {
-		kind: "human",
-		label: `Human ${nodeId}`,
-		prompt: "Review the workflow context and choose an available action.",
-		input: createWorkflowPort("text", "Context for human review.", undefined),
-		output: createWorkflowPort("json", "Human action result.", undefined, formatWorkflowSchemaText(DEFAULT_WORKFLOW_JSON_SCHEMA)),
-		schema: cloneWorkflowJsonObject(DEFAULT_WORKFLOW_JSON_SCHEMA),
-		actions: [createHumanActionObject(action)],
-		timeout: { kind: "minutes", value: 60 },
-	};
-}
 
 function describeSelectedGraphElement(definition: WorkflowDraftDefinition, selectedElement: SelectedGraphElement): string {
 	if (!selectedElement) return "Select a node or edge in the canvas to inspect or delete it.";
