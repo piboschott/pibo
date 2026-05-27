@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates room/session delete modal state, optimistic cache removal, API deletion, rollback, post-delete bootstrap reload, navigation, and error/deleting-state cleanup to a focused hook while preserving the tested pure planning seam in `app-delete-flow.ts`.
 - Evidence: `App.tsx` dropped from 1,514 to 1,442 LOC; the new hook is 184 LOC and is the only place importing delete API calls plus delete planning helpers.
 - Validation: source/import sanity checks passed; host `git diff --check` passed; Docker focused `node --test test/chat-ui-app-delete-flow.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending.
+- Commit: `d3c5735` (`refactor(chat-ui): extract app delete actions`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this hook extraction because focused tests and typechecks passed.
 - Exact next step: Re-rank remaining `App.tsx` seams after delete orchestration extraction, or pivot to `WorkflowsArea.tsx` component/hook seam ranking for the next high-value route-level target.
 
