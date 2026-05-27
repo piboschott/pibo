@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now delegates project archive splitting, selected project-session lookup, workflow-backed project-session listing, trace-bootstrap shaping, workflow picker defaulting, missing-workflow diagnostics, and workflow start-message formatting to a projects module. `App.tsx` fell from 5,638 LOC to 5,632 LOC; the new helper module is 68 LOC.
 - Evidence: Docker source/import sanity check found `ProjectsAreaModel.ts` and confirmed `App.tsx` imports/uses `findSelectedWorkflowVersionOption` and `createProjectsTraceBootstrap`; `wc -l` reports 5,632 LOC for `App.tsx` and 68 LOC for `ProjectsAreaModel.ts`.
 - Validation: `git diff --check` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Worker route smoke `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl --max-time 5 -S -s -o /tmp/pibo-chat-smoke.out -w "HTTP %{http_code}\\n" http://127.0.0.1:4802/apps/chat || true'` returned `curl: (7) Failed to connect to 127.0.0.1 port 4802` and HTTP 000, so no browser validation was possible without restarting worker services.
-- Commit: pending.
+- Commit: `206a13b` (`refactor(chat-ui): extract projects area model helpers`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Continue Projects route modularization with a focused side-effect hook for load/create/start operations, or do a test-safety batch for `SessionTracePane` before moving it/extracting live trace and web-annotation hooks. Avoid moving `ProjectsArea` into its own file while it would need to import `SessionTracePane` from `App.tsx`.
 
