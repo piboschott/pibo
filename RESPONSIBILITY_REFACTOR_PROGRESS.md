@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `WorkflowsArea.tsx` no longer owns workflow library loading, duplicate/edit/archive/delete side effects, confirmation UI, version-history rows, or draft/viewer URL construction.
 - Evidence: `WorkflowsArea.tsx` dropped from 3,346 to 2,847 LOC; the new `WorkflowLibraryPanel.tsx` is 495 LOC and `workflow-routes.ts` is 20 LOC.
 - Validation: host `git diff --check` passed; Docker source/import sanity confirmed `WorkflowsArea.tsx`, `WorkflowLibraryPanel.tsx`, and `workflow-routes.ts`; Docker focused `node --test test/chat-ui-workflow-node-defaults.test.mjs test/chat-ui-workflow-graph-model.test.mjs test/chat-ui-workflow-edge-adapters.test.mjs test/chat-ui-workflow-inspector-forms.test.mjs test/chat-ui-workflow-version-history-model.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 because port 4802 was not listening; no service restart was performed.
-- Commit: pending hash record after commit (`refactor(chat-ui): extract workflow library panel`).
+- Commit: `70716b8` (`refactor(chat-ui): extract workflow library panel`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure UI extraction because focused tests and typechecks passed.
 - Exact next step: Continue shrinking `WorkflowsArea.tsx` by ranking the remaining Workflow Builder seams; best candidates are graph canvas callback/component extraction or a smaller inspector React rendering extraction backed by existing workflow helper tests.
 
