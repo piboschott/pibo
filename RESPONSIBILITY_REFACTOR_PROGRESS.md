@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted Chat UI local-storage/session preference helpers from `src/apps/chat-ui/src/App.tsx` into `src/apps/chat-ui/src/app-storage.ts`.
 - Result: `App.tsx` now imports selected-session persistence, composer draft/history persistence, and chat session-view persistence from a focused browser-storage module. Web Annotation storage remains in `App.tsx` because it is coupled to annotation panel state and should be considered separately.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/app-storage.ts && grep -q "from \\"./app-storage\\"" src/apps/chat-ui/src/App.tsx && ! grep -E "function readStoredSelection|const LAST_SELECTION_STORAGE_KEY|const COMPOSER_HISTORY_LIMIT" src/apps/chat-ui/src/App.tsx && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). Best-effort route smoke check `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && curl -fsS -I http://127.0.0.1:4802/apps/chat'` could not connect because the worker web server was not running; no service restart was performed for this pure extraction.
-- Commit: pending until commit is created.
+- Commit: `31a1f4c` (`refactor(chat-ui): extract app storage helpers`).
 - Blockers: none.
 - Exact next step: Continue `src/apps/chat-ui/src/App.tsx` responsibility reduction with a small, testable seam; likely extract Web Annotation storage helpers or run an App seam analysis to rank component/hook extractions before moving larger UI blocks.
 
