@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted trace node tree/sorting utilities into `src/shared/trace-nodes.ts` while preserving the public `src/shared/trace-engine.ts` export surface.
-- Result: `src/shared/trace-engine.ts` dropped from 1,797 to 1,736 LOC; generic trace node ordering, flattening, nesting, and id mapping now live in a focused shared helper module that can be reused without importing the full event/transcript projection engine.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/chat-trace-materialization.test.mjs test/chat-ui-integration.test.mjs test/trace-live-reducer.test.mjs test/trace-patch-identity.test.mjs test/debug-cli.test.mjs'` (90 tests), and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure shared trace helper extraction with preserved public APIs.
-- Commit: `9743e8f0731f075c3cc85733a7aea7eb27d84fa4` (`refactor(trace): extract node tree helpers`).
+- Last batch: Extracted trace live-patch node structural sharing helpers into `src/shared/trace-patch-nodes.ts` while keeping `patchTraceViewWithEvents` in `src/shared/trace-engine.ts` as the live event orchestration seam.
+- Result: `src/shared/trace-engine.ts` dropped from 1,736 to 1,636 LOC; mutable copied-node nesting, unchanged-node identity reuse, shallow node equality, and order-key equality now live in a focused helper module. The extraction also removed an unused private `mapFlatTraceNodesById` helper from the moved seam.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/chat-trace-materialization.test.mjs test/chat-ui-integration.test.mjs test/trace-live-reducer.test.mjs test/trace-patch-identity.test.mjs test/debug-cli.test.mjs'` (90 tests), and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure shared trace helper extraction with preserved runtime behavior.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue `src/shared/trace-engine.ts` with a similarly small extraction around live patching/structural sharing helpers, or pivot to a test-safety/analysis batch for `src/apps/chat-ui/src/api.ts` if trace-engine coupling looks risky.
+- Exact next step: Continue `src/shared/trace-engine.ts` only if another clear, test-backed seam appears; otherwise pivot to a test-safety/analysis batch for `src/apps/chat-ui/src/api.ts` or another high-value Chat UI/API boundary.
 
 ## Progress log
 
@@ -110,3 +110,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted telemetry retention stats and prune planning/deletion helpers into `src/data/telemetry-retention.ts`; focused telemetry store/runtime/validation tests and root typecheck passed in Docker.
 - 2026-05-27: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts`; build, focused telemetry store/runtime/validation tests, and root typecheck passed in Docker.
 - 2026-05-27: Extracted trace node sorting/tree helpers into `src/shared/trace-nodes.ts`; build, focused trace/debug tests, and root typecheck passed in Docker.
+- 2026-05-27: Extracted trace live-patch structural sharing helpers into `src/shared/trace-patch-nodes.ts`; build, focused trace/debug tests, and root typecheck passed in Docker.

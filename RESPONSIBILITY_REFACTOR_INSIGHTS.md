@@ -86,7 +86,8 @@
 ## Trace engine seams
 
 - `src/shared/trace-nodes.ts` now owns generic trace node tree helpers: node sorting/order comparison, pre-order flattening, parent/child nesting, and id mapping. `src/shared/trace-engine.ts` re-exports these helpers to preserve existing imports from the trace-engine barrel.
-- `src/shared/trace-engine.ts` still owns event/transcript projection, live patching, event dedupe/stream cursors, delta merging, subagent/yielded-run linking, and run-notification parsing. The next clean trace seam is likely live patching/structural sharing (`patchTraceViewWithEvents`, content-delta changed-node tracking, mutable copied nesting, and shallow equality), but keep it test-backed because Chat UI render identity depends on those helpers.
+- `src/shared/trace-patch-nodes.ts` now owns live patch node identity helpers: nesting already-mutably-copied flat nodes, reusing unchanged previous nodes, shallow node equality, and trace order-key equality. Keep it focused on structural sharing for incremental trace patches; avoid mixing in event mapping or transcript projection.
+- `src/shared/trace-engine.ts` still owns event/transcript projection, live patch orchestration, event dedupe/stream cursors, delta merging, subagent/yielded-run linking, and run-notification parsing. Further trace splitting now needs a clearly test-backed seam because the remaining responsibilities are more intertwined with event projection semantics.
 - Focused trace coverage is strong for future trace refactors: `test/chat-trace-materialization.test.mjs`, `test/chat-ui-integration.test.mjs`, `test/trace-live-reducer.test.mjs`, `test/trace-patch-identity.test.mjs`, and `test/debug-cli.test.mjs` exercise full trace materialization, incremental patch identity, live reducer dedupe, debug trace output, and CLI-adjacent trace behavior.
 
 ## Telemetry data seams
