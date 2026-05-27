@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-registered-ref-pickers.ts`; `web-app.ts` now imports registered-ref picker data/helpers while keeping profile/handler picker construction, prompt-asset save side effects, registered-ref validation call sites, route dispatch, and lifecycle orchestration local.
 - Evidence: `web-app.ts` is now 5,673 LOC (down from 5,889); new `workflow-registered-ref-pickers.ts` is 239 LOC.
 - Validation: host `git diff --check` passed; Docker source/import sanity passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed (87 tests); Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused; no restart was performed.
-- Commit: pending.
+- Commit: `1529527` (`refactor(chat): extract workflow registered ref pickers`).
 - Blockers: none.
 - Exact next step: Inspect the remaining Chat Web Workflow V2 registered-ref validators (`validateWorkflowPromptAssetRefLike`, `validateRegisteredAdapterRefLike`, `validateWorkflowGuardRefLike`, and human-action ref checks) for a small pure validation extraction; if that seam is too coupled, switch to a short analysis of the next route-handler boundary.
 
