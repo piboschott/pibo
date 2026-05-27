@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` no longer owns current trace reconciliation/indexing, live trace computation timing instrumentation, streaming trace-state debug recording, or visibility-change backend-node snapshot collection.
 - Evidence: `App.tsx` dropped from 3,132 LOC to 3,085 LOC; the new hook is 74 LOC and keeps React/debug side effects separate from the pure `current-trace-view.ts` computation seam.
 - Validation: `git diff --check` passed; Docker source/import sanity check passed with `grep`; Docker focused `node --test test/chat-ui-current-trace-view.test.mjs test/chat-ui-trace-page-merge.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
-- Commit: pending.
+- Commit: `a362f2d` (`refactor(chat-ui): extract current trace hook`).
 - Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure hook extraction because focused tests and typechecks passed.
 - Exact next step: Continue reducing `SessionTracePane` by extracting the remaining session-view/header/sidebar composition into a small component or pivot to a Projects route side-effect hook if `SessionTracePane` has diminishing returns.
 
