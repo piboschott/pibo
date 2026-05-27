@@ -18,6 +18,13 @@ import {
 } from "./trace-async-agent-runs.js";
 import { nestMutableCopiedTraceNodes, shareUnchangedTraceNodes } from "./trace-patch-nodes.js";
 import { createRunNotificationNode, parseRunNotificationText } from "./trace-run-notifications.js";
+import {
+	findLikelyTraceChildSession,
+	isSubagentToolName,
+	mapTraceChildSessionsByParent,
+	mapTraceSubagentSessionLinks,
+	type TraceChildSession,
+} from "./trace-subagent-links.js";
 import { projectTranscriptEntries, traceNodesFromEntries } from "./trace-transcript.js";
 export { isRunStartToolNode } from "./trace-async-agent-runs.js";
 export { traceNodesFromEntries } from "./trace-transcript.js";
@@ -63,8 +70,8 @@ export function buildTraceViewFromEvents(input: TraceBuildInput): PiboSessionTra
 	const entries = projectTranscriptEntries(allEntries, sessionStatus, openTranscriptEventIds);
 	const nodes = traceNodesFromEntries(input.session.id, entries);
 	const byId = mapTraceNodesById(nodes);
-	const childByParent = mapChildren(input.sessions ?? []);
-	const linkedChildByToolCallId = mapSubagentSessionLinks(events);
+	const childByParent = mapTraceChildSessionsByParent(input.sessions ?? []);
+	const linkedChildByToolCallId = mapTraceSubagentSessionLinks(events);
 	const hasPersistedTranscript = entries.some((entry) => entry.type === "message");
 
 	for (const storedEvent of events) {
@@ -105,7 +112,7 @@ function applySingleEventToNodes(
 	byId: Map<string, PiboTraceNode>,
 	piboSessionId: string,
 	storedEvent: ChatWebStoredEvent,
-	childByParent: Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>>,
+	childByParent: Map<string, TraceChildSession[]>,
 	linkedChildByToolCallId: Map<string, string>,
 	hasPersistedTranscript: boolean,
 	openTranscriptEventIds: ReadonlySet<string>,
@@ -335,7 +342,7 @@ export function patchTraceViewWithEvents(
 		allNodes.push(nextNode);
 		byId.set(nextNode.id, nextNode);
 	}
-	const childByParent = new Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>>();
+	const childByParent = new Map<string, TraceChildSession[]>();
 	const linkedChildByToolCallId = new Map<string, string>();
 	const openTranscriptEventIds = new Set<string>();
 	const appliedEvents: ChatWebStoredEvent[] = [];
@@ -457,7 +464,7 @@ export function latestTraceStreamId(
 function traceNodeFromEvent(
 	piboSessionId: string,
 	event: PiboOutputEvent,
-	childByParent: Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>>,
+	childByParent: Map<string, TraceChildSession[]>,
 	linkedChildByToolCallId: Map<string, string>,
 	sessionStatus: PiboWebSessionStatus,
 	createdAt?: string,
@@ -553,7 +560,7 @@ function traceNodeFromEvent(
 			const linkedPiboSessionId =
 				linkedChildByToolCallId.get(event.toolCallId) ??
 				(subagentTool
-					? findLikelyChildSession(piboSessionId, event.toolName, event, childByParent)
+					? findLikelyTraceChildSession(piboSessionId, event.toolName, event, childByParent)
 					: undefined);
 			return {
 				...base,
@@ -945,72 +952,6 @@ function mergeCompactionEvent(target: PiboTraceNode, update: PiboTraceNode): voi
 	target.output = update.output ?? target.output;
 	target.error = update.error ?? target.error;
 	target.completedAt = update.completedAt ?? target.completedAt;
-}
-
-function mapChildren(
-	sessions: Array<{ id: string; parentId?: string | null }>,
-): Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>> {
-	const result = new Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>>();
-	for (const session of sessions) {
-		if (!session.parentId) continue;
-		const children = result.get(session.parentId) ?? [];
-		children.push(session);
-		result.set(session.parentId, children);
-	}
-	return result;
-}
-
-function mapSubagentSessionLinks(events: ChatWebStoredEvent[]): Map<string, string> {
-	const result = new Map<string, string>();
-	for (const storedEvent of events) {
-		const event = storedEvent.payload as PiboOutputEvent;
-		if (event.type !== "subagent_session" || !event.toolCallId) continue;
-		result.set(event.toolCallId, event.childPiboSessionId);
-	}
-	return result;
-}
-
-function findLikelyChildSession(
-	piboSessionId: string,
-	toolName: string,
-	event: Extract<
-		PiboOutputEvent,
-		{
-			type: "tool_call" | "tool_execution_started" | "tool_execution_updated" | "tool_execution_finished";
-		}
-	>,
-	childByParent: Map<string, Array<{ id: string; metadata?: Record<string, unknown> }>>,
-): string | undefined {
-	if (!isSubagentToolName(toolName)) return undefined;
-	const candidates =
-		childByParent
-			.get(piboSessionId)
-			?.filter((session) => session.metadata?.subagentToolName === toolName) ?? [];
-	const threadKey = toolEventThreadKey(event);
-	if (threadKey) {
-		return candidates.find((session) => session.metadata?.threadKey === threadKey)?.id;
-	}
-	return candidates.length === 1 ? candidates[0].id : undefined;
-}
-
-function isSubagentToolName(name: string): boolean {
-	return name.startsWith("pibo_subagent_");
-}
-
-function toolEventThreadKey(
-	event: Extract<
-		PiboOutputEvent,
-		{
-			type: "tool_call" | "tool_execution_started" | "tool_execution_updated" | "tool_execution_finished";
-		}
-	>,
-): string | undefined {
-	const args =
-		"args" in event && event.args && typeof event.args === "object" && !Array.isArray(event.args)
-			? event.args
-			: undefined;
-	const threadKey = args && "threadKey" in args ? args.threadKey : undefined;
-	return typeof threadKey === "string" && threadKey.trim() ? threadKey.trim() : undefined;
 }
 
 function hasVisibleText(value: unknown): value is string {

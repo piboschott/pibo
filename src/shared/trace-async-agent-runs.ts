@@ -1,5 +1,6 @@
 import { childTraceOrder } from "./trace-order.js";
 import { flattenTraceNodes } from "./trace-nodes.js";
+import { isSubagentToolName, subagentNameFromToolName } from "./trace-subagent-links.js";
 import type { PiboTraceNode, PiboTraceNodeStatus } from "./trace-types.js";
 
 export function attachAsyncAgentRunNode(
@@ -124,14 +125,6 @@ function isRunSnapshot(value: Record<string, unknown>): boolean {
 
 function stringValue(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
-}
-
-function subagentNameFromToolName(toolName: string): string {
-	return toolName.slice("pibo_subagent_".length);
-}
-
-function isSubagentToolName(name: string): boolean {
-	return name.startsWith("pibo_subagent_");
 }
 
 function asyncAgentStatus(parent: PiboTraceNode, runStatus?: string): PiboTraceNodeStatus {

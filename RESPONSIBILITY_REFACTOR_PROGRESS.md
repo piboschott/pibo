@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted transcript-entry projection from `src/shared/trace-engine.ts` into `src/shared/trace-transcript.ts`.
-- Result: `src/shared/trace-engine.ts` dropped from 1,418 LOC to 1,049 LOC; transcript projection now lives in a 391 LOC focused helper module that owns `traceNodesFromEntries`, transcript entry filtering while a live turn is open, user/session-info nodes, persisted assistant turn/message/reasoning/tool nodes, persisted tool results, and transcript run-notification nodes.
-- Evidence: The extraction is behavior-preserving: `trace-engine.ts` imports transcript projection helpers and re-exports `traceNodesFromEntries` for existing callers, while event-log/live-patch orchestration remains in the trace engine.
+- Last batch: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts` and reused the shared `pibo_subagent_*` tool-name helpers from trace event projection, transcript projection, and async-agent projection.
+- Result: `src/shared/trace-engine.ts` dropped from 1,049 LOC to 990 LOC; subagent child-session lookup by parent/tool/thread key and explicit `subagent_session` link mapping now live in a focused 73 LOC helper module.
+- Evidence: Added `test/chat-trace-materialization.test.mjs` coverage proving subagent tool events link likely child sessions by tool name and `threadKey` metadata.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `5e93889` (`refactor(trace): extract transcript projection`).
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Re-rank the remaining `src/shared/trace-engine.ts` responsibilities before more extraction; likely next candidates are event-to-node projection or subagent child-session link helpers, but event projection should get focused tests first because it is intertwined with live patch merge semantics.
+- Exact next step: Re-rank the remaining `src/shared/trace-engine.ts` responsibilities now that it is below 1,000 LOC; the highest-value next trace seam is likely event-to-node projection, but do a focused test-safety batch first because it is intertwined with live patch merge semantics.
 
 ## Progress log
 
+- 2026-05-27: Extracted trace subagent child-session linking into `src/shared/trace-subagent-links.ts`, consolidated `pibo_subagent_*` helper use across event/transcript/async-agent projection, and added materialization coverage for child-link lookup by tool/thread metadata; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted transcript-entry projection into `src/shared/trace-transcript.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace async agent run child-node/status reconciliation into `src/shared/trace-async-agent-runs.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace legacy yielded-run notification parsing/node creation into `src/shared/trace-run-notifications.ts` and added focused trace materialization tests for transcript and service-event notification projection; host `git diff --check`, Docker `npm run build`, focused trace tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.

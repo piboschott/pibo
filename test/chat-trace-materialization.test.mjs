@@ -114,6 +114,42 @@ test("service run notification events render running yielded-run nodes", () => {
 	assert.equal(view.nodes[0].source, "event-log");
 });
 
+test("subagent tool events link likely child sessions by tool name and thread key", () => {
+	const view = buildTraceViewFromEvents({
+		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
+		sessions: [
+			{
+				id: "ps_child",
+				parentId: "ps_root",
+				updatedAt: now,
+				metadata: { subagentToolName: "pibo_subagent_researcher", threadKey: "qa" },
+			},
+		],
+		events: [
+			{
+				id: "event-subagent-tool",
+				piboSessionId: "ps_root",
+				eventSequence: 1,
+				type: "tool_call",
+				createdAt: now,
+				payload: {
+					type: "tool_call",
+					piboSessionId: "ps_root",
+					eventId: "turn-1",
+					toolCallId: "tool-subagent",
+					toolName: "pibo_subagent_researcher",
+					args: { message: "inspect", threadKey: "qa" },
+				},
+			},
+		],
+		status: "running",
+	});
+
+	assert.equal(view.nodes.length, 1);
+	assert.equal(view.nodes[0].type, "agent.delegation");
+	assert.equal(view.nodes[0].linkedPiboSessionId, "ps_child");
+});
+
 test("v2 event mapper preserves session error details for trace rendering", () => {
 	const event = storedPiboEventFromV2Row({
 		stream_id: 42,

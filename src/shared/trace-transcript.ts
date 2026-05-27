@@ -3,6 +3,7 @@ import { transcriptTraceOrder } from "./trace-order.js";
 import { attachAsyncAgentRunNode, reconcileAsyncAgentRunStatuses } from "./trace-async-agent-runs.js";
 import { sortTraceNodes } from "./trace-nodes.js";
 import { createRunNotificationNode, parseRunNotificationText } from "./trace-run-notifications.js";
+import { isSubagentToolName } from "./trace-subagent-links.js";
 import type { PiboTraceNode, PiboTraceNodeStatus, PiboWebSessionStatus } from "./trace-types.js";
 
 type MessageSessionEntry = Extract<SessionEntry, { type: "message" }>;
@@ -384,8 +385,4 @@ function stringifyPreview(value: unknown): string {
 	} catch {
 		return String(value);
 	}
-}
-
-function isSubagentToolName(name: string): boolean {
-	return name.startsWith("pibo_subagent_");
 }
