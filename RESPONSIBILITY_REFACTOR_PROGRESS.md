@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App` now delegates the room/session navigation panel to `SessionSidebar`; sidebar-only derivations (`roomsSupported`, room groups, personal room, new-session profile options) moved with the component, while route-shell, refresh, context/settings sidebars, and trace pane orchestration remain in `App`.
 - Evidence: `git diff --check` passed; `wc -l src/apps/chat-ui/src/App.tsx` reports 10,078 LOC after the component extraction/tracking update.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `curl http://127.0.0.1:4802/apps/chat` returned `curl: (56) Recv failure: Connection reset by peer`/HTTP `000`, so no browser validation was possible without restarting worker services.
-- Commit: `2bded6b` (`refactor(chat-ui): extract session sidebar component`).
+- Commit: `777caa3` (`refactor(chat-ui): extract session sidebar component`).
 - Blockers: worker Chat Web server on port 4802 was not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Either move the `SessionSidebar` row-component cluster to a dedicated module once a clean dependency boundary is chosen, or take the lower-risk next App seam by extracting `AgentsView`/Agent Designer into a feature module.
 
