@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/workflow-registered-ref-validation.ts`; `web-app.ts` now imports registered-ref validators while retaining workflow node/edge orchestration, prompt-asset source checks, route dispatch, stores, lifecycle events, and response assembly. Exported the prompt-asset picker state type from `workflow-registered-ref-pickers.ts` so the validator input contract is explicit.
 - Evidence: `web-app.ts` is now 5,461 LOC (down from 5,673); new `workflow-registered-ref-validation.ts` is 237 LOC.
 - Validation: host `git diff --check` passed; Docker registered-ref validation source/import sanity passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs test/workflow-v2-security-boundary.test.mjs` passed (87 tests); Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused; no restart was performed.
-- Commit: Pending.
+- Commit: `15fd363` (`refactor(chat): extract workflow registered ref validation`).
 - Blockers: none.
 - Exact next step: Inspect the remaining `src/apps/chat/web-app.ts` route-orchestration surface for the next small feature-handler seam; start with analysis rather than moving side-effect-heavy route code unless a clear tested helper boundary appears.
 
