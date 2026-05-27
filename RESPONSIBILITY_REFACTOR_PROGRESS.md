@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted the Chat UI trace/signal polling and EventSource API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-trace-signals.ts`.
 - Result: Trace summary/detail clients, signal snapshot/tree clients, the signal EventSource subscription helper, and ETag helpers now live in `api-trace-signals.ts`; `App.tsx` imports that focused client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 452 LOC to 360 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-trace-signals.ts && grep -q "export \\* from \"./api-trace-signals\"" src/apps/chat-ui/src/api.ts && grep -q "./api-trace-signals" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function getTraceSummary|export async function getTrace\\(|fetchSessionSignals|fetchSignalTree|subscribeSignalTree|function toEtag|function fromEtag" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: pending.
+- Commit: `2503e2b` (`refactor(chat-ui): extract trace signal api client`).
 - Blockers: none.
 - Exact next step: Continue shrinking the Chat UI API boundary with another cohesive request family from `api.ts`, likely file upload/download plus download filename helpers, auth helpers, or a larger chat session/room API split if import churn is acceptable.
 
