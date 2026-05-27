@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted async agent run child-node creation/status reconciliation from `src/shared/trace-engine.ts` into `src/shared/trace-async-agent-runs.ts`.
-- Result: `src/shared/trace-engine.ts` dropped from 1,541 LOC to 1,418 LOC; async run snapshot parsing, `agent.async` child creation, status reconciliation, and `isRunStartToolNode` compatibility export now live in a 145 LOC focused helper module.
-- Evidence: The extraction is behavior-preserving: transcript and event-log paths still call the same async run attachment/reconciliation semantics, while `trace-engine.ts` re-exports `isRunStartToolNode` for existing callers.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker focused `node --test test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: `79abb5b` (`refactor(trace): extract async agent run helpers`).
+- Last batch: Extracted transcript-entry projection from `src/shared/trace-engine.ts` into `src/shared/trace-transcript.ts`.
+- Result: `src/shared/trace-engine.ts` dropped from 1,418 LOC to 1,049 LOC; transcript projection now lives in a 391 LOC focused helper module that owns `traceNodesFromEntries`, transcript entry filtering while a live turn is open, user/session-info nodes, persisted assistant turn/message/reasoning/tool nodes, persisted tool results, and transcript run-notification nodes.
+- Evidence: The extraction is behavior-preserving: `trace-engine.ts` imports transcript projection helpers and re-exports `traceNodesFromEntries` for existing callers, while event-log/live-patch orchestration remains in the trace engine.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
+- Commit: pending (`refactor(trace): extract transcript projection`).
 - Blockers: none.
-- Exact next step: Continue `src/shared/trace-engine.ts` only after another short seam review; likely next candidates are transcript-entry projection or event-to-node projection, but both should be test-backed because remaining trace responsibilities are intertwined.
+- Exact next step: Re-rank the remaining `src/shared/trace-engine.ts` responsibilities before more extraction; likely next candidates are event-to-node projection or subagent child-session link helpers, but event projection should get focused tests first because it is intertwined with live patch merge semantics.
 
 ## Progress log
 
+- 2026-05-27: Extracted transcript-entry projection into `src/shared/trace-transcript.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace async agent run child-node/status reconciliation into `src/shared/trace-async-agent-runs.ts`; host `git diff --check`, Docker `npm run build`, focused trace materialization/patch-identity/terminal-parity tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted trace legacy yielded-run notification parsing/node creation into `src/shared/trace-run-notifications.ts` and added focused trace materialization tests for transcript and service-event notification projection; host `git diff --check`, Docker `npm run build`, focused trace tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted debug web option parsing/defaults/preset/compare-target helpers into `src/debug/web-options.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and CLI smoke checks for help plus invalid streaming pre-CDP validation passed.
