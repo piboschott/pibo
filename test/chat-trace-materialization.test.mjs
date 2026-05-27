@@ -37,6 +37,10 @@ function storedEvent(sequence, text) {
 	};
 }
 
+function runNotificationText(notification) {
+	return `<pibo_run_notification>${JSON.stringify(notification)}</pibo_run_notification>`;
+}
+
 test("trace engine omits raw events by default", () => {
 	const view = buildTraceViewFromEvents({
 		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
@@ -57,6 +61,57 @@ test("raw event tail is opt-in and bounded", () => {
 
 	assert.deepEqual(view.rawEvents.map((event) => event.id), ["event-2", "event-3"]);
 	assert.deepEqual(view.nodes.map((node) => node.summary), ["one", "two", "three"]);
+});
+
+test("legacy transcript run notifications render yielded-run nodes", () => {
+	const view = buildTraceViewFromEvents({
+		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
+		transcriptEntries: [
+			{
+				id: "entry-run-note",
+				type: "message",
+				timestamp: now,
+				message: {
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: runNotificationText({
+								completed: [{ runId: "run_done" }],
+								failed: [{ runId: "run_failed" }],
+							}),
+						},
+					],
+				},
+			},
+		],
+		events: [],
+	});
+
+	assert.equal(view.nodes.length, 1);
+	assert.equal(view.nodes[0].type, "yielded.run");
+	assert.equal(view.nodes[0].title, "Run Notification");
+	assert.equal(view.nodes[0].status, "error");
+	assert.equal(view.nodes[0].summary, "1 completed, 1 failed");
+	assert.equal(view.nodes[0].source, "transcript");
+	assert.equal(view.nodes[0].runId, undefined);
+});
+
+test("service run notification events render running yielded-run nodes", () => {
+	const event = storedEvent(1, runNotificationText({ running: [{ runId: "run_active" }] }));
+	event.payload.source = "service";
+
+	const view = buildTraceViewFromEvents({
+		session: { id: "ps_root", piSessionId: "pi_root", title: "Root" },
+		events: [event],
+	});
+
+	assert.equal(view.nodes.length, 1);
+	assert.equal(view.nodes[0].type, "yielded.run");
+	assert.equal(view.nodes[0].status, "running");
+	assert.equal(view.nodes[0].summary, "1 running");
+	assert.equal(view.nodes[0].runId, "run_active");
+	assert.equal(view.nodes[0].source, "event-log");
 });
 
 test("v2 event mapper preserves session error details for trace rendering", () => {

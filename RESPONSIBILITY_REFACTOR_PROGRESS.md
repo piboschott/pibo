@@ -64,16 +64,17 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the `pibo debug web` option parsing/defaults/preset/compare-target seam from `src/debug/web.ts` into `src/debug/web-options.ts`.
-- Result: `src/debug/web.ts` dropped from 877 LOC to 600 LOC and now delegates option parsing, render preset resolution, streaming fixture/default validation, negative-profile expansion, compare URL shaping, and hosted compare env resolution to the new 282 LOC module.
-- Evidence: The extraction is behavior-preserving: parser branches, validation messages, defaults, negative regression presets, compare URL rules, and `.env.developer-host` parsing moved unchanged while `web.ts` keeps command dispatch, CDP target selection, browser evaluation, artifact/report orchestration, and public re-export compatibility.
-- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/debug-cli.test.mjs` passed (66 tests); Docker root `npm run typecheck` passed; Docker CLI smoke for `snapshot --help`, `watch --help`, and invalid `scenario streaming-benchmark --fixture-profile burst` pre-CDP validation passed.
-- Commit: `43c1b29` (`refactor(debug): extract web option helpers`).
+- Last batch: Extracted the legacy yielded-run notification trace-node seam from `src/shared/trace-engine.ts` into `src/shared/trace-run-notifications.ts` and added focused trace materialization coverage for notification status/summary projection.
+- Result: `src/shared/trace-engine.ts` dropped from 1,636 LOC to 1,541 LOC; legacy notification parsing, yielded-run node creation, notification summary/status calculation, and single-run id projection now live in a 102 LOC focused helper module.
+- Evidence: The extraction is behavior-preserving: transcript and service-event notification paths still call the same parser/node factory semantics, and new tests pin multi-run error summaries plus single running-run id/status projection through `buildTraceViewFromEvents`.
+- Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
+- Commit: `9f7f708` (`refactor(trace): extract run notification helpers`).
 - Blockers: none.
-- Exact next step: Pivot away from `src/debug/web.ts` unless a specific CDP/orchestration seam gets stronger test coverage; next high-value candidate is a test-backed `src/shared/trace-engine.ts` seam or an analysis batch to re-rank remaining App/trace targets.
+- Exact next step: Continue `src/shared/trace-engine.ts` only with another test-backed seam; likely next candidates are event-to-node projection helpers or async agent/subagent linking, but do a short seam review first because remaining responsibilities are more intertwined.
 
 ## Progress log
 
+- 2026-05-27: Extracted trace legacy yielded-run notification parsing/node creation into `src/shared/trace-run-notifications.ts` and added focused trace materialization tests for transcript and service-event notification projection; host `git diff --check`, Docker `npm run build`, focused trace tests, root `npm run typecheck`, and `pibo debug trace --help` smoke passed.
 - 2026-05-27: Extracted debug web option parsing/defaults/preset/compare-target helpers into `src/debug/web-options.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and CLI smoke checks for help plus invalid streaming pre-CDP validation passed.
 - 2026-05-27: Extracted debug web snapshot/watch browser expression generation and DOM observer library into `src/debug/web-snapshot-browser-scripts.ts`; host `git diff --check`, Docker `npm run build`, focused `test/debug-cli.test.mjs` (66 tests), root `npm run typecheck`, and `snapshot --help`/`watch --help` CLI smoke checks passed.
 - 2026-05-27: Completed analysis-only review of remaining `src/debug/web.ts` seams; ranked snapshot/watch browser script extraction as the safest next implementation slice, option parsing/validation as the next likely seam, and CDP command orchestration as too coupled for immediate extraction; host `git diff --check` passed for the tracking-only diff.
