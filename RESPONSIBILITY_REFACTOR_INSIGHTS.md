@@ -83,6 +83,12 @@
 - Existing workflow store/persistence tests (`workflow-store-facts`, `workflow-persistence-validation`, `workflow-run-inspection`, `workflow-sqlite-schema`, node-attempt persistence, catalog/published version tests) provide broad coverage for store refactors; add focused mapper/schema/catalog/list-query/write-value/draft-write tests only if extraction changes visibility, null/optional handling, migration behavior, catalog immutability semantics, bind ordering, canonical-definition write behavior, active-draft conflicts, or current-draft identity updates.
 - Store entry point responsibility is much improved and under the target size. Further store splitting likely has diminishing returns; pivot to another high-value large target unless review identifies a specific store seam.
 
+## Trace engine seams
+
+- `src/shared/trace-nodes.ts` now owns generic trace node tree helpers: node sorting/order comparison, pre-order flattening, parent/child nesting, and id mapping. `src/shared/trace-engine.ts` re-exports these helpers to preserve existing imports from the trace-engine barrel.
+- `src/shared/trace-engine.ts` still owns event/transcript projection, live patching, event dedupe/stream cursors, delta merging, subagent/yielded-run linking, and run-notification parsing. The next clean trace seam is likely live patching/structural sharing (`patchTraceViewWithEvents`, content-delta changed-node tracking, mutable copied nesting, and shallow equality), but keep it test-backed because Chat UI render identity depends on those helpers.
+- Focused trace coverage is strong for future trace refactors: `test/chat-trace-materialization.test.mjs`, `test/chat-ui-integration.test.mjs`, `test/trace-live-reducer.test.mjs`, `test/trace-patch-identity.test.mjs`, and `test/debug-cli.test.mjs` exercise full trace materialization, incremental patch identity, live reducer dedupe, debug trace output, and CLI-adjacent trace behavior.
+
 ## Telemetry data seams
 
 - `src/data/telemetry-rows.ts` now owns SQLite row shapes and row-to-domain hydration for telemetry turns, phases, provider requests, provider events, and tool calls. It also owns read-side JSON parsing for persisted telemetry metadata/counters/safe fields/argument-key arrays.

@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts` while preserving the public `src/data/telemetry.ts` export surface.
-- Result: `src/data/telemetry.ts` dropped from 1,129 to 933 LOC; list limits, session summaries/details, turn timelines, provider-event paging, stale-work shaping, and debug next-command hints now live in a focused read-model/query module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/telemetry-store.test.mjs test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs'`, and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure telemetry persistence/query helper extraction without user-facing route changes.
-- Commit: `0bef05189b8aee00ebbc89d5e4be08e1f0f1777d` (`refactor(telemetry): extract query helpers`).
+- Last batch: Extracted trace node tree/sorting utilities into `src/shared/trace-nodes.ts` while preserving the public `src/shared/trace-engine.ts` export surface.
+- Result: `src/shared/trace-engine.ts` dropped from 1,797 to 1,736 LOC; generic trace node ordering, flattening, nesting, and id mapping now live in a focused shared helper module that can be reused without importing the full event/transcript projection engine.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/chat-trace-materialization.test.mjs test/chat-ui-integration.test.mjs test/trace-live-reducer.test.mjs test/trace-patch-identity.test.mjs test/debug-cli.test.mjs'` (90 tests), and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure shared trace helper extraction with preserved public APIs.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Telemetry entry point is now under the 1,000 LOC target; pivot to another high-value large target such as `src/shared/trace-engine.ts` or start with an analysis/test-safety batch for `src/apps/chat-ui/src/api.ts` rather than continuing low-value telemetry splitting.
+- Exact next step: Continue `src/shared/trace-engine.ts` with a similarly small extraction around live patching/structural sharing helpers, or pivot to a test-safety/analysis batch for `src/apps/chat-ui/src/api.ts` if trace-engine coupling looks risky.
 
 ## Progress log
 
@@ -109,3 +109,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted telemetry bounded-preview and safe-field helpers into `src/data/telemetry-preview.ts`; focused telemetry store/runtime/validation tests and root typecheck passed in Docker.
 - 2026-05-27: Extracted telemetry retention stats and prune planning/deletion helpers into `src/data/telemetry-retention.ts`; focused telemetry store/runtime/validation tests and root typecheck passed in Docker.
 - 2026-05-27: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts`; build, focused telemetry store/runtime/validation tests, and root typecheck passed in Docker.
+- 2026-05-27: Extracted trace node sorting/tree helpers into `src/shared/trace-nodes.ts`; build, focused trace/debug tests, and root typecheck passed in Docker.
