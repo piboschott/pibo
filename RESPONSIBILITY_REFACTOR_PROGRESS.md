@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the Chat UI trace/signal polling and EventSource API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-trace-signals.ts`.
-- Result: Trace summary/detail clients, signal snapshot/tree clients, the signal EventSource subscription helper, and ETag helpers now live in `api-trace-signals.ts`; `App.tsx` imports that focused client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 452 LOC to 360 LOC.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-trace-signals.ts && grep -q "export \\* from \"./api-trace-signals\"" src/apps/chat-ui/src/api.ts && grep -q "./api-trace-signals" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function getTraceSummary|export async function getTrace\\(|fetchSessionSignals|fetchSignalTree|subscribeSignalTree|function toEtag|function fromEtag" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: `2503e2b` (`refactor(chat-ui): extract trace signal api client`).
+- Last batch: Extracted the Chat UI chat-file upload/download API seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-chat-files.ts`.
+- Result: `ChatUploadedFile`, `ChatUploadResult`, `uploadChatFiles`, `downloadChatFile`, and the download filename helper now live in `api-chat-files.ts`; `App.tsx` imports the file client directly, while `api.ts` re-exports it for compatibility. `api.ts` dropped from 360 LOC to 303 LOC.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-chat-files.ts && grep -q "export \\* from \"./api-chat-files\"" src/apps/chat-ui/src/api.ts && grep -q "./api-chat-files" src/apps/chat-ui/src/App.tsx && ! grep -E "export async function uploadChatFiles|export async function downloadChatFile|type ChatUploadedFile|type ChatUploadResult|function downloadFilename|DOWNLOAD_FILENAME_RE" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source/import sanity check, root build, root typecheck). A best-effort route smoke check with `curl -fsS http://127.0.0.1:4802/apps/chat` inside the Docker worker could not connect because the worker web server was not running; no service restart was performed for this pure module extraction.
+- Commit: pending (`refactor(chat-ui): extract chat file api client`).
 - Blockers: none.
-- Exact next step: Continue shrinking the Chat UI API boundary with another cohesive request family from `api.ts`, likely file upload/download plus download filename helpers, auth helpers, or a larger chat session/room API split if import churn is acceptable.
+- Exact next step: Continue shrinking the remaining Chat UI API boundary by extracting the auth helpers (`signOut`, `signInWithGoogle`) into `api-auth.ts`, or take the larger session/navigation split if import churn is acceptable.
 
 ## Progress log
 
@@ -119,3 +119,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the Agent Designer/capability-management Chat UI API client seam into `src/apps/chat-ui/src/api-agent-designer.ts`; source sanity check, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Web Annotation Chat UI API client seam into `src/apps/chat-ui/src/api-web-annotations.ts`; source/import sanity check, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the trace/signal Chat UI API client seam into `src/apps/chat-ui/src/api-trace-signals.ts`; source/import sanity check, build, and root typecheck passed in Docker.
+- 2026-05-27: Extracted the chat file upload/download Chat UI API client seam into `src/apps/chat-ui/src/api-chat-files.ts`; source/import sanity check, build, and root typecheck passed in Docker. A route smoke check found the worker web server was not listening, so no service restart/browser check was performed for this pure extraction.

@@ -47,7 +47,8 @@ import {
 	Wrench,
 	X,
 } from "lucide-react";
-import { deleteProject, deleteRoom, deleteSession, downloadChatFile, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, markRoomRead, markSessionRead, patchProject, patchProjectSession, patchRoom, patchSession, postAction, postMessage, postProject, postProjectMessage, postProjectSession, postRoom, postSession, signInWithGoogle, signOut, uploadChatFiles, type ChatUploadedFile } from "./api";
+import { deleteProject, deleteRoom, deleteSession, getBootstrap, getNavigation, getProjectsBootstrap, getSessionPage, markRoomRead, markSessionRead, patchProject, patchProjectSession, patchRoom, patchSession, postAction, postMessage, postProject, postProjectMessage, postProjectSession, postRoom, postSession, signInWithGoogle, signOut } from "./api";
+import { downloadChatFile, uploadChatFiles, type ChatUploadedFile } from "./api-chat-files";
 import { fetchSignalTree, getTrace, getTraceSummary, subscribeSignalTree } from "./api-trace-signals";
 import { createWebAnnotationBinding, injectWebAnnotationBinding, listWebAnnotations, listWebAnnotationTargets, patchWebAnnotation, type WebAnnotationBindingResponse, type WebAnnotationMessageAttachment, type WebAnnotationOverlayConfig, type WebAnnotationTargetSummary } from "./api-web-annotations";
 import { createUserSkill, deleteCustomAgent, deletePiPackage, deleteUserSkill, getUserSkill, installUserSkill, listUserSkills, patchCustomAgent, patchPiPackage, postCustomAgent, postPiPackage, updateUserSkill, type SaveCustomAgentInput } from "./api-agent-designer";
