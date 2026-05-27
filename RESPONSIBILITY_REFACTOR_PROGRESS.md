@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted the Context Files Chat UI API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-context-files.ts`.
-- Result: `ContextFilesView` and the App context upload path now import context-file client functions directly from the focused module, while `api.ts` re-exports the module for compatibility. `api.ts` dropped from 1,573 LOC to 1,415 LOC.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/context-files-web.test.mjs && npm run build && npm run typecheck'` passed (`context-files-web` 3 tests, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: `c4d067a6c08e01c300905e3db29c07fa984ff8fa` (`refactor(chat-ui): extract context files api client`).
+- Last batch: Extracted the cohesive Chat UI Workflow API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-workflows.ts`.
+- Result: `WorkflowsArea.tsx` and the project workflow creation/start call sites in `App.tsx` now import workflow client functions and types directly from the focused module, while `api.ts` re-exports the module for compatibility. `api.ts` dropped from 1,415 LOC to 868 LOC.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-workflows.ts && grep -R "api-workflows" src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/WorkflowsArea.tsx && ! grep -E "getWorkflowVersionPicker|postProjectWorkflowSession|postProjectWorkflowSessionStart" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
+- Commit: `63bd1ac` (`refactor(chat-ui): extract workflow api client`).
 - Blockers: none.
-- Exact next step: Continue the Chat UI API boundary by extracting another cohesive request family from `src/apps/chat-ui/src/api.ts`, likely settings/prompt APIs or project/session APIs, with direct imports at owning UI call sites and compatibility re-exports from `api.ts`.
+- Exact next step: Continue the Chat UI API boundary by extracting another cohesive request family from `src/apps/chat-ui/src/api.ts`, likely prompt/settings, agent-designer capability management, or room/session messaging APIs, with direct imports at owning UI call sites and compatibility re-exports from `api.ts`.
 
 ## Progress log
 
@@ -114,3 +114,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted the Ralph Chat UI API client seam into `src/apps/chat-ui/src/api-ralph.ts` and shared request helper into `src/apps/chat-ui/src/api-http.ts`; workflow API source checklist, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Cron Chat UI API client seam into `src/apps/chat-ui/src/api-cron.ts`; workflow API source checklist, build, and root typecheck passed in Docker.
 - 2026-05-27: Extracted the Context Files Chat UI API client seam into `src/apps/chat-ui/src/api-context-files.ts`; context-files web tests, build, and root typecheck passed in Docker.
+- 2026-05-27: Extracted the Workflow Chat UI API client seam into `src/apps/chat-ui/src/api-workflows.ts`; source sanity check, build, and root typecheck passed in Docker.

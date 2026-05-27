@@ -20,6 +20,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Archive, BookOpenText, Brain, CheckCheck, Code2, CopyPlus, ExternalLink, History, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
+import type { SaveState } from "./api";
 import {
 	deleteWorkflow,
 	getWorkflowAdapterPicker,
@@ -39,7 +40,6 @@ import {
 	postWorkflowDuplicateDraft,
 	postWorkflowNextDraft,
 	postWorkflowPromptAssetRevision,
-	type SaveState,
 	type WorkflowCatalogAction,
 	type WorkflowCatalogVersionRecord,
 	type WorkflowDraftDefinition,
@@ -58,7 +58,7 @@ import {
 	type WorkflowVersionPickerResponse,
 	type WorkflowVersionHistoryOption,
 	type WorkflowVersionHistoryResponse,
-} from "./api";
+} from "./api-workflows";
 import { MarkdownEditor } from "./context/MarkdownEditor";
 
 const DEFAULT_AGENT_PROMPT_TEMPLATE = "Use the workflow input to produce a concise answer.\n\n{{input}}";
