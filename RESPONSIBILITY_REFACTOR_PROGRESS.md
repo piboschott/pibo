@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: Added `src/apps/chat/chat-files.ts` for uploaded file storage, unique upload filenames, safe uploaded-file attachment path checks, model-context rendering, relative download path resolution, content-type mapping, and no-store download responses. `web-app.ts` now imports this file boundary and keeps API route dispatch, same-origin/session auth, room/session access, and workspace selection.
 - Evidence: `web-app.ts` is now 6,624 LOC (down from 6,824); new `chat-files.ts` is 198 LOC. Added focused web-channel coverage for downloading a file relative to a selected session workspace, alongside existing multipart upload coverage.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker `node --test test/web-channel.test.mjs` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused because the worker web server was not listening; no restart was performed.
-- Commit: pending.
+- Commit: `8d3ba28` (`refactor(chat): extract file helpers`).
 - Blockers: none.
 - Exact next step: Re-rank remaining Chat Web route seams after the small file boundary extraction; likely next candidates are workflow validation response shaping or an analysis-only pass over the residual `createChatWebApp` dispatch body before moving any side-effectful route handlers.
 
