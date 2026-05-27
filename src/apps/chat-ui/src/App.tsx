@@ -3,12 +3,12 @@ import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-q
 import { useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
 import { RefreshCw, X } from "lucide-react";
-import { deleteRoom, deleteSession, getBootstrap, getNavigation, getSessionPage, markRoomRead, markSessionRead, patchRoom, patchSession, postAction, postMessage, postRoom, postSession } from "./api-chat-sessions";
+import { getBootstrap, getNavigation, getSessionPage, markRoomRead, markSessionRead, patchRoom, patchSession, postAction, postMessage, postRoom, postSession } from "./api-chat-sessions";
 import { navigateToChatRoute, type ChatAppRoute, type NavigationOptions } from "./app-routes";
 import { downloadChatFile } from "./api-chat-files";
 import { fetchSignalTree, subscribeSignalTree } from "./api-trace-signals";
 import { listUserSkills } from "./api-agent-designer";
-import type { AgentCatalog, BootstrapData, NavigationData, PiboRoom, PiboSignalSnapshot, PiboWebSessionNode, UserSkill } from "./types";
+import type { AgentCatalog, BootstrapData, NavigationData, PiboSignalSnapshot, UserSkill } from "./types";
 import { countRender } from "./renderMetrics";
 import {
 	chatStreamEvent,
@@ -60,8 +60,6 @@ import {
 	createBootstrapMutationSnapshot,
 	createOptimisticRoom,
 	createOptimisticSessionNode,
-	removeRoomsFromBootstrap,
-	removeSessionsFromBootstrap,
 	replaceOptimisticSessionNode,
 	replaceRoomInBootstrap,
 	roomWithArchivedState,
@@ -127,13 +125,7 @@ import {
 	upsertAgentCatalogPiPackage,
 	upsertAgentCatalogUserSkill,
 } from "./app-agent-catalog-mutations";
-import {
-	deleteTargetMatchesSelectedRoom,
-	nextSelectedSessionAfterDelete,
-	planOptimisticRoomDelete,
-	planOptimisticSessionDelete,
-	responseDeletesSelectedSession,
-} from "./app-delete-flow";
+import { useAppDeleteActions } from "./app-delete-actions";
 
 export type { ChatAppRoute } from "./app-routes";
 
@@ -214,15 +206,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 	const [mobileAreaMenuOpen, setMobileAreaMenuOpen] = useState(false);
 	const mobileAreaMenuRef = useRef<HTMLDivElement>(null);
-	const [deleteRoomTarget, setDeleteRoomTarget] = useState<PiboRoom | null>(null);
-	const [deleteRoomConfirmName, setDeleteRoomConfirmName] = useState("");
-	const [deletingRoom, setDeletingRoom] = useState(false);
-	const [deleteSessionTarget, setDeleteSessionTarget] = useState<PiboWebSessionNode | null>(null);
 	const [gatewayMode, setGatewayMode] = useState<"main" | "fallback" | null>(null);
 	const [sessionSignals, setSessionSignals] = useState<PiboSignalSnapshot | null>(null);
 	const [signalNow, setSignalNow] = useState(() => Date.now());
-	const [deleteSessionConfirmText, setDeleteSessionConfirmText] = useState("");
-	const [deletingSession, setDeletingSession] = useState(false);
 	const showArchivedRef = useRef(showArchived);
 	const sessionListScrollRef = useRef<HTMLDivElement>(null);
 	const bootstrapRef = useRef<BootstrapData | null>(null);
@@ -656,6 +642,37 @@ export function App({ route }: { route: ChatAppRoute }) {
 		for (const [queryKey, data] of snapshot.queryData) queryClient.setQueryData(queryKey, data);
 	}, [queryClient]);
 
+	const {
+		deleteRoomTarget,
+		deleteRoomConfirmName,
+		deletingRoom,
+		setDeleteRoomConfirmName,
+		requestRoomDelete,
+		cancelRoomDelete,
+		permanentlyDeleteRoom,
+		deleteSessionTarget,
+		deleteSessionConfirmText,
+		deletingSession,
+		setDeleteSessionConfirmText,
+		requestSessionDelete,
+		cancelSessionDelete,
+		permanentlyDeleteSession,
+	} = useAppDeleteActions({
+		queryClient,
+		bootstrap,
+		selectedPiboSessionId,
+		selectedRoomId,
+		showArchivedRef,
+		isSessionsArea: area === "sessions",
+		loadBootstrap,
+		navigateToSelectedSession,
+		updateBootstrapCache,
+		restoreBootstrapSnapshot,
+		setSelectedPiboSessionId,
+		setSelectedRoomId,
+		setError,
+	});
+
 	const createSessionMutation = useMutation({
 		mutationFn: ({ profile, roomId }: { profile: string; roomId?: string }) => postSession(profile || undefined, roomId),
 		onMutate: async ({ profile }) => {
@@ -839,50 +856,6 @@ export function App({ route }: { route: ChatAppRoute }) {
 		}
 	};
 
-	const requestSessionDelete = (node: PiboWebSessionNode) => {
-		setDeleteSessionTarget(node);
-		setDeleteSessionConfirmText("");
-	};
-
-	const permanentlyDeleteSession = async () => {
-		if (!deleteSessionTarget) return;
-		setDeletingSession(true);
-		await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
-		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
-		const optimisticDelete = planOptimisticSessionDelete(deleteSessionTarget, selectedPiboSessionId);
-		if (optimisticDelete.selectedSessionDeleted) setSelectedPiboSessionId(null);
-		updateBootstrapCache((data) => removeSessionsFromBootstrap(data, optimisticDelete.deletedSessionIds));
-		try {
-			const deleted = await deleteSession(deleteSessionTarget.piboSessionId, deleteSessionConfirmText);
-			const deletedSelected = responseDeletesSelectedSession(
-				deleted.deletedSessionIds,
-				selectedPiboSessionId,
-				optimisticDelete.selectedSessionDeleted,
-			);
-			if (deletedSelected) {
-				setSelectedPiboSessionId(null);
-			}
-			const data = await loadBootstrap(
-				nextSelectedSessionAfterDelete(selectedPiboSessionId, deletedSelected),
-				showArchivedRef.current,
-				selectedRoomId ?? undefined,
-				{ force: true },
-			);
-			if (area === "sessions") {
-				navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, { closeMobileSidebar: false });
-			}
-			setDeleteSessionTarget(null);
-			setDeleteSessionConfirmText("");
-			setError(null);
-		} catch (caught) {
-			restoreBootstrapSnapshot(snapshot);
-			if (optimisticDelete.selectedSessionDeleted) setSelectedPiboSessionId(optimisticDelete.restoreSelectedPiboSessionId);
-			setError(caught instanceof Error ? caught.message : String(caught));
-		} finally {
-			setDeletingSession(false);
-		}
-	};
-
 	const createRoom = async () => {
 		if (creatingRoom) return;
 		setCreatingRoom(true);
@@ -958,45 +931,6 @@ export function App({ route }: { route: ChatAppRoute }) {
 		} catch (caught) {
 			restoreBootstrapSnapshot(snapshot);
 			setError(caught instanceof Error ? caught.message : String(caught));
-		}
-	};
-
-	const requestRoomDelete = (room: PiboRoom) => {
-		setDeleteRoomTarget(room);
-		setDeleteRoomConfirmName("");
-	};
-
-	const permanentlyDeleteRoom = async () => {
-		if (!deleteRoomTarget) return;
-		setDeletingRoom(true);
-		await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
-		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
-		const optimisticDelete = planOptimisticRoomDelete(deleteRoomTarget, selectedRoomId, selectedPiboSessionId);
-		if (optimisticDelete.selectedRoomDeleted) {
-			setSelectedRoomId(null);
-			setSelectedPiboSessionId(null);
-		}
-		updateBootstrapCache((data) => removeRoomsFromBootstrap(data, optimisticDelete.deletedRoomIds));
-		try {
-			await deleteRoom(deleteRoomTarget.id, deleteRoomConfirmName);
-			if (deleteTargetMatchesSelectedRoom(deleteRoomTarget.id, selectedRoomId)) {
-				setSelectedRoomId(null);
-				setSelectedPiboSessionId(null);
-			}
-			const data = await loadBootstrap(undefined, showArchivedRef.current, undefined, { force: true });
-			if (area === "sessions") navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, { closeMobileSidebar: false });
-			setDeleteRoomTarget(null);
-			setDeleteRoomConfirmName("");
-			setError(null);
-		} catch (caught) {
-			restoreBootstrapSnapshot(snapshot);
-			if (optimisticDelete.selectedRoomDeleted) {
-				setSelectedRoomId(optimisticDelete.restoreSelectedRoomId);
-				setSelectedPiboSessionId(optimisticDelete.restoreSelectedPiboSessionId);
-			}
-			setError(caught instanceof Error ? caught.message : String(caught));
-		} finally {
-			setDeletingRoom(false);
 		}
 	};
 
@@ -1476,10 +1410,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 							confirmName={deleteRoomConfirmName}
 							deleting={deletingRoom}
 							onConfirmNameChange={setDeleteRoomConfirmName}
-							onCancel={() => {
-								setDeleteRoomTarget(null);
-								setDeleteRoomConfirmName("");
-							}}
+							onCancel={cancelRoomDelete}
 							onDelete={() => void permanentlyDeleteRoom()}
 						/>
 					) : null}
@@ -1489,10 +1420,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 							confirmText={deleteSessionConfirmText}
 							deleting={deletingSession}
 							onConfirmTextChange={setDeleteSessionConfirmText}
-							onCancel={() => {
-								setDeleteSessionTarget(null);
-								setDeleteSessionConfirmText("");
-							}}
+							onCancel={cancelSessionDelete}
 							onDelete={() => void permanentlyDeleteSession()}
 						/>
 					) : null}
