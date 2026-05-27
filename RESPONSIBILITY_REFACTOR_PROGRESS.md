@@ -69,7 +69,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `web-app.ts` now delegates provider-auth action detection/execution/response formatting while retaining `/api/chat/action` method dispatch, same-origin JSON enforcement, body parsing, and non-auth execution action routing.
 - Evidence: `web-app.ts` is now 5,302 LOC (down from 5,335); `provider-auth-actions.ts` is 40 LOC.
 - Validation: host `git diff --check` passed; Docker `node --import tsx` provider-auth-actions import sanity passed; Docker `node --test test/web-channel.test.mjs` passed; Docker `npm run build` passed; Docker `npm run typecheck` passed. Worker route smoke to `http://127.0.0.1:4802/apps/chat` returned curl exit 7/HTTP 000 connection refused; no restart was performed.
-- Commit: `2470e8d` (`refactor(chat): extract provider auth actions`).
+- Commit: `ab84ddd` (`refactor(chat): extract provider auth actions`).
 - Blockers: none.
 - Exact next step: Continue the Chat Web route-orchestration review; the next safest implementation slice is likely a small user-settings or MCP/Pi-package helper, but prefer another targeted analysis before moving side-effect-heavy route handlers.
 
