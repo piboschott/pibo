@@ -64,13 +64,13 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Added focused test-safety coverage for `src/apps/chat-ui/src/session-trace-view-props.ts` before future changes to link labels, derivation links, and model/thinking/fast fallback semantics.
-- Result: New `test/chat-ui-session-trace-view-props.test.mjs` covers empty-link behavior, nested breadcrumb labels, origin and derived session links, profile/trace/runtime model badge fallback precedence, missing-model output, and `createSessionTraceViewProps` callback assembly/order.
-- Evidence: The focused test imports `createSessionTraceViewLinks`, `resolveSessionTraceModelBadge`, and `createSessionTraceViewProps` through the existing Chat UI `tsx` source-import test pattern.
-- Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-session-trace-view-props.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. No browser/manual check was needed because this batch changed tests and tracking only.
-- Commit: `e32263c` (`test(chat-ui): cover session trace view props`).
-- Blockers: worker Chat Web server on port 4802 has been unreliable in prior UI smoke checks; not relevant to this test-safety-only batch.
-- Exact next step: Pivot to extracting App bootstrap mutation helpers (`BootstrapMutationSnapshot`, optimistic session/room update helpers, and session-node conversion helpers) into a focused App support module, or first run a small analysis to map those helpers and tests.
+- Last batch: Extracted Chat UI App bootstrap mutation helpers into `src/apps/chat-ui/src/app-bootstrap-mutations.ts` with focused pure-helper coverage in `test/chat-ui-app-bootstrap-mutations.test.mjs`.
+- Result: `App.tsx` no longer owns optimistic session/room bootstrap cache mutation helpers, session/room subtree id collection, optimistic node/room factories, or session-node conversion for mutations; it imports that boundary instead.
+- Evidence: `App.tsx` dropped from 3,577 LOC to 3,335 LOC; the new 272 LOC support module covers the mutation boundary without pulling React components or route state into the helper file.
+- Validation: `git diff --check` passed; Docker focused `node --test test/chat-ui-app-bootstrap-mutations.test.mjs` passed; Docker `npm run chat-ui:typecheck` passed; Docker root `npm run typecheck` passed. Docker route smoke `curl http://127.0.0.1:4802/apps/chat` returned connection failure/HTTP 000, so no service restart/browser check was performed.
+- Commit: pending.
+- Blockers: worker Chat Web server on port 4802 is still not listening for route smoke checks; not blocking this pure extraction because typecheck and focused source-import tests passed.
+- Exact next step: Continue reducing `App.tsx` by extracting the shared session tree/navigation model helpers (`findSessionNode`, `findSessionPath`, selected-session active-model fallback) into a focused support module with tests, or run a small analysis first if route extraction looks safer.
 
 ## Progress log
 
@@ -152,3 +152,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted `SessionTracePane` trace-history load-more strip into `src/apps/chat-ui/src/tracing/TraceHistoryLoadMore.tsx`; source/import sanity, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Extracted `SessionTracePane` session-view prop assembly and session-view link/model badge helpers into `src/apps/chat-ui/src/session-trace-view-props.ts`; source/import sanity, focused chat-ui trace tests, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
 - 2026-05-27: Added focused test-safety coverage for `session-trace-view-props.ts` link labels, derivation links, model badge fallback precedence, missing-model output, and prop callback assembly; focused Docker test, `git diff --check`, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed.
+- 2026-05-27: Extracted Chat UI App bootstrap mutation helpers into `src/apps/chat-ui/src/app-bootstrap-mutations.ts` and added `test/chat-ui-app-bootstrap-mutations.test.mjs`; `git diff --check`, Docker focused test, Docker `npm run chat-ui:typecheck`, and root `npm run typecheck` passed. Worker route smoke returned curl connection failure/HTTP 000 without restarting services.
