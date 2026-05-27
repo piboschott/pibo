@@ -64,10 +64,8 @@ import {
 	removeSessionsFromBootstrap,
 	replaceOptimisticSessionNode,
 	replaceRoomInBootstrap,
-	roomSubtreeIds,
 	roomWithArchivedState,
 	sessionNodeFromSession,
-	sessionSubtreeIds,
 	updateRoomInBootstrap,
 	updateSessionFromPiboSession,
 	updateSessionNodeInBootstrap,
@@ -129,6 +127,13 @@ import {
 	upsertAgentCatalogPiPackage,
 	upsertAgentCatalogUserSkill,
 } from "./app-agent-catalog-mutations";
+import {
+	deleteTargetMatchesSelectedRoom,
+	nextSelectedSessionAfterDelete,
+	planOptimisticRoomDelete,
+	planOptimisticSessionDelete,
+	responseDeletesSelectedSession,
+} from "./app-delete-flow";
 
 export type { ChatAppRoute } from "./app-routes";
 
@@ -844,18 +849,21 @@ export function App({ route }: { route: ChatAppRoute }) {
 		setDeletingSession(true);
 		await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
 		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
-		const optimisticDeletedIds = sessionSubtreeIds(deleteSessionTarget);
-		const optimisticDeletedSelected = selectedPiboSessionId ? optimisticDeletedIds.has(selectedPiboSessionId) : false;
-		if (optimisticDeletedSelected) setSelectedPiboSessionId(null);
-		updateBootstrapCache((data) => removeSessionsFromBootstrap(data, optimisticDeletedIds));
+		const optimisticDelete = planOptimisticSessionDelete(deleteSessionTarget, selectedPiboSessionId);
+		if (optimisticDelete.selectedSessionDeleted) setSelectedPiboSessionId(null);
+		updateBootstrapCache((data) => removeSessionsFromBootstrap(data, optimisticDelete.deletedSessionIds));
 		try {
 			const deleted = await deleteSession(deleteSessionTarget.piboSessionId, deleteSessionConfirmText);
-			const deletedSelected = selectedPiboSessionId ? deleted.deletedSessionIds.includes(selectedPiboSessionId) : optimisticDeletedSelected;
+			const deletedSelected = responseDeletesSelectedSession(
+				deleted.deletedSessionIds,
+				selectedPiboSessionId,
+				optimisticDelete.selectedSessionDeleted,
+			);
 			if (deletedSelected) {
 				setSelectedPiboSessionId(null);
 			}
 			const data = await loadBootstrap(
-				deletedSelected ? undefined : (selectedPiboSessionId ?? undefined),
+				nextSelectedSessionAfterDelete(selectedPiboSessionId, deletedSelected),
 				showArchivedRef.current,
 				selectedRoomId ?? undefined,
 				{ force: true },
@@ -868,7 +876,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 			setError(null);
 		} catch (caught) {
 			restoreBootstrapSnapshot(snapshot);
-			if (optimisticDeletedSelected) setSelectedPiboSessionId(selectedPiboSessionId);
+			if (optimisticDelete.selectedSessionDeleted) setSelectedPiboSessionId(optimisticDelete.restoreSelectedPiboSessionId);
 			setError(caught instanceof Error ? caught.message : String(caught));
 		} finally {
 			setDeletingSession(false);
@@ -963,16 +971,15 @@ export function App({ route }: { route: ChatAppRoute }) {
 		setDeletingRoom(true);
 		await queryClient.cancelQueries({ queryKey: ["chat", "bootstrap"] });
 		const snapshot = createBootstrapMutationSnapshot(queryClient, bootstrap);
-		const optimisticDeletedRoomIds = roomSubtreeIds(deleteRoomTarget);
-		const optimisticDeletedSelected = selectedRoomId ? optimisticDeletedRoomIds.has(selectedRoomId) : false;
-		if (optimisticDeletedSelected) {
+		const optimisticDelete = planOptimisticRoomDelete(deleteRoomTarget, selectedRoomId, selectedPiboSessionId);
+		if (optimisticDelete.selectedRoomDeleted) {
 			setSelectedRoomId(null);
 			setSelectedPiboSessionId(null);
 		}
-		updateBootstrapCache((data) => removeRoomsFromBootstrap(data, optimisticDeletedRoomIds));
+		updateBootstrapCache((data) => removeRoomsFromBootstrap(data, optimisticDelete.deletedRoomIds));
 		try {
 			await deleteRoom(deleteRoomTarget.id, deleteRoomConfirmName);
-			if (selectedRoomId === deleteRoomTarget.id) {
+			if (deleteTargetMatchesSelectedRoom(deleteRoomTarget.id, selectedRoomId)) {
 				setSelectedRoomId(null);
 				setSelectedPiboSessionId(null);
 			}
@@ -983,9 +990,9 @@ export function App({ route }: { route: ChatAppRoute }) {
 			setError(null);
 		} catch (caught) {
 			restoreBootstrapSnapshot(snapshot);
-			if (optimisticDeletedSelected) {
-				setSelectedRoomId(selectedRoomId);
-				setSelectedPiboSessionId(selectedPiboSessionId);
+			if (optimisticDelete.selectedRoomDeleted) {
+				setSelectedRoomId(optimisticDelete.restoreSelectedRoomId);
+				setSelectedPiboSessionId(optimisticDelete.restoreSelectedPiboSessionId);
 			}
 			setError(caught instanceof Error ? caught.message : String(caught));
 		} finally {
