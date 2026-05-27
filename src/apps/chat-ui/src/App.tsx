@@ -29,7 +29,6 @@ import { listUserSkills } from "./api-agent-designer";
 import { getWorkflowVersionPicker, postProjectWorkflowSession, postProjectWorkflowSessionStart, type WorkflowVersionPickerOption } from "./api-workflows";
 import { THINKING_LEVELS } from "./types";
 import type { AgentCatalog, BootstrapData, ModelProfile, NavigationData, PiboProject, PiboProjectSession, ProjectsBootstrapData, PiboRoom, PiboSession, PiboSessionTraceSummary, PiboSessionTraceView, PiboSignalPatch, PiboSignalSnapshot, PiboTraceNode, PiboTraceOrderKey, PiboWebSessionNode, PiboWebSessionStatus, ThinkingLevel, UserSkill, WorkflowLifecycleEventRecord } from "./types";
-import type { ChatWebStoredEvent } from "../../../shared/trace-types.js";
 import { collectBackendNodes, isTraceSnapshotCollectionEnabled } from "./tracing/snapshotCollector";
 import { type SessionBreadcrumbItem, type SessionDerivationLink, type SessionOriginLink } from "./tracing/TraceTimeline";
 import { JsonRenderer } from "./tracing/JsonRenderer";
@@ -78,6 +77,7 @@ import {
 } from "./app-storage";
 import { compactWebAnnotationError, WebAnnotationsSessionPanel } from "./web-annotations";
 import { SessionTraceHeader } from "./session-trace-header";
+import { appendComposerOptimisticEvent, createComposerSendPlan } from "./composer-send";
 import {
 	DEFAULT_RAW_EVENTS_LIMIT,
 	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
@@ -2673,34 +2673,17 @@ function SessionTracePane({
 
 	const handleComposerSend = async (text: string) => {
 		if (!selectedPiboSessionId) return;
-		const webAnnotationIds = selectedWebAnnotations.map((annotation) => annotation.id);
-		const fileAttachmentPaths = selectedUploadAttachments.map((attachment) => attachment.path);
-		const now = new Date().toISOString();
-		const clientTxnId = createClientTxnId();
-		const eventId = clientTxnId;
-		const optimisticEvent: ChatWebStoredEvent = {
-			id: eventId,
+		const sendPlan = createComposerSendPlan({
 			piboSessionId: selectedPiboSessionId,
+			text,
+			selectedWebAnnotations,
+			selectedUploadAttachments,
 			eventSequence: liveEventSeqRef.current++,
-			eventId,
-			type: "message_queued",
-			createdAt: now,
-			payload: {
-				type: "message_queued",
-				piboSessionId: selectedPiboSessionId,
-				eventId,
-				clientTxnId,
-				queuedMessages: 1,
-				text,
-				...(fileAttachmentPaths.length ? { fileAttachmentPaths } : {}),
-				source: "user",
-			},
-		};
-		setLiveTraceOverlay((current) => ({
-			piboSessionId: selectedPiboSessionId,
-			events: [...(current?.piboSessionId === selectedPiboSessionId ? current.events : []), optimisticEvent],
-		}));
-		await onSend(text, webAnnotationIds, fileAttachmentPaths, clientTxnId);
+			now: new Date().toISOString(),
+			clientTxnId: createClientTxnId(),
+		});
+		setLiveTraceOverlay((current) => appendComposerOptimisticEvent(current, selectedPiboSessionId, sendPlan.optimisticEvent));
+		await onSend(sendPlan.text, sendPlan.webAnnotationIds, sendPlan.fileAttachmentPaths, sendPlan.clientTxnId);
 		clearSelectedWebAnnotationAttachments();
 		clearSelectedUploadAttachments();
 		await Promise.all([tracePageQuery.refetch(), webAnnotationsQuery.refetch()]);
