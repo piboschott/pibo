@@ -132,6 +132,16 @@ import {
 	type WorkflowUiDiagnostic,
 } from "./projects/ProjectWorkflowPanels";
 import {
+	createMissingWorkflowVersionDiagnostics,
+	createProjectsTraceBootstrap,
+	findSelectedProjectSession,
+	findSelectedWorkflowVersionOption,
+	listWorkflowProjectSessions,
+	splitProjectsByArchive,
+	workflowStartAcceptedMessage,
+	workflowStartBlockedMessage,
+} from "./projects/ProjectsAreaModel";
+import {
 	PROJECT_SESSION_VIEW_ALLOWED_IDS,
 	WorkflowHeaderMeta,
 	createWorkflowHeaderSummary,
@@ -2051,7 +2061,7 @@ function ProjectsArea({
 			.then((picker) => {
 				if (cancelled) return;
 				setWorkflowVersionOptions(picker.options);
-				const selected = picker.options.find((option) => option.id === picker.selectedWorkflowId && option.version === picker.selectedWorkflowVersion) ?? picker.options[0];
+				const selected = findSelectedWorkflowVersionOption(picker.options, picker.selectedWorkflowId, picker.selectedWorkflowVersion);
 				setSelectedWorkflowVersionKey((current) => current || (selected ? workflowVersionOptionKey(selected) : ""));
 				setWorkflowPickerState("loaded");
 			})
@@ -2074,23 +2084,14 @@ function ProjectsArea({
 	const selectedSessionNode = selectedPiboSessionId && data ? findSessionNode(data.sessions, selectedPiboSessionId) : undefined;
 	const selectedSessionProfile = selectedSessionNode?.profile ?? defaultProfileFromBootstrap(baseBootstrap);
 	const projectSessions = data?.projectSessions ?? [];
-	const selectedProjectSession = selectedPiboSessionId ? projectSessions.find((projectSession) => projectSession.piboSessionId === selectedPiboSessionId) : undefined;
-	const workflowProjectSessions = projectSessions.filter(isWorkflowBackedProjectSession);
-	const activeProjects = data?.projects.filter((project) => !project.archivedAt) ?? [];
-	const archivedProjects = data?.projects.filter((project) => project.archivedAt) ?? [];
+	const selectedProjectSession = findSelectedProjectSession(projectSessions, selectedPiboSessionId);
+	const workflowProjectSessions = listWorkflowProjectSessions(projectSessions);
+	const projectGroups = splitProjectsByArchive(data?.projects);
+	const activeProjects = projectGroups.active;
+	const archivedProjects = projectGroups.archived;
 	const sessionGroups = useMemo(() => data ? splitSessionNodesByArchive(data.sessions, showArchivedSessions) : { active: [], archived: [] }, [data, showArchivedSessions]);
 	const selectedSessionPathIds = useMemo(() => selectedPiboSessionId && data ? new Set(findSessionPath(data.sessions, selectedPiboSessionId).map((node) => node.piboSessionId)) : EMPTY_SESSION_PATH_IDS, [data, selectedPiboSessionId]);
-	const traceBootstrap = useMemo(() => ({
-		...baseBootstrap,
-		...(data?.session ? { session: data.session } : {}),
-		agents: data?.agents ?? baseBootstrap.agents,
-		customAgents: data?.customAgents ?? baseBootstrap.customAgents,
-		modelDefaults: data?.modelDefaults ?? baseBootstrap.modelDefaults,
-		modelCatalog: data?.modelCatalog ?? baseBootstrap.modelCatalog,
-		agentCatalog: data?.agentCatalog ?? baseBootstrap.agentCatalog,
-		capabilities: data?.capabilities ?? baseBootstrap.capabilities,
-		sessions: data?.sessions ?? [],
-	}) as BootstrapData, [baseBootstrap, data]);
+	const traceBootstrap = useMemo(() => createProjectsTraceBootstrap(baseBootstrap, data), [baseBootstrap, data]);
 	const projectSessionViewRouting = useMemo(() => resolveProjectSessionViewRouting({
 		selectedSessionNode,
 		selectedProjectSession,
@@ -2133,12 +2134,9 @@ function ProjectsArea({
 		if (!selectedProject) return;
 		const selectedWorkflow = workflowVersionOptions.find((option) => workflowVersionOptionKey(option) === selectedWorkflowVersionKey);
 		if (!selectedWorkflow) {
-			setWorkflowCreateDiagnostics([{
-				code: "ProjectWorkflowSessionCreate.missingWorkflowVersion",
-				message: "Select a workflow version before creating the Project session.",
-				severity: "error",
-			}]);
-			onError("Select a workflow version before creating the Project session.");
+			const diagnostics = createMissingWorkflowVersionDiagnostics();
+			setWorkflowCreateDiagnostics(diagnostics);
+			onError(diagnostics[0]?.message ?? "Select a workflow version before creating the Project session.");
 			return;
 		}
 		setCreatingWorkflowSession(true);
@@ -2168,19 +2166,16 @@ function ProjectsArea({
 		setStartingWorkflowSessionId(projectSession.piboSessionId);
 		try {
 			const response = await postProjectWorkflowSessionStart(selectedProject.id, projectSession.piboSessionId);
-			const message = response.projectSession.workflowRunId
-				? "Workflow run started."
-				: "Start accepted after validation. No workflow run record exists yet.";
+			const message = workflowStartAcceptedMessage(response.projectSession.workflowRunId);
 			setWorkflowStartMessages((current) => ({ ...current, [projectSession.piboSessionId]: message }));
 			onError(null);
 			await load({ projectId: selectedProject.id, piboSessionId: projectSession.piboSessionId });
 		} catch (caught) {
 			const diagnostics = workflowDiagnosticsFromError(caught);
 			if (diagnostics.length) {
-				const codes = diagnostics.map((diagnostic) => diagnostic.code).filter(Boolean).slice(0, 3).join(", ");
 				setWorkflowStartMessages((current) => ({
 					...current,
-					[projectSession.piboSessionId]: `Start blocked: ${codes || "validation diagnostics"}`,
+					[projectSession.piboSessionId]: workflowStartBlockedMessage(diagnostics),
 				}));
 			}
 			onError(errorMessage(caught));
