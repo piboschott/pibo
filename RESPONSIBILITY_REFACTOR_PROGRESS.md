@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted telemetry retention stats and prune planning/deletion helpers into `src/data/telemetry-retention.ts` while preserving the public `src/data/telemetry.ts` export surface.
-- Result: `src/data/telemetry.ts` dropped from 1,193 to 1,129 LOC; retention classes, stats row/result types, prune inputs/results, stats aggregation, dry-run planning, and delete execution now live in a focused telemetry retention module.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build && node --test test/telemetry-store.test.mjs test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs && npm run typecheck'` passed (30 telemetry tests plus root/chat-ui/context-files typecheck). No browser/manual check was needed because this was a pure telemetry persistence helper extraction without user-facing route changes.
-- Commit: `f2e43dfe2df7a886d800817d112b9d6913533678` (`refactor(telemetry): extract retention helpers`).
+- Last batch: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts` while preserving the public `src/data/telemetry.ts` export surface.
+- Result: `src/data/telemetry.ts` dropped from 1,129 to 933 LOC; list limits, session summaries/details, turn timelines, provider-event paging, stale-work shaping, and debug next-command hints now live in a focused read-model/query module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/telemetry-store.test.mjs test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs'`, and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure telemetry persistence/query helper extraction without user-facing route changes.
+- Commit: pending implementation commit (`refactor(telemetry): extract query helpers`).
 - Blockers: none.
-- Exact next step: Continue reducing `src/data/telemetry.ts` by extracting telemetry read/query helpers such as list-limit paging and correlated session/timeline composition, or pivot to `src/shared/trace-engine.ts` if telemetry review prefers a pause.
+- Exact next step: Telemetry entry point is now under the 1,000 LOC target; pivot to another high-value large target such as `src/shared/trace-engine.ts` or start with an analysis/test-safety batch for `src/apps/chat-ui/src/api.ts` rather than continuing low-value telemetry splitting.
 
 ## Progress log
 
@@ -108,3 +108,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted telemetry SQLite row types and row-to-domain mappers into `src/data/telemetry-rows.ts`; focused runtime/validation telemetry tests and root typecheck passed in Docker.
 - 2026-05-27: Extracted telemetry bounded-preview and safe-field helpers into `src/data/telemetry-preview.ts`; focused telemetry store/runtime/validation tests and root typecheck passed in Docker.
 - 2026-05-27: Extracted telemetry retention stats and prune planning/deletion helpers into `src/data/telemetry-retention.ts`; focused telemetry store/runtime/validation tests and root typecheck passed in Docker.
+- 2026-05-27: Extracted telemetry read/query helpers into `src/data/telemetry-queries.ts`; build, focused telemetry store/runtime/validation tests, and root typecheck passed in Docker.
