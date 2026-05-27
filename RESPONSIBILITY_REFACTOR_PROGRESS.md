@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted public workflow store contracts and list filter types into `packages/workflows/src/store/contracts.ts`.
-- Result: `packages/workflows/src/store/index.ts` is down from 1,173 to 1,052 LOC. The store entry point still re-exports the same public contract names, while the SQLite store implementation imports them as local types.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package store/persistence coverage across SQLite restarts because this batch is a type-only boundary extraction.
-- Commit: `925a6de90c9c62a6738ac871000f865182e18e05` (`refactor(workflows): extract store contracts`).
+- Last batch: Extracted workflow store write-side SQLite parameter serialization into `packages/workflows/src/store/write-values.ts`.
+- Result: `packages/workflows/src/store/index.ts` is down from 1,052 to 885 LOC. The store class keeps SQL/read/write orchestration, while JSON serialization, null coercion, output-present flags, checkpoint pending payload shaping, and canonical published-version definition JSON for writes live in one store-local helper module.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package store/persistence coverage across SQLite restarts because this batch preserves the store public API and database behavior.
+- Commit: pending.
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/store/index.ts` by inspecting write-side JSON serialization/upsert helpers for a behavior-preserving extraction, or pivot to another high-value target if the remaining SQLite class is too coupled for a small safe batch.
+- Exact next step: Continue `packages/workflows/src/store/index.ts` by inspecting whether the remaining catalog/draft write conflict and identity-update logic has a safe named helper boundary, or pivot to the next large target because the store entry point is now under 1,000 LOC.
 
 ## Progress log
 
@@ -103,3 +103,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-27: Extracted workflow store catalog record constants/guards and published-version record helpers into `packages/workflows/src/store/catalog-records.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store list-query construction and limit clamping into `packages/workflows/src/store/list-query.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store public contracts/list filters into `packages/workflows/src/store/contracts.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
+- 2026-05-27: Extracted workflow store write-side SQLite value serialization into `packages/workflows/src/store/write-values.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.

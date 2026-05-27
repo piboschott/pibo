@@ -2,7 +2,6 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { canonicalWorkflowDefinitionJson } from "../definition-hash.js";
 import type {
   EdgeTransfer,
   EdgeTransferId,
@@ -96,6 +95,22 @@ import {
   type WorkflowWakeupRow,
 } from "./row-mappers.js";
 import { installWorkflowSqliteSchema } from "./schema.js";
+import {
+  workflowArchiveStateWriteValues,
+  workflowCheckpointWriteValues,
+  workflowDefinitionSnapshotWriteValues,
+  workflowDeleteTombstoneWriteValues,
+  workflowDraftWriteValues,
+  workflowEdgeTransferWriteValues,
+  workflowEventWriteValues,
+  workflowHumanActionWriteValues,
+  workflowIdentityWriteValues,
+  workflowNodeAttemptWriteValues,
+  workflowPublishedVersionWriteValues,
+  workflowRunWriteValues,
+  workflowWaitTokenWriteValues,
+  workflowWakeupWriteValues,
+} from "./write-values.js";
 
 export {
   assertPublishedWorkflowVersionRecord,
@@ -194,14 +209,7 @@ export class SqliteWorkflowRunStore implements
         definition_hash = excluded.definition_hash,
         compiled_definition_json = excluded.compiled_definition_json,
         created_at = excluded.created_at
-    `).run(
-      snapshot.id,
-      snapshot.workflowId,
-      snapshot.workflowVersion,
-      snapshot.hash,
-      serialize(snapshot.definition),
-      snapshot.createdAt,
-    );
+    `).run(...workflowDefinitionSnapshotWriteValues(snapshot));
   }
 
   getDefinitionSnapshot(id: WorkflowDefinitionSnapshotId): WorkflowDefinitionSnapshot | undefined {
@@ -251,19 +259,7 @@ export class SqliteWorkflowRunStore implements
         created_at = excluded.created_at,
         updated_by = excluded.updated_by,
         updated_at = excluded.updated_at
-    `).run(
-      record.workflowId,
-      record.source,
-      record.title,
-      record.description ?? null,
-      serialize(record.tags),
-      record.currentDraftId ?? null,
-      record.latestVersion ?? null,
-      record.createdBy ?? null,
-      record.createdAt,
-      record.updatedBy ?? null,
-      record.updatedAt,
-    );
+    `).run(...workflowIdentityWriteValues(record));
   }
 
   getWorkflowIdentity(workflowId: string): WorkflowIdentityRecord | undefined {
@@ -329,24 +325,7 @@ export class SqliteWorkflowRunStore implements
         created_at = excluded.created_at,
         updated_by = excluded.updated_by,
         updated_at = excluded.updated_at
-    `).run(
-      record.draftId,
-      record.workflowId,
-      record.source,
-      record.status,
-      record.baseWorkflowId ?? null,
-      record.baseWorkflowVersion ?? null,
-      record.baseDefinitionHash ?? null,
-      record.versionIntent,
-      serialize(record.definition),
-      serialize(record.diagnostics),
-      record.validationState,
-      record.revision,
-      record.createdBy ?? null,
-      record.createdAt,
-      record.updatedBy ?? null,
-      record.updatedAt,
-    );
+    `).run(...workflowDraftWriteValues(record));
 
     this.db.prepare(`
       UPDATE workflow_identities
@@ -393,15 +372,7 @@ export class SqliteWorkflowRunStore implements
         archived_by = excluded.archived_by,
         archive_reason = excluded.archive_reason,
         updated_at = excluded.updated_at
-    `).run(
-      record.workflowId,
-      record.source,
-      record.archived ? 1 : 0,
-      record.archivedAt ?? null,
-      record.archivedBy ?? null,
-      record.archiveReason ?? null,
-      record.updatedAt,
-    );
+    `).run(...workflowArchiveStateWriteValues(record));
   }
 
   getWorkflowArchiveState(workflowId: string): WorkflowArchiveStateRecord | undefined {
@@ -448,17 +419,7 @@ export class SqliteWorkflowRunStore implements
         last_known_version = excluded.last_known_version,
         last_definition_hash = excluded.last_definition_hash,
         created_at = excluded.created_at
-    `).run(
-      record.workflowId,
-      record.source,
-      1,
-      record.deletedAt ?? null,
-      record.deletedBy ?? null,
-      record.lastKnownTitle,
-      record.lastKnownVersion ?? null,
-      record.lastDefinitionHash ?? null,
-      record.createdAt,
-    );
+    `).run(...workflowDeleteTombstoneWriteValues(record));
   }
 
   getWorkflowDeleteTombstone(workflowId: string): WorkflowDeleteTombstoneRecord | undefined {
@@ -497,18 +458,7 @@ export class SqliteWorkflowRunStore implements
         published_at,
         created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      normalized.workflowId,
-      normalized.version,
-      normalized.source,
-      normalized.status,
-      normalized.definitionHash,
-      canonicalWorkflowDefinitionJson(normalized.definition),
-      normalized.publishedFromDraftId ?? null,
-      normalized.publishedBy ?? null,
-      normalized.publishedAt,
-      normalized.createdAt,
-    );
+    `).run(...workflowPublishedVersionWriteValues(normalized));
   }
 
   getPublishedWorkflowVersion(workflowId: string, version: string): WorkflowPublishedVersionRecord | undefined {
@@ -583,34 +533,7 @@ export class SqliteWorkflowRunStore implements
         completed_at = excluded.completed_at,
         failed_at = excluded.failed_at,
         cancelled_at = excluded.cancelled_at
-    `).run(
-      run.id,
-      run.workflowId,
-      run.workflowVersion,
-      run.workflowDefinitionHash ?? null,
-      run.definitionSnapshotId ?? null,
-      run.ownerScope,
-      run.parentRunId ?? null,
-      run.parentNodeAttemptId ?? null,
-      run.piboSessionId ?? null,
-      run.projectId ?? null,
-      serializeOptional(run.environment),
-      run.status,
-      run.current.nodeId ?? null,
-      run.current.edgeId ?? null,
-      run.current.status ?? null,
-      serialize(run.current),
-      serialize(run.input),
-      run.output === undefined ? null : serialize(run.output),
-      run.output === undefined ? 0 : 1,
-      serialize(run.state),
-      serializeOptional(run.checkpoint),
-      run.createdAt,
-      run.updatedAt,
-      run.completedAt ?? null,
-      run.failedAt ?? null,
-      run.cancelledAt ?? null,
-    );
+    `).run(...workflowRunWriteValues(run));
   }
 
   getRun(id: WorkflowRunId): WorkflowRun | undefined {
@@ -650,16 +573,7 @@ export class SqliteWorkflowRunStore implements
         attempt_id = excluded.attempt_id,
         payload_json = excluded.payload_json,
         created_at = excluded.created_at
-    `).run(
-      event.id,
-      event.workflowRunId,
-      event.type,
-      event.nodeId ?? null,
-      event.edgeId ?? null,
-      event.attemptId ?? null,
-      serializeOptional(event.payload),
-      event.createdAt,
-    );
+    `).run(...workflowEventWriteValues(event));
   }
 
   getEvent(id: WorkflowEventId): WorkflowEventRecord | undefined {
@@ -723,27 +637,7 @@ export class SqliteWorkflowRunStore implements
         completed_at = excluded.completed_at,
         failed_at = excluded.failed_at,
         available_at = excluded.available_at
-    `).run(
-      nodeAttempt.id,
-      nodeAttempt.workflowRunId,
-      nodeAttempt.nodeId,
-      nodeAttempt.attempt,
-      nodeAttempt.kind,
-      nodeAttempt.status,
-      serializeOptional(nodeAttempt.environment),
-      serialize(nodeAttempt.input),
-      nodeAttempt.output === undefined ? null : serialize(nodeAttempt.output),
-      nodeAttempt.output === undefined ? 0 : 1,
-      serializeOptional(nodeAttempt.localState),
-      serializeOptional(nodeAttempt.metadata),
-      serializeOptional(nodeAttempt.error),
-      serializeOptional(nodeAttempt.lease),
-      nodeAttempt.startedAt ?? null,
-      nodeAttempt.heartbeatAt ?? null,
-      nodeAttempt.completedAt ?? null,
-      nodeAttempt.failedAt ?? null,
-      nodeAttempt.availableAt ?? null,
-    );
+    `).run(...workflowNodeAttemptWriteValues(nodeAttempt));
   }
 
   getNodeAttempt(id: NodeAttemptId): NodeAttempt | undefined {
@@ -788,17 +682,7 @@ export class SqliteWorkflowRunStore implements
         adapter_attempt_id = excluded.adapter_attempt_id,
         status = excluded.status,
         created_at = excluded.created_at
-    `).run(
-      transfer.id,
-      transfer.workflowRunId,
-      transfer.edgeId,
-      transfer.sourceNodeAttemptId,
-      transfer.targetNodeId,
-      serialize(transfer.payload),
-      transfer.adapterAttemptId ?? null,
-      transfer.status,
-      transfer.createdAt,
-    );
+    `).run(...workflowEdgeTransferWriteValues(transfer));
   }
 
   getEdgeTransfer(id: EdgeTransferId): EdgeTransfer | undefined {
@@ -839,19 +723,7 @@ export class SqliteWorkflowRunStore implements
         state_json = excluded.state_json,
         pending_json = excluded.pending_json,
         created_at = excluded.created_at
-    `).run(
-      checkpoint.id,
-      checkpoint.workflowRunId,
-      checkpoint.namespace,
-      serialize(checkpoint.cursor),
-      serialize(checkpoint.globalState),
-      serialize({
-        pendingNodeIds: checkpoint.pendingNodeIds,
-        completedNodeIds: checkpoint.completedNodeIds,
-        edgePayloadRefs: checkpoint.edgePayloadRefs,
-      }),
-      checkpoint.createdAt,
-    );
+    `).run(...workflowCheckpointWriteValues(checkpoint));
   }
 
   getCheckpoint(id: WorkflowCheckpointId): WorkflowCheckpoint | undefined {
@@ -892,16 +764,7 @@ export class SqliteWorkflowRunStore implements
         correlation_id = excluded.correlation_id,
         payload_json = excluded.payload_json,
         created_at = excluded.created_at
-    `).run(
-      wakeup.id,
-      wakeup.workflowRunId,
-      wakeup.nodeAttemptId ?? null,
-      wakeup.kind,
-      wakeup.availableAt,
-      wakeup.correlationId ?? null,
-      serializeOptional(wakeup.payload),
-      wakeup.createdAt,
-    );
+    `).run(...workflowWakeupWriteValues(wakeup));
   }
 
   getWakeup(id: WorkflowWakeupId): WorkflowWakeup | undefined {
@@ -953,22 +816,7 @@ export class SqliteWorkflowRunStore implements
         resume_payload_present = excluded.resume_payload_present,
         expires_at = excluded.expires_at,
         resolved_at = excluded.resolved_at
-    `).run(
-      token.id,
-      token.workflowRunId,
-      token.nodeAttemptId ?? null,
-      token.humanNodeId ?? null,
-      token.kind ?? null,
-      serialize(token.actions),
-      token.prompt,
-      serializeOptional(token.schema),
-      token.status,
-      token.resumePayload === undefined ? null : serialize(token.resumePayload),
-      token.resumePayload === undefined ? 0 : 1,
-      token.expiresAt ?? null,
-      token.createdAt,
-      token.resumedAt ?? null,
-    );
+    `).run(...workflowWaitTokenWriteValues(token));
   }
 
   getWaitToken(id: WorkflowWaitTokenId): WorkflowWaitToken | undefined {
@@ -1008,15 +856,7 @@ export class SqliteWorkflowRunStore implements
         actor_json = excluded.actor_json,
         payload_json = excluded.payload_json,
         created_at = excluded.created_at
-    `).run(
-      action.id,
-      action.workflowRunId,
-      action.waitTokenId,
-      action.kind,
-      serializeOptional(action.actor),
-      serializeOptional(action.payload),
-      action.createdAt,
-    );
+    `).run(...workflowHumanActionWriteValues(action));
   }
 
   getHumanAction(id: WorkflowHumanActionId): WorkflowHumanActionRecord | undefined {
@@ -1041,12 +881,4 @@ export class SqliteWorkflowRunStore implements
   close(): void {
     this.db.close();
   }
-}
-
-function serialize(value: unknown): string {
-  return JSON.stringify(value);
-}
-
-function serializeOptional(value: unknown | undefined): string | null {
-  return value === undefined ? null : serialize(value);
 }
