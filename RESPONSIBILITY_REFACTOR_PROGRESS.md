@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `App.tsx` now imports `AgentsView` instead of carrying the route implementation and fell from 8,069 LOC to 7,230 LOC. The new `agents/AgentsView.tsx` is 860 LOC and uses existing model helpers from `agent-designer-model.ts` and shared chrome from `designer-ui.tsx`.
 - Evidence: source sanity check confirmed `src/apps/chat-ui/src/App.tsx` imports `./agents/AgentsView`, `src/apps/chat-ui/src/agents/AgentsView.tsx` exports `AgentsView`, and `wc -l src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/agents/AgentsView.tsx` reports 7,230 / 860 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run chat-ui:typecheck'` passed; `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Worker route smoke `curl --max-time 5 http://127.0.0.1:4802/apps/chat` returned HTTP 000 / connection refused, so no browser validation was possible without restarting worker services.
-- Commit: `356a446` (`refactor(chat-ui): extract agent designer route`).
+- Commit: `a42cb7b` (`refactor(chat-ui): extract agent designer route`).
 - Blockers: worker Chat Web server on port 4802 is still not serving the route during smoke validation; no restart performed per operating rules.
 - Exact next step: Either extract the remaining Agent Designer section editors from `agents/AgentsView.tsx` into focused `agents/*Designer.tsx` modules if it starts growing again, or pivot to the next App seam: move `SettingsView` and settings subpanels into `src/apps/chat-ui/src/settings/SettingsView.tsx` because that route is already mostly prop-isolated and still lives in `App.tsx`.
 
