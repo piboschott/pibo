@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted the cohesive Chat UI Workflow API client seam from `src/apps/chat-ui/src/api.ts` into `src/apps/chat-ui/src/api-workflows.ts`.
 - Result: `WorkflowsArea.tsx` and the project workflow creation/start call sites in `App.tsx` now import workflow client functions and types directly from the focused module, while `api.ts` re-exports the module for compatibility. `api.ts` dropped from 1,415 LOC to 868 LOC.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && test -f src/apps/chat-ui/src/api-workflows.ts && grep -R "api-workflows" src/apps/chat-ui/src/App.tsx src/apps/chat-ui/src/WorkflowsArea.tsx && ! grep -E "getWorkflowVersionPicker|postProjectWorkflowSession|postProjectWorkflowSessionStart" src/apps/chat-ui/src/api.ts && npm run build && npm run typecheck'` passed (source sanity check, root build, root typecheck). No browser/manual check was needed because this was a pure client module extraction with preserved request paths and exported names.
-- Commit: `63bd1ac` (`refactor(chat-ui): extract workflow api client`).
+- Commit: `4e7f555` (`refactor(chat-ui): extract workflow api client`).
 - Blockers: none.
 - Exact next step: Continue the Chat UI API boundary by extracting another cohesive request family from `src/apps/chat-ui/src/api.ts`, likely prompt/settings, agent-designer capability management, or room/session messaging APIs, with direct imports at owning UI call sites and compatibility re-exports from `api.ts`.
 
