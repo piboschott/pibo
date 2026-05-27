@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `src/shared/trace-engine.ts` dropped from 1,541 LOC to 1,418 LOC; async run snapshot parsing, `agent.async` child creation, status reconciliation, and `isRunStartToolNode` compatibility export now live in a 145 LOC focused helper module.
 - Evidence: The extraction is behavior-preserving: transcript and event-log paths still call the same async run attachment/reconciliation semantics, while `trace-engine.ts` re-exports `isRunStartToolNode` for existing callers.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs` passed; Docker focused `node --test test/trace-patch-identity.test.mjs` passed; Docker focused `node --test test/terminal-parity-fixtures.test.mjs` passed; Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: pending.
+- Commit: `79abb5b` (`refactor(trace): extract async agent run helpers`).
 - Blockers: none.
 - Exact next step: Continue `src/shared/trace-engine.ts` only after another short seam review; likely next candidates are transcript-entry projection or event-to-node projection, but both should be test-backed because remaining trace responsibilities are intertwined.
 
