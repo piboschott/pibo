@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted telemetry bounded-preview and safe-field helpers into `src/data/telemetry-preview.ts` while preserving the public `src/data/telemetry.ts` export surface.
 - Result: `src/data/telemetry.ts` dropped from 1,278 to 1,193 LOC; preview volume-control, safe JSON object filtering, safe top-level key extraction, and preview capture-mode types now live in a focused telemetry data-safety module.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build && node --test test/telemetry-store.test.mjs test/runtime-telemetry.test.mjs test/telemetry-validation-fixtures.test.mjs'` passed (30 tests); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure telemetry helper extraction without user-facing route changes.
-- Commit: pending.
+- Commit: `592e0f5f990c08b653275d21e0b765df5f380af8` (`refactor(telemetry): extract preview helpers`).
 - Blockers: none.
 - Exact next step: Continue reducing `src/data/telemetry.ts` by extracting prune/list-query helpers, or pivot to `src/shared/trace-engine.ts` if telemetry review prefers a pause.
 
