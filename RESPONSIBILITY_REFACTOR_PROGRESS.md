@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted trace node tree/sorting utilities into `src/shared/trace-nodes.ts` while preserving the public `src/shared/trace-engine.ts` export surface.
 - Result: `src/shared/trace-engine.ts` dropped from 1,797 to 1,736 LOC; generic trace node ordering, flattening, nesting, and id mapping now live in a focused shared helper module that can be reused without importing the full event/transcript projection engine.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run build'`, `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && node --test test/chat-trace-materialization.test.mjs test/chat-ui-integration.test.mjs test/trace-live-reducer.test.mjs test/trace-patch-identity.test.mjs test/debug-cli.test.mjs'` (90 tests), and `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. No browser/manual check was needed because this was a pure shared trace helper extraction with preserved public APIs.
-- Commit: pending.
+- Commit: `9743e8f0731f075c3cc85733a7aea7eb27d84fa4` (`refactor(trace): extract node tree helpers`).
 - Blockers: none.
 - Exact next step: Continue `src/shared/trace-engine.ts` with a similarly small extraction around live patching/structural sharing helpers, or pivot to a test-safety/analysis batch for `src/apps/chat-ui/src/api.ts` if trace-engine coupling looks risky.
 
