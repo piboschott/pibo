@@ -67,7 +67,7 @@ Initial high-priority candidates from line-count scan:
 - Last batch: Extracted repeated workflow store list-query construction into `packages/workflows/src/store/list-query.ts`.
 - Result: `packages/workflows/src/store/index.ts` is down from 1,316 to 1,173 LOC. Store list methods now delegate `WHERE` assembly, bind ordering, and limit clamping to a focused store-local helper while keeping SQL text and row hydration at call sites.
 - Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package list/persistence coverage across SQLite restarts.
-- Commit: pending (`refactor(workflows): extract store list query helper`).
+- Commit: `66befff1de0ba8375ae49380804a3a50b358fbc0` (`refactor(workflows): extract store list query helper`).
 - Blockers: none.
 - Exact next step: Continue `packages/workflows/src/store/index.ts` with a type-only extraction of public store interfaces and list filter types into a `store/contracts.ts` module re-exported from the entry point, or first inspect downstream imports if contract movement looks risky.
 
