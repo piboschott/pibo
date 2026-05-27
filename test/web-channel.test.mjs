@@ -42,6 +42,20 @@ async function withCwd(cwd, run) {
 	}
 }
 
+async function withHome(home, run) {
+	const previous = process.env.HOME;
+	process.env.HOME = home;
+	try {
+		return await run();
+	} finally {
+		if (previous === undefined) {
+			delete process.env.HOME;
+		} else {
+			process.env.HOME = previous;
+		}
+	}
+}
+
 function assertStructuredMissingRefDiagnostic(diagnostics, expected) {
 	const diagnostic = diagnostics.find((candidate) => {
 		return candidate.code === expected.code &&
@@ -60,6 +74,8 @@ async function startWebHostChannel(options = {}) {
 	const emitted = [];
 	const listeners = new Set();
 	const sessions = new InMemoryPiboSessionStore();
+	const registeredSkills = [];
+	const unregisteredSkills = [];
 	let profiles = [...(options.profiles ?? [])];
 	const storageDir = mkdtempSync(join(tmpdir(), "pibo-web-channel-"));
 	const agentStorePath = join(storageDir, "agents.sqlite");
@@ -140,6 +156,14 @@ async function startWebHostChannel(options = {}) {
 		removeProfile(name) {
 			profiles = profiles.filter((item) => item.name !== name);
 		},
+		...(options.trackUserSkillRegistry ? {
+			registerSkill(skill) {
+				registeredSkills.push(skill);
+			},
+			unregisterSkill(name) {
+				unregisteredSkills.push(name);
+			},
+		} : {}),
 		getWebApps() {
 			return webApps;
 		},
@@ -157,6 +181,8 @@ async function startWebHostChannel(options = {}) {
 			profiles = [...nextProfiles];
 		},
 		sessions,
+		registeredSkills,
+		unregisteredSkills,
 		storageDir,
 		dataStorePath,
 		projectStorePath,
@@ -5655,6 +5681,126 @@ test("chat web app rejects non-pi.dev package sources from browser adds", async 
 	} finally {
 		await channel.stop?.();
 	}
+});
+
+test("chat web app manages user skill routes and syncs the capability catalog", async () => {
+	const home = mkdtempSync(join(tmpdir(), "pibo-web-user-skills-"));
+	await withHome(home, async () => {
+		const { channel, baseURL, registeredSkills, unregisteredSkills } = await startWebHostChannel({
+			auth: createFakeAuthService(),
+			profiles: [{ name: "codex-compat-openai-web", aliases: ["codex"] }],
+			trackUserSkillRegistry: true,
+		});
+
+		try {
+			const builtinConflict = await fetch(`${baseURL}/api/chat/user-skills`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({ name: "pi-agent-harness", markdown: "# Built-in" }),
+			});
+			assert.equal(builtinConflict.status, 409);
+			assert.match((await builtinConflict.json()).error, /conflicts with an existing registered skill/);
+
+			const created = await fetch(`${baseURL}/api/chat/user-skills`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({
+					name: "browser-skill",
+					description: "Use the browser safely.",
+					markdown: "# Browser Skill\n\nFollow browser steps.",
+				}),
+			});
+			assert.equal(created.status, 201);
+			const createdPayload = await created.json();
+			assert.equal(createdPayload.skill.name, "browser-skill");
+			assert.deepEqual(registeredSkills.map((skill) => skill.name), ["browser-skill"]);
+
+			const listed = await fetch(`${baseURL}/api/chat/user-skills`, {
+				headers: { "x-test-user": "user-1" },
+			});
+			assert.equal(listed.status, 200);
+			assert.deepEqual((await listed.json()).skills.map((skill) => skill.name), ["browser-skill"]);
+
+			const read = await fetch(`${baseURL}/api/chat/user-skills/${encodeURIComponent(createdPayload.skill.id)}`, {
+				headers: { "x-test-user": "user-1" },
+			});
+			assert.equal(read.status, 200);
+			const readPayload = await read.json();
+			assert.equal(readPayload.skill.name, "browser-skill");
+			assert.match(readPayload.markdown, /Follow browser steps/);
+
+			const updateConflict = await fetch(`${baseURL}/api/chat/user-skills/${encodeURIComponent(createdPayload.skill.id)}`, {
+				method: "PATCH",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({ name: "pi-agent-harness" }),
+			});
+			assert.equal(updateConflict.status, 409);
+			assert.match((await updateConflict.json()).error, /conflicts with an existing registered skill/);
+
+			const renamed = await fetch(`${baseURL}/api/chat/user-skills/${encodeURIComponent(createdPayload.skill.id)}`, {
+				method: "PATCH",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({
+					name: "renamed-browser-skill",
+					description: "Renamed skill.",
+					markdown: "# Renamed Browser Skill",
+				}),
+			});
+			assert.equal(renamed.status, 200);
+			assert.equal((await renamed.json()).skill.name, "renamed-browser-skill");
+			assert.deepEqual(unregisteredSkills, ["browser-skill"]);
+			assert.deepEqual(registeredSkills.map((skill) => skill.name), ["browser-skill", "renamed-browser-skill"]);
+
+			const disabled = await fetch(`${baseURL}/api/chat/user-skills/${encodeURIComponent(createdPayload.skill.id)}`, {
+				method: "PATCH",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: JSON.stringify({ enabled: false }),
+			});
+			assert.equal(disabled.status, 200);
+			assert.equal((await disabled.json()).skill.enabled, false);
+			assert.deepEqual(unregisteredSkills, ["browser-skill", "renamed-browser-skill"]);
+
+			const deleted = await fetch(`${baseURL}/api/chat/user-skills/${encodeURIComponent(createdPayload.skill.id)}`, {
+				method: "DELETE",
+				headers: {
+					"content-type": "application/json",
+					origin: baseURL,
+					"x-test-user": "user-1",
+				},
+				body: "{}",
+			});
+			assert.equal(deleted.status, 200);
+			assert.deepEqual(await deleted.json(), { removedSkillId: createdPayload.skill.id });
+
+			const afterDelete = await fetch(`${baseURL}/api/chat/user-skills`, {
+				headers: { "x-test-user": "user-1" },
+			});
+			assert.equal(afterDelete.status, 200);
+			assert.deepEqual((await afterDelete.json()).skills, []);
+		} finally {
+			await channel.stop?.();
+		}
+	});
 });
 
 test("chat web app exposes and updates MCP server descriptions", async () => {
