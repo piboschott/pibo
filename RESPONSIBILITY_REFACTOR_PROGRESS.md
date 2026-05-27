@@ -64,12 +64,12 @@ Initial high-priority candidates from line-count scan:
 
 ## Current state
 
-- Last batch: Extracted workflow store SQLite schema metadata, schema SQL, PRAGMA setup, and additive column migrations into `packages/workflows/src/store/schema.ts`.
-- Result: `packages/workflows/src/store/index.ts` is down from 1,707 to 1,380 LOC and now keeps store interfaces, catalog record invariants, the `SqliteWorkflowRunStore` API, write-side serialization, and query/list methods; schema ownership has a named module boundary and public schema constants remain re-exported from the store entry point.
-- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package persistence/schema/inspection coverage across SQLite restarts.
-- Commit: `7ca89e9e69b34d8c7b0c3a70108310b4145523d2` (`refactor(workflows): extract store schema setup`).
+- Last batch: Extracted workflow UI/catalog record invariants and published-version record factory/assertions into `packages/workflows/src/store/catalog-records.ts`.
+- Result: `packages/workflows/src/store/index.ts` is down from 1,380 to 1,316 LOC and now keeps store interfaces plus the `SqliteWorkflowRunStore` API/write/query methods; public record constants, guards, and published-version helpers remain re-exported from the store entry point.
+- Validation: `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace/packages/workflows && npm test -- src/testing/workflow-store-facts.test.ts src/testing/workflow-persistence-validation.test.ts src/testing/workflow-run-inspection.test.ts src/testing/workflow-sqlite-schema.test.ts src/testing/node-attempt-persistence.test.ts src/testing/workflow-catalog-entities.test.ts src/testing/workflow-published-versions.test.ts'` passed (138 passing because the package test script also includes `src/**/*.test.ts`); `docker exec pibo-dev-refactor-responsibility-ralph bash -lc 'cd /workspace && npm run typecheck'` passed. Closest practical store E2E is the workflow package catalog/published-version/persistence coverage across SQLite restarts.
+- Commit: pending (`refactor(workflows): extract store catalog records`).
 - Blockers: none.
-- Exact next step: Continue `packages/workflows/src/store/index.ts` by extracting the UI/catalog record source/status invariants and published-version record factory/assertions into a store-owned catalog record module, preserving public exports from the store entry point.
+- Exact next step: Continue `packages/workflows/src/store/index.ts` with a small test-backed extraction of repeated list-query construction helpers (where-clause assembly plus `listLimit`) or, if that proves too coupled, record a short analysis of the remaining store class seams before moving more code.
 
 ## Progress log
 
@@ -100,3 +100,4 @@ Initial high-priority candidates from line-count scan:
 - 2026-05-26: Extracted workflow agent node dispatch runtime/types into `packages/workflows/src/runtime/agent-node.ts`; focused agent/prompt/mixed/one-node/routing command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store row types/mappers into `packages/workflows/src/store/row-mappers.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
 - 2026-05-27: Extracted workflow store schema metadata and install/migration setup into `packages/workflows/src/store/schema.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
+- 2026-05-27: Extracted workflow store catalog record constants/guards and published-version record helpers into `packages/workflows/src/store/catalog-records.ts`; focused store/persistence/schema/inspection command (package script ran all 138 workflow tests) and root typecheck passed in Docker.
