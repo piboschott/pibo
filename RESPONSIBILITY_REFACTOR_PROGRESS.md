@@ -68,7 +68,7 @@ Initial high-priority candidates from line-count scan:
 - Result: `trace-engine.ts` is now a small trace-view build/patch orchestrator (~187 LOC), while `trace-event-projection.ts` owns event-to-node shaping, event dedupe/latest-stream helpers, content-delta patch ids, transcript echo filtering, and event node id/order/stable-key helpers.
 - Evidence: The public `trace-engine.ts` re-export surface is preserved for existing callers/tests, including trace node helpers and event id/dedupe helpers.
 - Validation: host `git diff --check` passed; Docker `npm run build` passed; Docker focused `node --test test/chat-trace-materialization.test.mjs test/trace-patch-identity.test.mjs test/terminal-parity-fixtures.test.mjs` passed (23 tests); Docker root `npm run typecheck` passed; Docker CLI smoke `node dist/bin/pibo.js debug trace --help` passed and showed trace rebuild/check help.
-- Commit: pending.
+- Commit: `3b9920c` (`refactor(trace): extract event projection helpers`).
 - Blockers: none.
 - Exact next step: Pivot away from trace-engine unless a specific trace bug appears; run an analysis batch on `src/apps/chat/web-app.ts` to rank safe server/API responsibility seams before extracting from that very large module.
 
