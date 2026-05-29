@@ -1,3 +1,4 @@
+import { compatiblePrincipalIds } from "../../../core/shared-app.js";
 import type { PiboDataStore } from "../../../data/pibo-store.js";
 
 export class ChatReadStateService {
@@ -20,10 +21,17 @@ export class ChatReadStateService {
 		for (let offset = 0; offset < input.piboSessionIds.length; offset += 400) {
 			const ids = [...new Set(input.piboSessionIds)].slice(offset, offset + 400);
 			const placeholders = ids.map(() => "?").join(", ");
+			const principals = compatiblePrincipalIds(input.principalId);
+			const principalPlaceholders = principals.map(() => "?").join(", ");
 			const rows = this.store.db.prepare(`
 				SELECT e.session_id, COUNT(*) AS count
 				FROM event_log e
-				LEFT JOIN principal_session_stats reads ON reads.session_id = e.session_id AND reads.principal_id = ?
+				LEFT JOIN (
+					SELECT session_id, MAX(last_read_stream_id) AS last_read_stream_id
+					FROM principal_session_stats
+					WHERE principal_id IN (${principalPlaceholders})
+					GROUP BY session_id
+				) reads ON reads.session_id = e.session_id
 				WHERE e.session_id IN (${placeholders})
 					AND e.stream_id > COALESCE(reads.last_read_stream_id, 0)
 					AND (e.actor_type IS NULL OR e.actor_type != 'user' OR e.actor_id IS NULL OR e.actor_id != ?)
@@ -32,7 +40,7 @@ export class ChatReadStateService {
 						OR e.type = 'session_error'
 					)
 				GROUP BY e.session_id
-			`).all(input.principalId, ...ids, input.principalId) as Array<{ session_id: string; count: number }>;
+			`).all(...principals, ...ids, input.principalId) as Array<{ session_id: string; count: number }>;
 			for (const row of rows) if (Number(row.count) > 0) counts.set(row.session_id, Number(row.count));
 		}
 		return counts;

@@ -40,7 +40,6 @@ export class SessionStore {
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				pi_session_id = excluded.pi_session_id,
-				owner_scope = excluded.owner_scope,
 				room_id = excluded.room_id,
 				root_session_id = excluded.root_session_id,
 				parent_id = excluded.parent_id,

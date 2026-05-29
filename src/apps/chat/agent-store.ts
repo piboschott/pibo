@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { piboHomePath } from "../../core/pibo-home.js";
+import { compatibleOwnerScopes } from "../../core/shared-app.js";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_BUILTIN_TOOL_NAMES, type BuiltinToolsMode, type ModelProfile } from "../../core/profiles.js";
 import { isPiboThinkingLevel, type PiboThinkingLevel } from "../../core/thinking.js";
@@ -158,7 +159,7 @@ export class CustomAgentStore {
 		this.migrateLegacyProfileNames();
 		const archivedClause = options.includeArchived ? "" : " AND archived_at IS NULL";
 		const rows = ownerScope
-			? this.db.prepare(`SELECT * FROM chat_agents WHERE owner_scope = ?${archivedClause} ORDER BY updated_at DESC`).all(ownerScope)
+			? this.db.prepare(`SELECT * FROM chat_agents WHERE owner_scope IN (${compatibleOwnerScopes(ownerScope).map(() => "?").join(", ")})${archivedClause} ORDER BY updated_at DESC`).all(...compatibleOwnerScopes(ownerScope))
 			: this.db.prepare(`SELECT * FROM chat_agents WHERE 1 = 1${archivedClause} ORDER BY updated_at DESC`).all();
 		return (rows as AgentRow[]).map(agentFromRow);
 	}

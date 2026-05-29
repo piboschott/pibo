@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { compatibleOwnerScopes } from "../core/shared-app.js";
 
 export type SessionNavigationUpsertInput = {
 	ownerScope: string;
@@ -72,7 +73,6 @@ export class NavigationStore {
 				updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(session_id) DO UPDATE SET
-				owner_scope = excluded.owner_scope,
 				room_id = excluded.room_id,
 				root_session_id = excluded.root_session_id,
 				parent_id = excluded.parent_id,
@@ -114,8 +114,9 @@ export class NavigationStore {
 	}
 
 	listSessions(input: SessionNavigationListInput): StoredSessionNavigation[] {
-		const clauses = ["owner_scope = ?"];
-		const values: Array<string | number> = [input.ownerScope];
+		const ownerScopes = compatibleOwnerScopes(input.ownerScope);
+		const clauses = [`owner_scope IN (${ownerScopes.map(() => "?").join(", ")})`];
+		const values: Array<string | number> = [...ownerScopes];
 		if (input.roomId !== undefined) {
 			clauses.push("room_id = ?");
 			values.push(input.roomId);

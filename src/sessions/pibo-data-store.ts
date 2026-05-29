@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { PiboJsonObject } from "../core/events.js";
+import { compatibleOwnerScopes } from "../core/shared-app.js";
 import { PiboDataStore } from "../data/pibo-store.js";
 import {
 	createPiboSession,
@@ -133,7 +134,11 @@ export class PiboDataSessionStore implements PiboSessionStore {
 		}
 		if (input.channel !== undefined) { clauses.push("channel = ?"); values.push(input.channel); }
 		if (input.kind !== undefined) { clauses.push("kind = ?"); values.push(input.kind); }
-		if (input.ownerScope !== undefined) { clauses.push("owner_scope = ?"); values.push(input.ownerScope); }
+		if (input.ownerScope !== undefined) {
+			const ownerScopes = compatibleOwnerScopes(input.ownerScope);
+			clauses.push(`owner_scope IN (${ownerScopes.map(() => "?").join(", ")})`);
+			values.push(...ownerScopes);
+		}
 		if (input.parentId !== undefined) {
 			if (input.parentId === null) clauses.push("parent_id IS NULL");
 			else { clauses.push("parent_id = ?"); values.push(input.parentId); }

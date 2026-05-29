@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { piboHomePath } from "../core/pibo-home.js";
+import { compatibleOwnerScopes } from "../core/shared-app.js";
 import { DatabaseSync } from "node:sqlite";
 import {
 	createPiboSession,
@@ -199,7 +200,11 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 		}
 		if (input.channel !== undefined) { clauses.push("channel = ?"); values.push(input.channel); }
 		if (input.kind !== undefined) { clauses.push("kind = ?"); values.push(input.kind); }
-		if (input.ownerScope !== undefined) { clauses.push("owner_scope = ?"); values.push(input.ownerScope); }
+		if (input.ownerScope !== undefined) {
+			const ownerScopes = compatibleOwnerScopes(input.ownerScope);
+			clauses.push(`owner_scope IN (${ownerScopes.map(() => "?").join(", ")})`);
+			values.push(...ownerScopes);
+		}
 		if (input.parentId !== undefined) {
 			if (input.parentId === null) clauses.push("parent_id IS NULL");
 			else { clauses.push("parent_id = ?"); values.push(input.parentId); }

@@ -49,6 +49,7 @@ import {
 	type PiboModelDefaults,
 } from "../../core/model-defaults.js";
 import { inspectPiboContextBuild } from "../../core/context-build.js";
+import { isCompatibleOwnerScope } from "../../core/shared-app.js";
 import { loadPiboUserSettings } from "../../core/user-settings.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
@@ -1324,7 +1325,7 @@ function requireAgentProfileNameAvailable(
 }
 
 function requireOwnedAgent(agent: CustomAgentDefinition | undefined, webSession: PiboWebSession): CustomAgentDefinition {
-	if (!agent || agent.ownerScope !== webSession.ownerScope) {
+	if (!agent || !isCompatibleOwnerScope(agent.ownerScope, webSession.ownerScope)) {
 		throw new PiboWebHttpError("Agent is not available for this user", 404);
 	}
 	return agent;

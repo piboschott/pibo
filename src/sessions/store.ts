@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PiboJsonObject } from "../core/events.js";
 import type { ModelProfile } from "../core/profiles.js";
+import { isCompatibleOwnerScope } from "../core/shared-app.js";
 
 export type PiboSession = {
 	id: string;
@@ -175,7 +176,7 @@ export function matchesFindInput(session: PiboSession, input: FindPiboSessionsIn
 	if (input.ids && !input.ids.includes(session.id)) return false;
 	if (input.channel !== undefined && session.channel !== input.channel) return false;
 	if (input.kind !== undefined && session.kind !== input.kind) return false;
-	if (input.ownerScope !== undefined && session.ownerScope !== input.ownerScope) return false;
+	if (input.ownerScope !== undefined && !isCompatibleOwnerScope(session.ownerScope, input.ownerScope)) return false;
 	if (input.parentId !== undefined) {
 		if (input.parentId === null) {
 			if (session.parentId !== undefined) return false;
