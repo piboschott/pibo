@@ -21,7 +21,7 @@
 - Worker Context UI port: `4834`
 - Chat room: `room_130a1897-996d-47e2-b805-b8e93f10a53d`
 - Room workspace: `/root/code/pibo/.worktrees/final-owner-scope-removal-ralph`
-- Ralph job: `TBD`
+- Ralph job: `ralph_66995290-8189-43a3-a735-27d23e0230e4` (created stopped; start only after final review/approval)
 - Max iterations safety net: `90` (`3 x 30` PRD stories)
 - Stop condition: promise-complete only after all PRD stories pass.
 - Verified host DB backup: `/root/.pibo/backups/final-owner-scope-removal-precutover-vacuum-20260531T194546Z`
@@ -63,3 +63,4 @@
 - 2026-05-31T20:11Z: Docker dev worker created: `pibo-dev-final-owner-scope-removal-ralph` with ports gateway `4830`, CDP `4831`, web `4832`, Chat UI `4833`, Context UI `4834`; worktree `/root/code/pibo/.worktrees/final-owner-scope-removal-ralph`; container workspace `/workspace`.
 - 2026-05-31T20:11Z: Created Chat room `room_130a1897-996d-47e2-b805-b8e93f10a53d` named `Ralph: Final Owner Scope Removal` with workspace metadata pointing to the worktree.
 - 2026-05-31T20:15Z: Created sandbox Pibo home at `.pibo/ralph-sandbox` from verified backup `/root/.pibo/backups/final-owner-scope-removal-precutover-vacuum-20260531T194546Z` and added untracked helper `.pibo/ralph-worker.sh` for Docker commands.
+- 2026-05-31T20:16Z: Created Ralph job `ralph_66995290-8189-43a3-a735-27d23e0230e4` stopped, target room `room_130a1897-996d-47e2-b805-b8e93f10a53d`, profile `pibo-agent`, template `prd-batch-stories`, max iterations `90`, prompt from `/tmp/final-owner-scope-ralph-prompt.txt`. Start command after review: `pibo ralph start ralph_66995290-8189-43a3-a735-27d23e0230e4`.
