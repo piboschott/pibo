@@ -1,0 +1,499 @@
+{
+  "project": "Final Owner Scope Removal",
+  "branchName": "ralph/final-owner-scope-removal",
+  "description": "Fully remove Owner Scope from Pibo's active product model, schemas, APIs, CLI/TUI, automation, workflows, tests, and current docs. Auth remains only an access gate; legacy data is handled through a safe final cutover migration without using shared:app as a replacement owner.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Establish final owner-scope removal baseline and progress tracking",
+      "description": "As a maintainer, I want an implementation baseline and progress record so that the Ralph loop can remove Owner Scope across the app without losing traceability.",
+      "acceptanceCriteria": [
+        "Create or update IMPLEMENTATION_PROGRESS.md with branch, worktree, Docker worker, PRD paths, current status, and story progress",
+        "Link the plan, PRD, inventory summary, and raw inventory files",
+        "Record baseline rg counts for ownerScope, owner_scope, OwnerScope, owner-scope, shared:app, principalId, principal_id, room_members, listOwned, getOwned, requireOwned, personal target, active owner, and --owner-scope",
+        "Record read-only SQLite schema/column inventory for reachable affected stores without mutating data",
+        "Run baseline npm run typecheck and npm run build, and record results",
+        "Do not change runtime behavior in this story",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add strict owner-scope search gates with temporary allowlist",
+      "description": "As a maintainer, I want automated gates for Owner Scope vocabulary so that new work cannot reintroduce product ownership artifacts.",
+      "acceptanceCriteria": [
+        "Add a test or script that fails on active product matches for ownerScope, owner_scope, OwnerScope, owner-scope, shared:app, principalId, principal_id, room_members, listOwned, getOwned, and requireOwned",
+        "Support a narrow temporary allowlist for the final migration module and historical docs only",
+        "Document how to run the gate and how to shrink the allowlist to zero after cutover",
+        "Add focused tests for the gate behavior",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Replace shared-app legacy owner helpers with neutral app context",
+      "description": "As an allowed Pibo user, I want the shared app context to be represented without a synthetic Owner Scope so that shared:app is not a product owner value.",
+      "acceptanceCriteria": [
+        "Remove LEGACY_SHARED_APP_OWNER_SCOPE and getSharedAppLegacyOwnerScope from active runtime code",
+        "Keep a neutral app context representation that has no legacyOwnerScope or ownerScope field",
+        "Update imports and callers to stop requesting a replacement owner value",
+        "Focused tests cover neutral app context creation and absence of legacy owner fields",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Make web auth an access gate without product owner fields",
+      "description": "As an allowed web user, I want login to grant app access without creating product ownership state so that two accounts enter the same app context.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from PiboWebSession and related web auth/session types",
+        "Keep unauthenticated 401 behavior where auth is required",
+        "Ensure authenticated handlers receive auth identity only for access/display/audit, not visibility or write location",
+        "Add tests proving two allowed auth identities resolve to the same app context and no owner field",
+        "Focused web auth tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Remove Owner Scope from runtime and session context",
+      "description": "As an agent/runtime user, I want runtime context to describe the shared app without owner state so that agents do not treat auth accounts as product owners.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from PiboRuntimeSessionContext and generated pibo://runtime/session-context.md content",
+        "Ensure session router, subagent creation, and runtime startup do not derive workspace or route state from auth user id",
+        "Update debug/context inspection tests for the new context text",
+        "Relevant runtime/router/subagent tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Remove Owner Scope from Pibo session store contracts",
+      "description": "As a maintainer, I want Pibo session models and stores to use resource identity instead of owner filters so that sessions are app-global.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from PiboSession, CreatePiboSessionInput, UpdatePiboSessionInput, and FindPiboSessionsInput",
+        "Remove owner matching from in-memory and SQLite-backed session store logic",
+        "Rename listOwned/getOwned/requireOwned session helpers to neutral list/get/require helpers where present",
+        "Update callers and tests for app-global session behavior",
+        "Session store tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Rebuild sessions database schema without owner columns",
+      "description": "As an operator, I want fresh session schemas without owner columns so that new data cannot persist product owner scope.",
+      "acceptanceCriteria": [
+        "Update fresh pibo-sessions SQLite schema to omit owner_scope and owner indexes",
+        "Add migration fixture coverage for old sessions with shared:app and user:* rows migrating to ownerless rows",
+        "Preserve session ids, piSessionIds, hierarchy, metadata, profile, workspace, and timestamps",
+        "Assert new databases do not contain owner_scope columns or owner indexes",
+        "Migration fixture tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Make Chat rooms, navigation, and read-state ownerless",
+      "description": "As a Chat Web user, I want one shared room and navigation state so that no sidebar data is hidden by Owner Scope or Principal state.",
+      "acceptanceCriteria": [
+        "Remove owner/principal parameters from room service, navigation store, session navigation, and read-state service APIs",
+        "Remove room membership as an access-control check in active behavior",
+        "Replace principal read-state with app-level read-state or documented browser-local state",
+        "Update tests for mixed historical room/navigation/read-state data",
+        "Relevant Chat room/navigation/read-state tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Rebuild Chat data schemas without owner/principal tables",
+      "description": "As an operator, I want Chat fresh schemas without Owner Scope, Principal stats, or room membership so that data layout matches app-global behavior.",
+      "acceptanceCriteria": [
+        "Update rooms and session_navigation fresh schemas to omit owner_scope and owner indexes",
+        "Drop active creation/use of room_members, principal_session_stats, and principal_room_stats in final schemas",
+        "Add migration fixture coverage for duplicate default rooms, duplicate navigation rows, and principal read-state merge rules",
+        "Assert new Chat data databases do not create owner/principal columns or membership tables",
+        "Migration and schema tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Clean Chat Web API and UI payloads",
+      "description": "As a Chat Web user, I want API and UI state to expose shared resources without owner fields or personal wording.",
+      "acceptanceCriteria": [
+        "Remove ownerScope/principalId fields from Chat Web bootstrap, room, navigation, session, action, and settings payloads",
+        "Replace Personal Chat/personal room/product owner copy with shared/default app wording",
+        "Update Chat UI TypeScript types and components for ownerless data",
+        "Add API tests proving payloads contain no ownerScope or principalId fields",
+        "Run browser validation for sidebar, direct session open, create session, send message, archive/restore, and room navigation",
+        "Chat UI/API tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Convert Custom Agents to app-global resources",
+      "description": "As an allowed user, I want custom agents to be app-global so that profiles do not depend on an owner value.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from CustomAgentDefinition, create/update/list inputs, store rows, and API payloads",
+        "Update dynamic profile registration to read all app-global custom agents without owner filters",
+        "Add deterministic migration handling for duplicate profile names that were previously separated by owner",
+        "Update Agent Designer tests and API tests for ownerless payloads",
+        "Agent store/profile tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Convert Projects and workflow UI persistence to app-global resources",
+      "description": "As an allowed user, I want projects and workflow UI drafts/assets to be shared app resources without owner columns.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from project types, create inputs, project services, and workflow session snapshots",
+        "Remove owner columns from workflow UI drafts, prompt assets, revisions, and lifecycle event schemas",
+        "Rename OwnedWorkflow* model names to neutral names where they refer to product ownership",
+        "Add migration fixture coverage for project/workflow UI rows with historical owner values",
+        "Project/workflow UI tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Convert Web Annotations to ownerless app resources",
+      "description": "As a Web Annotations user, I want annotations and bindings to be keyed by app/session/resource ids instead of Owner Scope.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from web annotation types, API/tool/CDP/attachment signatures, validation helpers, and store filters",
+        "Update web_annotation_bindings and web_annotations fresh schemas to omit owner_scope",
+        "Add migration fixture coverage for historical annotation rows with different owner values",
+        "Run focused Web Annotation tests and browser/API validation where practical",
+        "Web Annotation tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Remove Owner Scope from Ralph data model and store schema",
+      "description": "As an operator, I want Ralph jobs and runs to be app-global so that Ralph state is not tied to ownerScope.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from PiboRalphJob, PiboRalphRun, PiboRalphRunFact, and PiboRalphJobCreateInput",
+        "Remove ownerScope parameters and getOwnedJob-style methods from Ralph store APIs",
+        "Replace personal.principalId target shape with a neutral default-chat target",
+        "Update fresh Ralph schemas to omit owner_scope columns and indexes",
+        "Add migration fixture coverage for existing personal/shared/user Ralph jobs and runs",
+        "Ralph store tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Clean Ralph service, CLI, API, and UI surfaces",
+      "description": "As a Ralph user, I want Ralph commands and Chat UI/API to expose app-global jobs without owner options or fields.",
+      "acceptanceCriteria": [
+        "Remove --owner-scope and PIBO_OWNER_SCOPE handling from Ralph CLI and help output",
+        "Remove ownerScope from Ralph service signatures, Chat API serializers, and Chat UI types/components",
+        "Ensure pibo ralph add/list/start/stop/cancel/runs --json contains no ownerScope",
+        "Run real CLI validation for Ralph list/add/start/stop or the closest safe non-provider path",
+        "Ralph CLI/API/UI tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Remove Owner Scope from Cron data model and store schema",
+      "description": "As an operator, I want Cron schedules and execution history to be app-global so that scheduled work is not tied to ownerScope.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from Cron job/run/fact/create types and store inputs",
+        "Remove owner filters from Cron store/service methods",
+        "Replace personal.principalId target shape with a neutral default-chat target",
+        "Update fresh Cron schemas to omit owner_scope columns and indexes",
+        "Add migration fixture coverage for existing personal/shared/user Cron jobs and runs",
+        "Cron store tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Clean Cron service, CLI, API, and UI surfaces",
+      "description": "As a Cron user, I want Cron commands and Chat UI/API to expose app-global schedules without owner options or fields.",
+      "acceptanceCriteria": [
+        "Remove --owner-scope and PIBO_OWNER_SCOPE handling from Cron CLI and help output",
+        "Remove ownerScope from Cron service signatures, Chat API serializers, and Chat UI types/components",
+        "Ensure pibo cron JSON outputs contain no ownerScope",
+        "Run real CLI validation for safe Cron list/create/enable/disable flows or closest safe path",
+        "Cron CLI/API/UI tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Remove Owner Scope from workflows package store and public types",
+      "description": "As a workflow user, I want WorkflowRun persistence and listing to be app-global so that workflow runs are not filtered by ownerScope.",
+      "acceptanceCriteria": [
+        "Remove ownerScope from WorkflowRun and workflow run list/filter types in packages/workflows",
+        "Remove workflow_runs.owner_scope and idx_workflow_runs_owner from fresh schema",
+        "Update row mappers, write values, store contracts, and tests",
+        "Add migration fixture coverage for workflow_runs with historical owner_scope values",
+        "packages/workflows tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Clean workflow runtime, routing, inspection, and prompts",
+      "description": "As a workflow operator, I want workflow runtime and inspection output to avoid owner terminology so that tooling reflects app-global runs.",
+      "acceptanceCriteria": [
+        "Remove workflow runtime/routing owner propagation",
+        "Remove owner lines/fields from workflow inspection output",
+        "Rename prompt trace privacy kind or fields that use ownerScope terminology",
+        "Update workflow runtime and inspection tests",
+        "Real or integration workflow run inspection path shows no owner field",
+        "Workflow runtime/inspection tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Remove owner model from CLI session source contracts",
+      "description": "As a CLI user, I want the local session source to expose app rooms and sessions directly without owner selection.",
+      "acceptanceCriteria": [
+        "Remove CliOwnerSummary, getActiveOwner, setActiveOwner, listOwners, and ownerSummaries from CLI session source contracts and implementations",
+        "Remove owner mismatch errors and selected-owner repair behavior",
+        "Rename root recovery owner concepts to neutral recovery source/mode concepts where still needed",
+        "Update fake and local source tests for ownerless app-global behavior",
+        "CLI session source tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Remove owner picker and owner status from Ink TUI",
+      "description": "As a TUI user, I want pibo tui:sessions to start in the app-global session flow without an owner picker.",
+      "acceptanceCriteria": [
+        "Remove /owner command, owner picker UI, active owner header/status, and owner-specific room picker text from InkSessionApp",
+        "Remove --owner-scope CLI option and mocked owner env variables for TUI/session commands",
+        "Update shared session-ui view models to use app/source/room/session descriptors without owner descriptors",
+        "Run PTY validation showing pibo tui:sessions can open/create/select a session and send through the closest real path without an owner picker",
+        "Ink/TUI tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Create final owner-scope cutover migration inspect and dry-run",
+      "description": "As an operator, I want a final migration command that reports old Owner Scope data without mutating it so that cutover can be reviewed safely.",
+      "acceptanceCriteria": [
+        "Create an operator-only final cutover migration module/command with inspect and dry-run modes",
+        "Inspect reports affected files, tables, columns, indexes, row counts, legacy values, and conflict groups without secrets",
+        "Dry-run reports planned table rebuilds, merge/rename decisions, and unresolved blockers without writes",
+        "Command refuses Production apply unless explicit operator flags and backup path are provided in later apply story",
+        "Migration inspect/dry-run fixture tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Implement final owner-scope cutover migration apply and rollback checks",
+      "description": "As an operator, I want transactional apply behavior with backup verification and post-checks so that owner columns can be removed safely.",
+      "acceptanceCriteria": [
+        "Apply mode requires a fresh verified backup path and refuses unresolved conflicts",
+        "Apply rebuilds affected SQLite tables without owner/principal columns, membership tables, or owner indexes",
+        "Apply is transactional per database file and idempotent on already-migrated schemas",
+        "Post-check runs row-count checks and PRAGMA quick_check and writes a migration report",
+        "Rollback instructions are generated or documented with the backup path",
+        "Migration apply/idempotency/rollback fixture tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Remove temporary runtime compatibility after migrated schemas are supported",
+      "description": "As a maintainer, I want runtime code to require final ownerless schemas so that no long-lived shared:app compatibility remains.",
+      "acceptanceCriteria": [
+        "Remove runtime branches that read or write old owner_scope/principal_id columns outside the isolated migration module",
+        "Ensure fresh schemas and normal runtime code do not reference shared:app as storage",
+        "Shrink the search-gate allowlist to only the migration module and historical legacy docs, or document any unavoidable external term",
+        "Run focused regression tests for creating new sessions, rooms, agents, projects, annotations, Ralph, Cron, and workflows on fresh schemas",
+        "Regression tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Update current docs, glossary, skills, and help text",
+      "description": "As a maintainer, I want current documentation and help to describe the final app-space model so that agents do not learn old Owner Scope behavior.",
+      "acceptanceCriteria": [
+        "Update GLOSSARY.md so Owner Scope is a removed historical migration term, not an active compatibility model",
+        "Update current docs/specs/plans/project docs to describe one app space and no shared:app owner value",
+        "Move superseded Owner Scope docs to docs/legacy or clearly mark them as historical reports",
+        "Update CLI/help text and tool/skill docs that mention active owner selection or --owner-scope",
+        "Documentation search gate for current docs passes or has a reviewed legacy-only allowlist",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Run full Docker validation on ownerless fresh schemas",
+      "description": "As a maintainer, I want full validation in Docker so that the ownerless code works in a clean environment.",
+      "acceptanceCriteria": [
+        "Run npm run typecheck in Docker worker with sandboxed PIBO_HOME",
+        "Run npm run build in Docker worker with sandboxed PIBO_HOME",
+        "Run npm test in Docker worker with sandboxed PIBO_HOME",
+        "Run schema assertions proving fresh databases have no owner/principal product columns or membership tables",
+        "Record validation evidence in IMPLEMENTATION_PROGRESS.md and docs/reports",
+        "Typecheck passes",
+        "Build passes",
+        "Tests pass"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Validate migrated sandbox data through real Chat Web and CLI paths",
+      "description": "As an operator, I want migrated data validated through real user paths so that cutover is more than unit-tested.",
+      "acceptanceCriteria": [
+        "Run migration apply against copied/sandboxed historical fixture home, not Production",
+        "Start or emulate the Dev Chat Web path in Docker and validate bootstrap, sidebar, direct session open, send, agents, projects, Ralph, Cron, workflows, and annotations where available",
+        "Run CLI/TUI PTY validation for ownerless session open/create/send path",
+        "Run safe Ralph and Cron CLI JSON checks proving no owner fields/options",
+        "Record browser/API/PTY/CLI evidence in docs/reports",
+        "Relevant validation commands pass",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-028",
+      "title": "Prepare Dev deployment and production migration runbook without mutating Production",
+      "description": "As an operator, I want a deploy and cutover runbook so that Dev can be tested and Production remains gated by explicit approval.",
+      "acceptanceCriteria": [
+        "Document Dev deploy steps, Dev gateway restart, and Dev post-deploy validation commands",
+        "Document Production prerequisites, active-session safety, backup verification, dry-run review, apply approval, rollback, and post-check steps",
+        "Explicitly state that Ralph must not mutate Production data or force-restart Production without separate user approval",
+        "Add a final checklist for removing the temporary migration module after approved Production cutover if that policy is chosen",
+        "Docs/report validation passes",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-029",
+      "title": "Final zero-regression sweep for active Owner Scope artifacts",
+      "description": "As a maintainer, I want the final branch to have no active product Owner Scope artifacts so that the transition model is gone.",
+      "acceptanceCriteria": [
+        "Run the strict active-source owner/principal search gate and record output",
+        "Run CLI help checks for pibo ralph, pibo cron, pibo tui:sessions, data migration, and debug commands to ensure no active --owner-scope guidance remains",
+        "Run API/JSON payload checks for Chat bootstrap, Ralph, Cron, agents, projects, workflows, and annotations to ensure no owner fields remain",
+        "Ensure any remaining matches are only in the isolated migration command, generated migration reports, or docs/legacy, and are documented",
+        "Full npm run typecheck, npm run build, and npm test pass",
+        "Typecheck passes",
+        "Build passes",
+        "Tests pass"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-030",
+      "title": "Close the Ralph batch with implementation summary and PR readiness",
+      "description": "As a maintainer, I want a final implementation summary so that the branch is ready for review, Dev deploy, and separately approved Production cutover.",
+      "acceptanceCriteria": [
+        "Update IMPLEMENTATION_PROGRESS.md with all completed stories, commits, evidence, remaining risks, and explicit Production non-action statement",
+        "Create docs/reports final validation report summarizing tests, migrations, search gates, browser/PTY evidence, and known limitations",
+        "Ensure git status is clean except intended files before final commit",
+        "Do not run Production migration or Production restart in this story",
+        "Final full validation commands are recorded",
+        "Typecheck passes",
+        "Build passes",
+        "Tests pass"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
