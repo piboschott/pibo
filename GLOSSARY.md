@@ -109,7 +109,7 @@ The Pibo-owned store for Pibo Session records, backed by `.pibo/pibo-sessions.sq
 **Pi Session ID**:
 The technical Pi Coding Agent session identifier stored as `PiboSession.piSessionId`, used for Pi persistence, transcript files, provider cache affinity, fork, clone, switch, tree navigation, and compaction.
 
-**Shared App Context**:
+**App Context Context**:
 The single product data context for a Pibo host after login. Auth decides whether a person may enter the app; it does not create a separate product space.
 
 **Owner Scope**:
@@ -242,10 +242,10 @@ A URL under `/apps/chat/*` that can be opened directly or reloaded and restores 
 A user-facing Chat Web container that groups one or more Pibo Sessions for display, membership, room events, and room-scoped sending.
 
 **Shared Default Chat Room**:
-The default Pibo Room automatically created for the shared app when Chat Web needs a room and none exists. Legacy storage may still mark older rows with personal/default metadata, but the room is not account-owned.
+The default Pibo Room automatically created for the app context when Chat Web needs a room and none exists. Legacy storage may still mark older rows with personal/default metadata, but the room is not account-owned.
 
 **Room Membership**:
-A legacy Chat Web record that used to link a principal to a Pibo Room with a role and read cursor. Current shared-app behavior does not use room membership for access control.
+A legacy Chat Web record that used to link a principal to a Pibo Room with a role and read cursor. Current app-context behavior does not use room membership for access control.
 
 **Chat Event Log**:
 The durable Pibo-owned event store for Chat Web room and session events, backed by `chat_events` in `.pibo/web-chat.sqlite`.
@@ -325,7 +325,7 @@ A Pibo-owned wrapper-level process that summarizes tool usage in a Pibo Session 
 - A **Pibo Room** is a user-facing Chat Web container; it does not replace a **Pibo Session**.
 - A **Pibo Session** belongs to a **Pibo Room** through `PiboSession.metadata.chatRoomId` in the current migration bridge.
 - A **Canonical Chat URL** is the browser-visible route for a **Pibo Room** and **Pibo Session** selection; browser-local last-selection state is only an entry fallback.
-- A **Shared Default Chat Room** is created automatically for the **Shared App Context** when the Chat Web App bootstraps.
+- A **Shared Default Chat Room** is created automatically for the **App Context Context** when the Chat Web App bootstraps.
 - The **Chat Web Read Model** is a projection and is not the source of truth for Pibo Sessions or Pi transcripts.
 - The **Chat Event Log** is durable Chat Web room/session event storage, while the **Raw Pibo Event Log** remains a read-model/debugging projection of normalized output events.
 - A **Chat Web Trace View** is reconstructed from Pi transcript data plus the **Raw Pibo Event Log**.

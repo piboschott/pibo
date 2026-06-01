@@ -36,7 +36,7 @@ test("generated term list covers required legacy spellings", () => {
 
 test("clean active files pass", () => {
 	const root = fixtureRoot();
-	writeFixture(root, "src/app.ts", "export const appContext = { kind: 'shared-app' };\n");
+	writeFixture(root, "src/app.ts", "export const appContext = { kind: 'app-context' };\n");
 	const result = scan(root, ["src"]);
 	assert.equal(result.failures.length, 0);
 	assert.equal(result.allowed.length, 0);

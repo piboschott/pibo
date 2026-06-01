@@ -121,7 +121,7 @@ Browser preferences improve continuity but never become required for authenticat
 
 #### Acceptance
 
-A browser test can make `localStorage.getItem` and `setItem` throw and verify that Chat Web still renders, defaults are used, and server requests remain authenticated shared-app API calls.
+A browser test can make `localStorage.getItem` and `setItem` throw and verify that Chat Web still renders, defaults are used, and server requests remain authenticated app-context API calls.
 
 #### Scenario: Locked-down browser storage
 

@@ -44,7 +44,7 @@ The Chat Web UI has a `Cron` area that lists jobs, builds schedules, targets Sha
 
 ## Requirements
 
-### Requirement: Jobs are durable shared-app records
+### Requirement: Jobs are durable app-context records
 
 The system MUST store cron jobs with target, profile, prompt, schedule, enabled flag, delete-after-run flag, timestamps, and scheduler state. Legacy owner fields are compatibility metadata only.
 
@@ -55,7 +55,7 @@ The system MUST store cron jobs with target, profile, prompt, schedule, enabled 
 #### Acceptance
 
 - Creating a valid job returns an id beginning with `cron_`.
-- Listing jobs returns shared-app jobs for any allowed account.
+- Listing jobs returns app-context jobs for any allowed account.
 - Disabled jobs remain stored but are excluded from default active lists.
 
 #### Scenario: Create a room-targeted job
@@ -225,11 +225,11 @@ The API lives under `/api/chat/cron/*`, and `CronArea` provides the UI for job l
 #### Acceptance
 
 - `GET /api/chat/cron/status` returns scheduler and store status.
-- `GET /api/chat/cron/jobs` returns shared app jobs.
+- `GET /api/chat/cron/jobs` returns app context jobs.
 - `POST /api/chat/cron/jobs` creates a job after validation.
-- `GET/PATCH/DELETE /api/chat/cron/jobs/:id` operate on shared app jobs by id.
+- `GET/PATCH/DELETE /api/chat/cron/jobs/:id` operate on app context jobs by id.
 - `POST /api/chat/cron/jobs/:id/run` starts a manual run when the cron service is running.
-- `GET /api/chat/cron/runs` lists shared app runs, optionally filtered by job.
+- `GET /api/chat/cron/runs` lists app context runs, optionally filtered by job.
 - The UI can select Shared Chat or a Room target and select a registered agent profile.
 
 #### Scenario: Manual run from Chat Web
@@ -316,7 +316,7 @@ Users can inspect recent job outcomes without scanning unrelated rooms, and can 
 - [ ] SC-002: A due job creates exactly one visible cron-kind Pibo Session per reserved run.
 - [ ] SC-003: A successful run records `ok`, `completedAt`, and the created `piboSessionId`.
 - [ ] SC-004: A failed run records `error`, increments `consecutiveErrors`, and does not lose the run record.
-- [ ] SC-005: `pibo cron list` lists shared app jobs and excludes disabled jobs by default.
+- [ ] SC-005: `pibo cron list` lists app context jobs and excludes disabled jobs by default.
 - [ ] SC-006: Chat Web rejects cron job mutations for archived or inaccessible rooms.
 - [ ] SC-007: Interrupted running jobs are recovered as errors after service restart and cutoff.
 - [ ] SC-008: Existing Chat Web cron jobs with friendly schedule metadata round-trip through the schedule builder without changing their effective backend schedule.
@@ -327,7 +327,7 @@ Users can inspect recent job outcomes without scanning unrelated rooms, and can 
 ### Assumptions
 
 - The active gateway process is the only scheduler owner in normal local deployments.
-- Authentication is only the app access gate; Cron jobs and runs are shared app resources.
+- Authentication is only the app access gate; Cron jobs and runs are app context resources.
 - A cron run is complete when the initial generated message finishes or the session errors; follow-up user interaction happens in the created session outside the cron scheduler.
 
 ### Open Questions
@@ -341,7 +341,7 @@ Users can inspect recent job outcomes without scanning unrelated rooms, and can 
 
 | Requirement | Scenario / Story | Code basis | Status |
 |---|---|---|---|
-| REQ-001 Jobs are durable shared-app records | Create a room-targeted job; invalid input | `src/cron/types.ts`, `src/cron/store.ts` | Implemented |
+| REQ-001 Jobs are durable app-context records | Create a room-targeted job; invalid input | `src/cron/types.ts`, `src/cron/store.ts` | Implemented |
 | REQ-002 Schedules are validated before persistence | Repeating interval; friendly weekly schedule | `src/cron/schedule.ts` | Implemented |
 | REQ-003 The scheduler reserves due work atomically | Concurrent capacity is full | `src/cron/store.ts`, `src/cron/service.ts` | Implemented |
 | REQ-004 Each run creates a visible routed Pibo Session | Room target execution; shared default target execution | `src/cron/service.ts` | Implemented |

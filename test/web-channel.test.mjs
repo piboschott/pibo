@@ -776,7 +776,7 @@ test("chat web app default data path runs without creating the legacy web-chat s
 	}
 });
 
-test("chat web app creates shared app sessions", async () => {
+test("chat web app creates app context sessions", async () => {
 	const { channel, baseURL, emitted } = await startWebHostChannel({
 		auth: createFakeAuthService(),
 	});

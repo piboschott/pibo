@@ -20,13 +20,13 @@ const USER_FACING_PATTERNS = [
 ];
 
 const ALLOWLIST = [
-	{ path: "src/cli.ts", pattern: /owner-scope/g, reason: "deprecated CLI compatibility flag, help says shared-app mode ignores ownership" },
-	{ path: "src/apps/cli-ui/cliSessionsCommand.ts", pattern: /owner-scope/g, reason: "deprecated CLI compatibility flag, help says shared-app mode ignores ownership" },
+	{ path: "src/cli.ts", pattern: /owner-scope/g, reason: "deprecated CLI compatibility flag, help says app-context mode ignores ownership" },
+	{ path: "src/apps/cli-ui/cliSessionsCommand.ts", pattern: /owner-scope/g, reason: "deprecated CLI compatibility flag, help says app-context mode ignores ownership" },
 	{ path: "src/apps/cli-ui/cliSessionsCommand.ts", pattern: /Personal Chat/g, reason: "debug fixture parser accepts historical room titles as legacy compatibility" },
 	{ path: "src/data/cli.ts", pattern: /owner-scope/g, reason: "legacy unread-baseline repair option only, not a normal current workflow selector" },
 	{ path: "src/cli-session/localSessionSource.ts", pattern: /Personal Chat/g, reason: "legacy fallback recognizes historical default room titles while displaying Shared Chat for new fallback rows" },
-	{ path: "src/data/shared-app-migration.ts", pattern: /owner-scope/g, reason: "explicit migration action labels for legacy storage metadata" },
-	{ path: "src/data/shared-app-migration.ts", pattern: /personal target/g, reason: "explicit migration warning for legacy Ralph/Cron target metadata" },
+	{ path: "src/data/app-context-migration.ts", pattern: /owner-scope/g, reason: "explicit migration action labels for legacy storage metadata" },
+	{ path: "src/data/app-context-migration.ts", pattern: /personal target/g, reason: "explicit migration warning for legacy Ralph/Cron target metadata" },
 ];
 
 function walk(path) {
@@ -50,7 +50,7 @@ function isAllowed(path, text, index) {
 	});
 }
 
-test("shared-app user-facing artifact search gate allows only documented legacy/debug copy", () => {
+test("app-context user-facing artifact search gate allows only documented legacy/debug copy", () => {
 	const files = ROOTS.flatMap((root) => walk(root)).filter(isSourceFile);
 	const failures = [];
 	for (const file of files) {

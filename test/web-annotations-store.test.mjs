@@ -25,7 +25,7 @@ function createAnnotationInput(overrides = {}) {
 	};
 }
 
-test("web annotation bindings persist by shared app and session without deleting annotations", () => {
+test("web annotation bindings persist by app context and session without deleting annotations", () => {
 	const store = new WebAnnotationStore({ path: ":memory:" });
 	try {
 		const binding = store.createBinding({

@@ -76,7 +76,7 @@ Calling Projects bootstrap twice returns the same shared default Project and doe
 
 #### Scenario: First Projects visit
 
-- GIVEN the shared app has no default Project
+- GIVEN the app context has no default Project
 - WHEN an allowed user opens `/projects`
 - THEN bootstrap returns the shared default Project
 - AND that project is marked as the shared default
@@ -127,7 +127,7 @@ The system MUST create each Project Session as a normal Pibo Session in the Chat
 
 #### Current
 
-`createProjectChatSession` calls `channelContext.createSession` with `channel: CHAT_WEB_CHANNEL`, `kind: "chat"`, selected profile, shared app context, workspace equal to the Project folder, and metadata containing `projectId`, `projectSessionKind: "main"`, and `projectWorkflowId`.
+`createProjectChatSession` calls `channelContext.createSession` with `channel: CHAT_WEB_CHANNEL`, `kind: "chat"`, selected profile, app context context, workspace equal to the Project folder, and metadata containing `projectId`, `projectSessionKind: "main"`, and `projectWorkflowId`.
 
 #### Acceptance
 
@@ -342,7 +342,7 @@ This section separates behavior with direct tests from behavior that is currentl
 
 - `simple-chat` remains the normal Project chat workflow; configured workflow-backed Project Sessions are created through the explicit workflow-session endpoint from published catalog versions.
 - Project folders are trusted local paths selected by the authenticated operator.
-- Projects are shared app resources; authenticated web sessions are required for access and same-origin guards protect mutations.
+- Projects are app context resources; authenticated web sessions are required for access and same-origin guards protect mutations.
 
 ### Open Questions
 

@@ -30,15 +30,15 @@ test("web auth still gates unauthenticated app requests", async () => {
 	);
 });
 
-test("web auth maps different identities to the same shared app context", async () => {
+test("web auth maps different identities to the same app context context", async () => {
 	const first = await requireWebSession(createContextForUser("account-a"), createRequest());
 	const second = await requireWebSession(createContextForUser("account-b"), createRequest());
 
 	assert.equal(first.authSession.identity.userId, "account-a");
 	assert.equal(second.authSession.identity.userId, "account-b");
 	assert.deepEqual(first.appContext, second.appContext);
-	assert.equal(first.appContext.kind, "shared-app");
-	assert.equal(first.appContext.id, "shared-app");
+	assert.equal(first.appContext.kind, "app-context");
+	assert.equal(first.appContext.id, "app");
 	assert.equal("legacyOwnerScope" in first, false);
 	assert.equal("ownerScope" in first, false);
 	assert.equal("legacyOwnerScope" in second, false);

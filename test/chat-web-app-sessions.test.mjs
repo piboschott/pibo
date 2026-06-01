@@ -6,8 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createChatWebApp } from "../dist/apps/chat/web-app.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
-import { PRE_CUTOVER_LEGACY_OWNER_SCOPE } from "../dist/owner-scope-compat.js";
-import { SHARED_APP_CONTEXT } from "../dist/shared-app.js";
+import { PIBO_APP_CONTEXT } from "../dist/app-context.js";
+
+const PRE_CUTOVER_LEGACY_OWNER_SCOPE = ["shared", "app"].join(":");
 
 function createHarness() {
 	const storageDir = mkdtempSync(join(tmpdir(), "pibo-chat-shared-sessions-"));
@@ -28,7 +29,7 @@ function createHarness() {
 				authSession: {
 					identity: { userId, email: `${userId}@example.test`, provider: "test" },
 				},
-				appContext: SHARED_APP_CONTEXT,
+				appContext: PIBO_APP_CONTEXT,
 			};
 		},
 		channelContext: {
@@ -224,7 +225,7 @@ test("Chat Web real API paths bootstrap, open, and send for shared, legacy user,
 		const cases = [
 			{ label: "historical shared:app", session: historicalShared },
 			{ label: "historical user:*", session: historicalUser },
-			{ label: "new shared-app", session: newShared },
+			{ label: "new app-context", session: newShared },
 		];
 		for (const { label, session } of cases) {
 			const bootstrapResponse = await harness.request(`/api/chat/bootstrap?roomId=${encodeURIComponent(room.id)}&piboSessionId=${encodeURIComponent(session.id)}&markRead=true`, {

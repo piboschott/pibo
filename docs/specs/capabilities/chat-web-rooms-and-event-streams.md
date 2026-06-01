@@ -49,7 +49,7 @@ Rooms, room members, event logs, read state, sessions, payloads, observations, a
 
 ### Requirement: Shared default Chat room is created on demand
 
-The system MUST ensure the shared app has a default Chat room before Chat Web returns a default session or navigation payload.
+The system MUST ensure the app context has a default Chat room before Chat Web returns a default session or navigation payload.
 
 #### Current
 
@@ -58,19 +58,19 @@ The system MUST ensure the shared app has a default Chat room before Chat Web re
 #### Acceptance
 
 - Bootstrap or session APIs create a default room when none exists.
-- The default room belongs to the shared app context.
+- The default room belongs to the app context context.
 - Existing default rooms are reused instead of duplicated.
 - The shared default room cannot be archived or deleted through normal room mutation flows.
 
 #### Scenario: First Chat Web open
 
-- GIVEN the shared app has no rooms
+- GIVEN the app context has no rooms
 - WHEN an allowed user opens Chat Web bootstrap
 - THEN Pibo creates a Shared Chat room and returns it as the selected room.
 
 ### Requirement: Rooms are shared hierarchical containers
 
-The system MUST list and mutate rooms in the shared app context and MUST preserve parent-child room relationships.
+The system MUST list and mutate rooms in the app context context and MUST preserve parent-child room relationships.
 
 #### Current
 
@@ -240,7 +240,7 @@ The system MUST allow Chat Web to patch only supported Pibo Session metadata and
 - Session patch mutations require an authenticated same-origin JSON request.
 - The addressed session must exist and be in a state that allows the requested mutation.
 - Title updates are normalized through the session update path.
-- Archiving a session marks the selected session subtree read for the shared app read state.
+- Archiving a session marks the selected session subtree read for the app context read state.
 - Profile changes are accepted only before the session has active trace state or indexed activity.
 - Active-model changes update the Pibo Session record without changing unrelated room metadata.
 - If the channel cannot update sessions, the API returns an explicit not-implemented failure.
@@ -321,7 +321,7 @@ Room deletion rejects default rooms and requires confirmation by room name. Sess
 
 ## Success Criteria
 
-- [ ] SC-001: Opening Chat Web in a fresh shared app creates one Shared Chat room and one default selected session.
+- [ ] SC-001: Opening Chat Web in a fresh app context creates one Shared Chat room and one default selected session.
 - [ ] SC-002: Room CRUD is app-global and enforces room existence/archive-state rules.
 - [ ] SC-003: New sessions created in a workspace room inherit that room workspace.
 - [ ] SC-004: User message posts are authenticated, same-origin, room-safe, and idempotent by client transaction id.
@@ -346,7 +346,7 @@ Room deletion rejects default rooms and requires confirmation by room name. Sess
 - Should archived rooms still allow read-only SSE replay indefinitely?
 - Should room deletion offer export before deleting sessions and event history?
 - Should runtime termination endpoints be hidden or disabled for already-terminal session signals?
-- No room roles are planned in this shared-app migration; any future permission model requires a separate spec.
+- No room roles are planned in this app-context migration; any future permission model requires a separate spec.
 
 ## Traceability
 

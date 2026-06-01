@@ -188,20 +188,20 @@ The system MUST keep local configuration, model defaults, user settings, and pro
 
 #### Current
 
-`config.json` stores local operator config such as auth settings. `model-defaults.json` stores provider/model defaults. `user-settings.json` stores shared app settings such as timezone; older per-owner entries are read only as migration fallback. Workspace `.pibo/base-prompt.*` and `.pibo/compaction-prompt.*` store runtime prompt modes and custom content.
+`config.json` stores local operator config such as auth settings. `model-defaults.json` stores provider/model defaults. `user-settings.json` stores app context settings such as timezone; older per-owner entries are read only as migration fallback. Workspace `.pibo/base-prompt.*` and `.pibo/compaction-prompt.*` store runtime prompt modes and custom content.
 
 #### Acceptance
 
 - Config display redacts secrets and rejects unknown keys through the config CLI contract.
 - Invalid or missing model defaults fall back to supported defaults without corrupting sessions that already froze an active model.
-- Invalid or missing shared app timezone falls back to `UTC`.
+- Invalid or missing app context timezone falls back to `UTC`.
 - Prompt stores preserve custom content across mode switches and remain workspace-scoped.
 - None of these settings stores owns session, room, event, or auth identity records.
 
 #### Scenario: Corrupt user settings file
 
 - GIVEN `user-settings.json` is missing or cannot be parsed as valid state
-- WHEN runtime context asks for the shared app timezone
+- WHEN runtime context asks for the app context timezone
 - THEN Pibo returns the default timezone and does not alter session identity.
 
 ### Requirement: Debug store names are diagnostic aliases

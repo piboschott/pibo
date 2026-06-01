@@ -10,7 +10,6 @@ import { upsertPiPackage } from "../dist/pi-packages/store.js";
 import { piboCorePlugin } from "../dist/plugins/builtin.js";
 import { definePiboPlugin, PiboPluginRegistry } from "../dist/plugins/registry.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
-import { PRE_CUTOVER_LEGACY_OWNER_SCOPE } from "../dist/owner-scope-compat.js";
 
 function createTestRegistry(actionName, execute) {
 	return PiboPluginRegistry.create({
@@ -79,7 +78,7 @@ test("session router uses the Pibo session profile when creating a runtime", asy
 	}
 });
 
-test("session router creates implicit runtime sessions in the shared app context", async () => {
+test("session router creates implicit runtime sessions in the app context context", async () => {
 	const store = new InMemoryPiboSessionStore();
 	const router = new PiboSessionRouter({
 		persistSession: false,
@@ -418,7 +417,7 @@ test("kill cancels child sessions but not yielded runs", async () => {
 		});
 
 		const run = router.runRegistry.startToolRun({
-			ownerPiboSessionId: "ps_child",
+			controllerPiboSessionId: "ps_child",
 			toolName: "bash",
 		});
 		assert.equal(run.status, "running");
@@ -469,11 +468,11 @@ test("kill_all cancels child sessions and yielded runs recursively", async () =>
 		});
 
 		const childRun = router.runRegistry.startToolRun({
-			ownerPiboSessionId: "ps_child",
+			controllerPiboSessionId: "ps_child",
 			toolName: "bash",
 		});
 		const parentRun = router.runRegistry.startToolRun({
-			ownerPiboSessionId: "ps_parent",
+			controllerPiboSessionId: "ps_parent",
 			toolName: "bash",
 		});
 

@@ -7,7 +7,7 @@ import test from "node:test";
 import { ChatProjectService } from "../dist/apps/chat/data/project-service.js";
 
 test("project service uses app-global storage and lists projects", () => {
-	const tempRoot = mkdtempSync(join(tmpdir(), "pibo-project-shared-app-"));
+	const tempRoot = mkdtempSync(join(tmpdir(), "pibo-project-app-context-"));
 	const service = new ChatProjectService(join(tempRoot, "web-projects.sqlite"));
 
 	try {

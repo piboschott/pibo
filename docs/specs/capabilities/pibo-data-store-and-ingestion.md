@@ -172,7 +172,7 @@ The system MUST upsert session metadata and navigation rows when session-store o
 
 #### Current
 
-The `sessions` table stores Pibo Session identity, linked Pi session id, legacy owner compatibility value when present, room id, root/parent/origin ids, channel, kind, profile, active model, workspace, title, status, metadata, timestamps, and first-message preview. In normal gateway startup, `PiboDataSessionStore` uses this table as the routed Pibo Session Store. The navigation projection stores shared app room, session hierarchy, title, profile, status, last activity, last message preview, child count, sort key, and archive state.
+The `sessions` table stores Pibo Session identity, linked Pi session id, legacy owner compatibility value when present, room id, root/parent/origin ids, channel, kind, profile, active model, workspace, title, status, metadata, timestamps, and first-message preview. In normal gateway startup, `PiboDataSessionStore` uses this table as the routed Pibo Session Store. The navigation projection stores app context room, session hierarchy, title, profile, status, last activity, last message preview, child count, sort key, and archive state.
 
 #### Target
 
@@ -215,7 +215,7 @@ Chat Web call sites can move to v2-native services while retaining existing room
 
 #### Scenario: V2-native chat service flow
 
-- GIVEN a fresh v2 store and the shared app read-state actor
+- GIVEN a fresh v2 store and the app context read-state actor
 - WHEN Chat Web ensures the default room, upserts a Pibo Session, appends a user event and an assistant event, lists the timeline, and marks the session read
 - THEN the duplicate user append returns the first event
 - AND the timeline returns the stored events in stream order
@@ -237,7 +237,7 @@ Operators and agents can inspect data-store state, migrate session projections, 
 
 - Inventory can run against a configured root and includes v2, v2-shadow, legacy sessions, legacy chat, reliability, and auth stores.
 - Session migration reports read, inserted, updated, skipped, and source-existence counts.
-- Unread repair is a legacy compatibility command that refuses to run without app partition and cutoff timestamp; shared-app migration uses `pibo data shared-app` instead.
+- Unread repair is a legacy compatibility command that refuses to run without app partition and cutoff timestamp; app-context migration uses `pibo data app-context` instead.
 
 #### Scenario: Inventory for missing root store
 

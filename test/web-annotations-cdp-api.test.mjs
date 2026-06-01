@@ -36,7 +36,7 @@ function createContext(options = {}) {
 			},
 		},
 		requireSession() {
-			return Promise.resolve({ authSession: { user: { id: options.authUserId ?? "u" } }, appContext: { kind: "shared-app", id: "app" } });
+			return Promise.resolve({ authSession: { user: { id: options.authUserId ?? "u" } }, appContext: { kind: "app-context", id: "app" } });
 		},
 	};
 }

@@ -46,7 +46,7 @@ Pibo has one product app space after login. Data maintenance commands must not c
 | Compact discovery and JSON output | `src/data/cli.ts`, `test/data-cli.test.mjs` |
 | Session import idempotency | `src/data/cli.ts`, `test/pibo-data-session-store.test.mjs` |
 | Final cutover inspect/dry-run/apply | `src/data/final-app-space-cutover-migration.ts`, `test/final-app-space-cutover-migration.test.mjs` |
-| Fresh app-space schemas | `test/shared-app-fresh-schema.test.mjs`, `test/ownerless-fresh-runtime-regression.test.mjs` |
+| Fresh app-space schemas | `test/app-context-fresh-schema.test.mjs`, `test/ownerless-fresh-runtime-regression.test.mjs` |
 
 ## Notes
 

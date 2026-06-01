@@ -13,7 +13,7 @@ Pibo Session Signals provide that read model at the Product Boundary. They summa
 
 ## Goal
 
-Expose shared-app live session activity snapshots and monotonic patches that describe local and descendant activity for Pibo Session trees.
+Expose app-context live session activity snapshots and monotonic patches that describe local and descendant activity for Pibo Session trees.
 
 ## Background / Current State
 
@@ -188,7 +188,7 @@ For one root, each emitted patch starts at the previous `toVersion`. Repeated id
 - THEN no patch is emitted
 - AND the session snapshot `updatedAt` does not change.
 
-### Requirement: Chat Web signal APIs are authenticated and shared-app
+### Requirement: Chat Web signal APIs are authenticated and app-context
 
 The system MUST require an authenticated web session and ownership of the requested root or session before returning signal snapshots or streams.
 
@@ -329,7 +329,7 @@ The project SHOULD provide an operator-run benchmark that measures signal regist
 ## Success Criteria
 
 - [ ] SC-001: `test/signal-registry.test.mjs` verifies tree aggregation, queue changes, run signals, patch versions, pruning, and error semantics.
-- [ ] SC-002: `test/chat-signals-api.test.mjs` verifies shared-app snapshots, tree snapshots, SSE snapshot-before-patch behavior, and navigation/bootstrap status overlays.
+- [ ] SC-002: `test/chat-signals-api.test.mjs` verifies app-context snapshots, tree snapshots, SSE snapshot-before-patch behavior, and navigation/bootstrap status overlays.
 - [ ] SC-003: Chat Web can show running, idle, and error state for a selected session tree without reading the full trace.
 - [ ] SC-004: A failed tool call or yielded run remains visible as a node error without incorrectly marking the whole session failed.
 - [ ] SC-005: `scripts/bench-signal-registry.mjs` runs after build and prints timing for deep-tree propagation, no-op queue updates, and metadata-changing tool updates.

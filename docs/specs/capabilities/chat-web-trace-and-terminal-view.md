@@ -44,7 +44,7 @@ The active frontend session view is the compact terminal in `src/apps/chat-ui/sr
 
 ## Requirements
 
-### Requirement: Trace APIs are authenticated, shared-app, and cache-aware
+### Requirement: Trace APIs are authenticated, app-context, and cache-aware
 
 The system MUST serve trace summaries and trace views only for sessions the authenticated web user can access, and MUST expose version metadata that allows clients to avoid rebuilding unchanged traces.
 
@@ -279,7 +279,7 @@ The Chat Web session surface MUST expose only supported active session views to 
 
 | Requirement | Scenario / Story | Code Basis | Status |
 |---|---|---|---|
-| REQ-001 Trace APIs are authenticated, shared-app, and cache-aware | Unchanged trace summary | `src/apps/chat/web-app.ts` trace endpoints | Implemented |
+| REQ-001 Trace APIs are authenticated, app-context, and cache-aware | Unchanged trace summary | `src/apps/chat/web-app.ts` trace endpoints | Implemented |
 | REQ-002 Trace versions change when observable trace inputs change | Child session updates trace version | `src/apps/chat/trace.ts`, `test/chat-trace-materialization.test.mjs` | Implemented |
 | REQ-003 Trace materialization produces stable ordered execution nodes | Tool call lifecycle | `src/shared/trace-engine.ts`, `src/shared/trace-order.ts`, `src/shared/trace-types.ts` | Implemented |
 | REQ-004 Persisted transcript echoes do not duplicate live event nodes | Transcript catches up after streaming | `src/shared/trace-engine.ts`, `src/apps/chat/trace.ts` | Implemented |

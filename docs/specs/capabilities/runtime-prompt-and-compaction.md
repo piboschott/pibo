@@ -124,7 +124,7 @@ Pibo MUST inject product-level runtime identity into each runtime as a context f
 
 #### Current
 
-`createPiboRuntime` creates an in-memory context file with shared app context, Pibo Session ID, optional room ID, and timezone, then merges it with Pi and profile context files.
+`createPiboRuntime` creates an in-memory context file with app context context, Pibo Session ID, optional room ID, and timezone, then merges it with Pi and profile context files.
 
 #### Target
 
@@ -310,7 +310,7 @@ Users can inspect the active prompt, edit custom content, save changes, and swit
 
 ### Open Questions
 
-- Should prompt configuration remain workspace-scoped or become profile-scoped? It must not become account-scoped in the shared app model.
+- Should prompt configuration remain workspace-scoped or become profile-scoped? It must not become account-scoped in the app context model.
 - Should base prompt saves receive structural validation beyond requiring markdown to be a string?
 - Should prompt snapshots include revision metadata or conflict detection like managed context files?
 

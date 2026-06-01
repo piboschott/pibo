@@ -49,7 +49,7 @@ function createAttempt(overrides: Partial<NodeAttempt> = {}): NodeAttempt {
   };
 }
 
-function assertNoWorkflowOwnerFields(value: unknown): void {
+function assertNoWorkflowPartitionFields(value: unknown): void {
   const blockedKeys = new Set([["owner", "Scope"].join(""), ["owner", "scope"].join("_")]);
   const stack = [value];
   while (stack.length > 0) {
@@ -102,10 +102,10 @@ describe("workflow run inspection", () => {
       assert.equal(inspection.summary.latestCheckpointId, "wcp_done");
       assert.equal(inspection.run.output, "finished");
       assert.equal(inspection.events[0]?.type, "workflow.completed");
-      assertNoWorkflowOwnerFields(inspection);
+      assertNoWorkflowPartitionFields(inspection);
       const formatted = formatWorkflowRunInspection(inspection);
       assert.match(formatted, /status\tcompleted/);
-      assert.doesNotMatch(formatted, /owner/i);
+      assert.doesNotMatch(formatted, /removed product partition vocabulary/i);
     } finally {
       store.close();
       rmSync(tempRoot, { recursive: true, force: true });

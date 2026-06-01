@@ -2190,7 +2190,7 @@ async function makeDebugFixture() {
 	reliability.fail(dead.jobId, "worker", "failed");
 	reliability.createRun({
 		runId: "run_debug",
-		ownerPiboSessionId: "ps_parent",
+		controllerPiboSessionId: "ps_parent",
 		toolName: "helper",
 		completionPolicy: "tracked",
 	});

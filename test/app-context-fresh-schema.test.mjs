@@ -31,8 +31,8 @@ function assertNoTable(db, table) {
 	assert.equal(row, undefined, `${table} should not exist in fresh schema`);
 }
 
-test("fresh shared-app schemas omit owner/principal access-control structures", () => {
-	const dir = tempDir("shared-app-fresh-schema-");
+test("fresh app-context schemas omit owner/principal access-control structures", () => {
+	const dir = tempDir("app-context-fresh-schema-");
 	const pibo = new PiboDataStore(join(dir, "pibo.sqlite"), { payloadRootDir: join(dir, "payloads") });
 	new ChatWorkflowDraftStore(pibo);
 	new ChatWorkflowPromptAssetStore(pibo);

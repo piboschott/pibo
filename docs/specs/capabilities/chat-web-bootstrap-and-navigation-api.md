@@ -60,8 +60,8 @@ A browser cannot use another user's room id or Pibo Session id to discover state
 
 - Requests without a valid web session fail before state is loaded.
 - A requested `piboSessionId` is accepted when the shared session exists and is otherwise valid.
-- Room trees contain shared app rooms.
-- Custom agents are serialized from the shared app resource set, while plugin profiles and product capabilities remain read-only catalog entries.
+- Room trees contain app context rooms.
+- Custom agents are serialized from the app context resource set, while plugin profiles and product capabilities remain read-only catalog entries.
 
 #### Scenario: Cross-owner session is requested
 
@@ -86,7 +86,7 @@ The browser receives canonical selected identifiers and never has to infer wheth
 #### Acceptance
 
 - Missing `piboSessionId` creates or reuses a top-level chat session in the requested room, or the Shared Chat room when no room is requested.
-- Requested sessions are accepted when they exist in the shared app.
+- Requested sessions are accepted when they exist in the app context.
 - Sessions without room metadata are attached to the shared default room.
 - A requested `roomId` that does not contain the requested session returns a not-available error.
 - The response includes `selectedRoomId`, `selectedPiboSessionId`, `room`, and `session` matching the resolved selection.
@@ -136,7 +136,7 @@ Bootstrap parses `markRead=true` and calls `markSessionsRead()` for the selected
 
 #### Target
 
-Opening a selected session can clear its unread state, and the returned room/session counts match the same shared app state used by Chat Web navigation.
+Opening a selected session can clear its unread state, and the returned room/session counts match the same app context state used by Chat Web navigation.
 
 #### Acceptance
 
@@ -216,7 +216,7 @@ The server MAY cache bootstrap catalog construction briefly, but MUST clear that
 
 #### Target
 
-Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agent Designer mutations become visible without waiting for the time-to-live. Custom agents are shared app resources: bootstrap catalog caching may cache them with other shared catalog data and must invalidate after Agent Designer mutations.
+Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agent Designer mutations become visible without waiting for the time-to-live. Custom agents are app context resources: bootstrap catalog caching may cache them with other shared catalog data and must invalidate after Agent Designer mutations.
 
 #### Acceptance
 
@@ -248,7 +248,7 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - **Compatibility:** Response field names used by `BootstrapData` and `NavigationData` remain stable for the current Chat Web client.
 - **Performance:** Navigation should avoid catalog loading and heavy Pi transcript fallback. Bootstrap catalog caching is bounded by a short TTL and explicit invalidation.
 - **Source of Truth:** Pibo Session Store and Chat Web data services remain authoritative for session identity, room placement, event positions, and unread state.
-- **Catalog cache:** Catalog fragments, including custom agents, are shared app data. Cache entries must be invalidated after catalog mutations and must not be served to unauthenticated requests.
+- **Catalog cache:** Catalog fragments, including custom agents, are app context data. Cache entries must be invalidated after catalog mutations and must not be served to unauthenticated requests.
 
 ## Success Criteria
 
@@ -258,7 +258,7 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 - [ ] SC-004: `markRead=true` on bootstrap clears unread counts for the selected session subtree.
 - [ ] SC-005: Signal and runtime overlays update node status without changing durable session identity.
 - [ ] SC-006: Catalog mutations invalidate the short-lived bootstrap catalog cache.
-- [ ] SC-007: Bootstrap catalog caching is shared-app safe and invalidated after custom-agent/catalog mutations.
+- [ ] SC-007: Bootstrap catalog caching is app-context safe and invalidated after custom-agent/catalog mutations.
 
 ## Assumptions and Open Questions
 
@@ -266,11 +266,11 @@ Repeated bootstrap calls avoid unnecessary catalog work, while settings and Agen
 
 - The Chat Web browser uses bootstrap for full app initialization and navigation for cheaper refreshes.
 - Registered plugin capabilities are read-only product catalog entries and can be shared across owners.
-- Custom agents are shared app resources in cached bootstrap catalog paths.
+- Custom agents are app context resources in cached bootstrap catalog paths.
 
 ### Decisions
 
-- Custom agents are shared app resources. Bootstrap catalog caching must invalidate after custom-agent mutations and still require authenticated bootstrap access.
+- Custom agents are app context resources. Bootstrap catalog caching must invalidate after custom-agent mutations and still require authenticated bootstrap access.
 
 ### Open Questions
 

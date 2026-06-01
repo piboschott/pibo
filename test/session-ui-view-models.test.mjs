@@ -162,7 +162,7 @@ test("shared command result descriptors normalize menus status links unsupported
 	assert.doesNotMatch(error.message, /supersecretvalue/);
 });
 
-test("shared app room session picker descriptors include defaults empty rooms and create actions", () => {
+test("app context room session picker descriptors include defaults empty rooms and create actions", () => {
 
 	const rooms = buildRoomPickerDescriptor({
 		activeRoomId: "room_project",

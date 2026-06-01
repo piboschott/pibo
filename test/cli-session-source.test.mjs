@@ -108,7 +108,7 @@ test("local CLI session source lists app-global sessions, derived rooms, agents,
 	assertNoOwnerFields(status, "status");
 });
 
-test("local CLI source creates sessions in the shared app default room without owner fields", async () => {
+test("local CLI source creates sessions in the app context default room without owner fields", async () => {
 	const store = new InMemoryPiboSessionStore();
 	const source = new LocalCliSessionSource({ sessionStore: store, now: () => fixedNow });
 	const rooms = await source.listRooms();

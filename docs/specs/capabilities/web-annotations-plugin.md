@@ -48,7 +48,7 @@ The system MUST register Web Annotations through the plugin registry and capabil
 
 ### Requirement: Annotations are session-scoped
 
-The system MUST keep annotations scoped to Pibo Sessions in the shared app context.
+The system MUST keep annotations scoped to Pibo Sessions in the app context context.
 
 #### Acceptance
 

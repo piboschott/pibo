@@ -43,7 +43,7 @@ test("V2 CLI writes ownerless app-global sessions", async () => {
 	const source = new LocalCliSessionSource({ dataStore, sessionStore, now: () => fixedNow });
 
 	try {
-		const created = await source.createSession({ roomId: "room_app_required", title: "Shared app session", profile: "base" });
+		const created = await source.createSession({ roomId: "room_app_required", title: "App context session", profile: "base" });
 		await source.sendMessage(created.id, "message that should keep the app-global path");
 		assert.equal("ownerScope" in created, false);
 

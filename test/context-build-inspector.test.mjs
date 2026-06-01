@@ -53,7 +53,7 @@ test("context build snapshot exposes runtime context and provider-backed web sea
 
 	const runtimeContext = findNode(snapshot.nodes, (node) => node.path === "pibo://runtime/session-context.md");
 	assert.ok(runtimeContext, "runtime session context node should exist");
-	assert.match(runtimeContext.hydratedText, /App context: shared-app/);
+	assert.match(runtimeContext.hydratedText, /App context: app/);
 	assert.match(runtimeContext.hydratedText, /Pibo Session ID: ps_test/);
 	assert.match(runtimeContext.hydratedText, /Pibo Room ID: room_test/);
 	assert.doesNotMatch(runtimeContext.hydratedText, /User ID|Owner scope|user_test|user:user_test/);
@@ -71,7 +71,7 @@ test("context build snapshot exposes runtime context and provider-backed web sea
 	assert.deepEqual(providerPayload.payloadJson.openAiWebSearch.filters.allowed_domains, ["example.com"]);
 });
 
-test("runtime context exposes shared app and resource ids without owner fields", async () => {
+test("runtime context exposes app context and resource ids without owner fields", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pibo-runtime-shared-context-"));
 	const profile = new InitialSessionContext({
 		profileName: "shared-context-test",
@@ -90,7 +90,7 @@ test("runtime context exposes shared app and resource ids without owner fields",
 	});
 	const runtimeContext = findNode(snapshot.nodes, (node) => node.path === "pibo://runtime/session-context.md");
 
-	assert.match(runtimeContext.hydratedText, /App context: shared-app/);
+	assert.match(runtimeContext.hydratedText, /App context: app/);
 	assert.match(runtimeContext.hydratedText, /Pibo Session ID: ps_shared/);
 	assert.match(runtimeContext.hydratedText, /Pibo Room ID: room_shared/);
 	assert.doesNotMatch(runtimeContext.hydratedText, /ownerScope|Owner scope|legacyOwnerScope|User ID|Principal|user:/);
