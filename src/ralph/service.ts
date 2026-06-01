@@ -5,7 +5,6 @@ import type { PiboChannelContext } from '../channels/types.js';
 import type { PiboJsonObject, PiboOutputEvent } from '../core/events.js';
 import { getDefaultPiboWorkspace } from '../core/workspace.js';
 import { PiboDataStore } from '../data/pibo-store.js';
-import { legacyOwnerScopeForPreCutoverSchemas } from '../owner-scope-compat.js';
 import { ChatRoomService } from '../apps/chat/data/room-service.js';
 import { isPiboRoomArchived } from '../apps/chat/types/rooms.js';
 import { browserPoolPaths, releaseBrowserPoolLease, type BrowserPoolIdentity, type BrowserPoolPaths, type BrowserPoolReleaseOptions, type BrowserPoolReleaseResult } from '../tools/browser-pool.js';
@@ -59,10 +58,10 @@ export class PiboRalphService {
 	start(): void { if (!this.stopped) return; this.stopped = false; this.store.recoverInterruptedRuns(); this.unsubscribeProductEvents = this.options.context.subscribeProductEvents?.((event) => this.handleProductEvent(event)); this.arm(250); }
 	stop(): void { this.stopped = true; if (this.timer) clearTimeout(this.timer); this.timer = undefined; this.unsubscribeProductEvents?.(); this.unsubscribeProductEvents = undefined; this.dataStore.close(); this.store.close(); }
 	status(): PiboRalphStatus { return { enabled: !this.stopped, ...this.store.status() }; }
-	async startJob(ownerScope: string, id: string): Promise<PiboRalphRun | undefined> { const job = this.store.updateJob(ownerScope, id, { enabled: true }); if (!job) return undefined; const reserved = await this.reserveAfterBeforeRunEvaluation(job); if (!reserved) return undefined; void this.executeReserved(reserved.job, reserved.run).finally(() => this.armSoon()); return reserved.run; }
-	stopJob(ownerScope: string, id: string): PiboRalphJob | undefined { const job = this.store.requestStop(ownerScope, id); this.armSoon(); return job; }
-	async cancelJob(ownerScope: string, id: string): Promise<PiboRalphJob | undefined> {
-		const job = this.store.requestCancel(ownerScope, id); if (!job) return undefined;
+	async startJob(id: string): Promise<PiboRalphRun | undefined> { const job = this.store.updateJob(id, { enabled: true }); if (!job) return undefined; const reserved = await this.reserveAfterBeforeRunEvaluation(job); if (!reserved) return undefined; void this.executeReserved(reserved.job, reserved.run).finally(() => this.armSoon()); return reserved.run; }
+	stopJob(id: string): PiboRalphJob | undefined { const job = this.store.requestStop(id); this.armSoon(); return job; }
+	async cancelJob(id: string): Promise<PiboRalphJob | undefined> {
+		const job = this.store.requestCancel(id); if (!job) return undefined;
 		await this.abortJobIfRunning(job);
 		this.armSoon(); return this.store.getJob(id);
 	}
@@ -75,7 +74,7 @@ export class PiboRalphService {
 		const { evaluation, conditionStates } = await this.evaluateStopPolicy(fresh, 'before-run');
 		if (evaluation.finalAction !== 'continue') { this.store.applyStopEvaluation({ jobId: fresh.id, evaluation, conditionStates, disable: true }); return undefined; }
 		this.store.applyStopEvaluation({ jobId: fresh.id, evaluation, conditionStates, disable: false });
-		return this.store.reserveRun(fresh.ownerScope, fresh.id);
+		return this.store.reserveRun(fresh.id);
 	}
 	private async abortCancelRequestedJobs(): Promise<void> { for (const job of this.store.listJobs({ includeDisabled: true })) { if (job.state.cancelRequestedAt) await this.abortJobIfRunning(job); } }
 	private async abortJobIfRunning(job: PiboRalphJob): Promise<void> {
@@ -102,20 +101,20 @@ export class PiboRalphService {
 	private markRunResourcesDirty(job: PiboRalphJob, dirtyReason: string): void {
 		const latestJob = this.store.getJob(job.id) ?? job;
 		const runId = latestJob.state.lastRunId ?? job.state.lastRunId;
-		const latestRun = runId ? this.store.listRuns({ ownerScope: latestJob.ownerScope, jobId: latestJob.id, limit: 100 }).find((candidate) => candidate.id === runId) : undefined;
+		const latestRun = runId ? this.store.listRuns({ jobId: latestJob.id, limit: 100 }).find((candidate) => candidate.id === runId) : undefined;
 		const resources = mergeRunResources(latestJob.resources, latestRun?.resources);
 		if (!resources || (!resources.workerId && (resources.browserLeaseIds ?? []).length === 0)) return;
 		const nextResources: PiboRalphResourceMetadata = { ...resources, cleanupState: 'dirty', dirtyReason, updatedAt: new Date().toISOString() };
 		try {
-			if (latestRun) this.store.updateRunResources({ ownerScope: latestJob.ownerScope, jobId: latestJob.id, runId: latestRun.id, resources: nextResources });
-			this.store.updateJobResources(latestJob.ownerScope, latestJob.id, nextResources);
+			if (latestRun) this.store.updateRunResources({ jobId: latestJob.id, runId: latestRun.id, resources: nextResources });
+			this.store.updateJobResources(latestJob.id, nextResources);
 		} catch (error) {
 			console.error(`[ralph] failed to mark resource cleanup dirty for job ${latestJob.id}`, error);
 		}
 	}
 	private async cleanupRunResources(job: PiboRalphJob, run: PiboRalphRun): Promise<void> {
 		const latestJob = this.store.getJob(job.id) ?? job;
-		const latestRun = this.store.listRuns({ ownerScope: job.ownerScope, jobId: job.id, limit: 100 }).find((candidate) => candidate.id === run.id) ?? run;
+		const latestRun = this.store.listRuns({ jobId: job.id, limit: 100 }).find((candidate) => candidate.id === run.id) ?? run;
 		const resources = mergeRunResources(latestJob.resources, latestRun.resources);
 		const leaseIds = resources?.browserLeaseIds ?? [];
 		if (!resources || leaseIds.length === 0) return;
@@ -143,8 +142,8 @@ export class PiboRalphService {
 			? { ...resources, workerId, cleanupState: 'dirty', dirtyReason, updatedAt }
 			: clearDirtyReason({ ...resources, workerId, cleanupState: 'released', updatedAt });
 		try {
-			this.store.updateRunResources({ ownerScope: job.ownerScope, jobId: job.id, runId: run.id, resources: nextResources });
-			this.store.updateJobResources(job.ownerScope, job.id, nextResources);
+			this.store.updateRunResources({ jobId: job.id, runId: run.id, resources: nextResources });
+			this.store.updateJobResources(job.id, nextResources);
 		} catch (error) {
 			console.error(`[ralph] failed to record resource cleanup for run ${run.id}`, error);
 		}
@@ -159,7 +158,7 @@ export class PiboRalphService {
 		if (!isJsonObject(payload.payload)) return;
 		if (typeof payload.jobId !== 'string' || typeof payload.type !== 'string') return;
 		const source = payload.source === 'pi-extension' || payload.source === 'tool' || payload.source === 'plugin' || payload.source === 'pibo' ? payload.source : 'plugin';
-		try { this.store.appendRunFact({ ownerScope: legacyOwnerScopeForPreCutoverSchemas(), jobId: payload.jobId, runId: typeof payload.runId === 'string' ? payload.runId : undefined, piboSessionId: typeof payload.piboSessionId === 'string' ? payload.piboSessionId : undefined, type: payload.type, source: source as PiboRalphRunFact['source'], payload: payload.payload }); } catch (error) { console.error('[ralph] failed to append run fact', error); }
+		try { this.store.appendRunFact({ jobId: payload.jobId, runId: typeof payload.runId === 'string' ? payload.runId : undefined, piboSessionId: typeof payload.piboSessionId === 'string' ? payload.piboSessionId : undefined, type: payload.type, source: source as PiboRalphRunFact['source'], payload: payload.payload }); } catch (error) { console.error('[ralph] failed to append run fact', error); }
 	}
 	private async executeJob(job: PiboRalphJob, run: PiboRalphRun): Promise<{ piboSessionId: string; finalAnswer: string }> {
 		const target = this.resolveTarget(job);

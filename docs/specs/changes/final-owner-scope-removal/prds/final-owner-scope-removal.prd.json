@@ -235,8 +235,8 @@
         "Any migration fixture or schema validation runs only against temp files or Docker sandbox homes, never /root/.pibo"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed ownerScope from PiboRalphJob, PiboRalphRun, PiboRalphRunFact, PiboRalphJobCreateInput, and Ralph store/service active contracts. Ralph targets now persist as { kind: \"room\", roomId } or { kind: \"default-chat\" }; historical personal/principal targets are normalized to default-chat when rows are read or rebuilt. Removed getOwnedJob and owner parameters/filters from Ralph store methods (list/create/update/remove/reserve/run/fact/resource APIs). Fresh pibo-ralph.sqlite schemas create pibo_ralph_jobs, pibo_ralph_runs, and pibo_ralph_run_facts without owner_scope columns or owner indexes. Added temp-file migration fixture coverage for historical user owner_scope jobs/runs/facts and owner indexes, proving rows preserve ids, run history, facts, resource metadata compatibility, timestamps, state, and convert personal target JSON to default-chat while dropping owner columns/indexes. Updated Ralph service and Chat API call sites to use ownerless store APIs; CLI deprecated option cleanup is left to US-015, but it now writes ownerless jobs. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/ralph-resource-metadata.test.mjs test/ralph-stop-conditions.test.mjs test/ralph-resource-cleanup.test.mjs test/ralph-runtime-overrides.test.mjs test/ralph-resource-visibility.test.mjs; node --test test/shared-app-fresh-schema.test.mjs test/ralph-resource-metadata.test.mjs; npm run typecheck. Targeted source gate over src/ralph/types.ts src/ralph/store.ts src/ralph/service.ts found no ownerScope/getOwnedJob/personal target/principalId model matches, and fresh-schema rg for owner_scope column/index creation in src/ralph/store.ts returned no matches. Fixtures used only Docker temp files/fresh test home; host /root/.pibo, host gateways, Production data, deploys, and PR creation were not touched."
     },
     {
       "id": "US-015",
