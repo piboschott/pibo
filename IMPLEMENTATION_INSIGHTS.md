@@ -317,3 +317,11 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Active-source residual vocabulary after US-029 is limited to the final-removal implementation docs and `src/data/final-app-space-cutover-migration.ts`. The temporary implementation-doc allowlist should be shrunk after user-approved archival/cutover.
 - Technical helper names can trip product-vocabulary gates even when they refer to controller/run ownership rather than product Owner Scope. Prefer neutral names such as `getSessionForController`, `requireRunForController`, and `holder` for active source.
 - Worker-local API sweeps can reuse a built `dist/gateway/web.js` dev-auth server on an isolated worker port and recursively scan JSON keys for owner/principal fields across Chat bootstrap, agents, projects, workflows, Ralph, Cron, and Web Annotations without touching host gateways.
+
+## US-030 final handoff lessons
+
+- The final review handoff report is `docs/reports/final-owner-scope-review-handoff-us-030.md`. It is the entry point for user review before any upstream PR or real host/Production cutover.
+- Final validation should still be described as Docker-only: use the fresh test home `/workspace/.pibo/ralph-test-home`; do not infer anything from host `/root/.pibo`.
+- The remaining allowed active-root product-vocabulary paths are intentional review/cutover artifacts only: the final-removal plan, text PRD, PRD JSON, and `src/data/final-app-space-cutover-migration.ts`. Shrink this allowlist after approved cutover/archival or migration-tool removal.
+- The draft PR body and PR creation command in the handoff are instructions for a future human-approved step. The autonomous Ralph loop must not run them.
+- Production cutover remains governed by the US-028 runbook: fresh backup, verified quick checks, inspect/dry-run review, explicit apply approval, Pibo CLI gateway operations only, post-checks, and rollback readiness.
