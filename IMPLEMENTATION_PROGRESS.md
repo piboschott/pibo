@@ -232,4 +232,4 @@
   - Evidence tier: Docker build/typecheck, focused Ralph service/store/API/resource/stop-condition tests, fresh shared schema test, temp-file migration fixture tests, and targeted source/schema search gates.
   - Safety: all migration fixtures used Docker temp files or `/workspace/.pibo/ralph-test-home`; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-014 set to `passes: true` with evidence notes. Next failing story: US-015 (`Clean Ralph service, CLI, API, and UI surfaces`).
-  - Commit: pending.
+  - Commit: `4b55ab1 feat: US-014 - remove Ralph owner scope model`.
