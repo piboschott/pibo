@@ -76,4 +76,4 @@
   - Evidence tier: Docker build/typecheck plus read-only sandbox schema inspection and Docker search baseline.
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-001 set to `passes: true` with evidence notes.
-  - Commit: `af25c65 docs: US-001 baseline owner scope removal`.
+  - Commit: `8ef39c9 docs: US-001 baseline owner scope removal`.
