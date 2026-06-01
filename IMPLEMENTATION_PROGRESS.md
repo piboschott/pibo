@@ -336,4 +336,4 @@
   - Evidence tier: Docker build/typecheck plus focused temp-fixture migration apply/idempotency/rollback-report tests and real built-CLI JSON apply path against temp roots.
   - Safety: apply validation used only Docker temp fixture homes and temp backup directories. No apply was run against host `/root/.pibo`, the copied host backup, or Production; host Dev/Production gateways, deploy scripts, and PR creation were not touched.
   - PRD update: US-023 set to `passes: true` with evidence notes. Next failing story: US-024 (`Remove temporary runtime compatibility for fresh ownerless test schemas`).
-- 2026-06-01T23:59Z: US-023 implementation commit created: `943df3f feat: US-023 - add final cutover apply`.
+- 2026-06-01T23:59Z: US-023 implementation commit created: `ad5d647 feat: US-023 - add final cutover apply`.
