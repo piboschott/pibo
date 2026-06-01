@@ -197,3 +197,4 @@
   - Evidence tier: Docker build/typecheck, focused Custom Agent store/profile tests, full Chat Web handler-path test file covering Custom Agent API/Profile flows, Chat UI Agent catalog mutation test, targeted source search, and temp-file migration/schema fixtures.
   - Safety: migration fixtures used only Docker temp files and the fresh Docker test home; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-011 set to `passes: true` with evidence notes. Next failing story: US-012 (`Convert Projects and workflow UI persistence to app-global resources`).
+- 2026-06-01T12:44Z: US-011 implementation commit created: `bc2241d feat: US-011 - convert custom agents ownerless`.
