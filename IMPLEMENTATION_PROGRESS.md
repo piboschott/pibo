@@ -256,3 +256,4 @@
   - Evidence tier: Docker build/typecheck, focused Cron store/lifecycle/API tests, fresh shared schema regression, temp-file migration fixture tests, CLI temp-store add/edit paths in focused tests, and targeted source/schema search gates.
   - Safety: all fixtures used Docker temp files or `/workspace/.pibo/ralph-test-home`; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-016 set to `passes: true` with evidence notes. Next failing story: US-017 (`Clean Cron service, CLI, API, and UI surfaces`).
+- 2026-06-01T17:42Z: US-016 implementation commit created: `7f45d74 feat: US-016 - remove Cron owner scope model`.
