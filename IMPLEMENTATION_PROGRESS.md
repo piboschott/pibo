@@ -359,3 +359,4 @@
   - Evidence tier: Docker build/typecheck, focused gate tests, current-docs search gate, and built CLI guide output checks.
   - Safety: no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-025 set to `passes: true` with evidence notes. Next failing story: US-026 (`Run full Docker validation on ownerless fresh test databases`).
+- 2026-06-01T09:38Z: US-025 implementation commit created: `b43e1c3 docs: US-025 - update ownerless docs and help`.
