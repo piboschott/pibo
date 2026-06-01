@@ -378,19 +378,18 @@ export class ChatProjectService {
 		}
 		const existingForSession = this.getWorkflowSessionSnapshotForSession(snapshot.piboSessionId);
 		if (existingForSession) throw new Error(`Project workflow session '${snapshot.piboSessionId}' already has a configuration snapshot`);
-		const ownerlessSnapshot = stripWorkflowSessionSnapshotOwnerScope(snapshot);
 		this.db.prepare(`INSERT INTO project_workflow_session_snapshots (id, schema_version, project_id, pibo_session_id, workflow_id, workflow_version, base_definition_hash, effective_definition_hash, snapshot_json, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-			ownerlessSnapshot.id,
-			ownerlessSnapshot.schemaVersion,
-			ownerlessSnapshot.projectId,
-			ownerlessSnapshot.piboSessionId,
-			ownerlessSnapshot.workflow.id,
-			ownerlessSnapshot.workflow.version,
-			ownerlessSnapshot.workflow.baseDefinitionHash,
-			ownerlessSnapshot.workflow.effectiveDefinitionHash,
-			JSON.stringify(ownerlessSnapshot),
-			ownerlessSnapshot.createdAt,
+			snapshot.id,
+			snapshot.schemaVersion,
+			snapshot.projectId,
+			snapshot.piboSessionId,
+			snapshot.workflow.id,
+			snapshot.workflow.version,
+			snapshot.workflow.baseDefinitionHash,
+			snapshot.workflow.effectiveDefinitionHash,
+			JSON.stringify(snapshot),
+			snapshot.createdAt,
 		);
 		return this.getWorkflowSessionSnapshot(snapshot.id)!;
 	}
@@ -881,52 +880,8 @@ export class ChatProjectService {
 			CREATE INDEX IF NOT EXISTS project_workflow_human_actions_run_idx ON project_workflow_human_actions(workflow_run_id, created_at);
 			CREATE INDEX IF NOT EXISTS project_workflow_human_actions_wait_token_idx ON project_workflow_human_actions(wait_token_id, created_at);
 		`);
-		this.removeLegacyProjectOwnerScopeColumn();
-		this.removeLegacyWorkflowSessionSnapshotOwnerScope();
 		this.ensureProjectSessionWorkflowVersionColumn();
 		this.ensureProjectSessionConfigurationColumn();
-	}
-
-	private removeLegacyProjectOwnerScopeColumn(): void {
-		const columnNames = new Set((this.db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>).map((column) => column.name));
-		if (!columnNames.has("owner_scope")) return;
-		const now = new Date().toISOString();
-		this.db.exec(`
-			PRAGMA foreign_keys = OFF;
-			BEGIN IMMEDIATE;
-			ALTER TABLE projects RENAME TO __pibo_legacy_projects_owner_scope;
-			CREATE TABLE projects (
-				id TEXT PRIMARY KEY,
-				name TEXT NOT NULL,
-				description TEXT,
-				project_folder TEXT NOT NULL,
-				configuration_status TEXT NOT NULL DEFAULT 'configured',
-				current_main_session_id TEXT,
-				archived_at TEXT,
-				metadata_json TEXT NOT NULL DEFAULT '{}',
-				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL
-			);
-			INSERT INTO projects (id, name, description, project_folder, configuration_status, current_main_session_id, archived_at, metadata_json, created_at, updated_at)
-				SELECT ${projectColumnSelect(columnNames, "id", "'prj_legacy_' || lower(hex(randomblob(8)))")}, ${projectColumnSelect(columnNames, "name", "'Untitled Project'")}, ${projectColumnSelect(columnNames, "description", "NULL")}, ${projectColumnSelect(columnNames, "project_folder", "id")}, ${projectColumnSelect(columnNames, "configuration_status", "'configured'")}, ${projectColumnSelect(columnNames, "current_main_session_id", "NULL")}, ${projectColumnSelect(columnNames, "archived_at", "NULL")}, ${projectColumnSelect(columnNames, "metadata_json", "'{}'")}, ${projectColumnSelect(columnNames, "created_at", `'${now}'`)}, ${projectColumnSelect(columnNames, "updated_at", `'${now}'`)}
-				FROM __pibo_legacy_projects_owner_scope;
-			DROP TABLE __pibo_legacy_projects_owner_scope;
-			COMMIT;
-			PRAGMA foreign_keys = ON;
-			CREATE UNIQUE INDEX IF NOT EXISTS projects_name_unique ON projects (lower(name));
-			CREATE UNIQUE INDEX IF NOT EXISTS projects_folder_unique ON projects (project_folder);
-		`);
-	}
-
-	private removeLegacyWorkflowSessionSnapshotOwnerScope(): void {
-		const rows = this.db.prepare("SELECT id, snapshot_json FROM project_workflow_session_snapshots").all() as Array<{ id: string; snapshot_json: string }>;
-		const update = this.db.prepare("UPDATE project_workflow_session_snapshots SET snapshot_json = ? WHERE id = ?");
-		for (const row of rows) {
-			const snapshot = safeJsonObject(row.snapshot_json) as Partial<PiboProjectWorkflowSessionSnapshot> & { ownerScope?: unknown };
-			if (!("ownerScope" in snapshot)) continue;
-			delete snapshot.ownerScope;
-			update.run(JSON.stringify(snapshot), row.id);
-		}
 	}
 
 	private ensureProjectSessionWorkflowVersionColumn(): void {
@@ -1086,7 +1041,7 @@ function projectSessionFromRow(row: ProjectSessionRow): PiboProjectSession {
 }
 
 function workflowSessionSnapshotFromRow(row: ProjectWorkflowSessionSnapshotRow): PiboProjectWorkflowSessionSnapshot {
-	const snapshot = stripWorkflowSessionSnapshotOwnerScope(safeJsonObject(row.snapshot_json) as Partial<PiboProjectWorkflowSessionSnapshot>);
+	const snapshot = safeJsonObject(row.snapshot_json) as Partial<PiboProjectWorkflowSessionSnapshot>;
 	return {
 		...snapshot,
 		id: row.id,
@@ -1312,20 +1267,6 @@ function isPlainJsonObject(value: unknown): value is PiboJsonObject {
 function isStringRecord(value: unknown): value is Record<string, string> {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 		&& Object.values(value as Record<string, unknown>).every((entry) => typeof entry === "string");
-}
-
-function stripWorkflowSessionSnapshotOwnerScope<T extends Partial<PiboProjectWorkflowSessionSnapshot>>(snapshot: T): T {
-	const clone = { ...snapshot } as T & { ownerScope?: unknown };
-	delete clone.ownerScope;
-	return clone;
-}
-
-function projectColumnSelect(columns: Set<string>, columnName: string, fallback: string): string {
-	return columns.has(columnName) ? quoteIdentifier(columnName) : `${fallback} AS ${quoteIdentifier(columnName)}`;
-}
-
-function quoteIdentifier(value: string): string {
-	return `"${value.replaceAll('"', '""')}"`;
 }
 
 export function sharedDefaultProjectId(): string {

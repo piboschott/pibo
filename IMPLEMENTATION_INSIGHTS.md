@@ -267,3 +267,12 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Apply reuses the final migration decisions from dry-run: duplicate Chat defaults keep the newest non-archived default, duplicate `session_navigation` keeps the newest row per `session_id`, principal read-state merges into app read-state, Custom Agent profile-name collisions rename older rows with deterministic `-legacy-<hash>` suffixes, and Ralph/Cron legacy personal/principal targets normalize to `default-chat`.
 - Post-check evidence includes row-count checks for every affected table, post-apply `PRAGMA quick_check`, a JSON report under `<root>/migration-reports/`, and rollback instructions pointing at the verified backup path.
 - US-023 intentionally validated apply only against Docker temp fixture homes/backups. Do not run apply against the copied migration sandbox unless using an extra sandbox copy and a verified backup path; never run it against host `/root/.pibo` inside this Ralph loop.
+
+## US-024 runtime compatibility removal lessons
+
+- Normal runtime/source no longer carries pre-cutover Owner Scope compatibility. Do not add `src/owner-scope-compat.ts` or the old `pibo data shared-app` normalization framework back; legacy product data handling belongs in `src/data/final-app-space-cutover-migration.ts` and its tests only.
+- Store constructors should assume ownerless schemas after final cutover. If old DBs fail, run/review the final-cutover inspect/dry-run/apply path in an approved isolated/Production process instead of reintroducing runtime table rebuilds.
+- `loadPiboUserSettings()` and `updatePiboUserSettings(patch)` are app-level settings APIs. Do not pass auth user ids, principals, or synthetic storage keys into settings callers.
+- Compute worker technical labeling is now `holder` / `pibo.compute.holder`; avoid `ownerScope` even for non-product Docker metadata because it trips product vocabulary gates and confuses agents.
+- Fresh ownerless runtime regression lives in `test/ownerless-fresh-runtime-regression.test.mjs`; it is the quick proof that new sessions, rooms, agents, projects, annotations, Ralph, Cron, and workflow runs can be created without owner/principal payloads.
+- Useful US-024 source gate: `rg -n "owner_scope|principal_id|shared:app|legacyOwnerScopeForPreCutoverSchemas|ownerScope" src packages --glob "*.ts" --glob "!src/data/final-app-space-cutover-migration.ts"` should return no matches. Current historical tests/docs still need cleanup in US-025/US-026/US-029.

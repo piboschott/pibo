@@ -48,7 +48,6 @@ import {
 } from "../../core/model-defaults.js";
 import { inspectPiboContextBuild } from "../../core/context-build.js";
 import { loadPiboUserSettings } from "../../core/user-settings.js";
-import { legacyOwnerScopeForPreCutoverSchemas } from "../../owner-scope-compat.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
@@ -616,8 +615,8 @@ function isJsonValue(value: unknown): value is PiboJsonValue {
 	return false;
 }
 
-function principalIdFor(_webSession: PiboWebSession): string {
-	return legacyOwnerScopeForPreCutoverSchemas();
+function auditActorIdFor(webSession: PiboWebSession): string {
+	return webSession.authSession.identity.userId;
 }
 
 function recordWorkflowLifecycleEvent(
@@ -627,7 +626,7 @@ function recordWorkflowLifecycleEvent(
 ): WorkflowLifecycleEventRecord {
 	return state.workflowLifecycleEventStore.record({
 		...input,
-		actorId: input.actorId ?? principalIdFor(webSession),
+		actorId: input.actorId ?? auditActorIdFor(webSession),
 	});
 }
 
@@ -1815,7 +1814,7 @@ function archiveWorkflowIdentity(
 	}
 	const archiveState = state.workflowArchiveStore.setWorkflowArchived({
 		workflowId,
-		archivedBy: principalIdFor(webSession),
+		archivedBy: auditActorIdFor(webSession),
 		archiveReason: normalizeWorkflowArchiveReason(reasonValue),
 	});
 	recordWorkflowLifecycleEvent(state, webSession, {
@@ -1852,7 +1851,7 @@ function deleteWorkflowIdentity(
 	const displayVersion = selectWorkflowCatalogDisplayVersion(workflow.versions);
 	const tombstone = state.workflowTombstoneStore.setWorkflowDeleted({
 		workflowId,
-		deletedBy: principalIdFor(webSession),
+		deletedBy: auditActorIdFor(webSession),
 		lastKnownTitle: workflow.title,
 		...(displayVersion?.version ? { lastKnownVersion: displayVersion.version } : {}),
 		...(displayVersion?.definitionHash ? { lastDefinitionHash: displayVersion.definitionHash } : {}),
@@ -2681,7 +2680,7 @@ async function buildContextBuildSnapshotForRequest(input: {
 
 	const selectedSession = requireSharedSession(input.context, input.piboSessionId);
 	const profile = createProfile(selectedSession.profile);
-	const userSettings = loadPiboUserSettings(legacyOwnerScopeForPreCutoverSchemas());
+	const userSettings = loadPiboUserSettings();
 	const cwd = selectedSession?.workspace ?? getDefaultPiboWorkspace();
 	return inspectPiboContextBuild({
 		cwd,
@@ -3289,7 +3288,7 @@ async function sendProjectMessage(input: {
 	const selectedSession = requireSharedSession(input.context, input.body.piboSessionId);
 	const projectSession = input.state.projectService.getProjectSession(selectedSession.id);
 	if (!projectSession) throw new PiboWebHttpError("Project session not found", 404);
-	const actorId = principalIdFor(input.webSession);
+	const actorId = auditActorIdFor(input.webSession);
 	const duplicate = clientTxnId ? input.state.eventCommands.findByClientTxn(undefined, actorId, clientTxnId) : undefined;
 	if (duplicate) return responseJson({ duplicate: true, event: duplicate });
 	const accepted = input.state.eventCommands.appendEvent({
@@ -3452,7 +3451,7 @@ async function sendChatMessage(input: {
 		throw new PiboWebHttpError("Archived rooms are read-only", 403);
 	}
 	input.state.sessionQuery.upsertSession(selectedSession);
-	const actorId = principalIdFor(input.webSession);
+	const actorId = auditActorIdFor(input.webSession);
 	const duplicate = clientTxnId ? input.state.eventCommands.findByClientTxn(room.id, actorId, clientTxnId) : undefined;
 	if (duplicate) return responseJson({ duplicate: true, event: duplicate });
 	const webAnnotationContext = prepareWebAnnotationAttachments({
@@ -4192,7 +4191,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const publishResult = state.workflowPublishedVersionStore.publishDraft({
 					draft: record,
 					versionIntent: record.versionIntent,
-					publishedBy: principalIdFor(webSession),
+					publishedBy: auditActorIdFor(webSession),
 					reservedVersions: STATIC_WORKFLOW_VERSION_CATALOG
 						.filter((workflow) => workflow.id === record.workflowId && workflow.status === "published")
 						.map((workflow) => workflow.version),
@@ -4379,7 +4378,6 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				const response = await handleChatSettingsRoute({
 					route: settingsRoute,
 					request,
-					ownerScope: legacyOwnerScopeForPreCutoverSchemas(),
 					cwd: process.cwd(),
 				});
 				if (chatSettingsRouteInvalidatesBootstrapCatalog(settingsRoute)) invalidateBootstrapCatalogCache(state);

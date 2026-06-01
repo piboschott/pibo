@@ -15,7 +15,6 @@ type SessionRow = {
 	channel: string;
 	kind: string;
 	profile: string;
-	owner_scope: string | null;
 	parent_id: string | null;
 	origin_id: string | null;
 	workspace: string | null;

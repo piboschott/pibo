@@ -4,7 +4,6 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { piboHomePath } from "../core/pibo-home.js";
 import type { PiboJsonObject } from "../core/events.js";
-import { sqliteTableColumns, sqliteTableExists } from "../data/sqlite-schema.js";
 import {
 	isWebAnnotationBindingState,
 	isWebAnnotationStatus,
@@ -238,7 +237,6 @@ export class WebAnnotationStore {
 		this.db.exec("PRAGMA foreign_keys = ON");
 		if (resolved !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
 		this.applySchema();
-		this.migrateLegacyOwnerColumns();
 		this.applySchema();
 	}
 
@@ -546,32 +544,6 @@ export class WebAnnotationStore {
 			CREATE INDEX IF NOT EXISTS idx_web_annotations_session_created
 				ON web_annotations(pibo_session_id, created_at DESC);
 		`);
-	}
-
-	private migrateLegacyOwnerColumns(): void {
-		this.rebuildWithoutOwnerColumn("web_annotation_bindings", BINDING_COLUMNS);
-		this.rebuildWithoutOwnerColumn("web_annotations", ANNOTATION_COLUMNS);
-	}
-
-	private rebuildWithoutOwnerColumn(tableName: "web_annotation_bindings" | "web_annotations", finalColumns: readonly string[]): void {
-		if (!sqliteTableExists(this.db, tableName)) return;
-		const columns = sqliteTableColumns(this.db, tableName);
-		if (!columns.has("owner_scope")) return;
-		const copyColumns = finalColumns.filter((column) => columns.has(column));
-		if (!copyColumns.length) return;
-		const oldTableName = `${tableName}_legacy_owner_scope_${randomUUID().replaceAll("-", "")}`;
-		this.db.exec("BEGIN");
-		try {
-			this.db.exec(`ALTER TABLE ${quoteIdentifier(tableName)} RENAME TO ${quoteIdentifier(oldTableName)}`);
-			this.applySchema();
-			const columnSql = copyColumns.map(quoteIdentifier).join(", ");
-			this.db.exec(`INSERT OR IGNORE INTO ${quoteIdentifier(tableName)} (${columnSql}) SELECT ${columnSql} FROM ${quoteIdentifier(oldTableName)}`);
-			this.db.exec(`DROP TABLE ${quoteIdentifier(oldTableName)}`);
-			this.db.exec("COMMIT");
-		} catch (error) {
-			this.db.exec("ROLLBACK");
-			throw error;
-		}
 	}
 }
 

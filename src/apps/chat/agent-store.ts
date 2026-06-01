@@ -147,7 +147,6 @@ export class CustomAgentStore {
 		this.migrateBuiltinToolNamesColumn();
 		this.migrateLegacyProfileNames();
 		this.migrateDuplicateProfileNames();
-		this.migrateOwnerScopeColumn();
 	}
 
 	list(options: { includeArchived?: boolean } = {}): CustomAgentDefinition[] {
@@ -410,61 +409,6 @@ export class CustomAgentStore {
 			this.db
 				.prepare("UPDATE chat_agents SET profile_name = ?, display_name = ? WHERE id = ?")
 				.run(nextName, nextName, row.id);
-		}
-	}
-
-	private migrateOwnerScopeColumn(): void {
-		const columns = this.tableColumns();
-		if (!columns.has("owner_scope")) return;
-		this.db.exec("BEGIN IMMEDIATE");
-		try {
-			this.db.exec(`
-				CREATE TABLE chat_agents_ownerless (
-					id TEXT PRIMARY KEY,
-					profile_name TEXT NOT NULL UNIQUE,
-					display_name TEXT NOT NULL,
-					description TEXT,
-					native_tools_json TEXT NOT NULL,
-					skills_json TEXT NOT NULL,
-					context_files_json TEXT NOT NULL,
-					subagents_json TEXT NOT NULL,
-					mcp_servers_json TEXT NOT NULL DEFAULT '[]',
-					pi_packages_json TEXT NOT NULL DEFAULT '[]',
-					main_model_json TEXT,
-					subagent_model_json TEXT,
-					thinking_level TEXT,
-					main_thinking_level TEXT,
-					subagent_thinking_level TEXT,
-					fast INTEGER,
-					main_fast INTEGER,
-					subagent_fast INTEGER,
-					builtin_tools TEXT NOT NULL,
-					builtin_tool_names_json TEXT NOT NULL DEFAULT '["read","bash","edit","write"]',
-					auto_context_files INTEGER NOT NULL DEFAULT 1,
-					run_control INTEGER NOT NULL,
-					created_at TEXT NOT NULL,
-					updated_at TEXT NOT NULL,
-					archived_at TEXT
-				);
-				INSERT INTO chat_agents_ownerless (
-					id, profile_name, display_name, description, native_tools_json, skills_json, context_files_json,
-					subagents_json, mcp_servers_json, pi_packages_json, main_model_json, subagent_model_json,
-					thinking_level, main_thinking_level, subagent_thinking_level, fast, main_fast, subagent_fast,
-					builtin_tools, builtin_tool_names_json, auto_context_files, run_control, created_at, updated_at, archived_at
-				)
-				SELECT
-					id, profile_name, display_name, description, native_tools_json, skills_json, context_files_json,
-					subagents_json, mcp_servers_json, pi_packages_json, main_model_json, subagent_model_json,
-					thinking_level, main_thinking_level, subagent_thinking_level, fast, main_fast, subagent_fast,
-					builtin_tools, builtin_tool_names_json, auto_context_files, run_control, created_at, updated_at, archived_at
-				FROM chat_agents;
-				DROP TABLE chat_agents;
-				ALTER TABLE chat_agents_ownerless RENAME TO chat_agents;
-			`);
-			this.db.exec("COMMIT");
-		} catch (error) {
-			this.db.exec("ROLLBACK");
-			throw error;
 		}
 	}
 

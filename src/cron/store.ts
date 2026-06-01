@@ -316,7 +316,6 @@ export class PiboCronStore {
 
 	private applySchema(): void {
 		this.createFreshSchema();
-		this.ensureOwnerlessSchema();
 	}
 
 	private createFreshSchema(): void {
@@ -352,30 +351,6 @@ export class PiboCronStore {
 			);
 			CREATE INDEX IF NOT EXISTS idx_pibo_cron_runs_job_created ON pibo_cron_runs(job_id, created_at DESC);
 		`);
-	}
-
-	private ensureOwnerlessSchema(): void {
-		const needsRebuild = this.tableColumns("pibo_cron_jobs").has("owner_scope") || this.tableColumns("pibo_cron_runs").has("owner_scope");
-		if (!needsRebuild) return;
-		const jobs = this.db.prepare("SELECT * FROM pibo_cron_jobs").all() as CronJobRow[];
-		const runs = this.db.prepare("SELECT * FROM pibo_cron_runs").all() as CronRunRow[];
-		this.db.exec("BEGIN IMMEDIATE");
-		try {
-			this.db.exec("DROP TABLE IF EXISTS pibo_cron_runs; DROP TABLE IF EXISTS pibo_cron_jobs;");
-			this.createFreshSchema();
-			const insertJob = this.db.prepare("INSERT INTO pibo_cron_jobs (id, name, description, enabled, target_json, profile, prompt, schedule_json, schedule_ui_json, delete_after_run, state_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-			for (const row of jobs) insertJob.run(row.id, row.name, row.description ?? null, row.enabled, targetJson(parseTarget(row.target_json)), row.profile, row.prompt, row.schedule_json, row.schedule_ui_json ?? null, row.delete_after_run, row.state_json, row.created_at, row.updated_at);
-			const insertRun = this.db.prepare("INSERT INTO pibo_cron_runs (id, job_id, pibo_session_id, status, reason, error, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-			for (const row of runs) insertRun.run(row.id, row.job_id, row.pibo_session_id ?? null, row.status, row.reason ?? null, row.error ?? null, row.started_at ?? null, row.completed_at ?? null, row.created_at, row.updated_at);
-			this.db.exec("COMMIT");
-		} catch (error) {
-			this.db.exec("ROLLBACK");
-			throw error;
-		}
-	}
-
-	private tableColumns(tableName: string): Set<string> {
-		return new Set((this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((column) => column.name));
 	}
 
 	private insertJob(job: PiboCronJob): void {

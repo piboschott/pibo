@@ -44,10 +44,6 @@ export async function runDataCli(argv: string[]): Promise<void> {
 		await runFinalCutoverCommand(args.slice(1));
 		return;
 	}
-	if (args[0] === "shared-app") {
-		await runSharedAppMigrationCommand(args.slice(1));
-		return;
-	}
 	if (args[0] === "migrate" && args[1] === "sessions-to-v2") {
 		const json = args.includes("--json");
 		const root = optionValue(args, "--root") ?? process.env.PIBO_HOME;
@@ -56,20 +52,6 @@ export async function runDataCli(argv: string[]): Promise<void> {
 		const report = migrateSessionsToV2({ from, to });
 		if (json) console.log(JSON.stringify(report, null, 2));
 		else printSessionMigrationReport(report);
-		return;
-	}
-	if (args[0] === "repair" && args[1] === "unread-baseline") {
-		const json = args.includes("--json");
-		const root = optionValue(args, "--root") ?? process.env.PIBO_HOME;
-		const to = optionValue(args, "--to") ?? dataPath(root, "pibo.sqlite");
-		const ownerScope = optionValue(args, "--owner-scope");
-		const before = optionValue(args, "--before");
-		const dryRun = args.includes("--dry-run");
-		if (!ownerScope) throw new Error("pibo data repair unread-baseline requires --owner-scope <ownerScope>");
-		if (!before) throw new Error("pibo data repair unread-baseline requires --before <isoTimestamp>");
-		const report = repairUnreadBaseline({ to, ownerScope, before, dryRun });
-		if (json) console.log(JSON.stringify(report, null, 2));
-		else printUnreadBaselineRepairReport(report);
 		return;
 	}
 	throw new Error(`Unknown pibo data command "${args[0]}". Run pibo data --help.`);
@@ -219,112 +201,6 @@ function migrateSessionsToV2(input: { from: string; to: string }): SessionMigrat
 	return report;
 }
 
-type UnreadBaselineRepairSession = {
-	sessionId: string;
-	previousLastReadStreamId: number;
-	targetLastReadStreamId: number;
-	inserted: boolean;
-	changed: boolean;
-};
-
-type UnreadBaselineRepairReport = {
-	to: string;
-	inputExists: boolean;
-	ownerScope: string;
-	before: string;
-	dryRun: boolean;
-	candidateSessions: number;
-	changedSessions: number;
-	inserted: number;
-	updated: number;
-	skipped: number;
-	sessions: UnreadBaselineRepairSession[];
-};
-
-function repairUnreadBaseline(input: { to: string; ownerScope: string; before: string; dryRun: boolean }): UnreadBaselineRepairReport {
-	const report: UnreadBaselineRepairReport = {
-		to: input.to,
-		inputExists: existsSync(input.to),
-		ownerScope: input.ownerScope,
-		before: input.before,
-		dryRun: input.dryRun,
-		candidateSessions: 0,
-		changedSessions: 0,
-		inserted: 0,
-		updated: 0,
-		skipped: 0,
-		sessions: [],
-	};
-	if (!report.inputExists) return report;
-	const db = new DatabaseSync(input.to);
-	try {
-		if (!hasTable(db, "sessions") || !hasTable(db, "event_log") || !hasTable(db, "principal_session_stats")) return report;
-		const rows = db.prepare(`
-			SELECT
-				s.id AS session_id,
-				stats.session_id AS stats_session_id,
-				COALESCE(stats.last_read_stream_id, 0) AS previous_last_read_stream_id,
-				MAX(e.stream_id) AS target_last_read_stream_id
-			FROM sessions s
-			JOIN event_log e ON e.session_id = s.id
-			LEFT JOIN principal_session_stats stats ON stats.session_id = s.id AND stats.principal_id = s.owner_scope
-			WHERE s.owner_scope = ?
-				AND s.deleted_at IS NULL
-				AND e.created_at <= ?
-			GROUP BY s.id
-			ORDER BY s.id ASC
-		`).all(input.ownerScope, input.before) as Array<{
-			session_id: string;
-			stats_session_id: string | null;
-			previous_last_read_stream_id: number;
-			target_last_read_stream_id: number;
-		}>;
-		report.candidateSessions = rows.length;
-		const now = new Date().toISOString();
-		const upsert = db.prepare(`
-			INSERT INTO principal_session_stats (
-				session_id, principal_id, unread_count, last_read_stream_id, last_read_message_sequence, last_read_at, updated_at
-			) VALUES (?, ?, 0, ?, 0, ?, ?)
-			ON CONFLICT(session_id, principal_id) DO UPDATE SET
-				last_read_stream_id = MAX(principal_session_stats.last_read_stream_id, excluded.last_read_stream_id),
-				unread_count = 0,
-				last_read_at = excluded.last_read_at,
-				updated_at = excluded.updated_at
-		`);
-		if (!input.dryRun) db.exec("BEGIN IMMEDIATE");
-		try {
-			for (const row of rows) {
-				const previous = Number(row.previous_last_read_stream_id ?? 0);
-				const target = Number(row.target_last_read_stream_id ?? 0);
-				const inserted = !row.stats_session_id;
-				const changed = target > previous;
-				report.sessions.push({
-					sessionId: row.session_id,
-					previousLastReadStreamId: previous,
-					targetLastReadStreamId: target,
-					inserted,
-					changed,
-				});
-				if (!changed) {
-					report.skipped++;
-					continue;
-				}
-				report.changedSessions++;
-				if (inserted) report.inserted++;
-				else report.updated++;
-				if (!input.dryRun) upsert.run(row.session_id, input.ownerScope, target, now, now);
-			}
-			if (!input.dryRun) db.exec("COMMIT");
-		} catch (error) {
-			if (!input.dryRun) db.exec("ROLLBACK");
-			throw error;
-		}
-	} finally {
-		db.close();
-	}
-	return report;
-}
-
 function parseJsonObject(json: string | null | undefined): Record<string, unknown> {
 	if (!json) return {};
 	try {
@@ -361,45 +237,6 @@ async function runFinalCutoverCommand(args: string[]): Promise<void> {
 	else console.log(formatFinalAppSpaceCutoverReport(report));
 }
 
-async function runSharedAppMigrationCommand(args: string[]): Promise<void> {
-	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-		printSharedAppMigrationHelp();
-		return;
-	}
-	const command = args[0];
-	if (command !== "inspect" && command !== "dry-run" && command !== "apply") {
-		throw new Error(`Unknown pibo data shared-app command "${command}". Run pibo data shared-app --help.`);
-	}
-	const { formatSharedAppMigrationText, inspectSharedAppMigration } = await import("./shared-app-migration.js");
-	const json = args.includes("--json");
-	const report = inspectSharedAppMigration({
-		mode: command,
-		root: optionValue(args, "--root") ?? process.env.PIBO_HOME,
-		backupPath: optionValue(args, "--backup"),
-	});
-	if (json) console.log(JSON.stringify(report, null, 2));
-	else console.log(formatSharedAppMigrationText(report));
-}
-
-function printUnreadBaselineRepairReport(report: UnreadBaselineRepairReport): void {
-	console.log(`to\t${report.to}`);
-	console.log(`inputExists\t${report.inputExists}`);
-	console.log(`ownerScope\t${report.ownerScope}`);
-	console.log(`before\t${report.before}`);
-	console.log(`dryRun\t${report.dryRun}`);
-	console.log(`candidateSessions\t${report.candidateSessions}`);
-	console.log(`changedSessions\t${report.changedSessions}`);
-	console.log(`inserted\t${report.inserted}`);
-	console.log(`updated\t${report.updated}`);
-	console.log(`skipped\t${report.skipped}`);
-	if (report.sessions.length) {
-		console.log("session\tpreviousLastReadStreamId\ttargetLastReadStreamId\tinserted\tchanged");
-		for (const session of report.sessions) {
-			console.log(`${session.sessionId}\t${session.previousLastReadStreamId}\t${session.targetLastReadStreamId}\t${session.inserted}\t${session.changed}`);
-		}
-	}
-}
-
 function formatCounts(counts: Record<string, number>): string {
 	return Object.entries(counts).map(([name, count]) => `${name}:${count}`).join(",") || "-";
 }
@@ -428,22 +265,16 @@ function printDataHelp(): void {
 Commands:
   inventory           Read-only row counts, sizes, WAL sizes, and integrity checks; legacy-* rows are archived stores
   final-cutover       Inspect or dry-run the final app-space SQLite cutover against an isolated root
-  shared-app          Inspect and dry-run the shared-app owner/principal migration framework
   migrate sessions-to-v2  Import an explicit legacy pibo-sessions.sqlite into pibo.sqlite idempotently
-  repair unread-baseline  Seed read cursors for historical imported chat events
 
 Options:
   --json              Print machine-readable JSON
   --root DIR          Inspect a specific Pibo home directory instead of ~/.pibo
   --to FILE           Target pibo.sqlite path for migration or repair
-  --owner-scope ID    Legacy technical principal for unread-baseline repair only
-  --before TIMESTAMP  Baseline events at or before this ISO timestamp
-  --dry-run           Report unread-baseline changes without writing
 
 Next:
   pibo data inventory --json
   pibo data final-cutover --help
-  pibo data shared-app --help
   pibo data migrate sessions-to-v2 --from /path/to/pibo-sessions.sqlite --json
 `);
 }
@@ -471,22 +302,3 @@ Next:
 `);
 }
 
-function printSharedAppMigrationHelp(): void {
-	console.log(`pibo data shared-app - backup-gated shared-app migration inspection
-
-Commands:
-  inspect   Read-only counts by affected store, table, and legacy owner/principal value
-  dry-run   Read-only planned normalization and conflict report; writes nothing
-  apply     Backup-gated mutation for primary and auxiliary shared-app stores
-
-Options:
-  --json        Print machine-readable JSON
-  --root DIR    Inspect a specific Pibo home directory instead of ~/.pibo
-  --backup DIR  Existing fresh backup directory containing affected SQLite file copies; required by apply mode
-
-Next:
-  pibo data shared-app inspect --json
-  pibo data shared-app dry-run --json
-  pibo data shared-app apply --backup /path/to/fresh-backup --json
-`);
-}

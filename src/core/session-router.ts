@@ -42,7 +42,6 @@ import { withWorkflowSessionKind } from "../sessions/workflow-session-kind.js";
 import { PiboRuntimeTelemetryRecorder } from "./runtime-telemetry.js";
 import { createPiboProviderTelemetryExtension } from "./provider-telemetry.js";
 import type { TelemetryStore } from "../data/telemetry.js";
-import { legacyOwnerScopeForPreCutoverSchemas } from "../owner-scope-compat.js";
 
 export type {
 	PiboEventListener,
@@ -437,8 +436,7 @@ export class PiboSessionRouter {
 		const modelDefaults = this.resolveModelDefaults();
 		const activeModel = this.ensureSessionActiveModel(piboSession, profile, parentPiSessionId, modelDefaults);
 		const initialThinkingLevel = resolvePiboSessionInitialThinkingLevel(piboSession);
-		const legacySharedAppOwnerScope = legacyOwnerScopeForPreCutoverSchemas();
-		const userSettings = loadPiboUserSettings(legacySharedAppOwnerScope);
+		const userSettings = loadPiboUserSettings();
 		const telemetryExtension = this.telemetryStore
 			? createPiboProviderTelemetryExtension({ store: this.telemetryStore, session: piboSession, model: activeModel })
 			: undefined;

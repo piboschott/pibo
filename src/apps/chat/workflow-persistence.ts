@@ -144,7 +144,6 @@ type WorkflowLifecycleEventStoreRow = {
 
 export class ChatWorkflowDraftStore {
 	constructor(private readonly dataStore: PiboDataStore) {
-		rebuildWorkflowTableWithoutOwnerScope(this.dataStore.db, WORKFLOW_UI_DRAFTS_OWNERLESS_TABLE);
 		this.dataStore.db.exec(`
 			CREATE TABLE IF NOT EXISTS workflow_ui_drafts (
 				draft_id TEXT PRIMARY KEY,
@@ -413,8 +412,6 @@ function workflowPublishedVersionFromStoreRow(row: WorkflowPublishedVersionStore
 
 export class ChatWorkflowPromptAssetStore {
 	constructor(private readonly dataStore: PiboDataStore) {
-		rebuildWorkflowTableWithoutOwnerScope(this.dataStore.db, WORKFLOW_PROMPT_ASSETS_OWNERLESS_TABLE);
-		rebuildWorkflowTableWithoutOwnerScope(this.dataStore.db, WORKFLOW_PROMPT_ASSET_REVISIONS_OWNERLESS_TABLE);
 		this.dataStore.db.exec(`
 			CREATE TABLE IF NOT EXISTS workflow_prompt_assets (
 				asset_id TEXT PRIMARY KEY,
@@ -750,7 +747,6 @@ function workflowTombstoneFromStoreRow(row: WorkflowTombstoneStoreRow): Workflow
 
 export class ChatWorkflowLifecycleEventStore {
 	constructor(private readonly dataStore: PiboDataStore) {
-		rebuildWorkflowTableWithoutOwnerScope(this.dataStore.db, WORKFLOW_LIFECYCLE_EVENTS_OWNERLESS_TABLE);
 		this.dataStore.db.exec(`
 			CREATE TABLE IF NOT EXISTS workflow_lifecycle_events (
 				id TEXT PRIMARY KEY,
@@ -894,161 +890,6 @@ function workflowLifecycleEventFromStoreRow(row: WorkflowLifecycleEventStoreRow)
 		...(row.payload_json ? { payload: JSON.parse(row.payload_json) as PiboJsonObject } : {}),
 		createdAt: row.created_at,
 	};
-}
-
-type OwnerlessWorkflowTableSpec = {
-	name: string;
-	createSql: string;
-	columns: Array<{ name: string; fallback: string }>;
-};
-
-const WORKFLOW_UI_DRAFTS_OWNERLESS_TABLE: OwnerlessWorkflowTableSpec = {
-	name: "workflow_ui_drafts",
-	createSql: `CREATE TABLE __pibo_ownerless_workflow_ui_drafts (
-		draft_id TEXT PRIMARY KEY,
-		workflow_id TEXT NOT NULL,
-		source TEXT NOT NULL,
-		status TEXT NOT NULL,
-		base_workflow_id TEXT,
-		base_workflow_version TEXT,
-		base_definition_hash TEXT,
-		target_workflow_version TEXT,
-		version_intent TEXT NOT NULL,
-		definition_json TEXT NOT NULL,
-		diagnostics_json TEXT NOT NULL,
-		validation_json TEXT,
-		validation_state TEXT NOT NULL,
-		revision INTEGER NOT NULL,
-		created_at TEXT NOT NULL,
-		updated_at TEXT NOT NULL
-	);`,
-	columns: [
-		{ name: "draft_id", fallback: "'draft_legacy_' || lower(hex(randomblob(8)))" },
-		{ name: "workflow_id", fallback: "'legacy-workflow'" },
-		{ name: "source", fallback: "'ui'" },
-		{ name: "status", fallback: "'draft'" },
-		{ name: "base_workflow_id", fallback: "NULL" },
-		{ name: "base_workflow_version", fallback: "NULL" },
-		{ name: "base_definition_hash", fallback: "NULL" },
-		{ name: "target_workflow_version", fallback: "NULL" },
-		{ name: "version_intent", fallback: "'patch'" },
-		{ name: "definition_json", fallback: "'{}'" },
-		{ name: "diagnostics_json", fallback: "'[]'" },
-		{ name: "validation_json", fallback: "NULL" },
-		{ name: "validation_state", fallback: "'unknown'" },
-		{ name: "revision", fallback: "1" },
-		{ name: "created_at", fallback: "CURRENT_TIMESTAMP" },
-		{ name: "updated_at", fallback: "CURRENT_TIMESTAMP" },
-	],
-};
-
-const WORKFLOW_PROMPT_ASSETS_OWNERLESS_TABLE: OwnerlessWorkflowTableSpec = {
-	name: "workflow_prompt_assets",
-	createSql: `CREATE TABLE __pibo_ownerless_workflow_prompt_assets (
-		asset_id TEXT PRIMARY KEY,
-		source TEXT NOT NULL,
-		display_name TEXT NOT NULL,
-		description TEXT,
-		active_revision_id TEXT,
-		created_at TEXT NOT NULL,
-		updated_at TEXT NOT NULL
-	);`,
-	columns: [
-		{ name: "asset_id", fallback: "'asset_legacy_' || lower(hex(randomblob(8)))" },
-		{ name: "source", fallback: "'ui'" },
-		{ name: "display_name", fallback: "'Legacy Prompt Asset'" },
-		{ name: "description", fallback: "NULL" },
-		{ name: "active_revision_id", fallback: "NULL" },
-		{ name: "created_at", fallback: "CURRENT_TIMESTAMP" },
-		{ name: "updated_at", fallback: "CURRENT_TIMESTAMP" },
-	],
-};
-
-const WORKFLOW_PROMPT_ASSET_REVISIONS_OWNERLESS_TABLE: OwnerlessWorkflowTableSpec = {
-	name: "workflow_prompt_asset_revisions",
-	createSql: `CREATE TABLE __pibo_ownerless_workflow_prompt_asset_revisions (
-		revision_id TEXT PRIMARY KEY,
-		asset_id TEXT NOT NULL,
-		content_hash TEXT NOT NULL,
-		markdown TEXT NOT NULL,
-		created_at TEXT NOT NULL,
-		created_by TEXT,
-		based_on_revision_id TEXT
-	);`,
-	columns: [
-		{ name: "revision_id", fallback: "'rev_legacy_' || lower(hex(randomblob(8)))" },
-		{ name: "asset_id", fallback: "'asset_legacy'" },
-		{ name: "content_hash", fallback: "'sha256:legacy'" },
-		{ name: "markdown", fallback: "''" },
-		{ name: "created_at", fallback: "CURRENT_TIMESTAMP" },
-		{ name: "created_by", fallback: "NULL" },
-		{ name: "based_on_revision_id", fallback: "NULL" },
-	],
-};
-
-const WORKFLOW_LIFECYCLE_EVENTS_OWNERLESS_TABLE: OwnerlessWorkflowTableSpec = {
-	name: "workflow_lifecycle_events",
-	createSql: `CREATE TABLE __pibo_ownerless_workflow_lifecycle_events (
-		id TEXT PRIMARY KEY,
-		type TEXT NOT NULL,
-		actor_id TEXT,
-		workflow_id TEXT,
-		workflow_version TEXT,
-		draft_id TEXT,
-		project_id TEXT,
-		pibo_session_id TEXT,
-		workflow_run_id TEXT,
-		status TEXT,
-		validation_json TEXT,
-		diagnostics_json TEXT NOT NULL,
-		payload_json TEXT,
-		created_at TEXT NOT NULL
-	);`,
-	columns: [
-		{ name: "id", fallback: "'wfle_legacy_' || lower(hex(randomblob(8)))" },
-		{ name: "type", fallback: "'workflow.draft.saved'" },
-		{ name: "actor_id", fallback: "NULL" },
-		{ name: "workflow_id", fallback: "NULL" },
-		{ name: "workflow_version", fallback: "NULL" },
-		{ name: "draft_id", fallback: "NULL" },
-		{ name: "project_id", fallback: "NULL" },
-		{ name: "pibo_session_id", fallback: "NULL" },
-		{ name: "workflow_run_id", fallback: "NULL" },
-		{ name: "status", fallback: "NULL" },
-		{ name: "validation_json", fallback: "NULL" },
-		{ name: "diagnostics_json", fallback: "'[]'" },
-		{ name: "payload_json", fallback: "NULL" },
-		{ name: "created_at", fallback: "CURRENT_TIMESTAMP" },
-	],
-};
-
-function rebuildWorkflowTableWithoutOwnerScope(db: DatabaseSync, spec: OwnerlessWorkflowTableSpec): void {
-	if (!workflowTableHasOwnerScope(db, spec.name)) return;
-	const columns = new Set((db.prepare(`PRAGMA table_info(${quoteIdentifier(spec.name)})`).all() as Array<{ name: string }>).map((column) => column.name));
-	const columnNames = spec.columns.map((column) => quoteIdentifier(column.name)).join(", ");
-	const selectColumns = spec.columns.map((column) => workflowColumnSelect(columns, column.name, column.fallback)).join(", ");
-	const legacyTable = `__pibo_legacy_${spec.name}_owner_scope`;
-	const ownerlessTable = `__pibo_ownerless_${spec.name}`;
-	db.exec(`
-		BEGIN IMMEDIATE;
-		ALTER TABLE ${quoteIdentifier(spec.name)} RENAME TO ${quoteIdentifier(legacyTable)};
-		${spec.createSql}
-		INSERT INTO ${quoteIdentifier(ownerlessTable)} (${columnNames})
-			SELECT ${selectColumns} FROM ${quoteIdentifier(legacyTable)};
-		DROP TABLE ${quoteIdentifier(legacyTable)};
-		ALTER TABLE ${quoteIdentifier(ownerlessTable)} RENAME TO ${quoteIdentifier(spec.name)};
-		COMMIT;
-	`);
-}
-
-function workflowTableHasOwnerScope(db: DatabaseSync, tableName: string): boolean {
-	const table = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName) as { found: number } | undefined;
-	if (!table) return false;
-	return (db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all() as Array<{ name: string }>).some((column) => column.name === "owner_scope");
-}
-
-function workflowColumnSelect(columns: Set<string>, columnName: string, fallback: string): string {
-	return columns.has(columnName) ? quoteIdentifier(columnName) : `${fallback} AS ${quoteIdentifier(columnName)}`;
 }
 
 function quoteIdentifier(value: string): string {

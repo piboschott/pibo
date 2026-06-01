@@ -41,7 +41,7 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 		this.db.exec("PRAGMA busy_timeout = 5000");
 		if (resolvedPath !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
 		this.applySchema();
-		this.ensureOwnerlessSchema();
+		this.ensureActiveModelColumn();
 	}
 
 	private applySchema(): void {
@@ -73,67 +73,9 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 		`);
 	}
 
-	private ensureOwnerlessSchema(): void {
-		const columns = this.tableColumns("pibo_sessions");
-		if (!columns.has("owner_scope")) {
-			if (!columns.has("active_model_json")) this.db.exec("ALTER TABLE pibo_sessions ADD COLUMN active_model_json TEXT");
-			this.db.exec("DROP INDEX IF EXISTS idx_pibo_sessions_owner");
-			return;
-		}
-
-		const activeModelSelection = columns.has("active_model_json") ? "active_model_json" : "NULL AS active_model_json";
-		this.db.exec("BEGIN IMMEDIATE");
-		try {
-			this.db.exec(`
-				ALTER TABLE pibo_sessions RENAME TO pibo_sessions_legacy_owner_scope;
-				DROP INDEX IF EXISTS idx_pibo_sessions_owner;
-				DROP INDEX IF EXISTS idx_pibo_sessions_parent;
-				DROP INDEX IF EXISTS idx_pibo_sessions_origin;
-				DROP INDEX IF EXISTS idx_pibo_sessions_channel_kind;
-			`);
-			this.applySchema();
-			this.db.exec(`
-				INSERT INTO pibo_sessions (
-					id,
-					pi_session_id,
-					channel,
-					kind,
-					profile,
-					parent_id,
-					origin_id,
-					workspace,
-					title,
-					metadata_json,
-					active_model_json,
-					created_at,
-					updated_at
-				)
-				SELECT
-					id,
-					pi_session_id,
-					channel,
-					kind,
-					profile,
-					parent_id,
-					origin_id,
-					workspace,
-					title,
-					metadata_json,
-					${activeModelSelection},
-					created_at,
-					updated_at
-				FROM pibo_sessions_legacy_owner_scope;
-				DROP TABLE pibo_sessions_legacy_owner_scope;
-			`);
-			this.db.exec("COMMIT");
-		} catch (error) {
-			this.db.exec("ROLLBACK");
-			throw error;
-		}
-	}
-
-	private tableColumns(tableName: string): Set<string> {
-		return new Set((this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((column) => column.name));
+	private ensureActiveModelColumn(): void {
+		const columns = new Set((this.db.prepare("PRAGMA table_info(pibo_sessions)").all() as Array<{ name: string }>).map((column) => column.name));
+		if (!columns.has("active_model_json")) this.db.exec("ALTER TABLE pibo_sessions ADD COLUMN active_model_json TEXT");
 	}
 
 	get(id: string): PiboSession | undefined {

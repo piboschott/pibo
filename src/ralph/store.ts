@@ -305,32 +305,9 @@ export class PiboRalphStore {
 		this.ensureJobColumn('stop_policy_json', 'TEXT');
 		this.ensureJobColumn('resource_json', 'TEXT');
 		this.ensureRunColumn('resource_json', 'TEXT');
-		this.ensureOwnerlessSchema();
 	}
 	private createFreshSchema(): void {
 		this.db.exec(`CREATE TABLE IF NOT EXISTS pibo_ralph_jobs (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, enabled INTEGER NOT NULL, target_json TEXT NOT NULL, profile TEXT NOT NULL, prompt TEXT NOT NULL, max_iterations INTEGER, runtime_options_json TEXT, stop_policy_json TEXT, resource_json TEXT, state_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_jobs_enabled ON pibo_ralph_jobs(enabled, updated_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, pibo_session_id TEXT, status TEXT NOT NULL, reason TEXT, error TEXT, resource_json TEXT, started_at TEXT, completed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_runs_job_created ON pibo_ralph_runs(job_id, created_at DESC); CREATE TABLE IF NOT EXISTS pibo_ralph_run_facts (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, run_id TEXT, pibo_session_id TEXT, type TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_job_created ON pibo_ralph_run_facts(job_id, created_at DESC); CREATE INDEX IF NOT EXISTS idx_pibo_ralph_facts_run_type ON pibo_ralph_run_facts(run_id, type, created_at DESC);`);
-	}
-	private ensureOwnerlessSchema(): void {
-		const needsRebuild = this.tableColumns('pibo_ralph_jobs').has('owner_scope') || this.tableColumns('pibo_ralph_runs').has('owner_scope') || this.tableColumns('pibo_ralph_run_facts').has('owner_scope');
-		if (!needsRebuild) return;
-		const jobs = this.db.prepare('SELECT * FROM pibo_ralph_jobs').all() as RalphJobRow[];
-		const runs = this.db.prepare('SELECT * FROM pibo_ralph_runs').all() as RalphRunRow[];
-		const facts = this.db.prepare('SELECT * FROM pibo_ralph_run_facts').all() as RalphRunFactRow[];
-		this.db.exec('BEGIN IMMEDIATE');
-		try {
-			this.db.exec('DROP TABLE IF EXISTS pibo_ralph_run_facts; DROP TABLE IF EXISTS pibo_ralph_runs; DROP TABLE IF EXISTS pibo_ralph_jobs;');
-			this.createFreshSchema();
-			const insertJob = this.db.prepare('INSERT INTO pibo_ralph_jobs (id, name, description, enabled, target_json, profile, prompt, max_iterations, runtime_options_json, stop_policy_json, resource_json, state_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-			for (const row of jobs) insertJob.run(row.id, row.name, row.description ?? null, row.enabled, targetJson(parseRalphTarget(row.target_json)), row.profile, row.prompt, row.max_iterations ?? null, row.runtime_options_json ?? null, row.stop_policy_json ?? null, row.resource_json ?? null, row.state_json, row.created_at, row.updated_at);
-			const insertRun = this.db.prepare('INSERT INTO pibo_ralph_runs (id, job_id, pibo_session_id, status, reason, error, resource_json, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-			for (const row of runs) insertRun.run(row.id, row.job_id, row.pibo_session_id ?? null, row.status, row.reason ?? null, row.error ?? null, row.resource_json ?? null, row.started_at ?? null, row.completed_at ?? null, row.created_at, row.updated_at);
-			const insertFact = this.db.prepare('INSERT INTO pibo_ralph_run_facts (id, job_id, run_id, pibo_session_id, type, source, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-			for (const row of facts) insertFact.run(row.id, row.job_id, row.run_id ?? null, row.pibo_session_id ?? null, row.type, row.source, row.payload_json, row.created_at);
-			this.db.exec('COMMIT');
-		} catch (error) {
-			this.db.exec('ROLLBACK');
-			throw error;
-		}
 	}
 	private ensureJobColumn(name: string, definition: string): void {
 		const columns = this.tableColumns('pibo_ralph_jobs');
