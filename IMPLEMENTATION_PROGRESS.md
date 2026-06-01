@@ -315,3 +315,4 @@
   - Evidence tier: Docker build/typecheck, focused Ink/session-ui tests, built CLI help check, targeted source/test search gates, and real PTY-backed TUI flow in Docker.
   - Safety: all validation used Docker temp files or `/workspace/.pibo/ralph-test-home`; no migration inspect/dry-run/apply command was run; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-021 set to `passes: true` with evidence notes. Next failing story: US-022 (`Create final owner-scope cutover migration inspect and dry-run for isolated homes`).
+- 2026-06-01T22:58Z: US-021 implementation commit created: `1d45c68 feat: US-021 - remove Ink TUI owner picker`.
