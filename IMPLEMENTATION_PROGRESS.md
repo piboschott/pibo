@@ -131,3 +131,4 @@
   - Evidence tier: Docker typecheck/build, focused runtime/router/subagent/context/tool assembly tests, and exact source/call-site search gates.
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-005 set to `passes: true` with evidence notes. Remaining `PiboSession.ownerScope` storage compatibility is intentionally left for US-006/US-007.
+- 2026-06-01T07:37Z: US-005 implementation commit created: `3866753 feat: US-005 - remove runtime owner context`.
