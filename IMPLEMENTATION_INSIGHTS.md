@@ -293,3 +293,13 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Compute worker metadata uses `holder` / `pibo.compute.holder`; do not reintroduce compute `ownerScope` labels.
 - Historical spec docs moved by US-025 should be read from `docs/legacy/...` in tests that intentionally validate old traceability artifacts.
 - Fresh-home schema inventory should check product Owner Scope artifacts (`owner_scope`, `principal_id`, `room_members`, `principal_session_stats`, `principal_room_stats`). Technical run-control fields such as `ownerPiboSessionId` are session-control ownership, not product Owner Scope, but US-029 should still decide whether broader technical owner terminology needs more cleanup or explicit exception documentation.
+
+## US-027 migrated sandbox validation lessons
+
+- For sandbox apply validation, copy the Docker migration sandbox to a separate target such as `/workspace/.tmp/us027-migrated-home` and pass the original `/workspace/.pibo/ralph-migration-sandbox` as the required external backup. Do not mutate the original sandbox unless a later task explicitly calls for that.
+- Full copied-sandbox apply on the current data set took about 18.5 minutes including the large `pibo.sqlite` copy and backup/post-apply checks. Use a yielded/background run for this step.
+- Worker-local Chat Web validation can start `runWebGatewayServer({ devAuth: true, web: { host: "127.0.0.1", port: <worker-local-port> } })` with `PIBO_HOME` set to the migrated copy. Log in through `/api/auth/sign-in/social` followed by the callback redirect and pass the `pibo_dev_session` cookie to Chat/API requests.
+- The provider-free Chat send-equivalent path for validation is `/api/chat/debug/streaming-fixture` with `preludeOnly: true`; it exercises selected session/room resolution and stream fixture handling without invoking an external model provider.
+- API payload validation should recursively reject `ownerScope`, `owner_scope`, `principalId`, and `principal_id` keys across bootstrap, rooms/sessions, agents, projects, workflows, Ralph, Cron, and Web Annotation responses.
+- Ralph/Cron CLI validation against a migrated copy can safely create disabled/default-chat jobs and recursively scan JSON outputs. Use `pibo ralph add --default-chat --profile base ... --json` and `pibo cron add --default-chat --agent base ... --disabled --json`.
+- The reusable Ink PTY smoke script intentionally creates its own deterministic fixture home for `room-session-message`; it validates the owner-picker-free TUI path, while separate CLI JSON/API checks validate the migrated copied data home.

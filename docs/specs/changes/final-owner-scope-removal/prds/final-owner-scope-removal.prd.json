@@ -461,8 +461,8 @@
         "Typecheck passes"
       ],
       "priority": 27,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Created a Docker-local copy of the migration sandbox at /workspace/.tmp/us027-migrated-home and ran pibo data final-cutover apply against that copy only, using /workspace/.pibo/ralph-migration-sandbox as the verified external backup. Apply reported appliedDatabases=6, six quick_check ok results, and post-apply totals of 0 affected databases, 0 legacy columns, 0 legacy indexes, 0 legacy rows, 0 conflict groups, and 0 unresolved blockers. A read-only schema inventory of the migrated copy found no owner_scope/principal_id product columns and no room_members/principal stats tables across 9 SQLite DBs. Started a worker-local dev-auth Chat Web gateway on 127.0.0.1:4791 with PIBO_HOME=/workspace/.tmp/us027-migrated-home, logged in through dev auth, loaded /apps/chat, and validated Chat bootstrap/sidebar/direct session open/session create/room detail/provider-free streaming fixture send, Agent list/create, Project list/create/bootstrap, Workflow catalog/picker, Ralph API list/create/get/runs, Cron API list/create/get/runs, and Web Annotation same-origin binding/submission/app list. The validation recursively asserted no ownerScope, owner_scope, principalId, or principal_id keys in all JSON payloads and recorded created resource ids in docs/reports/final-owner-scope-migrated-sandbox-validation-us-027.md. Safe Ralph/Cron CLI JSON checks ran against the migrated copy and found no owner/principal keys; help checks for Ralph, Cron add, and tui:sessions found no removed owner/personal options or wording. PTY validation passed with node scripts/ink-cli-v2-pty-smoke.mjs --scenario room-session-message --artifact-root /workspace/.tmp/us027-pty, selecting a room, creating a session, sending a mocked message, and receiving the mocked reply without an owner picker. Docker typecheck passed with PIBO_HOME=/workspace/.pibo/ralph-test-home. Host /root/.pibo, host Dev/Production gateways, Production data, deploy scripts, and PR creation were not touched."
     },
     {
       "id": "US-028",
