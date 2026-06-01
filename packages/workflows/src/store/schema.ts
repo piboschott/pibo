@@ -141,7 +141,6 @@ const WORKFLOW_SQLITE_SCHEMA_SQL = `
     workflow_version TEXT NOT NULL,
     workflow_definition_hash TEXT,
     definition_snapshot_id TEXT,
-    owner_scope TEXT NOT NULL,
     parent_run_id TEXT,
     parent_node_attempt_id TEXT,
     pibo_session_id TEXT,
@@ -168,8 +167,6 @@ const WORKFLOW_SQLITE_SCHEMA_SQL = `
     ON workflow_runs(workflow_id, workflow_version, updated_at);
   CREATE INDEX IF NOT EXISTS idx_workflow_runs_status
     ON workflow_runs(status, updated_at);
-  CREATE INDEX IF NOT EXISTS idx_workflow_runs_owner
-    ON workflow_runs(owner_scope, updated_at);
   CREATE INDEX IF NOT EXISTS idx_workflow_runs_current_node
     ON workflow_runs(current_node_id, updated_at);
   CREATE INDEX IF NOT EXISTS idx_workflow_runs_pibo_session
@@ -335,11 +332,111 @@ export function installWorkflowSqliteSchema(db: DatabaseSync, options: { enableW
 
   ensureWorkflowSqliteColumn(db, "workflow_runs", "workflow_definition_hash", "TEXT");
   ensureWorkflowSqliteColumn(db, "workflow_runs", "definition_snapshot_id", "TEXT");
+  rebuildWorkflowRunsWithoutLegacyOwnerScope(db);
   ensureWorkflowSqliteColumn(db, "workflow_node_attempts", "attempt_number", "INTEGER");
   ensureWorkflowSqliteColumn(db, "workflow_node_attempts", "environment_json", "TEXT");
   ensureWorkflowSqliteColumn(db, "workflow_wait_tokens", "kind", "TEXT");
   ensureWorkflowSqliteColumn(db, "workflow_wait_tokens", "available_actions_json", "TEXT");
   ensureWorkflowSqliteColumn(db, "workflow_wait_tokens", "resolved_at", "TEXT");
+}
+
+function rebuildWorkflowRunsWithoutLegacyOwnerScope(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(workflow_runs)").all() as WorkflowSqliteColumnRow[];
+  if (!columns.some((row) => row.name === "owner_scope")) {
+    db.exec("DROP INDEX IF EXISTS idx_workflow_runs_owner");
+    return;
+  }
+
+  db.exec(`
+    DROP TABLE IF EXISTS workflow_runs_ownerless_rebuild;
+    CREATE TABLE workflow_runs_ownerless_rebuild (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      workflow_version TEXT NOT NULL,
+      workflow_definition_hash TEXT,
+      definition_snapshot_id TEXT,
+      parent_run_id TEXT,
+      parent_node_attempt_id TEXT,
+      pibo_session_id TEXT,
+      project_id TEXT,
+      environment_json TEXT,
+      status TEXT NOT NULL,
+      current_node_id TEXT,
+      current_edge_id TEXT,
+      current_status TEXT,
+      current_json TEXT NOT NULL,
+      input_json TEXT NOT NULL,
+      output_json TEXT,
+      output_present INTEGER NOT NULL DEFAULT 0,
+      state_json TEXT NOT NULL,
+      checkpoint_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      failed_at TEXT,
+      cancelled_at TEXT
+    );
+
+    INSERT INTO workflow_runs_ownerless_rebuild (
+      id,
+      workflow_id,
+      workflow_version,
+      workflow_definition_hash,
+      definition_snapshot_id,
+      parent_run_id,
+      parent_node_attempt_id,
+      pibo_session_id,
+      project_id,
+      environment_json,
+      status,
+      current_node_id,
+      current_edge_id,
+      current_status,
+      current_json,
+      input_json,
+      output_json,
+      output_present,
+      state_json,
+      checkpoint_json,
+      created_at,
+      updated_at,
+      completed_at,
+      failed_at,
+      cancelled_at
+    )
+    SELECT
+      id,
+      workflow_id,
+      workflow_version,
+      workflow_definition_hash,
+      definition_snapshot_id,
+      parent_run_id,
+      parent_node_attempt_id,
+      pibo_session_id,
+      project_id,
+      environment_json,
+      status,
+      current_node_id,
+      current_edge_id,
+      current_status,
+      current_json,
+      input_json,
+      output_json,
+      output_present,
+      state_json,
+      checkpoint_json,
+      created_at,
+      updated_at,
+      completed_at,
+      failed_at,
+      cancelled_at
+    FROM workflow_runs;
+
+    DROP TABLE workflow_runs;
+    ALTER TABLE workflow_runs_ownerless_rebuild RENAME TO workflow_runs;
+  `);
+  db.exec(WORKFLOW_SQLITE_SCHEMA_SQL);
+  db.exec("DROP INDEX IF EXISTS idx_workflow_runs_owner");
 }
 
 function ensureWorkflowSqliteColumn(

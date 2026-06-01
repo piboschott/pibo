@@ -69,7 +69,6 @@ function createVariablePromptRun(definition: WorkflowDefinition): WorkflowRun {
     id: "wfr_variable_prompt",
     workflowId: definition.id,
     workflowVersion: definition.version,
-    ownerScope: "user:prompt-workflows",
     status: "running",
     current: { nodeId: "plan", status: "running" },
     input: { topic: "prompt builders", audience: "workflow authors" },
@@ -91,7 +90,6 @@ describe("fixed and variable prompt workflow runtime coverage", () => {
       minimalOneNodePiboAgentWorkflowFixture,
       "Explain fixed workflow prompts.",
       {
-        ownerScope: "user:fixed-prompt-workflow",
         now: () => "2026-05-11T00:55:01.000Z",
         createRunId: () => "wfr_fixed_prompt",
         createNodeAttemptId: () => "wna_fixed_prompt",

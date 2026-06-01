@@ -19,7 +19,6 @@ function createRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
     id: "wfr_inspect",
     workflowId: "workflow.inspect",
     workflowVersion: "1.0.0",
-    ownerScope: "user:inspect",
     piboSessionId: "ps_inspect",
     projectId: "project_inspect",
     status: "completed",

@@ -672,7 +672,6 @@ export type WorkflowRun = {
   workflowVersion: WorkflowVersion;
   workflowDefinitionHash?: string;
   definitionSnapshotId?: string;
-  ownerScope: string;
   parentRunId?: WorkflowRunId;
   parentNodeAttemptId?: NodeAttemptId;
   piboSessionId?: string;

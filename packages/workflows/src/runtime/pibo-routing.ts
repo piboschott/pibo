@@ -132,7 +132,6 @@ export type PiboWorkflowProjectSessionLinkInput = {
   workflowNodeId: string;
   workflowNodeAttemptId?: NodeAttemptId;
   parentPiboSessionId?: string;
-  ownerScope: string;
   title?: string;
 };
 
@@ -170,13 +169,13 @@ export function createPiboSessionRoutingAgentExecutor(
   options: PiboSessionRoutingAgentExecutorOptions,
 ): OneNodeAgentExecutor {
   return async (context) => {
-    const ownerScope = context.routing?.ownerScope ?? context.run.ownerScope;
+    const ownerScope = context.routing?.ownerScope;
     const title = resolveExecutorTitle(options.title, context);
     const session = options.routing.createSession({
       channel: options.channel ?? context.routing?.channel ?? "pibo.workflows",
       kind: options.kind ?? "workflow-agent",
       profile: context.profileId,
-      ownerScope,
+      ...(ownerScope ? { ownerScope } : {}),
       parentId: context.routing?.parentSessionId,
       workspace: options.workspace,
       title,
@@ -203,7 +202,6 @@ export function createPiboSessionRoutingAgentExecutor(
         workflowNodeId: context.nodeId,
         ...(context.nodeAttemptId ? { workflowNodeAttemptId: context.nodeAttemptId } : {}),
         ...(context.routing.parentSessionId ? { parentPiboSessionId: context.routing.parentSessionId } : {}),
-        ownerScope,
         ...(title ? { title } : {}),
       });
     }

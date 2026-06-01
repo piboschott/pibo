@@ -215,3 +215,11 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Chat Cron API request payloads should reject legacy personal/principal targets and serialize only `{ kind: "default-chat" }` or `{ kind: "room", roomId }`.
 - Useful US-017 regression gate: `rg -n -e --owner-scope -e PIBO_OWNER_SCOPE -e --personal -e --principal-id -e ownerScope -e getOwnedJob -e principalId src/cron src/apps/chat/cron-api.ts src/apps/chat-ui/src/CronArea.tsx src/apps/chat-ui/src/api-cron.ts src/apps/chat-ui/src/types.ts` should return no matches.
 - The broader shared-app artifact search gate still fails on out-of-scope data/session compatibility (`src/data/session-store.ts`) before the later CLI/TUI/data compatibility stories. Do not treat that as a Cron regression.
+
+## US-018 Workflow package store lessons
+
+- `WorkflowRun` and `WorkflowRunListFilter` are now ownerless. Do not add `ownerScope` back to package run persistence, row mappers, write values, or list filters.
+- Fresh `pibo-workflows.sqlite` `workflow_runs` schema must not include `owner_scope` or `idx_workflow_runs_owner`. Historical owner-column handling is limited to `SqliteWorkflowRunStore` constructor-time table rebuild until US-024/final cutover isolation removes runtime compatibility.
+- Workflow run migration preserves run/resource identity and execution facts: workflow id/version/hash/snapshot, parent run/node attempt, Pibo session/project links, environment, current cursor, input/output, state, checkpoint, and timestamps. Owner values are dropped, not normalized.
+- Runtime code must not fall back from routing to `run.ownerScope`; persisted workflow runs are app-global. Remaining `SessionRoutingPolicy.ownerScope`, Pibo workflow routing owner fields, and prompt trace privacy `kind: "ownerScope"` are US-019 cleanup targets.
+- Useful US-018 regression gate: `rg -n "WorkflowRun.*ownerScope|WorkflowRunListFilter.*ownerScope|owner_scope TEXT|ON workflow_runs\\(owner_scope|owner_scope," packages/workflows/src/types/index.ts packages/workflows/src/store/contracts.ts packages/workflows/src/store/index.ts packages/workflows/src/store/row-mappers.ts packages/workflows/src/store/write-values.ts packages/workflows/src/store/schema.ts` should return no matches. Broader package `ownerScope` matches are expected only until US-019 removes routing/prompt terminology and tests.

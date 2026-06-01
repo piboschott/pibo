@@ -304,8 +304,8 @@
         "Any migration fixture or schema validation runs only against temp files or Docker sandbox homes, never /root/.pibo"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed ownerScope from package-level WorkflowRun and WorkflowRunListFilter contracts, store row mapping, write values, saveRun SQL, and listRuns filtering. Fresh pibo-workflows.sqlite workflow_runs schema no longer creates owner_scope or idx_workflow_runs_owner. SqliteWorkflowRunStore now rebuilds historical workflow_runs tables that contain owner_scope into ownerless tables on open, preserving run ids, workflow/version/hash/snapshot ids, parent run/node attempt links, Pibo session/project links, environment, status/current cursor, input/output, state, checkpoint, timestamps, and terminal status timestamps while dropping the legacy owner index. Updated workflow runtime compile paths that previously fell back to run.ownerScope so run storage remains ownerless; remaining workflow routing/prompt owner terminology is left for US-019. Added temp-file schema migration fixture coverage and shared fresh-schema assertions for pibo-workflows.sqlite. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: cd packages/workflows && npm run typecheck; cd packages/workflows && npm run build; cd packages/workflows && npm run test; npm run typecheck; npm run build; node --test test/shared-app-fresh-schema.test.mjs. Targeted Docker search gate over package WorkflowRun/store files found no WorkflowRun ownerScope, WorkflowRunListFilter ownerScope, fresh owner_scope column/index creation, or owner_scope write/filter patterns; remaining package ownerScope matches are runtime routing/prompt terminology scheduled for US-019 and migration fixture assertions. Fixtures used only Docker temp files/fresh test home; host /root/.pibo, host gateways, Production data, deploys, and PR creation were not touched."
     },
     {
       "id": "US-019",
