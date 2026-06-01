@@ -68,7 +68,7 @@ function normalizeEnabled(value: unknown): boolean | undefined {
 
 function normalizeTarget(value: unknown, options: ChatCronApiOptions): PiboCronTarget {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new PiboWebHttpError("target is required", 400);
-	const raw = value as { kind?: unknown; roomId?: unknown; principalId?: unknown };
+	const raw = value as { kind?: unknown; roomId?: unknown };
 	if (raw.kind === "room") {
 		const roomId = normalizeString(raw.roomId, "target.roomId", { required: true })!;
 		let room: PiboRoom;
@@ -80,11 +80,11 @@ function normalizeTarget(value: unknown, options: ChatCronApiOptions): PiboCronT
 		if (isPiboRoomArchived(room)) throw new PiboWebHttpError("Archived rooms are read-only", 403);
 		return { kind: "room", roomId };
 	}
-	if (raw.kind === "personal" || raw.kind === "default-chat") {
+	if (raw.kind === "default-chat") {
 		options.roomService.ensureDefaultRoom({ name: "Shared Chat" });
 		return { kind: "default-chat" };
 	}
-	throw new PiboWebHttpError("target.kind must be room, default-chat, or personal", 400);
+	throw new PiboWebHttpError("target.kind must be room or default-chat", 400);
 }
 
 function normalizeSchedule(value: unknown): { schedule: PiboCronSchedule; scheduleUi?: PiboCronScheduleUi } {
@@ -122,15 +122,9 @@ function jobResource(pathname: string): { id: string; child?: "run" } | undefine
 	return { id: parts[0], child: parts[1] as "run" | undefined };
 }
 
-type CronApiTarget = { kind: "room"; roomId: string } | { kind: "personal" };
-type CronApiJob = Omit<PiboCronJob, "target"> & { target: CronApiTarget };
 type CronApiRun = PiboCronRun;
-function serializeTarget(target: PiboCronTarget): CronApiTarget {
-	return target.kind === "room" ? target : { kind: "personal" };
-}
-function serializeJob(job: PiboCronJob): CronApiJob {
-	const { target, ...rest } = job;
-	return { ...rest, target: serializeTarget(target) };
+function serializeJob(job: PiboCronJob): PiboCronJob {
+	return job;
 }
 function serializeRun(run: PiboCronRun): CronApiRun {
 	return run;

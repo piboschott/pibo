@@ -287,8 +287,8 @@
         "Real-path validation runs only in the Docker worker or isolated container ports, not host gateways"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed active Cron owner/principal CLI/API/UI surfaces: pibo cron no longer registers --owner-scope, reads PIBO_OWNER_SCOPE, or accepts --personal/--principal-id; Cron add/edit now use --room <roomId> or --default-chat. Chat Cron API now accepts only room/default-chat targets, rejects legacy personal/principal target payloads, and serializes default-chat jobs as { kind: \"default-chat\" } with no ownerScope or principalId fields. Chat UI Cron types and CronArea form state now use default-chat and no longer include Cron job/run ownerScope fields or personal/principal target payloads; visible CLI guidance now uses --default-chat. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/cron-schedule-store.test.mjs test/cron-store-lifecycle.test.mjs test/chat-cron-api.test.mjs; npm run typecheck. The built CLI temp-store tests cover add --default-chat --json, add --help target options, and edit --room --json; Chat Cron API tests cover create/list/get/patch/delete and legacy personal-target rejection. Targeted Docker rg over src/cron, Chat Cron API, Chat UI Cron area/API/types found no --owner-scope, PIBO_OWNER_SCOPE, --personal, --principal-id, ownerScope, getOwnedJob, or principalId matches. An attempted broader shared-app artifact gate now fails only on out-of-scope src/data/session-store.ts owner-scope compatibility scheduled for later stories, with the Cron allowlist removed. All validation used Docker temp files/fresh test home; host /root/.pibo, host gateways, Production data, deploys, and PR creation were not touched."
     },
     {
       "id": "US-018",

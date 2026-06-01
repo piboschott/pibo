@@ -336,7 +336,7 @@ export type ProjectsBootstrapData = {
 
 export type PiboCronTarget =
 	| { kind: "room"; roomId: string }
-	| { kind: "personal"; principalId?: string };
+	| { kind: "default-chat" };
 
 export type PiboCronSchedule =
 	| { kind: "at"; at: string }
@@ -354,7 +354,6 @@ export type PiboCronScheduleUi =
 
 export type PiboCronJob = {
 	id: string;
-	ownerScope?: string;
 	name: string;
 	description?: string;
 	enabled: boolean;
@@ -381,7 +380,6 @@ export type PiboCronJob = {
 export type PiboCronRun = {
 	id: string;
 	jobId: string;
-	ownerScope?: string;
 	piboSessionId?: string;
 	status: "queued" | "running" | "ok" | "error" | "skipped";
 	reason?: string;

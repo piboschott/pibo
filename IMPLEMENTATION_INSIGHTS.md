@@ -207,3 +207,11 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Fresh `pibo-cron.sqlite` schemas must not create `owner_scope` columns or owner indexes. Historical owner-column rebuild lives in `src/cron/store.ts` until US-024/final cutover isolation removes runtime compatibility.
 - Useful US-016 regression gates: `rg -n "ownerScope|getOwnedJob|PiboCron(Job|Run|JobCreateInput).*ownerScope|kind: .personal.|principalId" src/cron/types.ts src/cron/store.ts src/cron/service.ts` should return no matches, and `rg -n "owner_scope TEXT|owner_scope,|ON pibo_cron_.*owner" src/cron/store.ts` should return no fresh-schema creation matches.
 - US-017 still owns the visible Cron CLI/API/UI cleanup for deprecated `--owner-scope`, `--personal`, `--principal-id`, Chat UI target labels, and API/UI personal-target payloads. Do not confuse those transitional surfaces with the ownerless store model.
+
+## US-017 Cron CLI/API/UI lessons
+
+- Cron active user-facing surfaces now use only `room` and `default-chat` targets. Do not add `--owner-scope`, `PIBO_OWNER_SCOPE`, `--personal`, `--principal-id`, `principalId`, or `ownerScope` back to `src/cron/cli.ts`, Chat Cron API serializers, or Chat UI Cron types/forms.
+- `pibo cron add` and `pibo cron edit` use `--default-chat` for the shared default target and `--room <roomId>` for room targets. The built CLI real-path validation in `test/cron-schedule-store.test.mjs` covers add/help/edit JSON against a temp Cron store.
+- Chat Cron API request payloads should reject legacy personal/principal targets and serialize only `{ kind: "default-chat" }` or `{ kind: "room", roomId }`.
+- Useful US-017 regression gate: `rg -n -e --owner-scope -e PIBO_OWNER_SCOPE -e --personal -e --principal-id -e ownerScope -e getOwnedJob -e principalId src/cron src/apps/chat/cron-api.ts src/apps/chat-ui/src/CronArea.tsx src/apps/chat-ui/src/api-cron.ts src/apps/chat-ui/src/types.ts` should return no matches.
+- The broader shared-app artifact search gate still fails on out-of-scope data/session compatibility (`src/data/session-store.ts`) before the later CLI/TUI/data compatibility stories. Do not treat that as a Cron regression.

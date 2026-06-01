@@ -104,7 +104,7 @@ test('cron CLI creates shared jobs without owner scope', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pibo-cron-cli-'));
   const storePath = join(root, 'cron.sqlite');
   try {
-    const result = await execFileAsync('node', [cliPath, 'cron', '--store', storePath, 'add', '--personal', '--daily', '09:10', '--prompt', 'do it', '--json']);
+    const result = await execFileAsync('node', [cliPath, 'cron', '--store', storePath, 'add', '--default-chat', '--daily', '09:10', '--prompt', 'do it', '--json']);
     const job = JSON.parse(result.stdout);
     assert.equal('ownerScope' in job, false);
     assert.deepEqual(job.target, { kind: 'default-chat' });
@@ -113,32 +113,15 @@ test('cron CLI creates shared jobs without owner scope', async () => {
   }
 });
 
-test('cron CLI treats explicit owner scope as deprecated no-op', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pibo-cron-cli-'));
-  const storePath = join(root, 'cron.sqlite');
-  try {
-    const result = await execFileAsync('node', [
-      cliPath,
-      'cron',
-      '--store',
-      storePath,
-      '--owner-scope',
-      'user:test',
-      'add',
-      '--personal',
-      '--daily',
-      '09:10',
-      '--prompt',
-      'do it',
-      '--json',
-    ]);
-    const job = JSON.parse(result.stdout);
-    assert.equal('ownerScope' in job, false);
-    assert.deepEqual(job.target, { kind: 'default-chat' });
-    assert.match(result.stderr, /--owner-scope is deprecated for Cron and ignored/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+test('cron CLI help exposes only ownerless target options', async () => {
+  const result = await execFileAsync('node', [cliPath, 'cron', 'add', '--help']);
+  const legacyOwnerOption = ['--owner', '-scope'].join('');
+  const legacyPersonalOption = ['--', 'personal'].join('');
+  const legacyPrincipalOption = ['--principal', '-id'].join('');
+  assert.match(result.stdout, /--default-chat/);
+  assert.doesNotMatch(result.stdout, new RegExp(legacyOwnerOption));
+  assert.doesNotMatch(result.stdout, new RegExp(legacyPersonalOption));
+  assert.doesNotMatch(result.stdout, new RegExp(legacyPrincipalOption));
 });
 
 test('cron CLI edits prompt, target, profile, and schedule', async () => {
@@ -150,10 +133,8 @@ test('cron CLI edits prompt, target, profile, and schedule', async () => {
       'cron',
       '--store',
       storePath,
-      '--owner-scope',
-      'user:test',
       'add',
-      '--personal',
+      '--default-chat',
       '--daily',
       '09:10',
       '--prompt',
@@ -166,8 +147,6 @@ test('cron CLI edits prompt, target, profile, and schedule', async () => {
       'cron',
       '--store',
       storePath,
-      '--owner-scope',
-      'user:test',
       'edit',
       original.id,
       '--room',
