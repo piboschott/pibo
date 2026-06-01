@@ -369,4 +369,4 @@
   - Evidence tier: full Docker typecheck/build/npm test, explicit fresh ownerless schema/runtime tests, read-only fresh-home SQLite schema inventory, and validation report.
   - Safety: no migration inspect/dry-run/apply command was run against `/root/.pibo`; no host/Production DB, host Dev/Production gateway, deploy script, or PR creation was touched.
   - PRD update: US-026 set to `passes: true` with evidence notes. Next failing story: US-027 (`Validate migrated sandbox data through Docker Chat Web and CLI paths`).
-- 2026-06-02T02:12Z: US-026 implementation commit created: `ed59d09 test: US-026 - validate ownerless fresh runtime`.
+- 2026-06-02T02:12Z: US-026 implementation commit created: `e3d82c8 test: US-026 - validate ownerless fresh runtime`.
