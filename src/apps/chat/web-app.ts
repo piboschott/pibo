@@ -639,7 +639,6 @@ function getChatWebAnnotationStore(): WebAnnotationStore {
 }
 
 function prepareWebAnnotationAttachments(input: {
-	ownerScope: string;
 	piboSessionId: string;
 	messageText: string;
 	attachmentIds: unknown;
@@ -647,7 +646,6 @@ function prepareWebAnnotationAttachments(input: {
 	try {
 		return prepareWebAnnotationMessageAttachments({
 			store: getChatWebAnnotationStore(),
-			ownerScope: input.ownerScope,
 			piboSessionId: input.piboSessionId,
 			messageText: input.messageText,
 			attachmentIds: input.attachmentIds,
@@ -664,7 +662,7 @@ function markWebAnnotationsAttached(prepared: PreparedWebAnnotationAttachments):
 	const store = getChatWebAnnotationStore();
 	for (const annotation of prepared.annotations) {
 		if (annotation.status !== "attached") {
-			store.patchAnnotation(annotation.ownerScope, annotation.piboSessionId, annotation.id, { status: "attached" });
+			store.patchAnnotation(annotation.piboSessionId, annotation.id, { status: "attached" });
 		}
 	}
 }
@@ -3458,7 +3456,6 @@ async function sendChatMessage(input: {
 	const duplicate = clientTxnId ? input.state.eventCommands.findByClientTxn(room.id, actorId, clientTxnId) : undefined;
 	if (duplicate) return responseJson({ duplicate: true, event: duplicate });
 	const webAnnotationContext = prepareWebAnnotationAttachments({
-		ownerScope: legacyOwnerScopeForPreCutoverSchemas(),
 		piboSessionId: selectedSession.id,
 		messageText: text,
 		attachmentIds: input.body.webAnnotationIds,
