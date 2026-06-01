@@ -119,3 +119,4 @@
   - Evidence tier: Docker typecheck/build, focused web-auth/context-files tests, and exact source/test grep for removed web-session owner call sites.
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-004 set to `passes: true` with evidence notes. Remaining runtime/session-context `ownerScope` fields are intentionally left for US-005/US-006.
+- 2026-06-01T07:05Z: US-004 implementation commit created: `e052341 feat: US-004 - make web auth ownerless`.
