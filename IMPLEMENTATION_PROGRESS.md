@@ -163,4 +163,4 @@
   - Evidence tier: Docker typecheck/build plus focused service/API tests and real Chat Web handler-path tests.
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-008 set to `passes: true` with evidence notes. Next failing story: US-009 (`Rebuild Chat data schemas without owner/principal tables`).
-- 2026-06-01T09:42Z: US-008 implementation commit created: `5342f52 feat: US-008 - make chat read state ownerless`.
+- 2026-06-01T09:42Z: US-008 implementation commit created: `9594a68 feat: US-008 - make chat read state ownerless`.
