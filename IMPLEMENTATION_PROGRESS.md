@@ -109,3 +109,4 @@
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-003 set to `passes: true` with evidence notes. Temporary pre-cutover compatibility remains intentionally visible for later owner-column removal stories; it is not a final target.
   - Additional Docker focused regression: `node --test test/context-build-inspector.test.mjs test/cron-store-lifecycle.test.mjs test/session-router-store.test.mjs` passed (18 tests), covering representative tests that now import the temporary pre-cutover compatibility value from `dist/owner-scope-compat.js` instead of `dist/shared-app.js`.
+  - Commit: `c45e739 feat: US-003 - neutral shared app context`.
