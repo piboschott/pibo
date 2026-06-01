@@ -290,3 +290,4 @@
   - Evidence tier: Docker package typecheck/build/test, root typecheck/build, focused workflow runtime/inspection tests, real persisted SQLite workflow inspection path, and targeted source/test search gate.
   - Safety: no migration inspect/dry-run/apply command was run; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-019 set to `passes: true` with evidence notes. Next failing story: US-020 (`Remove owner model from CLI session source contracts`).
+- 2026-06-01T20:58Z: US-019 implementation commit created: `c8bed5a feat: US-019 - clean workflow owner routing`.
