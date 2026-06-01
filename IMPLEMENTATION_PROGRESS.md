@@ -326,3 +326,4 @@
   - Evidence tier: Docker build/typecheck, focused temp-fixture migration command tests, real built-CLI JSON inspect/dry-run against temp fixtures, and read-only inspect/dry-run against the Docker migration sandbox.
   - Safety: all inspect/dry-run validation used Docker temp fixture roots or `/workspace/.pibo/ralph-migration-sandbox`; no apply command was implemented or run; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-022 set to `passes: true` with evidence notes. Next failing story: US-023 (`Implement final owner-scope cutover migration apply for Docker test databases only`).
+- 2026-06-01T23:58Z: US-022 implementation commit created: `9767288 feat: US-022 - add final cutover dry-run`.
