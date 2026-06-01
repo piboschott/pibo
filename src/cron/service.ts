@@ -5,7 +5,6 @@ import { getDefaultPiboWorkspace } from "../core/workspace.js";
 import { PiboDataStore } from "../data/pibo-store.js";
 import { ChatRoomService } from "../apps/chat/data/room-service.js";
 import { isPiboRoomArchived } from "../apps/chat/types/rooms.js";
-import { legacyOwnerScopeForPreCutoverSchemas } from "../owner-scope-compat.js";
 import { formatSchedule } from "./schedule.js";
 import { createDefaultPiboCronStore, PiboCronStore } from "./store.js";
 import type { PiboCronJob, PiboCronRun, PiboCronStatus } from "./types.js";
@@ -79,9 +78,8 @@ export class PiboCronService {
 		return { enabled: !this.stopped, ...this.store.status() };
 	}
 
-	async runJobNow(ownerScope: string, id: string): Promise<PiboCronRun> {
-		void ownerScope;
-		const reserved = this.store.reserveManualRun(legacyOwnerScopeForPreCutoverSchemas(), id);
+	async runJobNow(id: string): Promise<PiboCronRun> {
+		const reserved = this.store.reserveManualRun(id);
 		if (!reserved) throw new Error("Cron job not found");
 		void this.executeReserved(reserved.job, reserved.run).finally(() => this.armSoon());
 		return reserved.run;

@@ -37,7 +37,7 @@ function targetFromOptions(options: { room?: string; personal?: boolean; princip
 	if (options.room) return { kind: "room", roomId: options.room };
 	if (options.personal || options.principalId) {
 		if (options.principalId) console.error("--principal-id is deprecated for Cron and ignored; the default target is shared.");
-		return { kind: "personal", principalId: legacyOwnerScopeForPreCutoverSchemas() };
+		return { kind: "default-chat" };
 	}
 	throw new Error("Choose --room <roomId> or --personal");
 }
@@ -140,7 +140,6 @@ export async function runCronCli(argv = process.argv): Promise<void> {
 			const positionalCron = Array.isArray(cronExprParts) && cronExprParts.length ? cronExprParts.join(" ") : undefined;
 			const normalized = scheduleFromOptions(options, positionalCron);
 			const job = store.createJob({
-				ownerScope: scope,
 				name: options.name,
 				enabled: options.disabled ? false : true,
 				target: targetFromOptions({ ...options, ownerScope: scope }),
@@ -199,7 +198,7 @@ export async function runCronCli(argv = process.argv): Promise<void> {
 				...(options.keepAfterRun === true ? { deleteAfterRun: false } : {}),
 			};
 			if (Object.keys(patch).length === 0) throw new Error("No cron job update fields provided");
-			const job = store.updateJob(scope, id, patch);
+			const job = store.updateJob(id, patch);
 			if (!job) throw new Error("Cron job not found");
 			if (options.json) printJson(job);
 			else console.log(`${job.id}\t${job.enabled ? "enabled" : "disabled"}\t${job.state.nextRunAt ?? "-"}\t${job.name}`);
@@ -210,7 +209,7 @@ export async function runCronCli(argv = process.argv): Promise<void> {
 		program.command(name).argument("<id>").description(enabled ? "Enable a cron job" : "Disable a cron job").option("--json", "Print JSON").action((id, options) => {
 			const scope = ownerScope(program.opts().ownerScope);
 			const store = createDefaultPiboCronStore({ path: program.opts().store });
-			const job = store.updateJob(scope, id, { enabled });
+			const job = store.updateJob(id, { enabled });
 			if (!job) throw new Error("Cron job not found");
 			if (options.json) printJson(job);
 			else console.log(`${job.id}\t${job.enabled ? "enabled" : "disabled"}\t${job.state.nextRunAt ?? "-"}`);
@@ -221,7 +220,7 @@ export async function runCronCli(argv = process.argv): Promise<void> {
 	program.command("remove").argument("<id>").description("Delete a cron job").option("--json", "Print JSON").action((id, options) => {
 		const scope = ownerScope(program.opts().ownerScope);
 		const store = createDefaultPiboCronStore({ path: program.opts().store });
-		const removed = store.removeJob(scope, id);
+		const removed = store.removeJob(id);
 		if (options.json) printJson({ removed });
 		else console.log(removed ? "removed" : "not found");
 		store.close();

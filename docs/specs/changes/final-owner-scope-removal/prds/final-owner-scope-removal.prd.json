@@ -270,8 +270,8 @@
         "Any migration fixture or schema validation runs only against temp files or Docker sandbox homes, never /root/.pibo"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed ownerScope from Cron active data contracts: PiboCronJob, PiboCronRun, and PiboCronJobCreateInput no longer expose or accept ownerScope, and Cron store/service APIs are app-global (createJob, listJobs, updateJob, removeJob, listRuns, reserveManualRun, runJobNow) with no owner filters or getOwnedJob helper. Cron targets now persist as { kind: \"room\", roomId } or neutral { kind: \"default-chat\" }; historical personal/principal target JSON is normalized to default-chat when read or during schema rebuild. Fresh pibo-cron.sqlite schemas create pibo_cron_jobs and pibo_cron_runs without owner_scope columns or owner indexes, and constructor-time temp-file migration rebuilds historical owner-scoped Cron jobs/runs while preserving ids, prompts, schedules, state, run history, timestamps, and piboSessionIds. Chat Cron API and CLI were adjusted only enough to compile and write ownerless/default-chat store data; deprecated visible --owner-scope/--personal/principal surfaces remain scheduled for US-017. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/cron-schedule-store.test.mjs test/cron-store-lifecycle.test.mjs test/chat-cron-api.test.mjs test/shared-app-fresh-schema.test.mjs; npm run typecheck; reran node --test test/chat-cron-api.test.mjs test/cron-schedule-store.test.mjs test/cron-store-lifecycle.test.mjs after adding API store-target evidence. Targeted Docker rg over src/cron/types.ts src/cron/store.ts src/cron/service.ts found no ownerScope/getOwnedJob/principal/personal target model matches, and fresh-schema rg in src/cron/store.ts found no owner_scope column/index creation. Fixtures used only Docker temp files/fresh test home; host /root/.pibo, host gateways, Production data, deploys, and PR creation were not touched."
     },
     {
       "id": "US-017",

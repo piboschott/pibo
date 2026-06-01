@@ -198,3 +198,12 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Chat Ralph API request payloads should reject legacy personal/principal targets and serialize only `{ kind: "default-chat" }` or `{ kind: "room", roomId }`.
 - Useful US-015 regression gate: `rg -n -e --owner-scope -e PIBO_OWNER_SCOPE -e --personal -e --principal-id -e ownerScope -e getOwnedJob -e principalId src/ralph src/apps/chat/ralph-api.ts src/apps/chat-ui/src/RalphArea.tsx src/apps/chat-ui/src/api-ralph.ts` should return no matches. Ralph-target matches in `src/apps/chat-ui/src/types.ts` should show only `room` and `default-chat`; Cron owner/personal matches in the same shared types file are US-016/US-017 targets.
 - The broader shared-app artifact search gate still sees out-of-scope Cron/data compatibility imports before US-016/US-024. Do not treat those as Ralph regressions; remove them when their stories are selected.
+
+## US-016 Cron store lessons
+
+- Cron active data contracts are ownerless: `PiboCronJob`, `PiboCronRun`, and `PiboCronJobCreateInput` must not regain `ownerScope`.
+- Cron targets now use `{ kind: "room", roomId }` or `{ kind: "default-chat" }`. Historical `{ kind: "personal", principalId }` target JSON is migration/input compatibility only and must normalize to `default-chat`, not propagate as an active model.
+- `PiboCronStore` APIs are app-global: use `createJob(input)`, `updateJob(id, patch)`, `removeJob(id)`, `reserveManualRun(id)`, `listJobs({ includeDisabled })`, and `listRuns({ jobId, limit })`.
+- Fresh `pibo-cron.sqlite` schemas must not create `owner_scope` columns or owner indexes. Historical owner-column rebuild lives in `src/cron/store.ts` until US-024/final cutover isolation removes runtime compatibility.
+- Useful US-016 regression gates: `rg -n "ownerScope|getOwnedJob|PiboCron(Job|Run|JobCreateInput).*ownerScope|kind: .personal.|principalId" src/cron/types.ts src/cron/store.ts src/cron/service.ts` should return no matches, and `rg -n "owner_scope TEXT|owner_scope,|ON pibo_cron_.*owner" src/cron/store.ts` should return no fresh-schema creation matches.
+- US-017 still owns the visible Cron CLI/API/UI cleanup for deprecated `--owner-scope`, `--personal`, `--principal-id`, Chat UI target labels, and API/UI personal-target payloads. Do not confuse those transitional surfaces with the ownerless store model.

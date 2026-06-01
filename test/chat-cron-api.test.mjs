@@ -88,6 +88,7 @@ test("chat cron API normalizes personal cron targets to the shared default targe
 		assert.equal(response.status, 201);
 		assert.equal("ownerScope" in body.job, false);
 		assert.deepEqual(body.job.target, { kind: "personal" });
+		assert.deepEqual(options.cronStore.listJobs({ includeDisabled: true })[0].target, { kind: "default-chat" });
 		assert.deepEqual(defaultCalls, [{ name: "Shared Chat" }]);
 	} finally {
 		options.cronStore.close();
