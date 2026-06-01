@@ -443,8 +443,8 @@
         "Tests pass"
       ],
       "priority": 26,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Ran full validation inside Docker worker pibo-dev-final-owner-scope-removal-ralph after resetting only the worker-local fresh test home /workspace/.pibo/ralph-test-home. Environment evidence printed PIBO_HOME=/workspace/.pibo/ralph-test-home and PIBO_MIGRATION_SANDBOX_HOME=/workspace/.pibo/ralph-migration-sandbox; no command targeted /root/.pibo or host gateways. Updated stale tests that still expected runtime stores to rebuild historical owner/principal schemas or current docs to contain archived specs; historical data migration coverage remains in final-cutover migration tests. Docker validation passed: npm run typecheck; npm run build (only existing Vite chunk-size warnings); npm test with 895 tests / 4 suites / 895 pass / 0 fail; node --test test/shared-app-fresh-schema.test.mjs test/ownerless-fresh-runtime-regression.test.mjs with 2 pass / 0 fail. A read-only Python SQLite inventory over fresh-home DBs found zero forbidden product owner/principal columns or membership/principal stats tables across pibo.sqlite, pibo-ralph.sqlite, pibo-cron.sqlite, pibo-events.sqlite, web-annotations.sqlite, and web-projects.sqlite. Report written to docs/reports/final-owner-scope-full-docker-validation-us-026.md. Host /root/.pibo, host Dev/Production gateways, Production data, deploys, migrations against host data, and PR creation were not touched."
     },
     {
       "id": "US-027",

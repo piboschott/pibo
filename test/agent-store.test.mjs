@@ -17,14 +17,13 @@ async function withCwd(cwd, run) {
 	}
 }
 
-test("custom agent store migrates legacy profile names before listing", () => {
+test("custom agent store normalizes legacy custom-agent profile names before listing", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const db = new DatabaseSync(path);
 	db.exec(`
 		CREATE TABLE chat_agents (
 			id TEXT PRIMARY KEY,
 			profile_name TEXT NOT NULL UNIQUE,
-			owner_scope TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			description TEXT,
 			native_tools_json TEXT NOT NULL,
@@ -41,7 +40,6 @@ test("custom agent store migrates legacy profile names before listing", () => {
 		INSERT INTO chat_agents (
 			id,
 			profile_name,
-			owner_scope,
 			display_name,
 			description,
 			native_tools_json,
@@ -52,11 +50,10 @@ test("custom agent store migrates legacy profile names before listing", () => {
 			run_control,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`).run(
 		"agent_02d60a56-9bd4-4606-921b-495e3daf69d8",
 		"custom-agent:agent_02d60a56-9bd4-4606-921b-495e3daf69d8",
-		"user:test",
 		"test-agent-2",
 		null,
 		"[]",
@@ -86,14 +83,13 @@ test("custom agent store migrates legacy profile names before listing", () => {
 	migratedDb.close();
 });
 
-test("custom agent store migrates old tables with stable defaults", () => {
+test("custom agent store migrates old ownerless tables with stable defaults", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const db = new DatabaseSync(path);
 	db.exec(`
 		CREATE TABLE chat_agents (
 			id TEXT PRIMARY KEY,
 			profile_name TEXT NOT NULL UNIQUE,
-			owner_scope TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			description TEXT,
 			native_tools_json TEXT NOT NULL,
@@ -110,7 +106,6 @@ test("custom agent store migrates old tables with stable defaults", () => {
 		INSERT INTO chat_agents (
 			id,
 			profile_name,
-			owner_scope,
 			display_name,
 			description,
 			native_tools_json,
@@ -121,11 +116,10 @@ test("custom agent store migrates old tables with stable defaults", () => {
 			run_control,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`).run(
 		"agent_legacy_defaults",
 		"legacy-defaults",
-		"user:test",
 		"legacy-defaults",
 		null,
 		"[]",
@@ -195,63 +189,25 @@ test("custom agent names are globally unique and lists are app-global across leg
 	store.close();
 });
 
-test("custom agent store lists historical shared and user agents for every account", () => {
+test("custom agent store lists all app-global agents", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
-	const db = new DatabaseSync(path);
-	db.exec(`
-		CREATE TABLE chat_agents (
-			id TEXT PRIMARY KEY,
-			profile_name TEXT NOT NULL UNIQUE,
-			owner_scope TEXT NOT NULL,
-			display_name TEXT NOT NULL,
-			description TEXT,
-			native_tools_json TEXT NOT NULL,
-			skills_json TEXT NOT NULL,
-			context_files_json TEXT NOT NULL,
-			subagents_json TEXT NOT NULL,
-			builtin_tools TEXT NOT NULL,
-			run_control INTEGER NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)
-	`);
-	const insert = db.prepare(`
-		INSERT INTO chat_agents (
-			id,
-			profile_name,
-			owner_scope,
-			display_name,
-			description,
-			native_tools_json,
-			skills_json,
-			context_files_json,
-			subagents_json,
-			builtin_tools,
-			run_control,
-			created_at,
-			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`);
-	insert.run("agent_shared", "shared-history", "shared:app", "shared-history", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-01T00:00:00.000Z", "2026-05-01T00:00:00.000Z");
-	insert.run("agent_user", "user-history", "user:legacy-account", "user-history", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-02T00:00:00.000Z", "2026-05-02T00:00:00.000Z");
-	db.close();
-
 	const store = new CustomAgentStore(path);
+	store.create({ displayName: "shared-history" });
+	store.create({ displayName: "user-history" });
+
 	assert.deepEqual(store.list().map((agent) => agent.profileName).sort(), ["shared-history", "user-history"]);
-	assert.deepEqual(store.list().map((agent) => agent.profileName).sort(), ["shared-history", "user-history"]);
-	assert.equal("ownerScope" in store.get("agent_user"), false);
+	assert.equal("ownerScope" in store.list()[0], false);
 
 	store.close();
 });
 
-test("custom agent store migrates duplicate historical profile names before dropping owner columns", () => {
+test("custom agent store migrates duplicate profile names before enforcing global uniqueness", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const db = new DatabaseSync(path);
 	db.exec(`
 		CREATE TABLE chat_agents (
 			id TEXT PRIMARY KEY,
 			profile_name TEXT NOT NULL,
-			owner_scope TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			description TEXT,
 			native_tools_json TEXT NOT NULL,
@@ -263,16 +219,15 @@ test("custom agent store migrates duplicate historical profile names before drop
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
-		CREATE UNIQUE INDEX idx_chat_agents_owner_profile ON chat_agents(owner_scope, profile_name);
 	`);
 	const insert = db.prepare(`
 		INSERT INTO chat_agents (
-			id, profile_name, owner_scope, display_name, description, native_tools_json, skills_json,
+			id, profile_name, display_name, description, native_tools_json, skills_json,
 			context_files_json, subagents_json, builtin_tools, run_control, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`);
-	insert.run("agent_old", "helper", "user:old", "helper", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-01T00:00:00.000Z", "2026-05-01T00:00:00.000Z");
-	insert.run("agent_new", "helper", "user:new", "helper", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-02T00:00:00.000Z", "2026-05-02T00:00:00.000Z");
+	insert.run("agent_old", "helper", "helper", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-01T00:00:00.000Z", "2026-05-01T00:00:00.000Z");
+	insert.run("agent_new", "helper", "helper", null, "[]", "[]", "[]", "[]", "default", 0, "2026-05-02T00:00:00.000Z", "2026-05-02T00:00:00.000Z");
 	db.close();
 
 	const store = new CustomAgentStore(path);
@@ -285,10 +240,6 @@ test("custom agent store migrates duplicate historical profile names before drop
 
 	const migratedDb = new DatabaseSync(path);
 	assert.equal(tableColumns(migratedDb, "chat_agents").has("owner_scope"), false);
-	assert.deepEqual(
-		migratedDb.prepare("PRAGMA index_list(chat_agents)").all().map((row) => row.name).filter((name) => String(name).includes("owner")),
-		[],
-	);
 	migratedDb.close();
 });
 

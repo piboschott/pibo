@@ -284,3 +284,12 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - `scripts/legacy-product-vocabulary-gate.mjs` has a temporary final-removal documentation allowlist because the active Ralph batch docs necessarily record removed historical vocabulary. The reviewed allowed current-doc files are limited to the final-removal plan, text PRD, and PRD JSON. After user-approved cutover/archival, shrink this allowlist again.
 - Built tool guides must not teach removed partition flags. Ralph examples should use `--room` or the default-chat target; Web Annotation docs should describe app resources keyed by Pibo Session/resource metadata.
 - Useful US-025 current-docs gate: `node scripts/legacy-product-vocabulary-gate.mjs --roots GLOSSARY.md,docs/project,docs/specs,docs/plans,skills,src/tools/guides.ts --json` should have zero failures; allowed matches should be only final-removal implementation docs until they are archived.
+
+## US-026 full validation lessons
+
+- After US-024 removed normal runtime compatibility for historical owner/principal schemas, tests must not expect runtime stores to rebuild old owner columns. Historical schema/data assertions belong in `test/final-app-space-cutover-migration.test.mjs`; active store tests should cover fresh ownerless schemas and app-global records only.
+- Full `npm test` now passes in Docker after stale compatibility tests were removed or rewritten: 895 tests / 4 suites / 895 pass / 0 fail.
+- User settings are app-level in `user-settings.json` under `settings`; tests should not expect per-user or synthetic-owner keyed settings maps.
+- Compute worker metadata uses `holder` / `pibo.compute.holder`; do not reintroduce compute `ownerScope` labels.
+- Historical spec docs moved by US-025 should be read from `docs/legacy/...` in tests that intentionally validate old traceability artifacts.
+- Fresh-home schema inventory should check product Owner Scope artifacts (`owner_scope`, `principal_id`, `room_members`, `principal_session_stats`, `principal_room_stats`). Technical run-control fields such as `ownerPiboSessionId` are session-control ownership, not product Owner Scope, but US-029 should still decide whether broader technical owner terminology needs more cleanup or explicit exception documentation.

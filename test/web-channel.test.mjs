@@ -9,7 +9,6 @@ import { PiboAuthError } from "../dist/auth/types.js";
 import { createWebHostChannel } from "../dist/web/channel.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
 import { upsertPiPackage } from "../dist/pi-packages/store.js";
-import { PRE_CUTOVER_LEGACY_OWNER_SCOPE } from "../dist/owner-scope-compat.js";
 
 function createFakeAuthService() {
 	return {
@@ -3039,7 +3038,7 @@ test("workflow catalog authentication and permission baseline treats UI workflow
 		const userTwoPublishPayload = await userTwoPublish.json();
 		assert.equal(userTwoPublishPayload.publishedVersion.workflowId, "ui-global-permission-draft");
 		assert.equal(userTwoPublishPayload.publishedVersion.version, "0.1.1");
-		assert.equal(userTwoPublishPayload.publishedVersion.publishedBy, PRE_CUTOVER_LEGACY_OWNER_SCOPE);
+		assert.equal(userTwoPublishPayload.publishedVersion.publishedBy, "user-2");
 
 		const userOneVersion = await fetch(`${baseURL}/api/chat/workflows/ui-global-permission-draft/versions/0.1.1`, {
 			headers: { "x-test-user": "user-1" },
@@ -3699,7 +3698,7 @@ test("workflow delete API tombstones UI workflows while preserving Project snaps
 		assert.equal(deletePayload.workflowId, "ui-review-workflow");
 		assert.equal(deletePayload.deleted, true);
 		assert.equal(deletePayload.tombstone.workflowId, "ui-review-workflow");
-		assert.equal(deletePayload.tombstone.deletedBy, PRE_CUTOVER_LEGACY_OWNER_SCOPE);
+		assert.equal(deletePayload.tombstone.deletedBy, "user-1");
 		assert.equal(deletePayload.tombstone.lastKnownTitle, "UI Review Workflow");
 		assert.equal(deletePayload.tombstone.lastKnownVersion, "2.0.0");
 		assert.match(deletePayload.tombstone.lastDefinitionHash, /^sha256:[a-f0-9]{64}$/);

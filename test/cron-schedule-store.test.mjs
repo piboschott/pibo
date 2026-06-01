@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
@@ -11,14 +10,6 @@ import { PiboCronStore } from '../dist/cron/store.js';
 
 const execFileAsync = promisify(execFile);
 const cliPath = new URL('../dist/bin/pibo.js', import.meta.url).pathname;
-
-function tableColumns(db, tableName) {
-  return new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name));
-}
-
-function indexNames(db) {
-  return db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name").all().map((row) => row.name);
-}
 
 test('cron at schedule returns future date once', () => {
   const now = new Date('2026-05-09T08:00:00.000Z');
@@ -61,43 +52,6 @@ test('cron store persists app-global jobs and reserves a due run once', () => {
   assert.equal(updated.state.lastPiboSessionId, 'ps_test');
   assert.equal('ownerScope' in store.listRuns({})[0], false);
   store.close();
-});
-
-test('cron store migrates and controls historical user cron jobs ownerlessly', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pibo-cron-historical-'));
-  const storePath = join(root, 'cron.sqlite');
-  try {
-    let store = new PiboCronStore({ path: storePath });
-    const now = new Date('2026-05-09T08:00:00.000Z');
-    const jobA = store.createJob({ target: { kind: 'default-chat' }, profile: 'default', prompt: 'a', schedule: { kind: 'at', at: '2026-05-09T08:10:00.000Z' } }, now);
-    const jobB = store.createJob({ target: { kind: 'default-chat' }, profile: 'default', prompt: 'b', schedule: { kind: 'at', at: '2026-05-09T08:20:00.000Z' } }, now);
-    store.close();
-
-    const db = new DatabaseSync(storePath);
-    db.exec("ALTER TABLE pibo_cron_jobs ADD COLUMN owner_scope TEXT NOT NULL DEFAULT 'shared:app'; ALTER TABLE pibo_cron_runs ADD COLUMN owner_scope TEXT NOT NULL DEFAULT 'shared:app'; CREATE INDEX idx_cron_jobs_owner ON pibo_cron_jobs(owner_scope, updated_at); CREATE INDEX idx_cron_runs_owner ON pibo_cron_runs(owner_scope, created_at);");
-    db.prepare('UPDATE pibo_cron_jobs SET owner_scope = ?, target_json = ? WHERE id = ?').run('user:a', JSON.stringify({ kind: 'personal', principalId: 'user:a' }), jobA.id);
-    db.prepare('UPDATE pibo_cron_jobs SET owner_scope = ?, target_json = ? WHERE id = ?').run('user:b', JSON.stringify({ kind: 'personal', principalId: 'user:b' }), jobB.id);
-    db.close();
-
-    store = new PiboCronStore({ path: storePath });
-    assert.deepEqual(store.listJobs({ includeDisabled: true }).map((job) => job.id).sort(), [jobA.id, jobB.id].sort());
-    const updated = store.updateJob(jobA.id, { name: 'updated by c', target: { kind: 'default-chat' } });
-    assert.equal(updated.name, 'updated by c');
-    assert.equal('ownerScope' in updated, false);
-    assert.deepEqual(updated.target, { kind: 'default-chat' });
-    const reserved = store.reserveManualRun(jobA.id, new Date('2026-05-09T08:03:00.000Z'));
-    assert.equal(reserved.job.id, jobA.id);
-    assert.equal('ownerScope' in reserved.run, false);
-    assert.deepEqual(store.listRuns({}).map((run) => run.id), [reserved.run.id]);
-    assert.equal(tableColumns(store.db, 'pibo_cron_jobs').has('owner_scope'), false);
-    assert.equal(tableColumns(store.db, 'pibo_cron_runs').has('owner_scope'), false);
-    assert.equal(indexNames(store.db).some((name) => name.includes('owner')), false);
-    assert.equal(store.removeJob(jobB.id), true);
-    assert.equal(store.getJob(jobB.id), undefined);
-    store.close();
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
 });
 
 test('cron CLI creates shared jobs without owner scope', async () => {

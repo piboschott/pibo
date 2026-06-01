@@ -1,18 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { renderAttachedWebAnnotations, WEB_ANNOTATION_LIMITS, WebAnnotationStore } from "../dist/web-annotations/index.js";
-
-function tableColumns(db, tableName) {
-	return db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
-}
-
-function legacySharedValue() {
-	return ["shared", "app"].join(":");
-}
 
 function createAnnotationInput(overrides = {}) {
 	return {
@@ -148,52 +136,5 @@ test("web annotations normalize oversized and secret-like payloads", () => {
 		assert.doesNotMatch(promptBlock, /screen/);
 	} finally {
 		store.close();
-	}
-});
-
-test("web annotations migrate historical owner columns to app-global session-scoped rows", () => {
-	const dir = mkdtempSync(join(tmpdir(), "pibo-web-annotations-ownerless-"));
-	const dbPath = join(dir, "web-annotations.sqlite");
-	const legacyDb = new DatabaseSync(dbPath);
-	try {
-		legacyDb.exec(`
-			CREATE TABLE web_annotation_bindings (
-				id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, pibo_session_id TEXT NOT NULL, pibo_room_id TEXT,
-				state TEXT NOT NULL, url TEXT NOT NULL, title TEXT, target_id TEXT, created_at TEXT NOT NULL,
-				updated_at TEXT, last_injected_at TEXT, closed_at TEXT, error TEXT, metadata_json TEXT
-			);
-			CREATE INDEX idx_legacy_bindings_owner ON web_annotation_bindings(owner_scope, pibo_session_id);
-			CREATE TABLE web_annotations (
-				id TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, pibo_session_id TEXT NOT NULL, pibo_room_id TEXT,
-				binding_id TEXT, status TEXT NOT NULL, note TEXT NOT NULL, url TEXT NOT NULL, title TEXT, target_id TEXT,
-				target_kind TEXT NOT NULL, viewport_json TEXT NOT NULL, target_json TEXT, screenshot_ref_json TEXT,
-				thread_json TEXT, created_at TEXT NOT NULL, updated_at TEXT, resolved_at TEXT, resolved_by TEXT,
-				summary TEXT, metadata_json TEXT
-			);
-			CREATE INDEX idx_legacy_annotations_owner ON web_annotations(owner_scope, pibo_session_id);
-		`);
-		legacyDb.prepare("INSERT INTO web_annotation_bindings (id, owner_scope, pibo_session_id, pibo_room_id, state, url, target_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-			.run("binding_legacy", "user:legacy", "ps_a", "room_a", "active", "http://localhost:3000/settings", "target-a", "2026-05-16T09:59:00.000Z", "2026-05-16T09:59:00.000Z");
-		legacyDb.prepare("INSERT INTO web_annotations (id, owner_scope, pibo_session_id, pibo_room_id, binding_id, status, note, url, target_kind, viewport_json, target_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-			.run("ann_legacy_user", "user:legacy", "ps_a", "room_a", "binding_legacy", "open", "Legacy user row", "http://localhost:3000/settings", "element", JSON.stringify({ width: 100, height: 100 }), JSON.stringify({ kind: "element", label: "Legacy" }), "2026-05-16T10:00:00.000Z", "2026-05-16T10:00:00.000Z");
-		legacyDb.prepare("INSERT INTO web_annotations (id, owner_scope, pibo_session_id, status, note, url, target_kind, viewport_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-			.run("ann_legacy_shared", legacySharedValue(), "ps_a", "acknowledged", "Legacy shared row", "http://localhost:3000/shared", "pin", JSON.stringify({ width: 200, height: 100 }), "2026-05-16T10:01:00.000Z", "2026-05-16T10:01:00.000Z");
-	} finally {
-		legacyDb.close();
-	}
-
-	const store = new WebAnnotationStore({ path: dbPath });
-	try {
-		assert.deepEqual(tableColumns(store.db, "web_annotation_bindings").includes("owner_scope"), false);
-		assert.deepEqual(tableColumns(store.db, "web_annotations").includes("owner_scope"), false);
-		const indexes = store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%owner%'").all();
-		assert.deepEqual(indexes, []);
-		assert.equal(Object.hasOwn(store.getBinding("ps_a", "binding_legacy"), ["owner", "Scope"].join("")), false);
-		assert.deepEqual(store.listAnnotations({ piboSessionId: "ps_a" }).map((annotation) => annotation.id), ["ann_legacy_shared", "ann_legacy_user"]);
-		assert.equal(store.getAnnotation("ps_a", "ann_legacy_user")?.target?.label, "Legacy");
-		assert.equal(store.patchAnnotation("ps_a", "ann_legacy_user", { status: "resolved" })?.status, "resolved");
-	} finally {
-		store.close();
-		rmSync(dir, { recursive: true, force: true });
 	}
 });
