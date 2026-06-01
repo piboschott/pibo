@@ -279,3 +279,4 @@
   - Evidence tier: Docker package typecheck/build/test, root typecheck/build, shared fresh-schema regression, temp-file workflow schema migration fixture, and targeted source/schema search gate.
   - Safety: all fixtures used Docker temp files or `/workspace/.pibo/ralph-test-home`; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-018 set to `passes: true` with evidence notes. Next failing story: US-019 (`Clean workflow runtime, routing, inspection, and prompts`).
+- 2026-06-01T19:58Z: US-018 implementation commit created: `b9ecf3c feat: US-018 - remove workflow run owner scope`.
