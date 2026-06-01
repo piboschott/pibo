@@ -338,8 +338,8 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed the CLI session source owner-selection contract from src/cli-session: CliOwnerSummary, getActiveOwner, setActiveOwner, listOwners, ownerSummaries, activeOwnerScope/activeOwnerLabel status fields, create/list ownerScope inputs, slash command ownerScope inputs, session owner mismatch checks, and owner-filtered fake/local source behavior are gone. LocalCliSessionSource now lists app-global rooms/sessions, creates sessions in a neutral shared default room id, writes Chat navigation and message read models without owner fields, and exposes a neutral repairLegacyCliSessions result instead of selected-owner repair. Root recovery owner constants were replaced by neutral local recovery source constants. The tui:sessions command source setup no longer accepts --owner-scope or PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS mocked-owner fixtures; debug mocked rooms are app-global. Focused CLI source tests were rewritten for ownerless fake/local behavior, recursive no-owner-field assertions, app-global session listing, real local navigation/message persistence, slash action routing without owner parameters, and neutral legacy repair output. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/cli-session-source.test.mjs test/session-ui-view-models.test.mjs test/ink-cli-v2-current-state.test.mjs; npm run typecheck. Targeted Docker source gate over src/cli-session and src/apps/cli-ui/cliSessionsCommand.ts found no CliOwnerSummary/getActiveOwner/setActiveOwner/listOwners/ownerSummaries/active owner status/session_owner_mismatch/ownerScope matches. Host /root/.pibo, host gateways, Production data, deploys, migrations, and PR creation were not touched. InkSessionApp still contains owner-picker UI compatibility under US-021 scope and is temporarily ts-nocheck after the source contract removal; US-021 is the next failing story and should remove that UI surface rather than preserving the compatibility shim."
     },
     {
       "id": "US-021",

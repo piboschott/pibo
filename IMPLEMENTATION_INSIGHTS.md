@@ -231,3 +231,12 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Recorded agent prompt trace privacy now uses neutral `kind: "workflowRun"`; do not reintroduce `kind: "ownerScope"` or owner terminology in prompt metadata.
 - Workflow run inspection should expose workflow/run/session/project/status facts only. Useful US-019 regression gate: `rg -n "ownerScope|kind: \\\"ownerScope\\\"|principalId|shared:app|SessionRoutingPolicy.*ownerScope|PiboWorkflowSession.*ownerScope" packages/workflows/src/runtime packages/workflows/src/types packages/workflows/src/inspection packages/workflows/src/testing/runtime-agent-node.test.ts packages/workflows/src/testing/runtime-one-node-agent.test.ts packages/workflows/src/testing/runtime-prompt-workflows.test.ts packages/workflows/src/testing/workflow-run-inspection.test.ts` should return no matches.
 - Remaining `owner_scope` in package tests/source should be historical workflow-run migration fixture/schema-rebuild code from US-018 until US-024/final migration isolation decides whether that compatibility remains outside active runtime.
+
+## US-020 CLI session source lessons
+
+- `CliSessionSource` is now ownerless. Do not add `CliOwnerSummary`, `getActiveOwner`, `setActiveOwner`, `listOwners`, `ownerSummaries`, owner-scoped list/create inputs, active owner status fields, slash-command owner parameters, or `session_owner_mismatch` back to `src/cli-session`.
+- The local CLI source default room id is now the neutral `cliDefaultRoomId()` value `room_cli_default`; it is not derived from an owner value.
+- `repairLegacyCliSessions` is a neutral local repair hook. It must not ask for a selected owner or return an owner value.
+- `pibo tui:sessions` source construction no longer accepts `--owner-scope` or `PIBO_DEBUG_PTY_CLI_SESSIONS_OWNERS`; debug mocked rooms are app-global.
+- `InkSessionApp` still carries the UI owner picker/header compatibility and is temporarily `ts-nocheck` after the source contract removal. US-021 should delete that UI surface and the shim rather than adapting it back to source owner methods.
+- Useful US-020 regression gate: `rg -n "CliOwnerSummary|getActiveOwner\(|setActiveOwner\(|listOwners\(|ownerSummaries|activeOwnerScope|activeOwnerLabel|session_owner_mismatch|Root recovery owner|selected owner|owner mismatch|ownerScope" src/cli-session src/apps/cli-ui/cliSessionsCommand.ts` should return no matches.
