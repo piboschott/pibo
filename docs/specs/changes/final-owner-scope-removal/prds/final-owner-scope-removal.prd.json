@@ -391,8 +391,8 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Extended the operator-only pibo data final-cutover command with backup-gated apply mode for isolated Docker fixture/sandbox roots. Apply requires --root plus --backup, refuses /root/.pibo through the existing root guard, requires the backup directory to live outside the target root, verifies matching backup copies for each existing affected SQLite database with PRAGMA quick_check, and refuses unresolved inspect blockers before writes. Apply runs per-database BEGIN IMMEDIATE transactions, applies database-specific conflict decisions (Chat duplicate defaults/navigation and principal read-state merge, Custom Agent duplicate profile-name rename, Ralph/Cron personal/principal target normalization), drops membership/principal stats tables, rebuilds remaining tables without owner_scope/principal_id columns, removes owner/principal indexes, runs row-count checks and post-apply PRAGMA quick_check, writes a JSON migration report under migration-reports, and includes rollback instructions referencing the verified backup path. Added fixture coverage for apply, idempotency, missing/invalid backup refusal, host-root refusal, schema cleanup, target normalization, report persistence, row-count/post-check output, and CLI inspect/dry-run/apply JSON paths. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/final-app-space-cutover-migration.test.mjs; npm run typecheck. Apply validation used only Docker temp fixture homes/backups; no apply was run against host /root/.pibo or Production, and host gateways/deploys/PR creation were not touched."
     },
     {
       "id": "US-024",

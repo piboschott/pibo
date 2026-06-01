@@ -258,3 +258,12 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Legacy value summaries redact user-derived values with short hashes while leaving the known historical shared-app literal visible for conflict review. Do not dump arbitrary JSON, prompts, messages, profile names, or auth identities in migration reports.
 - Current dry-run conflict detection covers duplicate default rooms, duplicate navigation rows, duplicate Custom Agent profile names, and legacy Ralph/Cron personal/principal target shapes. US-023 apply must keep these decisions aligned when it performs transactional rebuilds.
 - Docker sandbox validation for US-022 found copied migration sandbox totals: 6 affected DBs, 19 legacy columns, 15 legacy indexes, 4349 legacy rows, 1 conflict group, and 20 dry-run planned actions with no unresolved blockers. These are sandbox-copy facts only, not Production mutation.
+
+## US-023 final cutover apply lessons
+
+- `pibo data final-cutover apply` is backup-gated and isolated-root-only: it requires `--root` plus `--backup`, refuses `/root/.pibo` through the final-cutover root guard, and requires backup copies outside the target root for every existing affected SQLite DB.
+- Backup verification opens each matching backup DB read-only and requires `PRAGMA quick_check = ok` before any target write. Keep this requirement for future sandbox/Production cutover work.
+- Apply runs one `BEGIN IMMEDIATE` transaction per database. If a database-level rebuild fails, that database rolls back before later files are processed.
+- Apply reuses the final migration decisions from dry-run: duplicate Chat defaults keep the newest non-archived default, duplicate `session_navigation` keeps the newest row per `session_id`, principal read-state merges into app read-state, Custom Agent profile-name collisions rename older rows with deterministic `-legacy-<hash>` suffixes, and Ralph/Cron legacy personal/principal targets normalize to `default-chat`.
+- Post-check evidence includes row-count checks for every affected table, post-apply `PRAGMA quick_check`, a JSON report under `<root>/migration-reports/`, and rollback instructions pointing at the verified backup path.
+- US-023 intentionally validated apply only against Docker temp fixture homes/backups. Do not run apply against the copied migration sandbox unless using an extra sandbox copy and a verified backup path; never run it against host `/root/.pibo` inside this Ralph loop.

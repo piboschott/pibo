@@ -351,12 +351,12 @@ async function runFinalCutoverCommand(args: string[]): Promise<void> {
 		return;
 	}
 	const command = args[0];
-	if (command !== "inspect" && command !== "dry-run") {
+	if (command !== "inspect" && command !== "dry-run" && command !== "apply") {
 		throw new Error(`Unknown pibo data final-cutover command "${command}". Run pibo data final-cutover --help.`);
 	}
 	const { formatFinalAppSpaceCutoverReport, inspectFinalAppSpaceCutoverMigration } = await import("./final-app-space-cutover-migration.js");
 	const json = args.includes("--json");
-	const report = inspectFinalAppSpaceCutoverMigration({ mode: command, root: optionValue(args, "--root") });
+	const report = inspectFinalAppSpaceCutoverMigration({ mode: command, root: optionValue(args, "--root"), backupPath: optionValue(args, "--backup") });
 	if (json) console.log(JSON.stringify(report, null, 2));
 	else console.log(formatFinalAppSpaceCutoverReport(report));
 }
@@ -454,10 +454,12 @@ function printFinalCutoverHelp(): void {
 Commands:
   inspect   Read-only affected-file, table, column, index, row-count, legacy-value, and conflict report
   dry-run   Read-only planned table rebuild, merge, rename, and blocker report; writes nothing
+  apply     Backup-gated transactional apply for Docker fixture or sandbox roots only
 
 Options:
-  --json      Print machine-readable JSON
-  --root DIR  Required unless PIBO_MIGRATION_SANDBOX_HOME points at a Docker sandbox or temporary fixture root
+  --json        Print machine-readable JSON
+  --root DIR    Required unless PIBO_MIGRATION_SANDBOX_HOME points at a Docker sandbox or temporary fixture root
+  --backup DIR  Required by apply; verified backup directory containing copies of existing affected DB files
 
 Safety:
   Refuses /root/.pibo and paths under it. This command is for Docker sandboxes and fixture roots only.
@@ -465,6 +467,7 @@ Safety:
 Next:
   pibo data final-cutover inspect --root /workspace/.pibo/ralph-migration-sandbox --json
   pibo data final-cutover dry-run --root /workspace/.pibo/ralph-migration-sandbox --json
+  pibo data final-cutover apply --root /tmp/pibo-fixture-home --backup /tmp/pibo-fixture-backup --json
 `);
 }
 

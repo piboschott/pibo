@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -53,6 +53,26 @@ async function createFixtureHome() {
 	} finally {
 		ralph.close();
 	}
+	const cron = new DatabaseSync(join(root, "pibo-cron.sqlite"));
+	try {
+		cron.exec(`
+			CREATE TABLE pibo_cron_jobs (id TEXT PRIMARY KEY, owner_scope TEXT, target_json TEXT);
+			CREATE INDEX idx_pibo_cron_jobs_owner ON pibo_cron_jobs(owner_scope);
+			INSERT INTO pibo_cron_jobs VALUES ('cron_1', 'user:secret-alpha', '{"kind":"personal","principalId":"user:secret-alpha"}');
+		`);
+	} finally {
+		cron.close();
+	}
+	const sessions = new DatabaseSync(join(root, "pibo-sessions.sqlite"));
+	try {
+		sessions.exec(`
+			CREATE TABLE pibo_sessions (id TEXT PRIMARY KEY, pi_session_id TEXT, owner_scope TEXT, title TEXT);
+			CREATE INDEX idx_pibo_sessions_owner ON pibo_sessions(owner_scope);
+			INSERT INTO pibo_sessions VALUES ('ps_1', 'pi_1', 'user:secret-alpha', 'Session One');
+		`);
+	} finally {
+		sessions.close();
+	}
 	return root;
 }
 
@@ -62,6 +82,39 @@ async function withFixtureHome(fn) {
 		await fn(root);
 	} finally {
 		await rm(root, { recursive: true, force: true });
+	}
+}
+
+async function createBackupForFixture(root) {
+	const backup = await mkdtemp(join(tmpdir(), "pibo-final-cutover-backup-"));
+	for (const name of ["pibo.sqlite", "pibo-sessions.sqlite", "chat-agents.sqlite", "pibo-ralph.sqlite", "pibo-cron.sqlite"]) {
+		await copyFile(join(root, name), join(backup, name));
+	}
+	return backup;
+}
+
+function tableColumns(db, tableName) {
+	return db.prepare(`PRAGMA table_info("${tableName}")`).all().map((column) => column.name);
+}
+
+function schemaNames(db, type) {
+	return db.prepare("SELECT name FROM sqlite_master WHERE type = ? ORDER BY name").all(type).map((row) => row.name);
+}
+
+function assertNoLegacySchema(root, databaseName) {
+	const db = new DatabaseSync(join(root, databaseName), { readOnly: true });
+	try {
+		for (const tableName of schemaNames(db, "table")) {
+			assert.ok(!tableColumns(db, tableName).includes("owner_scope"), `${databaseName}.${tableName} has owner_scope`);
+			assert.ok(!tableColumns(db, tableName).includes("principal_id"), `${databaseName}.${tableName} has principal_id`);
+		}
+		for (const tableName of ["room_members", "principal_session_stats", "principal_room_stats"]) {
+			assert.equal(schemaNames(db, "table").includes(tableName), false, `${databaseName} still has ${tableName}`);
+		}
+		assert.equal(schemaNames(db, "index").some((name) => /owner|principal/i.test(name)), false, `${databaseName} still has owner/principal index`);
+		assert.equal(db.prepare("PRAGMA quick_check").get().quick_check, "ok");
+	} finally {
+		db.close();
 	}
 }
 
@@ -118,12 +171,78 @@ test("final cutover dry-run reports planned rebuild, merge, rename, and target n
 	});
 });
 
-test("final cutover refuses the host production home and requires an explicit isolated root or sandbox env", () => {
+test("final cutover apply requires a verified external backup and refuses host production home", async () => {
 	assert.throws(() => inspectFinalAppSpaceCutoverMigration({ root: "/root/.pibo" }), /refuses to target \/root\/\.pibo/);
 	assert.throws(() => inspectFinalAppSpaceCutoverMigration({ env: {} }), /requires --root/);
+	await withFixtureHome(async (root) => {
+		assert.throws(() => inspectFinalAppSpaceCutoverMigration({ mode: "apply", root }), /requires --backup/);
+		const emptyBackup = await mkdtemp(join(tmpdir(), "pibo-final-cutover-empty-backup-"));
+		try {
+			assert.throws(() => inspectFinalAppSpaceCutoverMigration({ mode: "apply", root, backupPath: emptyBackup }), /backup is missing pibo\.sqlite/);
+		} finally {
+			await rm(emptyBackup, { recursive: true, force: true });
+		}
+	});
 });
 
-test("pibo data final-cutover CLI supports inspect and dry-run JSON against fixture roots", async () => {
+test("final cutover apply rebuilds fixture schemas, normalizes targets, writes report, and is idempotent", async () => {
+	await withFixtureHome(async (root) => {
+		const backup = await createBackupForFixture(root);
+		try {
+			const report = inspectFinalAppSpaceCutoverMigration({ mode: "apply", root, backupPath: backup });
+			assert.equal(report.mode, "apply");
+			assert.equal(report.backupPath, backup);
+			assert.ok(report.apply.appliedDatabases >= 4);
+			assert.ok(report.apply.appliedActions.some((action) => action.action === "rebuild-table"));
+			assert.ok(report.apply.rowCountChecks.some((check) => check.table === "room_members" && check.status === "dropped"));
+			assert.ok(report.apply.quickChecks.every((check) => check.result === "ok"));
+			assert.equal(report.totals.legacyColumns, 0);
+			assert.equal(report.totals.legacyIndexes, 0);
+			assert.equal(report.totals.legacyRows, 0);
+			assert.equal(report.totals.unresolvedBlockers, 0);
+			assert.ok(report.apply.rollbackInstructions.some((line) => line.includes(backup)));
+			assert.ok(JSON.parse(await readFile(report.apply.reportPath, "utf8")).apply.rollbackInstructions.length > 0);
+
+			for (const databaseName of ["pibo.sqlite", "pibo-sessions.sqlite", "chat-agents.sqlite", "pibo-ralph.sqlite", "pibo-cron.sqlite"]) assertNoLegacySchema(root, databaseName);
+
+			const pibo = new DatabaseSync(join(root, "pibo.sqlite"), { readOnly: true });
+			try {
+				assert.equal(JSON.parse(pibo.prepare("SELECT metadata_json FROM rooms WHERE id = 'room-new'").get().metadata_json).default, true);
+				assert.equal(JSON.parse(pibo.prepare("SELECT metadata_json FROM rooms WHERE id = 'room-old'").get().metadata_json).default, undefined);
+				assert.equal(pibo.prepare("SELECT room_id FROM session_navigation WHERE session_id = 'ps_1'").get().room_id, "room-new");
+				assert.equal(pibo.prepare("SELECT last_read_stream_id FROM app_session_read_state WHERE session_id = 'ps_1'").get().last_read_stream_id, 7);
+			} finally {
+				pibo.close();
+			}
+
+			const agents = new DatabaseSync(join(root, "chat-agents.sqlite"), { readOnly: true });
+			try {
+				const names = agents.prepare("SELECT profile_name FROM chat_agents ORDER BY profile_name").all().map((row) => row.profile_name);
+				assert.equal(new Set(names).size, 2);
+				assert.ok(names.some((name) => /^helper-legacy-[a-f0-9]{8}$/.test(name)));
+			} finally {
+				agents.close();
+			}
+
+			for (const [databaseName, tableName] of [["pibo-ralph.sqlite", "pibo_ralph_jobs"], ["pibo-cron.sqlite", "pibo_cron_jobs"]]) {
+				const db = new DatabaseSync(join(root, databaseName), { readOnly: true });
+				try {
+					assert.deepEqual(JSON.parse(db.prepare(`SELECT target_json FROM ${tableName}`).get().target_json), { kind: "default-chat" });
+				} finally {
+					db.close();
+				}
+			}
+
+			const second = inspectFinalAppSpaceCutoverMigration({ mode: "apply", root, backupPath: backup });
+			assert.equal(second.totals.legacyColumns, 0);
+			assert.equal(second.apply.appliedDatabases, 0);
+		} finally {
+			await rm(backup, { recursive: true, force: true });
+		}
+	});
+});
+
+test("pibo data final-cutover CLI supports inspect, dry-run, and apply JSON against fixture roots", async () => {
 	await withFixtureHome(async (root) => {
 		const inspect = await execFileAsync(process.execPath, ["dist/bin/pibo.js", "data", "final-cutover", "inspect", "--root", root, "--json"], { cwd: process.cwd(), env: { ...process.env, PIBO_HOME: join(root, "fresh-home") } });
 		const inspectReport = JSON.parse(inspect.stdout);
@@ -135,5 +254,16 @@ test("pibo data final-cutover CLI supports inspect and dry-run JSON against fixt
 		const dryRunReport = JSON.parse(dryRun.stdout);
 		assert.equal(dryRunReport.mode, "dry-run");
 		assert.ok(dryRunReport.totals.plannedActions > 0);
+
+		const backup = await createBackupForFixture(root);
+		try {
+			const apply = await execFileAsync(process.execPath, ["dist/bin/pibo.js", "data", "final-cutover", "apply", "--root", root, "--backup", backup, "--json"], { cwd: process.cwd(), env: { ...process.env, PIBO_HOME: join(root, "fresh-home") } });
+			const applyReport = JSON.parse(apply.stdout);
+			assert.equal(applyReport.mode, "apply");
+			assert.equal(applyReport.backupPath, backup);
+			assert.equal(applyReport.totals.legacyColumns, 0);
+		} finally {
+			await rm(backup, { recursive: true, force: true });
+		}
 	});
 });

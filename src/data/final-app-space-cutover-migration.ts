@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export type FinalAppSpaceCutoverMode = "inspect" | "dry-run";
+export type FinalAppSpaceCutoverMode = "inspect" | "dry-run" | "apply";
 
 export type FinalAppSpaceLegacyValueSummary = {
 	table: string;
@@ -48,10 +48,30 @@ export type FinalAppSpaceDatabaseReport = {
 	unresolvedBlockers: string[];
 };
 
+export type FinalAppSpaceRowCountCheck = {
+	database: string;
+	table: string;
+	beforeRows: number;
+	afterRows: number;
+	status: "preserved" | "merged" | "dropped" | "unchanged";
+};
+
+export type FinalAppSpaceApplyResult = {
+	backupPath: string;
+	reportPath: string;
+	appliedDatabases: number;
+	appliedActions: FinalAppSpacePlannedAction[];
+	rowCountChecks: FinalAppSpaceRowCountCheck[];
+	quickChecks: Array<{ database: string; result: string }>;
+	rollbackInstructions: string[];
+};
+
 export type FinalAppSpaceCutoverReport = {
 	kind: "final-app-space-cutover";
 	mode: FinalAppSpaceCutoverMode;
 	root: string;
+	backupPath?: string;
+	apply?: FinalAppSpaceApplyResult;
 	databases: FinalAppSpaceDatabaseReport[];
 	totals: {
 		databases: number;
@@ -79,9 +99,10 @@ const FINAL_CUTOVER_DATABASES = [
 	"pibo-workflows.sqlite",
 ];
 
-export function inspectFinalAppSpaceCutoverMigration(input: { mode?: FinalAppSpaceCutoverMode; root?: string; env?: Record<string, string | undefined> } = {}): FinalAppSpaceCutoverReport {
+export function inspectFinalAppSpaceCutoverMigration(input: { mode?: FinalAppSpaceCutoverMode; root?: string; env?: Record<string, string | undefined>; backupPath?: string } = {}): FinalAppSpaceCutoverReport {
 	const mode = input.mode ?? "inspect";
 	const root = resolveFinalCutoverRoot(input.root, input.env ?? process.env);
+	if (mode === "apply") return applyFinalAppSpaceCutoverMigration({ root, backupPath: input.backupPath });
 	const databases = FINAL_CUTOVER_DATABASES.map((name) => inspectCutoverDatabase(root, name, mode));
 	return {
 		kind: "final-app-space-cutover",
@@ -105,8 +126,15 @@ export function formatFinalAppSpaceCutoverReport(report: FinalAppSpaceCutoverRep
 		`conflictGroups\t${report.totals.conflictGroups}`,
 		`plannedActions\t${report.totals.plannedActions}`,
 		`unresolvedBlockers\t${report.totals.unresolvedBlockers}`,
+		...(report.backupPath ? [`backupPath\t${report.backupPath}`] : []),
+		...(report.apply ? [`applyReportPath\t${report.apply.reportPath}`, `appliedDatabases\t${report.apply.appliedDatabases}`] : []),
 		"database\texists\tbytes\tquickCheck\tlegacyColumns\tlegacyIndexes\tlegacyRows\tconflicts\tplannedActions\tpath",
 	];
+	if (report.apply) {
+		for (const check of report.apply.rowCountChecks) lines.push(`rowCount\t${check.database}\t${check.table}\t${check.beforeRows}\t${check.afterRows}\t${check.status}`);
+		for (const check of report.apply.quickChecks) lines.push(`quickCheck\t${check.database}\t${check.result}`);
+		for (const instruction of report.apply.rollbackInstructions) lines.push(`rollback\t${instruction}`);
+	}
 	for (const database of report.databases) {
 		const legacyRows = database.legacyValues.reduce((sum, value) => sum + value.count, 0);
 		const legacyColumns = database.tables.reduce((sum, table) => sum + table.legacyColumns.length, 0);
@@ -132,7 +160,7 @@ function resolveFinalCutoverRoot(root: string | undefined, env: Record<string, s
 	return resolved;
 }
 
-function inspectCutoverDatabase(root: string, name: string, mode: FinalAppSpaceCutoverMode): FinalAppSpaceDatabaseReport {
+function inspectCutoverDatabase(root: string, name: string, mode: Exclude<FinalAppSpaceCutoverMode, "apply">): FinalAppSpaceDatabaseReport {
 	const path = join(root, name);
 	const exists = existsSync(path);
 	const report: FinalAppSpaceDatabaseReport = { name, path, exists, bytes: exists ? statSync(path).size : 0, tables: [], legacyValues: [], conflictGroups: [], plannedActions: [], unresolvedBlockers: [] };
@@ -161,6 +189,144 @@ function inspectCutoverDatabase(root: string, name: string, mode: FinalAppSpaceC
 	return report;
 }
 
+function applyFinalAppSpaceCutoverMigration(input: { root: string; backupPath?: string }): FinalAppSpaceCutoverReport {
+	const backupPath = resolveAndVerifyFinalCutoverBackup(input.root, input.backupPath);
+	const preDatabases = FINAL_CUTOVER_DATABASES.map((name) => inspectCutoverDatabase(input.root, name, "dry-run"));
+	const preTotals = summarizeCutoverDatabases(preDatabases);
+	if (preTotals.unresolvedBlockers > 0) {
+		const blockers = preDatabases.flatMap((database) => database.unresolvedBlockers.map((blocker) => `${database.name}: ${blocker}`));
+		throw new Error(`pibo data final-cutover apply refuses unresolved blockers: ${blockers.join("; ")}`);
+	}
+	const apply = applyCutoverDatabases(input.root, backupPath, preDatabases);
+	const databases = FINAL_CUTOVER_DATABASES.map((name) => inspectCutoverDatabase(input.root, name, "inspect"));
+	const report: FinalAppSpaceCutoverReport = {
+		kind: "final-app-space-cutover",
+		mode: "apply",
+		root: input.root,
+		backupPath,
+		apply,
+		databases,
+		totals: summarizeCutoverDatabases(databases),
+	};
+	writeFinalCutoverApplyReport(report);
+	return report;
+}
+
+function resolveAndVerifyFinalCutoverBackup(root: string, backupPath: string | undefined): string {
+	if (!backupPath) throw new Error("pibo data final-cutover apply requires --backup <verified-backup-dir>");
+	const resolved = resolve(backupPath);
+	if (resolved === root || resolved.startsWith(`${root}${sep}`)) throw new Error("pibo data final-cutover apply backup must be outside the target root");
+	if (!existsSync(resolved)) throw new Error(`pibo data final-cutover backup does not exist: ${resolved}`);
+	if (!statSync(resolved).isDirectory()) throw new Error(`pibo data final-cutover backup is not a directory: ${resolved}`);
+	for (const databaseName of FINAL_CUTOVER_DATABASES) {
+		const targetPath = join(root, databaseName);
+		if (!existsSync(targetPath)) continue;
+		const backupFile = join(resolved, databaseName);
+		if (!existsSync(backupFile)) throw new Error(`pibo data final-cutover backup is missing ${databaseName}`);
+		const db = new DatabaseSync(backupFile, { readOnly: true });
+		try {
+			const result = String((db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined)?.quick_check ?? "unknown");
+			if (result !== "ok") throw new Error(`pibo data final-cutover backup quick_check failed for ${databaseName}: ${result}`);
+		} finally {
+			db.close();
+		}
+	}
+	return resolved;
+}
+
+function applyCutoverDatabases(root: string, backupPath: string, preDatabases: FinalAppSpaceDatabaseReport[]): FinalAppSpaceApplyResult {
+	const appliedActions = preDatabases.flatMap((database) => database.plannedActions);
+	const rowCountChecks: FinalAppSpaceRowCountCheck[] = [];
+	const quickChecks: Array<{ database: string; result: string }> = [];
+	let appliedDatabases = 0;
+	for (const database of preDatabases) {
+		if (!database.exists) continue;
+		const hasWork = database.tables.length > 0 || database.conflictGroups.length > 0;
+		if (!hasWork) {
+			quickChecks.push({ database: database.name, result: quickCheckDatabase(database.path) });
+			continue;
+		}
+		const db = new DatabaseSync(database.path);
+		try {
+			const beforeCounts = countReportedTables(db, database);
+			db.exec("BEGIN IMMEDIATE");
+			try {
+				applyDatabaseCutover(db, database.name);
+				db.exec("COMMIT");
+			} catch (error) {
+				db.exec("ROLLBACK");
+				throw error;
+			}
+			const afterCounts = countReportedTables(db, database);
+			for (const table of database.tables) {
+				const beforeRows = beforeCounts.get(table.name) ?? 0;
+				const afterRows = afterCounts.get(table.name) ?? 0;
+				rowCountChecks.push({ database: database.name, table: table.name, beforeRows, afterRows, status: rowCountStatus(table.name, beforeRows, afterRows) });
+			}
+			const quickCheck = String((db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined)?.quick_check ?? "unknown");
+			quickChecks.push({ database: database.name, result: quickCheck });
+			if (quickCheck !== "ok") throw new Error(`pibo data final-cutover post-check failed for ${database.name}: ${quickCheck}`);
+			appliedDatabases++;
+		} finally {
+			db.close();
+		}
+	}
+	return {
+		backupPath,
+		reportPath: finalCutoverReportPath(root),
+		appliedDatabases,
+		appliedActions,
+		rowCountChecks,
+		quickChecks,
+		rollbackInstructions: [
+			"Do not run this autonomous loop against Production; real cutover requires separate user approval.",
+			`To roll back this isolated root, stop any worker-local gateway, copy SQLite files from ${backupPath} back to ${root}, then rerun final-cutover inspect.`,
+			"For host Production, restore only after stopping the gateway through the Pibo CLI and redeploying the previous approved build.",
+		],
+	};
+}
+
+function applyDatabaseCutover(db: DatabaseSync, databaseName: string): void {
+	if (databaseName === "pibo.sqlite") migrateLegacyChatDataSchemaToOwnerless(db);
+	if (databaseName === "chat-agents.sqlite") resolveCustomAgentProfileNameConflicts(db);
+	if (databaseName === "pibo-ralph.sqlite") normalizeAutomationTargets(db, "pibo_ralph_jobs");
+	if (databaseName === "pibo-cron.sqlite") normalizeAutomationTargets(db, "pibo_cron_jobs");
+	for (const tableName of [...LEGACY_DROP_TABLES]) dropTableIfExists(db, tableName);
+	for (const tableName of listUserTables(db)) rebuildTableWithoutLegacyColumns(db, tableName);
+}
+
+function countReportedTables(db: DatabaseSync, database: FinalAppSpaceDatabaseReport): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const table of database.tables) counts.set(table.name, tableExists(db, table.name) ? countRows(db, table.name) : 0);
+	return counts;
+}
+
+function rowCountStatus(tableName: string, beforeRows: number, afterRows: number): FinalAppSpaceRowCountCheck["status"] {
+	if (LEGACY_DROP_TABLES.has(tableName)) return "dropped";
+	if (afterRows < beforeRows) return "merged";
+	if (afterRows === beforeRows) return "preserved";
+	return "unchanged";
+}
+
+function quickCheckDatabase(path: string): string {
+	const db = new DatabaseSync(path, { readOnly: true });
+	try {
+		return String((db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined)?.quick_check ?? "unknown");
+	} finally {
+		db.close();
+	}
+}
+
+function writeFinalCutoverApplyReport(report: FinalAppSpaceCutoverReport): void {
+	if (!report.apply) return;
+	mkdirSync(join(report.root, "migration-reports"), { recursive: true });
+	writeFileSync(report.apply.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+}
+
+function finalCutoverReportPath(root: string): string {
+	return join(root, "migration-reports", `final-cutover-apply-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.json`);
+}
+
 function summarizeCutoverDatabases(databases: FinalAppSpaceDatabaseReport[]): FinalAppSpaceCutoverReport["totals"] {
 	let legacyColumns = 0;
 	let legacyIndexes = 0;
@@ -185,8 +351,10 @@ function summarizeCutoverDatabases(databases: FinalAppSpaceDatabaseReport[]): Fi
 }
 
 export function migrateLegacyChatDataSchemaToOwnerless(db: DatabaseSync): void {
-	db.exec("BEGIN IMMEDIATE");
+	const ownsTransaction = !db.isTransaction;
+	if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
 	try {
+		ensureAppReadStateTables(db);
 		retireDuplicateDefaultRooms(db);
 		rebuildRoomsWithoutOwnerScope(db);
 		rebuildSessionNavigationWithoutOwnerScope(db);
@@ -195,11 +363,31 @@ export function migrateLegacyChatDataSchemaToOwnerless(db: DatabaseSync): void {
 		dropTableIfExists(db, "room_members");
 		dropTableIfExists(db, "principal_session_stats");
 		dropTableIfExists(db, "principal_room_stats");
-		db.exec("COMMIT");
+		if (ownsTransaction) db.exec("COMMIT");
 	} catch (error) {
-		db.exec("ROLLBACK");
+		if (ownsTransaction) db.exec("ROLLBACK");
 		throw error;
 	}
+}
+
+function ensureAppReadStateTables(db: DatabaseSync): void {
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS app_session_read_state (
+			session_id TEXT PRIMARY KEY,
+			unread_count INTEGER NOT NULL DEFAULT 0,
+			last_read_stream_id INTEGER NOT NULL DEFAULT 0,
+			last_read_message_sequence INTEGER NOT NULL DEFAULT 0,
+			last_read_at TEXT,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS app_room_read_state (
+			room_id TEXT PRIMARY KEY,
+			unread_count INTEGER NOT NULL DEFAULT 0,
+			last_read_stream_id INTEGER NOT NULL DEFAULT 0,
+			last_read_at TEXT,
+			updated_at TEXT NOT NULL
+		);
+	`);
 }
 
 function retireDuplicateDefaultRooms(db: DatabaseSync): void {
@@ -462,6 +650,67 @@ function planCutoverActions(databaseName: string, report: FinalAppSpaceDatabaseR
 		actions.push({ database: databaseName, table: conflict.table, action: `resolve-${conflict.kind}`, details: conflict.decision });
 	}
 	return actions;
+}
+
+function listUserTables(db: DatabaseSync): string[] {
+	return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
+}
+
+function rebuildTableWithoutLegacyColumns(db: DatabaseSync, tableName: string): void {
+	if (!tableExists(db, tableName)) return;
+	const info = db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all() as Array<{ cid: number; name: string; type: string; notnull: number; dflt_value: unknown; pk: number }>;
+	const legacyColumns = info.filter((column) => LEGACY_COLUMN_NAMES.has(column.name));
+	if (legacyColumns.length === 0) return;
+	const kept = info.filter((column) => !LEGACY_COLUMN_NAMES.has(column.name));
+	if (kept.length === 0) {
+		dropTableIfExists(db, tableName);
+		return;
+	}
+	const tempName = `__pibo_ownerless_${tableName}_${Date.now().toString(36)}`;
+	const pkColumns = kept.filter((column) => column.pk > 0).sort((left, right) => left.pk - right.pk);
+	const singleColumnPrimaryKey = pkColumns.length === 1;
+	const definitions = kept.map((column) => columnDefinition(column, singleColumnPrimaryKey));
+	if (pkColumns.length > 1) definitions.push(`PRIMARY KEY (${pkColumns.map((column) => quoteIdentifier(column.name)).join(", ")})`);
+	db.exec(`CREATE TABLE ${quoteIdentifier(tempName)} (${definitions.join(", ")})`);
+	const columnList = kept.map((column) => quoteIdentifier(column.name)).join(", ");
+	db.exec(`INSERT INTO ${quoteIdentifier(tempName)} (${columnList}) SELECT ${columnList} FROM ${quoteIdentifier(tableName)}`);
+	db.exec(`DROP TABLE ${quoteIdentifier(tableName)}`);
+	db.exec(`ALTER TABLE ${quoteIdentifier(tempName)} RENAME TO ${quoteIdentifier(tableName)}`);
+}
+
+function columnDefinition(column: { name: string; type: string; notnull: number; dflt_value: unknown; pk: number }, singleColumnPrimaryKey: boolean): string {
+	const parts = [quoteIdentifier(column.name), column.type || "TEXT"];
+	if (singleColumnPrimaryKey && column.pk > 0) parts.push("PRIMARY KEY");
+	if (column.notnull && !(singleColumnPrimaryKey && column.pk > 0)) parts.push("NOT NULL");
+	if (column.dflt_value !== null && column.dflt_value !== undefined) parts.push(`DEFAULT ${String(column.dflt_value)}`);
+	return parts.join(" ");
+}
+
+function resolveCustomAgentProfileNameConflicts(db: DatabaseSync): void {
+	if (!tableExists(db, "chat_agents")) return;
+	const columns = tableColumns(db, "chat_agents");
+	if (!columns.has("id") || !columns.has("profile_name")) return;
+	const duplicates = db.prepare("SELECT profile_name FROM chat_agents GROUP BY profile_name HAVING COUNT(*) > 1 ORDER BY profile_name ASC").all() as Array<{ profile_name: string }>;
+	for (const duplicate of duplicates) {
+		const rows = db.prepare(`SELECT id, profile_name, ${selectExpression(columns, "display_name", "NULL")}, ${selectExpression(columns, "updated_at", "NULL")} FROM chat_agents WHERE profile_name = ? ORDER BY updated_at DESC, id ASC`).all(duplicate.profile_name) as Array<{ id: string; profile_name: string; display_name: string | null; updated_at: string | null }>;
+		for (const row of rows.slice(1)) {
+			const nextName = `${duplicate.profile_name}-legacy-${hashShort(`${row.id}:${duplicate.profile_name}`).slice(0, 8)}`;
+			if (columns.has("display_name") && row.display_name === duplicate.profile_name) db.prepare("UPDATE chat_agents SET profile_name = ?, display_name = ? WHERE id = ?").run(nextName, nextName, row.id);
+			else db.prepare("UPDATE chat_agents SET profile_name = ? WHERE id = ?").run(nextName, row.id);
+		}
+	}
+}
+
+function normalizeAutomationTargets(db: DatabaseSync, tableName: string): void {
+	if (!tableExists(db, tableName)) return;
+	const columns = tableColumns(db, tableName);
+	if (!columns.has("id") || !columns.has("target_json")) return;
+	const rows = db.prepare(`SELECT id, target_json FROM ${quoteIdentifier(tableName)} ORDER BY id ASC`).all() as Array<{ id: string; target_json: string | null }>;
+	const update = db.prepare(`UPDATE ${quoteIdentifier(tableName)} SET target_json = ? WHERE id = ?`);
+	for (const row of rows) {
+		const target = parseMetadata(row.target_json);
+		if (target.kind === "personal" || typeof target.principalId === "string") update.run(JSON.stringify({ kind: "default-chat" }), row.id);
+	}
 }
 
 function tableExists(db: DatabaseSync, tableName: string): boolean {
