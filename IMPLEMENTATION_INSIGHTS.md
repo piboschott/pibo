@@ -303,3 +303,10 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - API payload validation should recursively reject `ownerScope`, `owner_scope`, `principalId`, and `principal_id` keys across bootstrap, rooms/sessions, agents, projects, workflows, Ralph, Cron, and Web Annotation responses.
 - Ralph/Cron CLI validation against a migrated copy can safely create disabled/default-chat jobs and recursively scan JSON outputs. Use `pibo ralph add --default-chat --profile base ... --json` and `pibo cron add --default-chat --agent base ... --disabled --json`.
 - The reusable Ink PTY smoke script intentionally creates its own deterministic fixture home for `room-session-message`; it validates the owner-picker-free TUI path, while separate CLI JSON/API checks validate the migrated copied data home.
+
+## US-028 Docker deployment/runbook lessons
+
+- Docker-only deployment validation should use the built `dist/gateway/web.js` with `runWebGatewayServer({ devAuth: true, web: { host: "0.0.0.0", port: 4788 } })` and `PIBO_HOME=/workspace/.pibo/ralph-test-home`; this exercises the worker web port mapped to host `4832` without touching host gateways.
+- A safe gateway restart check is process-level inside the worker: start the worker-local gateway, dev-auth login, fetch `/api/chat/bootstrap`, stop the process, start it again, and repeat. Do not call `pibo gateway web restart` or `pibo gateway dev restart` from this loop.
+- The US-028 runbook report is `docs/reports/final-owner-scope-deploy-cutover-runbook-us-028.md`. It is the source for future manual cutover sequencing: review gate, backup gate, dry-run gate, apply gate, deploy/restart gate, post-checks, rollback, and optional temporary migration module removal after approved cutover.
+- The autonomous Ralph loop must still stop before upstream PR creation and before any real Production database migration. US-030 should reuse the US-028 runbook rather than creating a new cutover sequence from scratch.

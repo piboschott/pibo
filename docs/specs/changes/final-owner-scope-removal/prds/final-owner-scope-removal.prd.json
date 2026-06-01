@@ -478,8 +478,8 @@
         "Typecheck passes"
       ],
       "priority": 28,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Added docs/reports/final-owner-scope-deploy-cutover-runbook-us-028.md documenting Docker-only build/typecheck/gateway validation and a manual production cutover runbook. Docker validation used only worker pibo-dev-final-owner-scope-removal-ralph with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build passed with only existing Vite chunk-size warnings and npm run typecheck passed. Worker-local gateway validation started built dist/gateway/web.js with devAuth on container port 4788 / host-mapped worker web port 4832, logged in through dev auth, fetched /api/auth/session and /api/chat/bootstrap, recursively checked bootstrap payloads for no ownerScope/owner_scope/principalId/principal_id keys, stopped the process, restarted it on the same worker port, and repeated the checks successfully. The runbook documents that host Dev, host Production, host gateways, deploy scripts, /root/.pibo, Production data, and PR creation were not touched by the Ralph loop. It includes future manual prerequisites, PR review gate, active-session safety, fresh verified backup, inspect/dry-run review, apply approval, deploy/restart gate through Pibo CLI only, post-check validation, rollback steps, and a post-cutover checklist for removing the temporary final cutover migration module if that policy is chosen. The report explicitly states Ralph must stop before real Production DB migration and before upstream PR creation unless separately approved."
     },
     {
       "id": "US-029",
