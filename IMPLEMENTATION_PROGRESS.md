@@ -219,4 +219,4 @@
   - Evidence tier: Docker build/typecheck, focused Web Annotation store/tool/CDP/API/attachment tests, temp-file migration fixture tests, fresh-schema/shared-app migration regression tests, targeted source/test search gates, and real worker-local browser/CDP validation.
   - Safety: all fixtures used Docker temp files or `/workspace/.pibo/ralph-test-home`; browser validation used worker-local Chromium/CDP only; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-013 set to `passes: true` with evidence notes. Next failing story: US-014 (`Remove Owner Scope from Ralph data model and store schema`).
-- 2026-06-01T14:53Z: US-013 implementation commit created: `c93217e feat: US-013 - convert web annotations ownerless`.
+- 2026-06-01T14:53Z: US-013 implementation commit created: `b8c7839 feat: US-013 - convert web annotations ownerless`.
