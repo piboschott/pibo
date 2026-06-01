@@ -106,3 +106,10 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - Any remaining pre-cutover owner-column compatibility is isolated in `src/owner-scope-compat.ts`. Treat this as a deletion target for later schema/API stories, not as an app context or replacement product owner.
 - Tests that still need historical pre-cutover expected values import from `dist/owner-scope-compat.js`, not `dist/shared-app.js`. Later stories should remove those expectations as their feature areas become ownerless.
 - Use the exact-symbol gate `node_modules/@vscode/ripgrep-linux-x64/bin/rg -n "getSharedAppLegacyOwnerScope|LEGACY_SHARED_APP_OWNER_SCOPE" src packages scripts test` to ensure the removed shared-app helper names stay gone.
+
+## US-004 web auth access-gate lessons
+
+- `PiboWebSession` is now ownerless: only `authSession` and neutral `appContext` are allowed. Do not add storage compatibility fields back to `src/web/types.ts` or `src/web/auth.ts`.
+- If a pre-cutover owner column is still unavoidable before the schema-removal stories, call `legacyOwnerScopeForPreCutoverSchemas()` at that legacy schema boundary. Do not pass it through web auth or treat it as product context.
+- Auth identity may be used as audit/display metadata. `src/plugins/context-files.ts` now uses `webSession.authSession.identity.userId` for revision/change actor ids; it must not be reused as a product partition key.
+- Useful US-004 regression grep: `grep -R -n "webSession\\.ownerScope\\|ownerScope: .*webSession\\|PiboWebSession.*ownerScope" src/web src/apps/chat src/plugins test/web-auth-shared-app-context.test.mjs` should return no matches.

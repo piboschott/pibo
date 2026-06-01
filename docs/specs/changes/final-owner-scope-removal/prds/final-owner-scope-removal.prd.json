@@ -67,8 +67,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Removed ownerScope from PiboWebSession in src/web/types.ts and stopped requireWebSession from constructing a product owner field; it now returns only authSession plus the neutral appContext. Updated Chat Web and Context Files handlers that previously read webSession.ownerScope: unavoidable pre-cutover owner_scope storage compatibility now calls legacyOwnerScopeForPreCutoverSchemas() directly at legacy schema boundaries, while Context Files revision/change actor ids use the auth identity only as audit metadata. Focused web auth tests now assert unauthenticated requests still reject with PiboAuthError 401 and two authenticated identities receive the same ownerless app context with no ownerScope/legacyOwnerScope on either the web session or appContext. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run typecheck; npm run build; node --test test/web-auth-shared-app-context.test.mjs test/context-files-web.test.mjs; and grep over src/web src/apps/chat src/plugins plus the focused test found no webSession.ownerScope/PiboWebSession ownerScope call sites. Host /root/.pibo and host gateways were not touched."
     },
     {
       "id": "US-005",

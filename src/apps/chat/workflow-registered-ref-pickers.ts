@@ -1,4 +1,5 @@
 import type { PiboJsonObject } from "../../core/events.js";
+import { legacyOwnerScopeForPreCutoverSchemas } from "../../owner-scope-compat.js";
 import type { PiboWebSession } from "../../web/types.js";
 import type { ProjectWorkflowHumanActionRegistryOption } from "./project-workflow-human-actions.js";
 import {
@@ -155,7 +156,7 @@ export function buildWorkflowPromptAssetPicker(
 	webSession: PiboWebSession,
 	selectedRefId: string | undefined,
 ): WorkflowRegisteredRefPickerResponse {
-	const uiOptions = state.workflowPromptAssetStore.listAssets(webSession.ownerScope).map((asset): WorkflowRegisteredRefOption => ({
+	const uiOptions = state.workflowPromptAssetStore.listAssets(legacyOwnerScopeForPreCutoverSchemas()).map((asset): WorkflowRegisteredRefOption => ({
 		id: asset.assetId,
 		displayName: asset.displayName,
 		...(asset.description ? { description: asset.description } : {}),
@@ -187,14 +188,14 @@ export function getWorkflowPromptAssetDocument(
 			updatedAt: now,
 		};
 	}
-	const asset = state.workflowPromptAssetStore.getAsset(webSession.ownerScope, assetId);
-	const revision = asset ? state.workflowPromptAssetStore.getActiveRevision(webSession.ownerScope, assetId) : undefined;
+	const asset = state.workflowPromptAssetStore.getAsset(legacyOwnerScopeForPreCutoverSchemas(), assetId);
+	const revision = asset ? state.workflowPromptAssetStore.getActiveRevision(legacyOwnerScopeForPreCutoverSchemas(), assetId) : undefined;
 	return asset && revision ? workflowPromptAssetDocumentFromRecords(asset, revision) : undefined;
 }
 
 export function isWorkflowPromptAssetRegistered(state: WorkflowPromptAssetPickerState, webSession: PiboWebSession, assetId: string): boolean {
 	return WORKFLOW_PROMPT_ASSET_REF_OPTIONS.some((option) => option.id === assetId)
-		|| Boolean(state.workflowPromptAssetStore.getAsset(webSession.ownerScope, assetId));
+		|| Boolean(state.workflowPromptAssetStore.getAsset(legacyOwnerScopeForPreCutoverSchemas(), assetId));
 }
 
 function workflowRegisteredRefPickerDiagnostic(kind: WorkflowRegisteredRefPickerResponse["kind"], registryRef: string): WorkflowPickerDiagnostic {

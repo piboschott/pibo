@@ -39,6 +39,10 @@ test("web auth maps different identities to the same shared app context", async 
 	assert.deepEqual(first.appContext, second.appContext);
 	assert.equal(first.appContext.kind, "shared-app");
 	assert.equal(first.appContext.id, "shared-app");
+	assert.equal("legacyOwnerScope" in first, false);
+	assert.equal("ownerScope" in first, false);
+	assert.equal("legacyOwnerScope" in second, false);
+	assert.equal("ownerScope" in second, false);
 	assert.equal("legacyOwnerScope" in first.appContext, false);
 	assert.equal("ownerScope" in first.appContext, false);
 	assert.equal("legacyOwnerScope" in second.appContext, false);
