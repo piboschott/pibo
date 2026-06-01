@@ -173,3 +173,4 @@
   - Evidence tier: Docker build/typecheck, focused Chat data/API tests, temp-file schema migration fixture tests, and targeted fresh-schema/source search gate.
   - Safety: migration/schema tests used only temp files in the Docker worker; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host Dev/Production gateways and Production data were not touched.
   - PRD update: US-009 set to `passes: true` with evidence notes. Next failing story: US-010 (`Clean Chat Web API and UI payloads`).
+- 2026-06-01T10:52Z: US-009 implementation commit created: `e1ccfb8 feat: US-009 - rebuild chat schemas ownerless`.
