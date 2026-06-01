@@ -142,3 +142,4 @@
   - Evidence tier: Docker typecheck/build, focused session/router/pibo-data tests, and exact session-contract search gates.
   - Safety: no migration inspect/dry-run/apply commands were run; host `/root/.pibo`, host Dev/Production gateways, and Production data were not touched.
   - PRD update: US-006 set to `passes: true` with evidence notes. US-007 is the next failing story and should remove fresh `pibo-sessions` owner columns/indexes and add migration fixture coverage.
+- 2026-06-01T05:19Z: US-006 implementation commit created: `67ff14c feat: US-006 - remove session owner contracts`.
