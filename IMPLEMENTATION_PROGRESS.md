@@ -268,3 +268,4 @@
   - Evidence tier: Docker build/typecheck, focused Cron store/API/CLI tests, real built-CLI temp-store path, and targeted Cron source/UI/API search gate.
   - Safety: all tests used Docker temp files or `/workspace/.pibo/ralph-test-home`; no migration inspect/dry-run/apply command was run against `/root/.pibo`; host `/root/.pibo`, host Dev/Production gateways, Production data, deploys, and PR creation were not touched.
   - PRD update: US-017 set to `passes: true` with evidence notes. Next failing story: US-018 (`Remove Owner Scope from workflows package store and public types`).
+- 2026-06-01T18:42Z: US-017 implementation commit created: `6c37ae4 feat: US-017 - clean Cron owner surfaces`.
