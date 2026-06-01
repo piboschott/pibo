@@ -3,8 +3,29 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import { InMemoryPiboSessionStore, createPiboSession } from "../dist/sessions/store.js";
 import { SqlitePiboSessionStore, createDefaultPiboSessionStore } from "../dist/sessions/sqlite-store.js";
+
+function tableColumns(db, table) {
+	return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name));
+}
+
+function indexNames(db, table) {
+	return db.prepare(`PRAGMA index_list(${table})`).all().map((index) => index.name).sort();
+}
+
+function assertOwnerlessPiboSessionsSchema(dbPath) {
+	const db = new DatabaseSync(dbPath, { readOnly: true });
+	try {
+		const columns = tableColumns(db, "pibo_sessions");
+		assert.equal(columns.has("owner_scope"), false);
+		assert.equal(columns.has("active_model_json"), true);
+		assert.equal(indexNames(db, "pibo_sessions").includes("idx_pibo_sessions_owner"), false);
+	} finally {
+		db.close();
+	}
+}
 
 test("pibo session builder creates opaque product and Pi identities", () => {
 	const session = createPiboSession(
@@ -97,12 +118,14 @@ test("default sqlite pibo session store uses PIBO_HOME, not cwd", async () => {
 			kind: "chat",
 			profile: "base",
 		});
-		const reopened = new SqlitePiboSessionStore(join(dir, "pibo-sessions.sqlite"));
+		const dbPath = join(dir, "pibo-sessions.sqlite");
+		const reopened = new SqlitePiboSessionStore(dbPath);
 		try {
 			assert.equal(reopened.get("ps_home")?.id, "ps_home");
 		} finally {
 			reopened.close();
 		}
+		assertOwnerlessPiboSessionsSchema(dbPath);
 	} finally {
 		store.close();
 		if (previousPiboHome === undefined) delete process.env.PIBO_HOME;
@@ -224,8 +247,69 @@ test("sqlite pibo session store persists structured session fields", async () =>
 		} finally {
 			reopened.close();
 		}
+		assertOwnerlessPiboSessionsSchema(dbPath);
 	} finally {
 		store.close();
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite pibo session store rebuilds historical owner-scoped tables without owner columns", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pibo-sessions-ownerless-migration-"));
+	const dbPath = join(dir, "sessions.sqlite");
+	try {
+		const db = new DatabaseSync(dbPath);
+		db.exec(`
+			CREATE TABLE pibo_sessions (
+				id TEXT PRIMARY KEY,
+				pi_session_id TEXT NOT NULL UNIQUE,
+				channel TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				profile TEXT NOT NULL,
+				owner_scope TEXT,
+				parent_id TEXT,
+				origin_id TEXT,
+				workspace TEXT,
+				title TEXT,
+				metadata_json TEXT,
+				active_model_json TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			CREATE INDEX idx_pibo_sessions_owner ON pibo_sessions(owner_scope, updated_at);
+		`);
+		db.prepare("INSERT INTO pibo_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			.run("ps_shared", "pi_shared", "pibo.chat-web", "chat", "default", "shared:app", null, null, "/workspace", "Shared", '{"chatRoomId":"room_shared"}', '{"provider":"openai","id":"gpt-test"}', "2026-05-09T00:00:00.000Z", "2026-05-09T00:01:00.000Z");
+		db.prepare("INSERT INTO pibo_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			.run("ps_user_child", "pi_user_child", "pibo.subagents", "subagent", "researcher", "user:legacy", "ps_shared", "ps_shared", "/workspace/project", "Child", '{"rootSessionId":"ps_shared","chatRoomId":"room_shared"}', null, "2026-05-09T00:02:00.000Z", "2026-05-09T00:03:00.000Z");
+		db.close();
+
+		const store = new SqlitePiboSessionStore(dbPath);
+		try {
+			const shared = store.get("ps_shared");
+			assert.equal(shared?.piSessionId, "pi_shared");
+			assert.equal(Object.hasOwn(shared ?? {}, "ownerScope"), false);
+			assert.equal(shared?.workspace, "/workspace");
+			assert.equal(shared?.title, "Shared");
+			assert.deepEqual(shared?.metadata, { chatRoomId: "room_shared" });
+			assert.deepEqual(shared?.activeModel, { provider: "openai", id: "gpt-test" });
+			assert.equal(shared?.createdAt, "2026-05-09T00:00:00.000Z");
+			assert.equal(shared?.updatedAt, "2026-05-09T00:01:00.000Z");
+
+			const child = store.get("ps_user_child");
+			assert.equal(child?.piSessionId, "pi_user_child");
+			assert.equal(child?.parentId, "ps_shared");
+			assert.equal(child?.originId, "ps_shared");
+			assert.equal(child?.profile, "researcher");
+			assert.equal(child?.workspace, "/workspace/project");
+			assert.equal(child?.title, "Child");
+			assert.deepEqual(child?.metadata, { rootSessionId: "ps_shared", chatRoomId: "room_shared" });
+			assert.equal(child?.activeModel, undefined);
+		} finally {
+			store.close();
+		}
+		assertOwnerlessPiboSessionsSchema(dbPath);
+	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
 });

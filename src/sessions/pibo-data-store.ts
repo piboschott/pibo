@@ -1,8 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { PiboJsonObject } from "../core/events.js";
 import { PiboDataStore } from "../data/pibo-store.js";
-import { legacyOwnerScopeForPreCutoverSchemas } from "../owner-scope-compat.js";
-import { sqliteTableColumns } from "../data/sqlite-schema.js";
 import {
 	createPiboSession,
 	matchesFindInput,
@@ -16,7 +14,6 @@ import {
 type SessionRow = {
 	id: string;
 	pi_session_id: string | null;
-	owner_scope?: string;
 	room_id: string | null;
 	root_session_id: string | null;
 	parent_id: string | null;
@@ -86,11 +83,9 @@ export class PiboDataSessionStore implements PiboSessionStore {
 			activeModel: input.activeModel === null ? undefined : input.activeModel ? { ...input.activeModel } : existing.activeModel,
 			updatedAt: new Date().toISOString(),
 		};
-		const hasOwnerScope = sqliteTableColumns(this.db, "sessions").has("owner_scope");
 		this.db.prepare(`
 			UPDATE sessions SET
 				pi_session_id = ?,
-				${hasOwnerScope ? "owner_scope = ?," : ""}
 				root_session_id = ?,
 				parent_id = ?,
 				origin_id = ?,
@@ -104,7 +99,6 @@ export class PiboDataSessionStore implements PiboSessionStore {
 			WHERE id = ? AND deleted_at IS NULL
 		`).run(
 			updated.piSessionId,
-			...(hasOwnerScope ? [legacyOwnerScopeForPreCutoverSchemas()] : []),
 			rootSessionId(updated),
 			updated.parentId ?? null,
 			updated.originId ?? null,
@@ -158,9 +152,8 @@ export class PiboDataSessionStore implements PiboSessionStore {
 	}
 
 	private insertSession(session: PiboSession): void {
-		const hasOwnerScope = sqliteTableColumns(this.db, "sessions").has("owner_scope");
 		const columns = [
-			"id", "pi_session_id", ...(hasOwnerScope ? ["owner_scope"] : []), "room_id", "root_session_id", "parent_id", "origin_id",
+			"id", "pi_session_id", "room_id", "root_session_id", "parent_id", "origin_id",
 			"channel", "kind", "profile", "active_model_json", "workspace", "title", "first_message_preview",
 			"status", "metadata_json", "created_at", "updated_at", "last_activity_at",
 		];
@@ -169,7 +162,6 @@ export class PiboDataSessionStore implements PiboSessionStore {
 		`).run(
 			session.id,
 			session.piSessionId,
-			...(hasOwnerScope ? [legacyOwnerScopeForPreCutoverSchemas()] : []),
 			roomIdFromMetadata(session.metadata),
 			rootSessionId(session),
 			session.parentId ?? null,

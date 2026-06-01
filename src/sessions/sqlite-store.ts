@@ -19,7 +19,6 @@ type SessionRow = {
 	channel: string;
 	kind: string;
 	profile: string;
-	owner_scope?: string | null;
 	parent_id: string | null;
 	origin_id: string | null;
 	workspace: string | null;
@@ -41,6 +40,11 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 		this.db = new DatabaseSync(resolvedPath);
 		this.db.exec("PRAGMA busy_timeout = 5000");
 		if (resolvedPath !== ":memory:") this.db.exec("PRAGMA journal_mode = WAL");
+		this.applySchema();
+		this.ensureOwnerlessSchema();
+	}
+
+	private applySchema(): void {
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS pibo_sessions (
 				id TEXT PRIMARY KEY,
@@ -48,7 +52,6 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 				channel TEXT NOT NULL,
 				kind TEXT NOT NULL,
 				profile TEXT NOT NULL,
-				owner_scope TEXT,
 				parent_id TEXT,
 				origin_id TEXT,
 				workspace TEXT,
@@ -61,8 +64,6 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 				FOREIGN KEY(origin_id) REFERENCES pibo_sessions(id)
 			);
 
-			CREATE INDEX IF NOT EXISTS idx_pibo_sessions_owner
-				ON pibo_sessions(owner_scope, updated_at);
 			CREATE INDEX IF NOT EXISTS idx_pibo_sessions_parent
 				ON pibo_sessions(parent_id, updated_at);
 			CREATE INDEX IF NOT EXISTS idx_pibo_sessions_origin
@@ -70,14 +71,69 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 			CREATE INDEX IF NOT EXISTS idx_pibo_sessions_channel_kind
 				ON pibo_sessions(channel, kind, updated_at);
 		`);
-		this.ensureActiveModelColumn();
 	}
 
-	private ensureActiveModelColumn(): void {
-		const columns = this.db.prepare("PRAGMA table_info(pibo_sessions)").all() as Array<{ name: string }>;
-		if (!columns.some((column) => column.name === "active_model_json")) {
-			this.db.exec("ALTER TABLE pibo_sessions ADD COLUMN active_model_json TEXT");
+	private ensureOwnerlessSchema(): void {
+		const columns = this.tableColumns("pibo_sessions");
+		if (!columns.has("owner_scope")) {
+			if (!columns.has("active_model_json")) this.db.exec("ALTER TABLE pibo_sessions ADD COLUMN active_model_json TEXT");
+			this.db.exec("DROP INDEX IF EXISTS idx_pibo_sessions_owner");
+			return;
 		}
+
+		const activeModelSelection = columns.has("active_model_json") ? "active_model_json" : "NULL AS active_model_json";
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			this.db.exec(`
+				ALTER TABLE pibo_sessions RENAME TO pibo_sessions_legacy_owner_scope;
+				DROP INDEX IF EXISTS idx_pibo_sessions_owner;
+				DROP INDEX IF EXISTS idx_pibo_sessions_parent;
+				DROP INDEX IF EXISTS idx_pibo_sessions_origin;
+				DROP INDEX IF EXISTS idx_pibo_sessions_channel_kind;
+			`);
+			this.applySchema();
+			this.db.exec(`
+				INSERT INTO pibo_sessions (
+					id,
+					pi_session_id,
+					channel,
+					kind,
+					profile,
+					parent_id,
+					origin_id,
+					workspace,
+					title,
+					metadata_json,
+					active_model_json,
+					created_at,
+					updated_at
+				)
+				SELECT
+					id,
+					pi_session_id,
+					channel,
+					kind,
+					profile,
+					parent_id,
+					origin_id,
+					workspace,
+					title,
+					metadata_json,
+					${activeModelSelection},
+					created_at,
+					updated_at
+				FROM pibo_sessions_legacy_owner_scope;
+				DROP TABLE pibo_sessions_legacy_owner_scope;
+			`);
+			this.db.exec("COMMIT");
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+			throw error;
+		}
+	}
+
+	private tableColumns(tableName: string): Set<string> {
+		return new Set((this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((column) => column.name));
 	}
 
 	get(id: string): PiboSession | undefined {
@@ -101,7 +157,6 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 					channel,
 					kind,
 					profile,
-					owner_scope,
 					parent_id,
 					origin_id,
 					workspace,
@@ -110,7 +165,7 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 					active_model_json,
 					created_at,
 					updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`)
 			.run(
 				session.id,
@@ -118,7 +173,6 @@ export class SqlitePiboSessionStore implements PiboSessionStore {
 				session.channel,
 				session.kind,
 				session.profile,
-				null,
 				session.parentId ?? null,
 				session.originId ?? null,
 				session.workspace ?? null,

@@ -115,8 +115,8 @@
         "Any migration fixture or schema validation runs only against temp files or Docker sandbox homes, never /root/.pibo"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed 2026-06-01. Updated fresh SqlitePiboSessionStore pibo_sessions schema to omit owner_scope and idx_pibo_sessions_owner, and added constructor-time table rebuild for historical pibo_sessions tables that still contain owner_scope. The rebuild copies id, pi_session_id, channel, kind, profile, parent_id, origin_id, workspace, title, metadata_json, active_model_json when present, created_at, and updated_at into an ownerless table, then drops the legacy owner index/table. PiboDataSessionStore and pibo data migrate sessions-to-v2 no longer write owner_scope values even when importing historical pibo-sessions rows. Added temp-file fixture coverage for shared:app and user:* historical rows migrating to ownerless SqlitePiboSessionStore and pibo.sqlite sessions rows while preserving ids, piSessionIds, hierarchy/origin, metadata, active model, profile, workspace, titles, and timestamps. Added schema assertions that fresh pibo-sessions.sqlite and pibo.sqlite sessions tables contain no owner_scope column or owner index. Docker validation passed with PIBO_HOME=/workspace/.pibo/ralph-test-home: npm run build; node --test test/session-store.test.mjs test/pibo-data-session-store.test.mjs test/session-model-source-of-truth.test.mjs; npm run typecheck. A targeted Docker rg gate over src/sessions/sqlite-store.ts src/sessions/pibo-data-store.ts src/data/cli.ts for fresh owner column/index creation patterns returned no matches. Migration fixtures used only temp files in the Docker worker; host /root/.pibo and host gateways were not touched. Remaining src/data/cli.ts owner_scope references are in unread-baseline repair/read-state code scheduled for Chat read-state stories, not the pibo-sessions fresh schema."
     },
     {
       "id": "US-008",

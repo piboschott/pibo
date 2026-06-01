@@ -127,3 +127,10 @@ Temporary exceptions are allowed only for the isolated final migration module an
 - `session.ownerScope` is no longer available as a fallback actor, room, or CLI summary source. For temporary pre-cutover Chat navigation/read-state boundaries, call `legacyOwnerScopeForPreCutoverSchemas()` locally until the relevant later story removes that schema.
 - `src/sessions/sqlite-store.ts` and `src/sessions/pibo-data-store.ts` still mention `owner_scope` only as the expected schema-removal target for US-007/US-024. They must not expose that value through `PiboSession` or use it for find matching.
 - Useful US-006 regression gate: `rg -n "ownerScope|listOwned|getOwned|requireOwned|OwnedSession" src/sessions src/core/session-router.ts src/debug/trace.ts` should return no matches.
+
+## US-007 session schema lessons
+
+- `SqlitePiboSessionStore` fresh `pibo_sessions` schema is now ownerless. Do not reintroduce `owner_scope` or `idx_pibo_sessions_owner` in `src/sessions/sqlite-store.ts` except inside the isolated constructor rebuild that removes historical columns.
+- Standalone historical `pibo-sessions.sqlite` rows with `shared:app` or `user:*` values are migrated by table rebuild: preserve session identifiers and session facts, drop owner columns/indexes, and expose ownerless `PiboSession` objects.
+- `PiboDataSessionStore` and `pibo data migrate sessions-to-v2` no longer write owner_scope to `pibo.sqlite.sessions`. Fresh pibo.sqlite session schema was already ownerless; tests now assert this explicitly.
+- Useful US-007 regression gate: `rg -n "owner_scope TEXT|ON pibo_sessions\\(owner_scope|owner_scope," src/sessions/sqlite-store.ts src/sessions/pibo-data-store.ts src/data/cli.ts` should return no matches. Remaining data CLI owner/principal read-state repair references are Chat read-state cleanup targets for US-008/US-009, not pibo-sessions schema targets.

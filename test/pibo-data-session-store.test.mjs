@@ -11,10 +11,29 @@ function tempDir() {
 	return mkdtempSync(join(tmpdir(), "pibo-data-session-store-"));
 }
 
+function tableColumns(db, table) {
+	return new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name));
+}
+
+function indexNames(db, table) {
+	return db.prepare(`PRAGMA index_list(${table})`).all().map((index) => index.name).sort();
+}
+
+function assertOwnerlessSessionsSchema(dbPath) {
+	const db = new DatabaseSync(dbPath, { readOnly: true });
+	try {
+		assert.equal(tableColumns(db, "sessions").has("owner_scope"), false);
+		assert.equal(indexNames(db, "sessions").some((name) => name.includes("owner")), false);
+	} finally {
+		db.close();
+	}
+}
+
 test("pibo data session store persists structured session fields", () => {
 	const dir = tempDir();
 	try {
-		let store = new PiboDataSessionStore(join(dir, "pibo.sqlite"));
+		const dbPath = join(dir, "pibo.sqlite");
+		let store = new PiboDataSessionStore(dbPath);
 		const created = store.create({
 			id: "ps_one",
 			piSessionId: "pi_one",
@@ -27,7 +46,7 @@ test("pibo data session store persists structured session fields", () => {
 		});
 		store.close();
 
-		store = new PiboDataSessionStore(join(dir, "pibo.sqlite"));
+		store = new PiboDataSessionStore(dbPath);
 		const reopened = store.get(created.id);
 		assert.equal(reopened?.piSessionId, "pi_one");
 		assert.equal(Object.hasOwn(reopened ?? {}, "ownerScope"), false);
@@ -40,6 +59,7 @@ test("pibo data session store persists structured session fields", () => {
 		assert.equal(store.delete(created.id), true);
 		assert.equal(store.get(created.id), undefined);
 		store.close();
+		assertOwnerlessSessionsSchema(dbPath);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -69,18 +89,33 @@ test("pibo data migrate sessions-to-v2 is idempotent", async () => {
 			);
 		`);
 		source.prepare("INSERT INTO pibo_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-			.run("ps_legacy", "pi_legacy", "pibo.chat-web", "chat", "default", "user:test", null, null, "/tmp", "Legacy", '{"chatRoomId":"room_legacy"}', '{"provider":"openai","id":"gpt-test"}', "2026-05-09T00:00:00.000Z", "2026-05-09T00:01:00.000Z");
+			.run("ps_shared", "pi_shared", "pibo.chat-web", "chat", "default", "shared:app", null, null, "/tmp", "Shared", '{"chatRoomId":"room_shared"}', '{"provider":"openai","id":"gpt-test"}', "2026-05-09T00:00:00.000Z", "2026-05-09T00:01:00.000Z");
+		source.prepare("INSERT INTO pibo_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			.run("ps_user_child", "pi_user_child", "pibo.subagents", "subagent", "researcher", "user:test", "ps_shared", "ps_shared", "/tmp/project", "Child", '{"rootSessionId":"ps_shared","chatRoomId":"room_shared"}', null, "2026-05-09T00:02:00.000Z", "2026-05-09T00:03:00.000Z");
 		source.close();
 
 		await runDataCli(["node", "pibo", "migrate", "sessions-to-v2", "--root", dir, "--json"]);
 		await runDataCli(["node", "pibo", "migrate", "sessions-to-v2", "--root", dir, "--json"]);
 
-		const store = new PiboDataSessionStore(join(dir, "pibo.sqlite"));
-		const migrated = store.get("ps_legacy");
-		assert.equal(migrated?.piSessionId, "pi_legacy");
-		assert.equal(migrated?.metadata?.chatRoomId, "room_legacy");
-		assert.equal(store.list().length, 1);
+		const dbPath = join(dir, "pibo.sqlite");
+		const store = new PiboDataSessionStore(dbPath);
+		const migrated = store.get("ps_shared");
+		assert.equal(migrated?.piSessionId, "pi_shared");
+		assert.equal(Object.hasOwn(migrated ?? {}, "ownerScope"), false);
+		assert.equal(migrated?.workspace, "/tmp");
+		assert.equal(migrated?.title, "Shared");
+		assert.equal(migrated?.metadata?.chatRoomId, "room_shared");
+		assert.equal(migrated?.activeModel?.id, "gpt-test");
+
+		const child = store.get("ps_user_child");
+		assert.equal(child?.piSessionId, "pi_user_child");
+		assert.equal(child?.parentId, "ps_shared");
+		assert.equal(child?.originId, "ps_shared");
+		assert.equal(child?.workspace, "/tmp/project");
+		assert.deepEqual(child?.metadata, { rootSessionId: "ps_shared", chatRoomId: "room_shared" });
+		assert.equal(store.list().length, 2);
 		store.close();
+		assertOwnerlessSessionsSchema(dbPath);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

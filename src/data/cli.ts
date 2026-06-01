@@ -83,10 +83,6 @@ function hasTable(db: DatabaseSync, table: string): boolean {
 	return Boolean(db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
 }
 
-function tableColumns(db: DatabaseSync, table: string): Set<string> {
-	return new Set((db.prepare(`PRAGMA table_info(${quoteIdent(table)})`).all() as Array<{ name: string }>).map((row) => row.name));
-}
-
 function inventoryStore(name: string, file: string, expectedTables: string[], root?: string): StoreInventory {
 	const path = root ? resolve(root, file) : piboHomePath(file);
 	const exists = existsSync(path);
@@ -122,7 +118,6 @@ type LegacySessionRow = {
 	channel: string;
 	kind: string;
 	profile: string;
-	owner_scope: string | null;
 	parent_id: string | null;
 	origin_id: string | null;
 	workspace: string | null;
@@ -152,15 +147,13 @@ function migrateSessionsToV2(input: { from: string; to: string }): SessionMigrat
 		if (!hasTable(source, "pibo_sessions")) return report;
 		const rows = source.prepare("SELECT * FROM pibo_sessions ORDER BY created_at ASC").all() as LegacySessionRow[];
 		report.read = rows.length;
-		const targetSessionColumns = tableColumns(target.db, "sessions");
-		const hasOwnerScope = targetSessionColumns.has("owner_scope");
 		for (const row of rows) {
 			const existing = target.db.prepare("SELECT updated_at FROM sessions WHERE id = ?").get(row.id) as { updated_at: string } | undefined;
 			const metadata = parseJsonObject(row.metadata_json);
 			const rootSessionId = row.parent_id ? (typeof metadata.rootSessionId === "string" ? metadata.rootSessionId : row.parent_id) : row.id;
 			if (!existing) {
 				const columns = [
-					"id", "pi_session_id", ...(hasOwnerScope ? ["owner_scope"] : []), "room_id", "root_session_id", "parent_id", "origin_id",
+					"id", "pi_session_id", "room_id", "root_session_id", "parent_id", "origin_id",
 					"channel", "kind", "profile", "active_model_json", "workspace", "title", "status",
 					"metadata_json", "created_at", "updated_at", "last_activity_at",
 				];
@@ -170,7 +163,6 @@ function migrateSessionsToV2(input: { from: string; to: string }): SessionMigrat
 				`).run(
 					row.id,
 					row.pi_session_id,
-					...(hasOwnerScope ? [row.owner_scope ?? "user:unknown"] : []),
 					typeof metadata.chatRoomId === "string" ? metadata.chatRoomId : null,
 					rootSessionId,
 					row.parent_id,
@@ -191,13 +183,12 @@ function migrateSessionsToV2(input: { from: string; to: string }): SessionMigrat
 			} else if (row.updated_at > existing.updated_at) {
 				target.db.prepare(`
 					UPDATE sessions SET
-						pi_session_id = ?, ${hasOwnerScope ? "owner_scope = ?," : ""} root_session_id = ?, parent_id = ?, origin_id = ?,
+						pi_session_id = ?, root_session_id = ?, parent_id = ?, origin_id = ?,
 						channel = ?, kind = ?, profile = ?, active_model_json = ?, workspace = ?, title = ?,
 						metadata_json = ?, updated_at = ?, last_activity_at = MAX(last_activity_at, ?)
 					WHERE id = ?
 				`).run(
 					row.pi_session_id,
-					...(hasOwnerScope ? [row.owner_scope ?? "user:unknown"] : []),
 					rootSessionId,
 					row.parent_id,
 					row.origin_id,
