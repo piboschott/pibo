@@ -348,3 +348,4 @@
   - Evidence tier: Docker typecheck/build, package workflow typecheck/build/test, focused fresh-runtime regression, final-cutover fixture regression, data CLI inventory regression, fresh-schema regression, and targeted source search gates.
   - Safety: no migration inspect/dry-run/apply command was run against `/root/.pibo`; no host/Production DB, host Dev/Production gateway, deploy script, or PR creation was touched.
   - PRD update: US-024 set to `passes: true` with evidence notes. Next failing story: US-025 (`Update current docs, glossary, skills, and help text`).
+- 2026-06-02T01:08Z: US-024 implementation commit created: `895ef04 feat: US-024 - remove runtime owner compatibility`.
