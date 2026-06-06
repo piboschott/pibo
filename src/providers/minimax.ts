@@ -1,34 +1,25 @@
-import type { Model } from "@mariozechner/pi-ai";
+import { getModels, type Model } from "@mariozechner/pi-ai";
 import { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import {
+	OPENAI_COMPLETIONS_API,
+	registerOpenAiCompatProvider,
+	resetOpenAiCompatProviderRegistration,
+	unregisterOpenAiCompatProvider,
+	type OpenAiCompatModelSpec,
+	type OpenAiCompatProviderSpec,
+	type OpenAiCompatRegistrationResult,
+} from "./openai-compat.js";
 
 export const MINIMAX_PROVIDER_ID = "minimax";
 export const MINIMAX_CN_PROVIDER_ID = "minimax-cn";
 export const MINIMAX_DEFAULT_BASE_URL = "https://api.minimax.io/v1";
 export const MINIMAX_CN_DEFAULT_BASE_URL = "https://api.minimax.cn/v1";
-export const MINIMAX_API_TYPE = "openai-completions" as const;
 export const MINIMAX_API_KEY_ENV = "MINIMAX_API_KEY";
 export const MINIMAX_CN_API_KEY_ENV = "MINIMAX_API_KEY";
 
 export type MiniMaxProviderId =
 	| typeof MINIMAX_PROVIDER_ID
 	| typeof MINIMAX_CN_PROVIDER_ID;
-
-export type MiniMaxInputModality = "text" | "image";
-
-export type MiniMaxModelDefinition = {
-	id: string;
-	name: string;
-	reasoning?: boolean;
-	contextWindow: number;
-	maxTokens: number;
-	cost: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-	};
-	input: readonly MiniMaxInputModality[];
-};
 
 export type MiniMaxModelInput = {
 	provider?: string;
@@ -37,29 +28,7 @@ export type MiniMaxModelInput = {
 
 export type MiniMaxModelRegistryLike = Pick<ModelRegistry, "registerProvider" | "unregisterProvider" | "find">;
 
-export type MiniMaxProviderConfig = {
-	baseUrl: string;
-	api: typeof MINIMAX_API_TYPE;
-	apiKey: string;
-	models: Array<{
-		id: string;
-		name: string;
-		api: typeof MINIMAX_API_TYPE;
-		baseUrl: string;
-		reasoning: boolean;
-		input: MiniMaxInputModality[];
-		cost: {
-			input: number;
-			output: number;
-			cacheRead: number;
-			cacheWrite: number;
-		};
-		contextWindow: number;
-		maxTokens: number;
-	}>;
-};
-
-const DEFAULT_MINIMAX_M3: MiniMaxModelDefinition = {
+export const MINIMAX_M3_MODEL: OpenAiCompatModelSpec = {
 	id: "MiniMax-M3",
 	name: "MiniMax M3",
 	reasoning: false,
@@ -70,38 +39,27 @@ const DEFAULT_MINIMAX_M3: MiniMaxModelDefinition = {
 };
 
 function resolveBaseUrl(providerId: MiniMaxProviderId, defaultBaseUrl: string): string {
-	const envOverride = process.env[`PIBO_${providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL`];
+	const envKey = `PIBO_${providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL`;
+	const envOverride = process.env[envKey];
 	return envOverride && envOverride.length > 0 ? envOverride : defaultBaseUrl;
 }
 
-function cloneModel(model: MiniMaxModelDefinition, baseUrl: string): MiniMaxProviderConfig["models"][number] {
-	return {
-		id: model.id,
-		name: model.name,
-		api: MINIMAX_API_TYPE,
-		baseUrl,
-		reasoning: model.reasoning ?? false,
-		input: [...model.input],
-		cost: { ...model.cost },
-		contextWindow: model.contextWindow,
-		maxTokens: model.maxTokens,
-	};
-}
-
-export function buildMiniMaxProviderConfig(
+function buildMiniMaxSpec(
 	providerId: MiniMaxProviderId = MINIMAX_PROVIDER_ID,
-	models: readonly MiniMaxModelDefinition[] = [DEFAULT_MINIMAX_M3],
-): MiniMaxProviderConfig {
+	customModels: readonly OpenAiCompatModelSpec[] = [MINIMAX_M3_MODEL],
+): OpenAiCompatProviderSpec {
 	const defaultBaseUrl =
 		providerId === MINIMAX_CN_PROVIDER_ID
 			? MINIMAX_CN_DEFAULT_BASE_URL
 			: MINIMAX_DEFAULT_BASE_URL;
-	const baseUrl = resolveBaseUrl(providerId, defaultBaseUrl);
 	return {
-		baseUrl,
-		api: MINIMAX_API_TYPE,
-		apiKey: MINIMAX_API_KEY_ENV,
-		models: models.map((model) => cloneModel(model, baseUrl)),
+		id: providerId,
+		baseUrl: resolveBaseUrl(providerId, defaultBaseUrl),
+		apiKeyEnv:
+			providerId === MINIMAX_CN_PROVIDER_ID
+				? MINIMAX_CN_API_KEY_ENV
+				: MINIMAX_API_KEY_ENV,
+		models: customModels,
 	};
 }
 
@@ -118,17 +76,31 @@ export function findMiniMaxModel(
 	return modelRegistry.find(model.provider, model.id);
 }
 
-const registeredProviders = new Set<string>();
+export function getBuiltInMiniMaxModels(providerId: MiniMaxProviderId = MINIMAX_PROVIDER_ID): Model<any>[] {
+	try {
+		return getModels(providerId as any) as Model<any>[];
+	} catch {
+		return [];
+	}
+}
 
 export function registerMiniMaxProvider(
 	modelRegistry: MiniMaxModelRegistryLike,
-	options: { providerId?: MiniMaxProviderId; models?: readonly MiniMaxModelDefinition[] } = {},
-): void {
+	options: {
+		providerId?: MiniMaxProviderId;
+		customModels?: readonly OpenAiCompatModelSpec[];
+		baseModels?: readonly Model<any>[];
+		force?: boolean;
+	} = {},
+): OpenAiCompatRegistrationResult {
 	const providerId = options.providerId ?? MINIMAX_PROVIDER_ID;
-	if (registeredProviders.has(providerId)) return;
-	const config = buildMiniMaxProviderConfig(providerId, options.models);
-	modelRegistry.registerProvider(providerId, config);
-	registeredProviders.add(providerId);
+	const spec = buildMiniMaxSpec(providerId, options.customModels ?? [MINIMAX_M3_MODEL]);
+	const baseModels = options.baseModels ?? getBuiltInMiniMaxModels(providerId);
+	return registerOpenAiCompatProvider(
+		modelRegistry as Pick<ModelRegistry, "registerProvider">,
+		spec,
+		{ baseModels, force: options.force },
+	);
 }
 
 export function unregisterMiniMaxProvider(
@@ -136,15 +108,18 @@ export function unregisterMiniMaxProvider(
 	options: { providerId?: MiniMaxProviderId } = {},
 ): void {
 	const providerId = options.providerId ?? MINIMAX_PROVIDER_ID;
-	if (!registeredProviders.has(providerId)) return;
-	modelRegistry.unregisterProvider(providerId);
-	registeredProviders.delete(providerId);
+	unregisterOpenAiCompatProvider(
+		modelRegistry as Pick<ModelRegistry, "unregisterProvider">,
+		providerId,
+	);
 }
 
 export function resetMiniMaxProviderRegistration(): void {
-	registeredProviders.clear();
+	resetOpenAiCompatProviderRegistration();
 }
 
-export function getDefaultMiniMaxModels(): readonly MiniMaxModelDefinition[] {
-	return [DEFAULT_MINIMAX_M3];
+export function getDefaultMiniMaxModels(): readonly OpenAiCompatModelSpec[] {
+	return [MINIMAX_M3_MODEL];
 }
+
+export { OPENAI_COMPLETIONS_API };
