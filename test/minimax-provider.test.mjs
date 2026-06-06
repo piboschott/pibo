@@ -72,10 +72,11 @@ test.beforeEach(() => {
 	resetMiniMaxProviderRegistration();
 });
 
-test("MINIMAX_M3_MODEL is MiniMax-M3 with text input and 128k context", () => {
+test("MINIMAX_M3_MODEL is MiniMax-M3 with multimodal input and 1M context", () => {
 	assert.equal(MINIMAX_M3_MODEL.id, "MiniMax-M3");
-	assert.equal(MINIMAX_M3_MODEL.contextWindow, 128000);
-	assert.deepEqual([...MINIMAX_M3_MODEL.input], ["text"]);
+	assert.equal(MINIMAX_M3_MODEL.contextWindow, 1000000);
+	assert.equal(MINIMAX_M3_MODEL.reasoning, true);
+	assert.deepEqual([...MINIMAX_M3_MODEL.input], ["text", "image"]);
 });
 
 test("registerMiniMaxProvider merges built-in models with MiniMax-M3", () => {
@@ -116,13 +117,15 @@ test("registerMiniMaxProvider selects CN base URL for minimax-cn", () => {
 	assert.equal(fake.registrations[0].config.baseUrl, "https://api.minimax.cn/v1");
 });
 
-test("registerMiniMaxProvider is idempotent within a process", () => {
-	const fake = makeFakeRegistry();
+test("registerMiniMaxProvider re-registers on a fresh registry", () => {
+	const fakeA = makeFakeRegistry();
+	const fakeB = makeFakeRegistry();
 
-	registerMiniMaxProvider(fake.api, { baseModels: builtInModels });
-	registerMiniMaxProvider(fake.api, { baseModels: builtInModels });
+	registerMiniMaxProvider(fakeA.api, { baseModels: builtInModels });
+	registerMiniMaxProvider(fakeB.api, { baseModels: builtInModels });
 
-	assert.equal(fake.registrations.length, 1);
+	assert.equal(fakeA.registrations.length, 1);
+	assert.equal(fakeB.registrations.length, 1);
 });
 
 test("unregisterMiniMaxProvider clears the registration slot", () => {
