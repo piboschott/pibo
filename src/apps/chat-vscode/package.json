@@ -1,0 +1,85 @@
+{
+  "name": "pibo-vscode",
+  "displayName": "Pibo",
+  "description": "Run Pibo sessions in VS Code. Reuses the Chat Web App composer and terminal view.",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "publisher": "pibo",
+  "engines": {
+    "vscode": "^1.96.0",
+    "node": ">=24"
+  },
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "pibo.newSession",
+        "title": "Pibo: New Session",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pibo.deleteCurrentSession",
+        "title": "Pibo: Delete Current Session",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pibo.renameCurrentSession",
+        "title": "Pibo: Rename Current Session",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "pibo.openInChatWeb",
+        "title": "Pibo: Open in Chat Web",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "pibo.signIn",
+        "title": "Pibo: Sign In",
+        "icon": "$(sign-in)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pibo",
+          "title": "Pibo",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "pibo": [
+        {
+          "type": "webview",
+          "id": "pibo.sessionPanel",
+          "name": "Pibo",
+          "contextTitle": "Pibo"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pibo.sessionPanel",
+        "contents": "Open a folder to start a Pibo session for this workspace."
+      }
+    ],
+    "configuration": {
+      "title": "Pibo",
+      "properties": {
+        "pibo.chatWebUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:4788",
+          "description": "URL of the running pibo gateway:web instance."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/vscode-build.mjs",
+    "package": "node ../../scripts/vscode-package.mjs"
+  }
+}
