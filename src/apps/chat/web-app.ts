@@ -69,7 +69,7 @@ import { handleChatCronApiRequest } from "./cron-api.js";
 import { handleChatRalphApiRequest } from "./ralph-api.js";
 import { prepareWebAnnotationMessageAttachments, type PreparedWebAnnotationAttachments } from "../../web-annotations/attachments.js";
 import { createDefaultWebAnnotationStore, type WebAnnotationStore } from "../../web-annotations/store.js";
-import { CHAT_WEB_MOUNT_PATH, isChatAppPath, responseBuiltChatAsset, responseBuiltChatPublicFile, responseChatAppShell } from "./static-assets.js";
+import { CHAT_WEB_MOUNT_PATH, isChatAppPath, responseBuiltChatAsset, responseBuiltChatPublicFile, responseChatAppShell, CHAT_VSCODE_MOUNT_PATH, isVscodeAppPath, responseBuiltVscodeAsset, responseVscodeAppShell } from "./static-assets.js";
 import { executeProviderAuthAction, isProviderAuthAction, providerAuthActionResponse } from "./provider-auth-actions.js";
 import { prepareChatFileAttachments, resolveDownloadPath, responseChatFileDownload, saveUploadedChatFiles } from "./chat-files.js";
 import {
@@ -3603,6 +3603,12 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return responseChatAppShell();
 			}
 
+			const builtVscodeAsset = responseBuiltVscodeAsset(request, url.pathname);
+			if (builtVscodeAsset) return builtVscodeAsset;
+			if (isVscodeAppPath(url.pathname) && request.method === "GET") {
+				return responseVscodeAppShell();
+			}
+
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/upload` && request.method === "POST") {
 				requireSameOriginMultipartRequest(request);
 				await requireSession(request, context);
@@ -4549,6 +4555,13 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/rooms` && request.method === "GET") {
 				const webSession = await requireSession(request, context);
 				state.roomService.ensureDefaultRoom();
+				const workspaceFilter = url.searchParams.get("workspace");
+				if (workspaceFilter) {
+					const rooms = state.roomService
+						.listRooms()
+						.filter((room) => room.workspace === workspaceFilter);
+					return responseJson({ rooms });
+				}
 				return responseJson({ rooms: state.roomService.listRoomTree() });
 			}
 

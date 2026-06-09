@@ -6,7 +6,10 @@ import { responseHtml } from "../../web/http.js";
 
 export const CHAT_WEB_MOUNT_PATH = "/apps/chat";
 
+export const CHAT_VSCODE_MOUNT_PATH = "/apps/chat-vscode";
+
 const CHAT_UI_DIST_DIR = resolve(fileURLToPath(new URL("../../../dist/apps/chat-ui", import.meta.url)));
+const CHAT_VSCODE_DIST_DIR = resolve(fileURLToPath(new URL("../../../src/apps/chat-vscode/dist/webview", import.meta.url)));
 const compressedAssetCache = new Map<string, Uint8Array>();
 
 export function responseChatAppShell(): Response {
@@ -58,6 +61,42 @@ export function isChatAppPath(pathname: string): boolean {
 	if (pathname === `${CHAT_WEB_MOUNT_PATH}/sw.js`) return false;
 	if (pathname.startsWith(`${CHAT_WEB_MOUNT_PATH}/icons/`)) return false;
 	return pathname === CHAT_WEB_MOUNT_PATH || pathname.startsWith(`${CHAT_WEB_MOUNT_PATH}/`);
+}
+
+export function responseVscodeAppShell(): Response {
+	return responseBuiltVscodeIndex() ?? responseHtml(responseBuiltVscodeIndex() ? "" : "<!doctype html><title>Pibo</title>");
+}
+
+function responseBuiltVscodeIndex(): Response | undefined {
+	const indexPath = resolve(CHAT_VSCODE_DIST_DIR, "index.html");
+	if (!existsSync(indexPath)) return undefined;
+	return responseHtml(readFileSync(indexPath, "utf8"));
+}
+
+export function responseBuiltVscodeAsset(request: Request, pathname: string): Response | undefined {
+	if (!pathname.startsWith(`${CHAT_VSCODE_MOUNT_PATH}/assets/`)) return undefined;
+	return responseBuiltVscodeStaticFile(request, pathname, "public, max-age=31536000, immutable");
+}
+
+function responseBuiltVscodeStaticFile(request: Request, pathname: string, cacheControl: string): Response | undefined {
+	const relativePath = pathname.slice(`${CHAT_VSCODE_MOUNT_PATH}/`.length);
+	const filePath = resolve(CHAT_VSCODE_DIST_DIR, relativePath);
+	if (!filePath.startsWith(CHAT_VSCODE_DIST_DIR) || !existsSync(filePath)) return undefined;
+	const body = readFileSync(filePath);
+	const headers: Record<string, string> = {
+		"content-type": contentTypeFor(filePath),
+		"cache-control": cacheControl,
+	};
+	const encoding = preferredAssetEncoding(request.headers.get("accept-encoding"), filePath);
+	if (!encoding) return new Response(body, { headers });
+	headers["content-encoding"] = encoding;
+	headers["vary"] = "accept-encoding";
+	return new Response(compressedAssetBody(filePath, body, encoding), { headers });
+}
+
+export function isVscodeAppPath(pathname: string): boolean {
+	if (pathname.startsWith(`${CHAT_VSCODE_MOUNT_PATH}/assets/`)) return false;
+	return pathname === CHAT_VSCODE_MOUNT_PATH || pathname.startsWith(`${CHAT_VSCODE_MOUNT_PATH}/`);
 }
 
 function contentTypeFor(path: string): string {
