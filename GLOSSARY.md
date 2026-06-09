@@ -345,6 +345,9 @@ A Pibo-managed wrapper-level process that summarizes tool usage in a Pibo Sessio
 - The **Debug CLI** inspects Pibo-managed stores and projections; it is not an agent-facing profile tool.
 - The **Same-Origin Web Host** serves **Auth Service** routes and registered **Web Apps**.
 - **Tool Review** runs at the **Product Boundary** and uses **Pibo Session IDs**, not **Pi Session IDs**, as its review target identity.
+- The **Pibo VS Code Extension** is a thin WebView client that reuses the Chat Web **Composer** and **Chat Session View**; it does not own a separate data store.
+- A **VS Code Session Room** is a **Pibo Room** whose `workspace` field equals the canonical path of a VS Code `WorkspaceFolder`; the extension resolves one per folder.
+- The **Workspace Room Resolver** (`resolveRoomForWorkspace`) lists rooms by workspace and auto-creates a room when none match; multi-match results surface a **Room Picker** inside the WebView.
 
 ## Ambiguities
 
