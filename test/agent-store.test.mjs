@@ -215,6 +215,33 @@ test("custom agent profile renames leave old session profile names resolvable", 
 	reopened.close();
 });
 
+test("custom agent store records agent rename and deletion history", () => {
+	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
+	const store = new CustomAgentStore(path);
+	const agent = store.create({ displayName: "rename-source" });
+	store.update(agent.id, { displayName: "renamed-agent" });
+	store.close();
+
+	const db = new DatabaseSync(path);
+	db.prepare("UPDATE chat_agents SET profile_name = ?, display_name = ? WHERE id = ?").run("direct-profile", "direct-display", agent.id);
+	db.prepare("DELETE FROM chat_agents WHERE id = ?").run(agent.id);
+
+	const rows = db.prepare(`
+		SELECT event_type, field_name, old_value, new_value, old_profile_name, new_profile_name, old_display_name, new_display_name
+		FROM chat_agent_history
+		WHERE agent_id = ?
+	`).all(agent.id);
+
+	assert.equal(rows.length, 5);
+	assert.ok(rows.find((row) => row.event_type === "updated" && row.field_name === "profile_name" && row.old_value === "rename-source" && row.new_value === "renamed-agent"));
+	assert.ok(rows.find((row) => row.event_type === "updated" && row.field_name === "display_name" && row.old_value === "rename-source" && row.new_value === "renamed-agent"));
+	assert.ok(rows.find((row) => row.event_type === "updated" && row.field_name === "profile_name" && row.old_value === "renamed-agent" && row.new_value === "direct-profile"));
+	assert.ok(rows.find((row) => row.event_type === "updated" && row.field_name === "display_name" && row.old_value === "renamed-agent" && row.new_value === "direct-display"));
+	assert.ok(rows.find((row) => row.event_type === "deleted" && row.field_name === null && row.old_profile_name === "direct-profile" && row.new_profile_name === null && row.old_display_name === "direct-display"));
+
+	db.close();
+});
+
 test("custom agent names are globally unique and lists are app-global across legacy accounts", () => {
 	const path = join(mkdtempSync(join(tmpdir(), "pibo-agent-store-")), "agents.sqlite");
 	const store = new CustomAgentStore(path);

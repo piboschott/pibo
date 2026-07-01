@@ -103,6 +103,35 @@ test("compact row generation renders session errors with class details", () => {
 	assert.match(rowText(rows[0]), /Provider: openai-codex-responses \/ openai-codex \/ gpt-5.5/);
 });
 
+test("compact row generation renders thinking level changes as compact lines", () => {
+	const rows = buildCompactTerminalRows(traceView([
+		traceNode("execution.command", "thinking-menu", {
+			order: 1,
+			title: "thinking",
+			output: { action: "show_thinking_menu", level: "off", supported: true, availableLevels: ["off", "low", "high"] },
+		}),
+		traceNode("execution.command", "thinking-high", {
+			order: 2,
+			title: "thinking",
+			output: { action: "set_thinking_level", previousLevel: "off", level: "high", changed: true, supported: true, availableLevels: ["off", "low", "high"] },
+		}),
+		traceNode("execution.command", "thinking-high-again", {
+			order: 3,
+			title: "thinking",
+			output: { action: "set_thinking_level", previousLevel: "high", level: "high", changed: false, supported: true, availableLevels: ["off", "low", "high"] },
+		}),
+	]), { showThinking: false });
+
+	assert.deepEqual(rows.map((row) => [row.id, row.kind]), [
+		["thinking-menu", "tool.thinking"],
+		["thinking-high", "execution.command"],
+		["thinking-high-again", "execution.command"],
+	]);
+	assert.equal(rows[0].output.level, "high", "the existing thinking card should reflect the latest selected level");
+	assert.match(rowText(rows[1]), /Thinking level set to high\./);
+	assert.match(rowText(rows[2]), /Thinking level is already high\./);
+});
+
 test("compact row generation preserves streaming order metadata and running state", () => {
 	const rows = buildCompactTerminalRows(traceView([
 		traceNode("user.message", "node-user", { order: 1, status: "done", output: "Start work", orderKey: { streamId: 1, streamFrameIndex: 0 }, source: "event-log", eventId: "evt-user" }),
@@ -178,6 +207,104 @@ test("compact image tool rows hide binary blobs and show the image path", () => 
 	assert.equal(rows[0].output.path, "/tmp/screenshot.png");
 	assert.equal(rows[0].output.mimeType, "image/png");
 	assert.equal(rows[0].output.detail, "Image data hidden in terminal view.");
+});
+
+test("compact Codex image generation rows show generate/edit labels and hide binary blobs", () => {
+	const generatedBase64 = "iVBOR" + "G".repeat(800);
+	const editedBase64 = "iVBOR" + "E".repeat(800);
+	const rows = buildCompactTerminalRows(traceView([
+		traceNode("tool.call", "node-generated-image", {
+			order: 1,
+			title: "codex_image_generation",
+			input: { prompt: "paint a blue whale" },
+			output: {
+				content: [{ type: "image", data: generatedBase64, mimeType: "image/png" }],
+				details: {
+					operation: "generate",
+					model: "gpt-image-2",
+					savedPath: "/home/pibo/generated_images/ps_1/call_generate.png",
+					artifactId: "ps_1/call_generate.png",
+					referencedImageCount: 0,
+				},
+			},
+		}),
+		traceNode("tool.call", "node-edited-image", {
+			order: 2,
+			title: "codex_image_generation",
+			input: { prompt: "make it cinematic", referenced_image_paths: ["/tmp/input.png"] },
+			output: {
+				content: [{ type: "image", data: editedBase64, mimeType: "image/png" }],
+				details: {
+					operation: "edit",
+					model: "gpt-image-2",
+					savedPath: "/home/pibo/generated_images/ps_1/call_edit.png",
+					artifactId: "ps_1/call_edit.png",
+					referencedImageCount: 1,
+				},
+			},
+		}),
+	]), { showThinking: false });
+
+	assert.equal(rows.length, 2, "Codex image operations should not be grouped as image reads");
+	assert.equal(rows[0].kind, "tool.image");
+	assert.match(rowText(rows[0]), /Generated image/);
+	assert.match(rowText(rows[0]), /Path: \/home\/pibo\/generated_images\/ps_1\/call_generate\.png/);
+	assert.doesNotMatch(rowText(rows[0]), /Viewed image/);
+	assert.doesNotMatch(JSON.stringify(rows[0]), /iVBOR/);
+	assert.equal(rows[0].output.type, "image");
+	assert.equal(rows[0].output.toolName, "codex_image_generation");
+	assert.equal(rows[0].output.operation, "generate");
+	assert.equal(rows[0].output.path, "/home/pibo/generated_images/ps_1/call_generate.png");
+	assert.equal(rows[0].output.savedPath, "/home/pibo/generated_images/ps_1/call_generate.png");
+	assert.equal(rows[0].output.artifactId, "ps_1/call_generate.png");
+	assert.equal(rows[0].output.model, "gpt-image-2");
+	assert.equal(rows[0].output.referencedImageCount, 0);
+	assert.equal(rows[0].output.mimeType, "image/png");
+	assert.equal(rows[0].output.detail, "Image data hidden in terminal view.");
+
+	assert.equal(rows[1].kind, "tool.image");
+	assert.match(rowText(rows[1]), /Edited image/);
+	assert.match(rowText(rows[1]), /Path: \/home\/pibo\/generated_images\/ps_1\/call_edit\.png/);
+	assert.doesNotMatch(rowText(rows[1]), /Viewed image/);
+	assert.doesNotMatch(JSON.stringify(rows[1]), /iVBOR/);
+	assert.equal(rows[1].output.operation, "edit");
+	assert.equal(rows[1].output.referencedImageCount, 1);
+});
+
+test("compact Codex image generation running rows infer generate/edit labels from input", () => {
+	const rows = buildCompactTerminalRows(traceView([
+		traceNode("tool.call", "node-generating-image", {
+			order: 1,
+			status: "running",
+			title: "codex_image_generation",
+			input: { prompt: "paint a blue whale" },
+		}),
+		traceNode("tool.call", "node-editing-image", {
+			order: 2,
+			status: "running",
+			title: "codex_image_generation",
+			input: { prompt: "make it cinematic", referenced_image_paths: ["/tmp/input.png"] },
+		}),
+		traceNode("tool.call", "node-editing-recent-image", {
+			order: 3,
+			status: "running",
+			title: "codex_image_generation",
+			input: { prompt: "make the last image cinematic", num_last_images_to_include: 1 },
+		}),
+	]), { showThinking: false });
+
+	assert.equal(rows.length, 3, "Running Codex image operations should not be grouped as image reads");
+	assert.match(rowText(rows[0]), /Generating image/);
+	assert.match(rowText(rows[1]), /Editing image/);
+	assert.match(rowText(rows[2]), /Editing image/);
+	for (const row of rows) {
+		assert.equal(row.kind, "tool.image");
+		assert.doesNotMatch(rowText(row), /Viewing image/);
+		assert.equal(row.output.toolName, "codex_image_generation");
+	}
+	assert.equal(rows[0].output.operation, "generate");
+	assert.equal(rows[1].output.operation, "edit");
+	assert.equal(rows[2].output.operation, "edit");
 });
 
 test("compact image tool rows group consecutive image reads", () => {
