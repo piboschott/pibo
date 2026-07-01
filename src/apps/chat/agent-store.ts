@@ -145,6 +145,7 @@ export class CustomAgentStore {
 		this.migrateThinkingLevelColumn();
 		this.migrateThinkingOptionColumns();
 		this.migrateBuiltinToolNamesColumn();
+		this.migrateAgentHistory();
 		this.migrateLegacyProfileNames();
 		this.migrateDuplicateProfileNames();
 	}
@@ -503,6 +504,140 @@ export class CustomAgentStore {
 		if (!columns.has("builtin_tool_names_json")) {
 			this.db.prepare("ALTER TABLE chat_agents ADD COLUMN builtin_tool_names_json TEXT NOT NULL DEFAULT '[\"read\",\"bash\",\"edit\",\"write\"]'").run();
 		}
+	}
+
+	private migrateAgentHistory(): void {
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS chat_agent_events (
+				id TEXT PRIMARY KEY,
+				agent_id TEXT NOT NULL,
+				event_type TEXT NOT NULL CHECK (event_type IN ('updated', 'deleted')),
+				field_name TEXT,
+				old_value TEXT,
+				new_value TEXT,
+				old_profile_name TEXT,
+				new_profile_name TEXT,
+				old_display_name TEXT,
+				new_display_name TEXT,
+				recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+			);
+
+			CREATE INDEX IF NOT EXISTS chat_agent_events_agent_id_idx
+				ON chat_agent_events(agent_id, recorded_at);
+
+			CREATE INDEX IF NOT EXISTS chat_agent_events_profile_name_idx
+				ON chat_agent_events(old_profile_name, new_profile_name, recorded_at);
+
+			CREATE TRIGGER IF NOT EXISTS chat_agents_profile_name_history_update
+			AFTER UPDATE OF profile_name ON chat_agents
+			FOR EACH ROW
+			WHEN OLD.profile_name IS NOT NEW.profile_name
+			BEGIN
+				INSERT INTO chat_agent_events (
+					id,
+					agent_id,
+					event_type,
+					field_name,
+					old_value,
+					new_value,
+					old_profile_name,
+					new_profile_name,
+					old_display_name,
+					new_display_name,
+					recorded_at
+				) VALUES (
+					'agent_event_' || lower(hex(randomblob(16))),
+					NEW.id,
+					'updated',
+					'profile_name',
+					OLD.profile_name,
+					NEW.profile_name,
+					OLD.profile_name,
+					NEW.profile_name,
+					OLD.display_name,
+					NEW.display_name,
+					strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+				);
+			END;
+
+			CREATE TRIGGER IF NOT EXISTS chat_agents_display_name_history_update
+			AFTER UPDATE OF display_name ON chat_agents
+			FOR EACH ROW
+			WHEN OLD.display_name IS NOT NEW.display_name
+			BEGIN
+				INSERT INTO chat_agent_events (
+					id,
+					agent_id,
+					event_type,
+					field_name,
+					old_value,
+					new_value,
+					old_profile_name,
+					new_profile_name,
+					old_display_name,
+					new_display_name,
+					recorded_at
+				) VALUES (
+					'agent_event_' || lower(hex(randomblob(16))),
+					NEW.id,
+					'updated',
+					'display_name',
+					OLD.display_name,
+					NEW.display_name,
+					OLD.profile_name,
+					NEW.profile_name,
+					OLD.display_name,
+					NEW.display_name,
+					strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+				);
+			END;
+
+			CREATE TRIGGER IF NOT EXISTS chat_agents_history_delete
+			AFTER DELETE ON chat_agents
+			FOR EACH ROW
+			BEGIN
+				INSERT INTO chat_agent_events (
+					id,
+					agent_id,
+					event_type,
+					field_name,
+					old_value,
+					new_value,
+					old_profile_name,
+					new_profile_name,
+					old_display_name,
+					new_display_name,
+					recorded_at
+				) VALUES (
+					'agent_event_' || lower(hex(randomblob(16))),
+					OLD.id,
+					'deleted',
+					NULL,
+					OLD.profile_name,
+					NULL,
+					OLD.profile_name,
+					NULL,
+					OLD.display_name,
+					NULL,
+					strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+				);
+			END;
+
+			CREATE VIEW IF NOT EXISTS chat_agent_history AS
+			SELECT
+				id,
+				agent_id,
+				event_type,
+				field_name,
+				old_value,
+				new_value,
+				old_profile_name,
+				new_profile_name,
+				old_display_name,
+				new_display_name,
+				recorded_at
+			FROM chat_agent_events;
+		`);
 	}
 }
 
