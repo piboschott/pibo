@@ -322,6 +322,44 @@ test("terminal markdown helper preserves structure, links, and code fences", () 
 	assert.deepEqual(lines, ["# Title", "", "See docs (https://example.test) and `code`.", "", "• item", "  • nested", "", "┌ code ts", "  const ok = true;", "└ code"]);
 });
 
+test("terminal markdown helper syntax-highlights Prism-backed code fences", () => {
+	const cases = [
+		["ts", "export function answer(value: number): string { return `value-${42}`; }"],
+		["python", "def answer(value): return f'value-{value + 1}'"],
+		["yaml", "name: \"pibo\"\nenabled: true\ncount: 3"],
+		["go", "func main() { println(\"hi\", 7) }"],
+		["rust", "fn main() { let value = Some(7); println!(\"{value}\"); }"],
+	];
+
+	for (const [language, source] of cases) {
+		const lines = renderInkMarkdownTerminalLines(`\`\`\`${language}\n${source}\n\`\`\``, { maxLines: 20 });
+		const tokens = lines.slice(1, -1).flatMap((line) => line.tokens);
+		const tones = new Set(tokens.map((token) => token.tone).filter((tone) => tone && tone !== "default"));
+		assert.ok(tones.size >= 3, `${language} fence should use at least three syntax tones, got ${[...tones].join(", ")}`);
+	}
+});
+
+test("terminal markdown helper keeps unknown and no-color fences plain", () => {
+	const unknownLine = renderInkMarkdownTerminalLines("```foo\nplain text\n```", { maxLines: 5 })[1];
+	assert.deepEqual(unknownLine.tokens, [{ text: "  plain text", tone: "default" }]);
+
+	const previousNoColor = process.env.NO_COLOR;
+	process.env.NO_COLOR = "1";
+	try {
+		const highlightedLine = renderInkMarkdownTerminalLines("```ts\nconst ok = true;\n```", { maxLines: 5 })[1];
+		assert.deepEqual(highlightedLine.tokens, [{ text: "  " }, { text: "const ok = true;", tone: "default" }]);
+		const output = renderToString(React.createElement(InkTerminalView, {
+			rows: [{ id: "code", kind: "message.assistant", status: "done", lines: renderInkMarkdownTerminalLines("```ts\nconst ok = true;\n```"), sourceNodeIds: ["code"] }],
+			maxRows: 5,
+			maxLineChars: 120,
+		}));
+		assert.doesNotMatch(output, /\u001b\[/);
+	} finally {
+		if (previousNoColor === undefined) delete process.env.NO_COLOR;
+		else process.env.NO_COLOR = previousNoColor;
+	}
+});
+
 test("terminal inline JSON helper emits Web-derived token roles and disclosure markers", () => {
 	const fixture = nestedJsonSyntaxFixture();
 	const tokens = formatInlineJsonTokens(fixture.input);

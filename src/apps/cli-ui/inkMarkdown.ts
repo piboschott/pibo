@@ -1,5 +1,6 @@
 import type { CompactTerminalLine, TerminalInlineToken } from "../../session-ui/index.js";
 import { sanitizeTerminalText, tokenizeJsonTextLine } from "./inkJson.js";
+import { highlightInkCodeLine, normalizeInkCodeLanguage } from "./inkSyntaxHighlighter.js";
 
 export type InkMarkdownOptions = {
 	maxChars?: number;
@@ -98,13 +99,16 @@ function inlineMarkdownTokens(text: string, defaults: Pick<TerminalInlineToken, 
 }
 
 function codeFenceTokens(sourceLine: string, language: string): TerminalInlineToken[] {
-	if (isBashLanguage(language)) return [{ text: "  " }, ...tokenizeInkBashCommand(sourceLine)];
-	if (language === "json" || language === "jsonc") return [{ text: "  " }, ...tokenizeJsonTextLine(sourceLine)];
+	const normalizedLanguage = normalizeInkCodeLanguage(language);
+	if (isBashLanguage(normalizedLanguage)) return [{ text: "  " }, ...tokenizeInkBashCommand(sourceLine)];
+	if (normalizedLanguage === "json") return [{ text: "  " }, ...tokenizeJsonTextLine(sourceLine)];
+	const highlighted = highlightInkCodeLine(sourceLine, normalizedLanguage);
+	if (highlighted) return [{ text: "  " }, ...highlighted];
 	return [{ text: `  ${sourceLine}`, tone: "default" }];
 }
 
 function isBashLanguage(language: string): boolean {
-	return ["bash", "sh", "shell", "zsh"].includes(language);
+	return language === "bash";
 }
 
 function line(tokens: TerminalInlineToken[]): CompactTerminalLine {
