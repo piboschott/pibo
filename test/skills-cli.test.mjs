@@ -22,9 +22,17 @@ function runSkills(args, home = tempHome()) {
 test("skills help exits successfully without a subcommand", () => {
 	const result = runSkills([]);
 	assert.equal(result.status, 0);
-	assert.match(result.stdout, /Manage Pibo user skills/);
-	assert.match(result.stdout, /not built-in or plugin skills/);
+	assert.match(result.stdout, /Manage Pibo user skills and inspect the built-in\/plugin skill catalog/);
+	assert.match(result.stdout, /catalog/);
+	assert.match(result.stdout, /pibo skills catalog/);
 	assert.equal(result.stderr, "");
+});
+
+test("skills catalog lists built-in skills", () => {
+	const result = runSkills(["catalog", "--json"]);
+	assert.equal(result.status, 0);
+	const skills = JSON.parse(result.stdout);
+	assert.ok(skills.some((skill) => skill.name === "graphify" && skill.kind === "builtin"));
 });
 
 test("skills list supports JSON output", () => {
