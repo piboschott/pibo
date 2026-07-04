@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
 	Background,
 	BaseEdge,
 	Controls,
-	EdgeLabelRenderer,
 	Handle,
 	MarkerType,
 	MiniMap,
@@ -12,6 +11,7 @@ import {
 	addEdge as addReactFlowEdge,
 	applyEdgeChanges,
 	applyNodeChanges,
+	getSmoothStepPath,
 	useReactFlow,
 	type Connection,
 	type EdgeChange,
@@ -600,34 +600,59 @@ function WorkflowGraphRoutableEdge({
 	sourceY,
 	targetX,
 	targetY,
+	sourcePosition,
+	targetPosition,
 	markerEnd,
+	markerStart,
 	style,
 	selected,
 	data,
 	label,
+	labelStyle,
+	labelShowBg,
+	labelBgStyle,
+	labelBgPadding,
+	labelBgBorderRadius,
 }: EdgeProps<WorkflowGraphFlowEdge>) {
 	const { screenToFlowPosition } = useReactFlow();
+	const defaultCenterX = sourceX + (targetX - sourceX) / 2;
 	const routeCenterX = data?.route?.centerX;
-	const centerX = typeof routeCenterX === "number" && Number.isFinite(routeCenterX)
-		? routeCenterX
-		: sourceX + (targetX - sourceX) / 2;
-	const centerY = typeof data?.route?.centerY === "number" && Number.isFinite(data.route.centerY)
-		? data.route.centerY
-		: sourceY + (targetY - sourceY) / 2;
-	const path = `M ${sourceX},${sourceY} L ${centerX},${sourceY} L ${centerX},${targetY} L ${targetX},${targetY}`;
-	const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+	const persistedCenterX = typeof routeCenterX === "number" && Number.isFinite(routeCenterX) ? routeCenterX : undefined;
+	const [dragCenterX, setDragCenterX] = useState<number | undefined>(undefined);
+	const dragCenterXRef = useRef<number | undefined>(undefined);
+	useEffect(() => {
+		setDragCenterX(undefined);
+		dragCenterXRef.current = undefined;
+	}, [persistedCenterX, sourceX, targetX]);
+	const centerX = dragCenterX ?? persistedCenterX ?? defaultCenterX;
+	const [path, labelX, labelY] = getSmoothStepPath({
+		sourceX,
+		sourceY,
+		targetX,
+		targetY,
+		sourcePosition,
+		targetPosition,
+		centerX,
+	});
+	const dragSegmentPath = `M ${centerX},${Math.min(sourceY, targetY)} L ${centerX},${Math.max(sourceY, targetY)}`;
+	const handlePointerDown = (event: ReactPointerEvent<SVGPathElement>) => {
 		if (data?.readOnly) return;
 		event.preventDefault();
 		event.stopPropagation();
+		dragCenterXRef.current = centerX;
 		const moveRoute = (moveEvent: PointerEvent) => {
 			const position = screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY });
-			data?.onRouteChange?.(id, { centerX: Math.round(position.x) });
+			const nextCenterX = Math.round(position.x);
+			dragCenterXRef.current = nextCenterX;
+			setDragCenterX(nextCenterX);
 		};
 		const stopRoute = () => {
 			document.removeEventListener("pointermove", moveRoute);
 			document.removeEventListener("pointerup", stopRoute);
 			document.body.style.cursor = "";
 			document.body.style.userSelect = "";
+			const nextCenterX = dragCenterXRef.current;
+			if (typeof nextCenterX === "number" && Number.isFinite(nextCenterX)) data?.onRouteChange?.(id, { centerX: nextCenterX });
 		};
 		document.body.style.cursor = "ew-resize";
 		document.body.style.userSelect = "none";
@@ -640,26 +665,30 @@ function WorkflowGraphRoutableEdge({
 			<BaseEdge
 				id={id}
 				path={path}
+				markerStart={markerStart}
 				markerEnd={markerEnd}
 				style={{ ...style, stroke: selected ? "#facc15" : "#38bdf8", strokeWidth: selected ? 2.2 : 1.5 }}
 				interactionWidth={22}
+				label={label}
+				labelX={labelX}
+				labelY={labelY}
+				labelStyle={labelStyle}
+				labelShowBg={labelShowBg}
+				labelBgStyle={labelBgStyle}
+				labelBgPadding={labelBgPadding}
+				labelBgBorderRadius={labelBgBorderRadius}
 			/>
-			<EdgeLabelRenderer>
-				<div
-					className="nodrag nopan absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full border border-slate-700 bg-[#0f1b20]/95 px-1.5 py-1 text-[10px] text-slate-300 shadow-lg shadow-black/30"
-					style={{ transform: `translate(-50%, -50%) translate(${centerX}px, ${centerY}px)`, pointerEvents: "all" }}
-				>
-					<button
-						type="button"
-						className="h-4 w-4 cursor-ew-resize rounded-full border border-[#38bdf8]/70 bg-[#102a33] text-[#8bdcf4] transition hover:border-[#8bdcf4] hover:bg-[#123847] disabled:cursor-default disabled:opacity-50"
-						onPointerDown={handlePointerDown}
-						disabled={Boolean(data?.readOnly)}
-						aria-label={`Move edge route ${id}`}
-						title="Drag to move this edge route"
-					/>
-					<span>{typeof label === "string" ? label : data?.kind}</span>
-				</div>
-			</EdgeLabelRenderer>
+			<path
+				d={dragSegmentPath}
+				fill="none"
+				stroke="transparent"
+				strokeWidth={22}
+				className="nopan cursor-ew-resize"
+				onPointerDown={handlePointerDown}
+				aria-label={`Move edge route ${id}`}
+			>
+				<title>Drag vertical edge segment left or right</title>
+			</path>
 		</>
 	);
 }
