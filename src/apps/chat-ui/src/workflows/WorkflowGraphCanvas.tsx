@@ -281,17 +281,6 @@ export function WorkflowGraphCanvas({
 		publishStatus(`Edge route updated for ${edgeId}; it will be preserved on save or graph edits.`);
 	}, [nodes, publishStatus, readOnly, syncDraftLayout]);
 
-	const renderedEdges = useMemo<WorkflowGraphFlowEdge[]>(() => edges.map((edge) => ({
-		...edge,
-		data: {
-			edgeId: edge.data?.edgeId ?? edge.id,
-			kind: edge.data?.kind ?? "data",
-			...edge.data,
-			onRouteChange: handleEdgeRouteChange,
-			readOnly,
-		},
-	})), [edges, handleEdgeRouteChange, readOnly]);
-
 	useEffect(() => {
 		if (!contextMenu) return undefined;
 		const close = () => setContextMenu(undefined);
@@ -320,6 +309,23 @@ export function WorkflowGraphCanvas({
 			target,
 		});
 	}, []);
+
+	const handleEdgeContextMenu = useCallback((edgeId: string, event: WorkflowGraphContextMenuEvent) => {
+		setSelectedElement({ type: "edge", id: edgeId });
+		openContextMenu(event, { type: "edge", id: edgeId });
+	}, [openContextMenu]);
+
+	const renderedEdges = useMemo<WorkflowGraphFlowEdge[]>(() => edges.map((edge) => ({
+		...edge,
+		data: {
+			edgeId: edge.data?.edgeId ?? edge.id,
+			kind: edge.data?.kind ?? "data",
+			...edge.data,
+			onRouteChange: handleEdgeRouteChange,
+			onContextMenu: handleEdgeContextMenu,
+			readOnly,
+		},
+	})), [edges, handleEdgeContextMenu, handleEdgeRouteChange, readOnly]);
 
 	const addAgentNode = () => {
 		const nodeId = nextWorkflowNodeId(draft.definition, "agent");
@@ -371,19 +377,31 @@ export function WorkflowGraphCanvas({
 		void saveDefinition(definition, `Connected ${sourceId} to ${targetId}.`);
 	}, [draft.definition, saveDefinition, sourceNodeId, targetNodeId]);
 
-	const deleteGraphElement = (element: Exclude<SelectedGraphElement, undefined>) => {
+	const deleteGraphElement = useCallback((element: Exclude<SelectedGraphElement, undefined>) => {
 		const definition = element.type === "node"
 			? deleteWorkflowGraphNode(draft.definition, element.id)
 			: deleteWorkflowGraphEdge(draft.definition, element.id);
 		setSelectedElement(undefined);
 		setContextMenu(undefined);
 		void saveDefinition(definition, `Deleted ${element.type} ${element.id}.`);
-	};
+	}, [draft.definition, saveDefinition]);
 
 	const deleteSelectedElement = () => {
 		if (!selectedElement) return;
 		deleteGraphElement(selectedElement);
 	};
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (readOnly || saveState === "saving" || !selectedElement) return;
+			if (event.key !== "Delete" && event.key !== "Backspace") return;
+			if (isWorkflowEditableKeyboardTarget(event.target)) return;
+			event.preventDefault();
+			deleteGraphElement(selectedElement);
+		};
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [deleteGraphElement, readOnly, saveState, selectedElement]);
 
 	const inspectGraphElement = (element: Exclude<SelectedGraphElement, undefined>) => {
 		setSelectedElement(element);
@@ -857,6 +875,7 @@ function WorkflowGraphRoutableEdge({
 				strokeWidth={22}
 				className="nopan cursor-ew-resize"
 				onPointerDown={handlePointerDown}
+				onContextMenu={(event) => data?.onContextMenu?.(id, event)}
 				aria-label={`Move edge route ${id}`}
 			>
 				<title>Drag vertical edge segment left or right</title>
@@ -872,6 +891,12 @@ const WORKFLOW_GRAPH_NODE_TYPES = {
 const WORKFLOW_GRAPH_EDGE_TYPES = {
 	workflowEdge: WorkflowGraphRoutableEdge,
 };
+
+function isWorkflowEditableKeyboardTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) return false;
+	if (target.isContentEditable) return true;
+	return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
 
 function describeSelectedGraphElement(definition: WorkflowDraftDefinition, selectedElement: SelectedGraphElement): string {
 	if (!selectedElement) return "Select a node or edge in the canvas to inspect or delete it.";

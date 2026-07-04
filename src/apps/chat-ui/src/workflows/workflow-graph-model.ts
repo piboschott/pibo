@@ -21,6 +21,7 @@ export type WorkflowGraphEdgeData = Record<string, unknown> & {
 	kind: string;
 	route?: WorkflowEdgeRoute;
 	onRouteChange?: (edgeId: string, route: WorkflowEdgeRoute) => void;
+	onContextMenu?: (edgeId: string, event: { clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void }) => void;
 	readOnly?: boolean;
 };
 export type WorkflowGraphFlowEdge = Edge<WorkflowGraphEdgeData, "workflowEdge">;
