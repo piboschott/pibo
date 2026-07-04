@@ -47,7 +47,8 @@ import {
 	type PiboModelDefaults,
 } from "../../core/model-defaults.js";
 import { inspectPiboContextBuild } from "../../core/context-build.js";
-import { loadPiboUserSettings } from "../../core/user-settings.js";
+import { loadPiboUserSettings, updateTelemetryRetentionLastPrunedAt } from "../../core/user-settings.js";
+import { isTelemetryRetentionMaintenanceDue, maybeRunTelemetryRetentionMaintenance, type TelemetryRetentionMaintenanceState } from "./telemetry-retention-service.js";
 import { loadModelCatalog } from "./model-catalog.js";
 import { createCustomAgentProfileDefinition } from "./agent-profiles.js";
 import { createDefaultPiboReliabilityStore, PiboReliabilityStore } from "../../reliability/store.js";
@@ -364,6 +365,7 @@ type ChatWebAppState = {
 	workflowTombstoneStore: ChatWorkflowTombstoneStore;
 	workflowLifecycleEventStore: ChatWorkflowLifecycleEventStore;
 	workflowPromptAssetStore: ChatWorkflowPromptAssetStore;
+	telemetryRetentionMaintenance: TelemetryRetentionMaintenanceState;
 };
 
 type ChatBootstrapCatalog = {
@@ -3046,7 +3048,9 @@ async function buildProjectsBootstrap(input: {
 }): Promise<ChatProjectsBootstrap> {
 	const sharedDefaultProject = input.state.projectService.ensureSharedDefaultProject();
 	const selectedProject = input.projectId ? requireSharedProject(input.state, input.webSession, input.projectId, { includeArchived: true }) : sharedDefaultProject;
-	let storedProjectSessions = input.state.projectService.listProjectSessions(selectedProject.id, { includeArchived: input.includeArchived });
+	let storedProjectSessions = input.state.projectService
+		.listProjectSessions(selectedProject.id, { includeArchived: input.includeArchived })
+		.filter((projectSession) => projectSession.workflowId === "simple-chat");
 	if (selectedProject.id === sharedDefaultProject.id && storedProjectSessions.length === 0) {
 		const session = createProjectChatSession({
 			state: input.state,
@@ -3058,7 +3062,7 @@ async function buildProjectsBootstrap(input: {
 		});
 		storedProjectSessions = [input.state.projectService.getProjectSession(session.id)!];
 	}
-	const projectSessions = storedProjectSessions.map((projectSession) => enrichProjectSessionWorkflowWaitTokens(input.state, enrichProjectSessionWorkflowDefinitionLink(input.state, projectSession)));
+	const projectSessions = storedProjectSessions;
 	const rootSessions = projectSessions
 		.map((projectSession) => input.context.channelContext.getSession(projectSession.piboSessionId))
 		.filter((session): session is PiboSession => Boolean(session));
@@ -3071,17 +3075,13 @@ async function buildProjectsBootstrap(input: {
 	indexSharedSessions(input.state.sessionQuery, sessions);
 	const nodes = await buildSessionNodes(sessions, input.state.sessionQuery.listSessions(), selectedProject.projectFolder, new Map(), { skipPiMetadataFallback: true });
 	applyProjectSessionArchiveState(nodes, new Map(projectSessions.map((projectSession) => [projectSession.piboSessionId, Boolean(projectSession.archived)])));
-	const workflowLifecycleEvents = input.state.workflowLifecycleEventStore.listEvents({
-		projectId: selectedProject.id,
-		limit: 100,
-	});
 	return {
 		identity: input.webSession.authSession.identity,
 		sharedDefaultProject,
 		project: selectedProject,
 		projects: listSharedProjects(input.state, input.webSession, { includeArchived: input.includeArchived }),
 		projectSessions,
-		workflowLifecycleEvents,
+		workflowLifecycleEvents: [],
 		...(selectedSession ? { session: selectedSession, selectedPiboSessionId: selectedSession.id } : {}),
 		selectedProjectId: selectedProject.id,
 		sessions: nodes,
@@ -3571,6 +3571,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		workflowTombstoneStore: new ChatWorkflowTombstoneStore(dataStore),
 		workflowLifecycleEventStore: new ChatWorkflowLifecycleEventStore(dataStore),
 		workflowPromptAssetStore: new ChatWorkflowPromptAssetStore(dataStore),
+		telemetryRetentionMaintenance: {},
 	};
 
 	const requireSession = (request: Request, context: PiboWebAppContext): Promise<PiboWebSession> =>
@@ -3584,6 +3585,15 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		apiPrefix: CHAT_WEB_API_PREFIX,
 		async handleRequest(request, context) {
 			const url = new URL(request.url);
+			if (isTelemetryRetentionMaintenanceDue({ state: state.telemetryRetentionMaintenance })) {
+				maybeRunTelemetryRetentionMaintenance({
+					state: state.telemetryRetentionMaintenance,
+					dataStore: state.dataStore,
+					settings: loadPiboUserSettings().telemetryRetention,
+					context,
+					onPruned: updateTelemetryRetentionLastPrunedAt,
+				});
+			}
 			ensureEventIndexing(state, context);
 			ensureCustomAgentProfiles(state, context);
 			syncChatUserSkills({
@@ -4386,6 +4396,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					route: settingsRoute,
 					request,
 					cwd: process.cwd(),
+					dataStore: state.dataStore,
 				});
 				if (chatSettingsRouteInvalidatesBootstrapCatalog(settingsRoute)) invalidateBootstrapCatalogCache(state);
 				return response;
