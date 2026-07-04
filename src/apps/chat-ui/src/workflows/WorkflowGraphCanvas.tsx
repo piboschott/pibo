@@ -315,6 +315,11 @@ export function WorkflowGraphCanvas({
 		openContextMenu(event, { type: "edge", id: edgeId });
 	}, [openContextMenu]);
 
+	const handleEdgeSelect = useCallback((edgeId: string) => {
+		setSelectedElement({ type: "edge", id: edgeId });
+		setContextMenu(undefined);
+	}, []);
+
 	const renderedEdges = useMemo<WorkflowGraphFlowEdge[]>(() => edges.map((edge) => ({
 		...edge,
 		data: {
@@ -322,10 +327,11 @@ export function WorkflowGraphCanvas({
 			kind: edge.data?.kind ?? "data",
 			...edge.data,
 			onRouteChange: handleEdgeRouteChange,
+			onSelect: handleEdgeSelect,
 			onContextMenu: handleEdgeContextMenu,
 			readOnly,
 		},
-	})), [edges, handleEdgeContextMenu, handleEdgeRouteChange, readOnly]);
+	})), [edges, handleEdgeContextMenu, handleEdgeRouteChange, handleEdgeSelect, readOnly]);
 
 	const addAgentNode = () => {
 		const nodeId = nextWorkflowNodeId(draft.definition, "agent");
@@ -826,9 +832,10 @@ function WorkflowGraphRoutableEdge({
 	});
 	const dragSegmentPath = `M ${centerX},${Math.min(sourceY, targetY)} L ${centerX},${Math.max(sourceY, targetY)}`;
 	const handlePointerDown = (event: ReactPointerEvent<SVGPathElement>) => {
-		if (data?.readOnly) return;
+		if (data?.readOnly || event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
+		data?.onSelect?.(id);
 		dragCenterXRef.current = centerX;
 		const moveRoute = (moveEvent: PointerEvent) => {
 			const position = screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY });
@@ -874,6 +881,7 @@ function WorkflowGraphRoutableEdge({
 				stroke="transparent"
 				strokeWidth={22}
 				className="nopan cursor-ew-resize"
+				onClick={(event) => { event.stopPropagation(); data?.onSelect?.(id); }}
 				onPointerDown={handlePointerDown}
 				onContextMenu={(event) => data?.onContextMenu?.(id, event)}
 				aria-label={`Move edge route ${id}`}
