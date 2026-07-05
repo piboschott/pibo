@@ -8,7 +8,9 @@ const execFileAsync = promisify(execFile);
 
 test("trace views preload older pages near the top without a manual trace-history button", async () => {
 	const stickyHookSource = await readFile("src/apps/chat-ui/src/components/useStickyVirtuoso.ts", "utf8");
+	assert.match(stickyHookSource, /onAtTop\?: \(\) => void/);
 	assert.match(stickyHookSource, /onNearTop\?: \(\) => void/);
+	assert.match(stickyHookSource, /scrollTop <= atTopThreshold/);
 	assert.match(stickyHookSource, /nearTopThreshold\?: number/);
 	assert.match(stickyHookSource, /readingAwayFromBottom && scrollTop <= nearTopThreshold/);
 
@@ -20,7 +22,9 @@ test("trace views preload older pages near the top without a manual trace-histor
 		assert.match(source, new RegExp(`OLDER_TRACE_PREFETCH_TOP_THRESHOLD_PX = ${topThreshold}`));
 		assert.match(source, new RegExp(`OLDER_TRACE_PREFETCH_ROW_THRESHOLD = ${rowThreshold}`));
 		assert.match(source, /nearTopThreshold: OLDER_TRACE_PREFETCH_TOP_THRESHOLD_PX/);
-		assert.match(source, /onNearTop: loadOlderAtTop/);
+		assert.match(source, /onAtTop: loadOlderAtTop/);
+		assert.match(source, /onNearTop: loadOlderNearTop/);
+		assert.match(source, /range\.startIndex <= 0\) loadOlderAtTop/);
 		assert.match(source, /rangeChanged=\{handleVisibleRangeChanged\}/);
 		assert.match(source, /startReached=\{loadOlderAtTop\}/);
 		assert.doesNotMatch(source, /Load older trace history/);

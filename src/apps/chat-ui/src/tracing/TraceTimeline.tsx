@@ -140,8 +140,13 @@ export function TraceTimeline({
 		olderTraceIntentRef.current = false;
 		onLoadOlderTracePage?.();
 	}, [hasOlderTraceEvents, isFetchingOlderTracePage, onLoadOlderTracePage]);
-	const loadOlderAtTop = useCallback(() => {
+	const loadOlderNearTop = useCallback(() => {
+		if (!rangePrefetchReadyRef.current) return;
 		if (!olderTraceIntentRef.current) return;
+		loadOlderTracePage();
+	}, [loadOlderTracePage]);
+	const loadOlderAtTop = useCallback(() => {
+		if (!rangePrefetchReadyRef.current) return;
 		loadOlderTracePage();
 	}, [loadOlderTracePage]);
 	const markOlderTraceIntent = useCallback((event?: Event) => {
@@ -149,15 +154,17 @@ export function TraceTimeline({
 	}, []);
 	const handleVisibleRangeChanged = useCallback((range: { startIndex: number; endIndex: number }) => {
 		if (!rangePrefetchReadyRef.current) return;
-		if (range.startIndex <= OLDER_TRACE_PREFETCH_ROW_THRESHOLD) loadOlderAtTop();
-	}, [loadOlderAtTop]);
+		if (range.startIndex <= 0) loadOlderAtTop();
+		else if (range.startIndex <= OLDER_TRACE_PREFETCH_ROW_THRESHOLD) loadOlderNearTop();
+	}, [loadOlderAtTop, loadOlderNearTop]);
 
 	const stickyView = useStickyVirtuoso({
 		itemCount: visibleRows.length,
 		resetKey: trace?.id,
 		contentKey: visibleRows,
 		nearTopThreshold: OLDER_TRACE_PREFETCH_TOP_THRESHOLD_PX,
-		onNearTop: loadOlderAtTop,
+		onAtTop: loadOlderAtTop,
+		onNearTop: loadOlderNearTop,
 		onUserScrollIntent: markOlderTraceIntent,
 	});
 
