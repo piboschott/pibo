@@ -137,6 +137,7 @@ export function TraceTimeline({
 	}, [expandThinking, expansionDepth, expansionOverrides, spanTree, trace?.id, trace?.status]);
 	const loadOlderTracePage = useCallback(() => {
 		if (!hasOlderTraceEvents || isFetchingOlderTracePage) return;
+		olderTraceIntentRef.current = false;
 		onLoadOlderTracePage?.();
 	}, [hasOlderTraceEvents, isFetchingOlderTracePage, onLoadOlderTracePage]);
 	const loadOlderAtTop = useCallback(() => {

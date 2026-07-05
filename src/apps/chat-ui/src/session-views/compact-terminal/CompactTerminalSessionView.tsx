@@ -64,6 +64,7 @@ export function CompactTerminalSessionView({
 		: selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
 	const loadOlderTracePage = useCallback(() => {
 		if (!hasOlderTraceEvents || isFetchingOlderTracePage) return;
+		olderTraceIntentRef.current = false;
 		onLoadOlderTracePage?.();
 	}, [hasOlderTraceEvents, isFetchingOlderTracePage, onLoadOlderTracePage]);
 	const loadOlderAtTop = useCallback(() => {

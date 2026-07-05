@@ -22,6 +22,9 @@ type UseSessionTracePageOptions = {
 	setLiveTraceOverlay: Dispatch<SetStateAction<LiveTraceOverlay | null>>;
 };
 
+const OLDER_TRACE_LOAD_MIN_INTERVAL_MS = 650;
+const MAX_REMEMBERED_OLDER_TRACE_LOADS = 128;
+
 export function useSessionTracePage({
 	selectedPiboSessionId,
 	showRawEvents,
@@ -34,6 +37,8 @@ export function useSessionTracePage({
 	const [rawEventsBeforeSequence, setRawEventsBeforeSequence] = useState<number | undefined>(undefined);
 	const [loadingOlderTracePage, setLoadingOlderTracePage] = useState(false);
 	const loadingOlderTraceBeforeRef = useRef<string | null>(null);
+	const loadedOlderTraceBeforeRef = useRef<Set<string>>(new Set());
+	const lastOlderTraceLoadStartedAtRef = useRef(0);
 	const traceSummaryQueryKey = useMemo(
 		() => selectedPiboSessionId ? chatTraceSummaryQueryKey(selectedPiboSessionId) : null,
 		[selectedPiboSessionId],
@@ -89,6 +94,9 @@ export function useSessionTracePage({
 		setLoadingOlderTracePage(false);
 		setBaseTraceView(null);
 		setLiveTraceOverlay(null);
+		loadingOlderTraceBeforeRef.current = null;
+		loadedOlderTraceBeforeRef.current = new Set();
+		lastOlderTraceLoadStartedAtRef.current = 0;
 	}, [selectedPiboSessionId, setLiveTraceOverlay]);
 
 	const rawEventsQuery = useQuery({
@@ -142,8 +150,12 @@ export function useSessionTracePage({
 	const loadOlderTracePage = useCallback(async (beforeSequence?: number | null) => {
 		if (!selectedPiboSessionId || !beforeSequence) return;
 		const loadKey = `${selectedPiboSessionId}:${beforeSequence}`;
-		if (loadingOlderTraceBeforeRef.current === loadKey) return;
+		if (loadingOlderTraceBeforeRef.current) return;
+		if (loadedOlderTraceBeforeRef.current.has(loadKey)) return;
+		const now = Date.now();
+		if (now - lastOlderTraceLoadStartedAtRef.current < OLDER_TRACE_LOAD_MIN_INTERVAL_MS) return;
 		loadingOlderTraceBeforeRef.current = loadKey;
+		lastOlderTraceLoadStartedAtRef.current = now;
 		setLoadingOlderTracePage(true);
 		const queryKey = chatTracePageQueryKey(selectedPiboSessionId, {
 			includeRawEvents: showRawEvents,
@@ -173,6 +185,7 @@ export function useSessionTracePage({
 				setBaseTraceView((current) => current ? mergeOlderTracePage(current, olderTrace) : olderTrace);
 				setTraceEventLimit((current) => current + (olderTrace.pageSize ?? DEFAULT_TRACE_EVENTS_PAGE_SIZE));
 			});
+			rememberOlderTraceLoad(loadedOlderTraceBeforeRef.current, loadKey);
 		} finally {
 			if (loadingOlderTraceBeforeRef.current === loadKey) loadingOlderTraceBeforeRef.current = null;
 			setLoadingOlderTracePage(false);
@@ -197,4 +210,11 @@ export function useSessionTracePage({
 		loadOlderTracePage,
 		loadMoreRawEvents,
 	};
+}
+
+function rememberOlderTraceLoad(loads: Set<string>, loadKey: string) {
+	loads.add(loadKey);
+	if (loads.size <= MAX_REMEMBERED_OLDER_TRACE_LOADS) return;
+	const first = loads.values().next();
+	if (!first.done) loads.delete(first.value);
 }

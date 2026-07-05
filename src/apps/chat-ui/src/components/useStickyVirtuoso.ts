@@ -219,6 +219,7 @@ export function useStickyVirtuoso({
 		const addedHeight = scrollHeight - previousScrollHeight;
 		if (addedHeight > 0 && scrollTop <= nearTopThreshold) {
 			setScrollTop(scroller, scrollTop + addedHeight);
+			return;
 		}
 		requestAnimationFrame(() => {
 			if (!scroller || stickyRef.current) return;
