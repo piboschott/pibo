@@ -41,6 +41,7 @@ export function traceTimelinePageFromView(input: {
 	limit: number;
 	byteLimit?: number;
 	fromTail?: boolean;
+	transcriptTailCursor?: string;
 }): TraceTimelinePage {
 	const byteLimit = input.byteLimit ?? TRACE_V2_TIMELINE_HARD_BYTES;
 	const nodes = compactTraceNodes({
@@ -50,9 +51,10 @@ export function traceTimelinePageFromView(input: {
 		limit: Math.max(1, Math.min(input.limit, TRACE_V2_MAX_TIMELINE_LIMIT)),
 		fromTail: input.fromTail,
 	});
-	const hasOlder = input.trace.hasOlderEvents === true;
-	const nextBeforeCursor = hasOlder ? input.trace.nextBeforeCursor : undefined;
-	const nextBeforeSequence = hasOlder ? input.trace.nextBeforeSequence : undefined;
+	const transcriptTailCursor = input.fromTail ? input.transcriptTailCursor : undefined;
+	const hasOlder = input.trace.hasOlderEvents === true || transcriptTailCursor !== undefined;
+	const nextBeforeCursor = transcriptTailCursor ?? (hasOlder ? input.trace.nextBeforeCursor : undefined);
+	const nextBeforeSequence = transcriptTailCursor ? undefined : (hasOlder ? input.trace.nextBeforeSequence : undefined);
 	let page: TraceTimelinePage = {
 		piboSessionId: input.trace.piboSessionId,
 		piSessionId: input.trace.piSessionId,

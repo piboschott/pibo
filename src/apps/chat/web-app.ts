@@ -23,7 +23,7 @@ import {
 } from "./types/rooms.js";
 import { chatStreamFramesFromOutputEvent, createChatStreamState, nextTransientChatStreamFrameId, type ChatStreamEvent } from "./stream.js";
 import { buildSessionNodes, buildTraceView, createTraceViewVersion, loadPiSessionMetadata, readTailEntries, readTranscriptHistoryPage, type PiboSessionTraceView, type PiboWebSessionNode, type PiboWebSessionStatus } from "./trace.js";
-import type { ChatWebStoredEvent, PiboSessionTraceSummary, TraceTimelinePage } from "../../shared/trace-types.js";
+import type { ChatWebStoredEvent, PiboSessionTraceSummary, PiboTraceNode, TraceTimelinePage } from "../../shared/trace-types.js";
 import {
 	DEFAULT_TRACE_EVENTS_PAGE_SIZE,
 	MAX_TRACE_EVENTS_PER_REQUEST,
@@ -3152,6 +3152,39 @@ function compactionCutoffTimestamp(events: ChatWebStoredPiboEvent[]): string | u
 	return compaction?.createdAt;
 }
 
+function originTranscriptTailCursor(input: {
+	session: PiboSession;
+	trace: PiboSessionTraceView;
+	metadata?: { sessionPath?: string; sessionSize?: number };
+	limit: number;
+}): string | undefined {
+	if (!input.session.originId) return undefined;
+	const sessionPath = input.metadata?.sessionPath;
+	const sessionSize = input.metadata?.sessionSize;
+	if (!sessionPath || !sessionSize || sessionSize <= 0) return undefined;
+	const firstVisibleTranscript = firstVisibleTailTranscriptNode(input.trace.nodes, input.limit);
+	if (!firstVisibleTranscript?.startedAt) return undefined;
+	const probe = readTranscriptHistoryPage(sessionPath, {
+		beforeByte: sessionSize,
+		beforeTimestamp: firstVisibleTranscript.startedAt,
+		limit: 1,
+	});
+	if (probe.entries.length === 0) return undefined;
+	return encodeTranscriptTimelineCursor(sessionSize, firstVisibleTranscript.startedAt);
+}
+
+function firstVisibleTailTranscriptNode(nodes: readonly PiboTraceNode[], limit: number): PiboTraceNode | undefined {
+	const flat: PiboTraceNode[] = [];
+	const visit = (items: readonly PiboTraceNode[]): void => {
+		for (const item of items) {
+			flat.push(item);
+			visit(item.children);
+		}
+	};
+	visit(nodes);
+	return flat.slice(-Math.max(1, limit)).find((node) => node.source === "transcript" && node.startedAt);
+}
+
 function transientReplayScopeKeys(input: { roomId?: string; piboSessionId?: string }): string[] {
 	const keys: string[] = [];
 	if (input.piboSessionId) keys.push(`session:${input.piboSessionId}`);
@@ -5227,12 +5260,21 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					status: liveSnapshots.length ? "running" : indexedSession?.status,
 				});
 				trace = { ...trace, version };
+				const transcriptTailCursor = timelineCursor.kind === "tail"
+					? originTranscriptTailCursor({
+						session: selectedSession,
+						trace,
+						metadata: transcriptMetadata,
+						limit,
+					})
+					: undefined;
 				const page = traceTimelinePageFromView({
 					trace,
 					payloadStore: state.dataStore.payloads,
 					limit,
 					byteLimit: TRACE_V2_TIMELINE_HARD_BYTES,
 					fromTail: timelineCursor.kind === "tail",
+					transcriptTailCursor,
 				});
 				setTraceTimelinePageCache(state.traceTimelinePageCache, pageCacheKey, page);
 				return responseJson(page, {

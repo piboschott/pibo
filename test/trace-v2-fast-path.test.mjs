@@ -195,6 +195,53 @@ test("trace v2 tail pages keep the newest compacted nodes", () => {
 	}
 });
 
+test("trace v2 origin tail pages can continue through transcript history", () => {
+	const store = tempStore();
+	try {
+		const nodes = Array.from({ length: 6 }, (_, index) => ({
+			id: `transcript_${index}`,
+			piboSessionId: "ps_transcript",
+			type: index === 0 ? "user.message" : "assistant.message",
+			title: index === 0 ? "User Message" : "Agent Message",
+			status: "done",
+			output: `message ${index}`,
+			source: "transcript",
+			startedAt: `2026-06-22T15:4${index}:00.000Z`,
+			children: [],
+			orderKey: { sourceRank: 0, turnSeq: index, phaseRank: index === 0 ? 0 : 8 },
+		}));
+		const page = traceTimelinePageFromView({
+			trace: {
+				piboSessionId: "ps_transcript",
+				piSessionId: "pi_transcript",
+				title: "Transcript",
+				version: "v1",
+				eventCount: 8,
+				pageSize: 4,
+				firstEventSequence: 8,
+				lastEventSequence: 57,
+				nextBeforeSequence: 8,
+				hasOlderEvents: true,
+				rawEvents: [],
+				nodes,
+			},
+			payloadStore: store.payloads,
+			limit: 4,
+			fromTail: true,
+			transcriptTailCursor: "transcript:12345:MjAyNi0wNi0yMlQxNTo0MjowMC4wMDBa",
+		});
+
+		assert.equal(page.nodes.length, 4);
+		assert.equal(page.nodes[0].nodeId, "transcript_2");
+		assert.equal(page.cursor.hasOlder, true);
+		assert.equal(page.cursor.before, "transcript:12345:MjAyNi0wNi0yMlQxNTo0MjowMC4wMDBa");
+		assert.equal(page.nextBeforeCursor, "transcript:12345:MjAyNi0wNi0yMlQxNTo0MjowMC4wMDBa");
+		assert.equal(page.nextBeforeSequence, undefined);
+	} finally {
+		store.close();
+	}
+});
+
 test("trace v2 timeline does not duplicate fully inlined small tool payloads", () => {
 	const store = tempStore();
 	try {
