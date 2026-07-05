@@ -101,6 +101,12 @@ export function CompactTerminalSessionView({
 	}, [expandThinking, rows]);
 
 	useEffect(() => {
+		if (isFetchingOlderTracePage) return;
+		if (!stickyView.isAtTop && !stickyView.isScrolledToTop()) return;
+		loadOlderAtTop();
+	}, [hasOlderTraceEvents, isFetchingOlderTracePage, loadOlderAtTop, rows.length, stickyView.isAtTop, stickyView.isScrolledToTop, traceView?.nextBeforeCursor, traceView?.nextBeforeSequence]);
+
+	useEffect(() => {
 		rangePrefetchReadyRef.current = false;
 		olderTraceIntentRef.current = false;
 		const readyTimer = window.setTimeout(() => {

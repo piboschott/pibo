@@ -10,9 +10,16 @@ test("trace views preload older pages near the top without a manual trace-histor
 	const stickyHookSource = await readFile("src/apps/chat-ui/src/components/useStickyVirtuoso.ts", "utf8");
 	assert.match(stickyHookSource, /onAtTop\?: \(\) => void/);
 	assert.match(stickyHookSource, /onNearTop\?: \(\) => void/);
+	assert.match(stickyHookSource, /const \[isAtTop, setIsAtTopState\] = useState\(false\)/);
+	assert.match(stickyHookSource, /updateAtTopFromScrollTop\(getScrollTop\(scroller\)\)/);
+	assert.match(stickyHookSource, /const isScrolledToTop = useCallback/);
 	assert.match(stickyHookSource, /scrollTop <= atTopThreshold/);
 	assert.match(stickyHookSource, /nearTopThreshold\?: number/);
 	assert.match(stickyHookSource, /readingAwayFromBottom && scrollTop <= nearTopThreshold/);
+	const tracePageHookSource = await readFile("src/apps/chat-ui/src/tracing/use-session-trace-page.ts", "utf8");
+	assert.doesNotMatch(tracePageHookSource, /OLDER_TRACE_LOAD_MIN_INTERVAL_MS/);
+	assert.match(tracePageHookSource, /if \(loadingOlderTraceBeforeRef\.current\) return/);
+	assert.match(tracePageHookSource, /loadedOlderTraceBeforeRef\.current\.has\(loadKey\)/);
 
 	for (const [sourcePath, topThreshold, rowThreshold] of [
 		["src/apps/chat-ui/src/session-views/compact-terminal/CompactTerminalSessionView.tsx", "4_800", "20"],
@@ -24,6 +31,7 @@ test("trace views preload older pages near the top without a manual trace-histor
 		assert.match(source, /nearTopThreshold: OLDER_TRACE_PREFETCH_TOP_THRESHOLD_PX/);
 		assert.match(source, /onAtTop: loadOlderAtTop/);
 		assert.match(source, /onNearTop: loadOlderNearTop/);
+		assert.match(source, /if \(!stickyView\.isAtTop && !stickyView\.isScrolledToTop\(\)\) return/);
 		assert.match(source, /range\.startIndex <= 0\) loadOlderAtTop/);
 		assert.match(source, /rangeChanged=\{handleVisibleRangeChanged\}/);
 		assert.match(source, /startReached=\{loadOlderAtTop\}/);

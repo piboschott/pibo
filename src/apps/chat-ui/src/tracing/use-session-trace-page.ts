@@ -22,7 +22,6 @@ type UseSessionTracePageOptions = {
 	setLiveTraceOverlay: Dispatch<SetStateAction<LiveTraceOverlay | null>>;
 };
 
-const OLDER_TRACE_LOAD_MIN_INTERVAL_MS = 650;
 const MAX_REMEMBERED_OLDER_TRACE_LOADS = 128;
 
 export function useSessionTracePage({
@@ -38,7 +37,6 @@ export function useSessionTracePage({
 	const [loadingOlderTracePage, setLoadingOlderTracePage] = useState(false);
 	const loadingOlderTraceBeforeRef = useRef<string | null>(null);
 	const loadedOlderTraceBeforeRef = useRef<Set<string>>(new Set());
-	const lastOlderTraceLoadStartedAtRef = useRef(0);
 	const traceSummaryQueryKey = useMemo(
 		() => selectedPiboSessionId ? chatTraceSummaryQueryKey(selectedPiboSessionId) : null,
 		[selectedPiboSessionId],
@@ -96,7 +94,6 @@ export function useSessionTracePage({
 		setLiveTraceOverlay(null);
 		loadingOlderTraceBeforeRef.current = null;
 		loadedOlderTraceBeforeRef.current = new Set();
-		lastOlderTraceLoadStartedAtRef.current = 0;
 	}, [selectedPiboSessionId, setLiveTraceOverlay]);
 
 	const rawEventsQuery = useQuery({
@@ -152,10 +149,7 @@ export function useSessionTracePage({
 		const loadKey = `${selectedPiboSessionId}:${beforeCursor}`;
 		if (loadingOlderTraceBeforeRef.current) return;
 		if (loadedOlderTraceBeforeRef.current.has(loadKey)) return;
-		const now = Date.now();
-		if (now - lastOlderTraceLoadStartedAtRef.current < OLDER_TRACE_LOAD_MIN_INTERVAL_MS) return;
 		loadingOlderTraceBeforeRef.current = loadKey;
-		lastOlderTraceLoadStartedAtRef.current = now;
 		setLoadingOlderTracePage(true);
 		const queryKey = chatTracePageQueryKey(selectedPiboSessionId, {
 			includeRawEvents: showRawEvents,

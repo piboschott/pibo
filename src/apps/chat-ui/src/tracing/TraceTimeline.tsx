@@ -178,6 +178,12 @@ export function TraceTimeline({
 		return () => window.clearTimeout(readyTimer);
 	}, [expandThinking, trace?.id]);
 
+	useEffect(() => {
+		if (isFetchingOlderTracePage) return;
+		if (!stickyView.isAtTop && !stickyView.isScrolledToTop()) return;
+		loadOlderAtTop();
+	}, [hasOlderTraceEvents, isFetchingOlderTracePage, loadOlderAtTop, stickyView.isAtTop, stickyView.isScrolledToTop, visibleRows.length]);
+
 
 	if (!trace) {
 		return (
