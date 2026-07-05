@@ -41,6 +41,7 @@ export function traceTimelinePageFromView(input: {
 	limit: number;
 	byteLimit?: number;
 	fromTail?: boolean;
+	transcriptTailCursor?: string;
 }): TraceTimelinePage {
 	const byteLimit = input.byteLimit ?? TRACE_V2_TIMELINE_HARD_BYTES;
 	const nodes = compactTraceNodes({
@@ -50,6 +51,10 @@ export function traceTimelinePageFromView(input: {
 		limit: Math.max(1, Math.min(input.limit, TRACE_V2_MAX_TIMELINE_LIMIT)),
 		fromTail: input.fromTail,
 	});
+	const transcriptTailCursor = input.fromTail ? input.transcriptTailCursor : undefined;
+	const hasOlder = input.trace.hasOlderEvents === true || transcriptTailCursor !== undefined;
+	const nextBeforeCursor = transcriptTailCursor ?? (hasOlder ? input.trace.nextBeforeCursor : undefined);
+	const nextBeforeSequence = transcriptTailCursor ? undefined : (hasOlder ? input.trace.nextBeforeSequence : undefined);
 	let page: TraceTimelinePage = {
 		piboSessionId: input.trace.piboSessionId,
 		piSessionId: input.trace.piSessionId,
@@ -58,9 +63,9 @@ export function traceTimelinePageFromView(input: {
 		latestStreamId: input.trace.latestStreamId,
 		projectionStatus: "ready",
 		cursor: {
-			before: input.trace.nextBeforeSequence !== undefined ? String(input.trace.nextBeforeSequence) : undefined,
+			before: nextBeforeCursor ?? (nextBeforeSequence !== undefined ? String(nextBeforeSequence) : undefined),
 			after: input.trace.lastEventSequence !== undefined ? String(input.trace.lastEventSequence) : undefined,
-			hasOlder: input.trace.hasOlderEvents === true,
+			hasOlder,
 			hasNewer: false,
 		},
 		nodes,
@@ -73,8 +78,9 @@ export function traceTimelinePageFromView(input: {
 		pageSize: input.trace.pageSize,
 		firstEventSequence: input.trace.firstEventSequence,
 		lastEventSequence: input.trace.lastEventSequence,
-		nextBeforeSequence: input.trace.nextBeforeSequence,
-		hasOlderEvents: input.trace.hasOlderEvents,
+		nextBeforeSequence,
+		nextBeforeCursor,
+		hasOlderEvents: hasOlder,
 	};
 
 	while (Buffer.byteLength(JSON.stringify(page), "utf8") > byteLimit && page.nodes.length > 1) {

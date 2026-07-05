@@ -64,10 +64,16 @@ export function CompactTerminalSessionView({
 		: selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET";
 	const loadOlderTracePage = useCallback(() => {
 		if (!hasOlderTraceEvents || isFetchingOlderTracePage) return;
+		olderTraceIntentRef.current = false;
 		onLoadOlderTracePage?.();
 	}, [hasOlderTraceEvents, isFetchingOlderTracePage, onLoadOlderTracePage]);
-	const loadOlderAtTop = useCallback(() => {
+	const loadOlderNearTop = useCallback(() => {
+		if (!rangePrefetchReadyRef.current) return;
 		if (!olderTraceIntentRef.current) return;
+		loadOlderTracePage();
+	}, [loadOlderTracePage]);
+	const loadOlderAtTop = useCallback(() => {
+		if (!rangePrefetchReadyRef.current) return;
 		loadOlderTracePage();
 	}, [loadOlderTracePage]);
 	const markOlderTraceIntent = useCallback((event?: Event) => {
@@ -75,8 +81,9 @@ export function CompactTerminalSessionView({
 	}, []);
 	const handleVisibleRangeChanged = useCallback((range: { startIndex: number; endIndex: number }) => {
 		if (!rangePrefetchReadyRef.current) return;
-		if (range.startIndex <= OLDER_TRACE_PREFETCH_ROW_THRESHOLD) loadOlderAtTop();
-	}, [loadOlderAtTop]);
+		if (range.startIndex <= 0) loadOlderAtTop();
+		else if (range.startIndex <= OLDER_TRACE_PREFETCH_ROW_THRESHOLD) loadOlderNearTop();
+	}, [loadOlderAtTop, loadOlderNearTop]);
 
 	const stickyView = useStickyVirtuoso({
 		itemCount: rows.length,
@@ -84,13 +91,20 @@ export function CompactTerminalSessionView({
 		contentKey: rows,
 		atBottomThreshold: SHOW_LATEST_THRESHOLD_PX,
 		nearTopThreshold: OLDER_TRACE_PREFETCH_TOP_THRESHOLD_PX,
-		onNearTop: loadOlderAtTop,
+		onAtTop: loadOlderAtTop,
+		onNearTop: loadOlderNearTop,
 		onUserScrollIntent: markOlderTraceIntent,
 	});
 
 	useEffect(() => {
 		setExpandedRows((current) => retainExistingExpandedRows(current, rows, expandThinking));
 	}, [expandThinking, rows]);
+
+	useEffect(() => {
+		if (isFetchingOlderTracePage) return;
+		if (!stickyView.isAtTop && !stickyView.isScrolledToTop()) return;
+		loadOlderAtTop();
+	}, [hasOlderTraceEvents, isFetchingOlderTracePage, loadOlderAtTop, rows.length, stickyView.isAtTop, stickyView.isScrolledToTop, traceView?.nextBeforeCursor, traceView?.nextBeforeSequence]);
 
 	useEffect(() => {
 		rangePrefetchReadyRef.current = false;
@@ -158,7 +172,7 @@ export function CompactTerminalSessionView({
 			data-pibo-debug="compact-terminal-session-view"
 			data-pibo-session-id={traceView?.piboSessionId ?? undefined}
 			data-pibo-trace-has-older={traceView?.hasOlderEvents === true ? "true" : "false"}
-			data-pibo-trace-next-before={traceView?.nextBeforeSequence ?? ""}
+			data-pibo-trace-next-before={traceView?.nextBeforeCursor ?? traceView?.nextBeforeSequence ?? ""}
 		>
 			<TerminalHeader
 				errorCount={errorCount}
