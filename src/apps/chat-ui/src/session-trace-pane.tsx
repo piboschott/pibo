@@ -51,6 +51,7 @@ export function SessionTracePane({
   selectedPiboSessionId,
   selectedRoomId,
   selectedRoomArchived,
+  roomNavigationPending,
   selectedSessionProfile,
   selectedSessionActiveModel,
   selectedSessionStatus,
@@ -93,6 +94,7 @@ export function SessionTracePane({
   selectedPiboSessionId: string | null;
   selectedRoomId: string | null;
   selectedRoomArchived: boolean;
+  roomNavigationPending?: boolean;
   selectedSessionProfile: string;
   selectedSessionActiveModel?: string;
   selectedSessionStatus?: PiboWebSessionStatus;
@@ -322,6 +324,7 @@ export function SessionTracePane({
       fallbackRoomId={bootstrap.selectedRoomId ?? undefined}
       sessionViewId={sessionViewId}
       loadingTrace={loadingTrace}
+      roomNavigationPending={roomNavigationPending}
       traceError={traceError}
       showRawEvents={showRawEvents}
       currentTraceView={currentTraceView}

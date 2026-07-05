@@ -200,6 +200,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [visibleActiveSessionCount, setVisibleActiveSessionCount] = useState(SESSION_PAGE_SIZE);
 	const [visibleArchivedSessionCount, setVisibleArchivedSessionCount] = useState(ARCHIVED_SESSION_PAGE_SIZE);
 	const [loadingPiboSessionId, setLoadingPiboSessionId] = useState<string | null>(null);
+	const [loadingRoomId, setLoadingRoomId] = useState<string | null>(null);
 	const [autoRenameSessionId, setAutoRenameSessionId] = useState<string | null>(null);
 	const [contextPanel, setContextPanel] = useState<ContextPanel>("build-context");
 	const [selectedContextFileKey, setSelectedContextFileKey] = useState<string | null>(null);
@@ -219,6 +220,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const activeRoomId = selectedRoomId ?? bootstrap?.selectedRoomId ?? null;
 	const selectedRoom = activeRoomId && bootstrap ? findRoomById(bootstrap.rooms, activeRoomId) ?? bootstrap.room : undefined;
 	const selectedRoomArchived = selectedRoom ? isArchivedRoom(selectedRoom) : false;
+	const loadingSelectedRoom = Boolean(loadingRoomId && loadingRoomId === selectedRoomId);
 
 	useEffect(() => {
 		showArchivedRef.current = showArchived;
@@ -806,8 +808,12 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const selectRoom = useCallback(async (roomId: string, options: NavigationOptions = {}) => {
 		const navigationOptions = { ...options, closeMobileSidebar: false };
 		const storedPiboSessionId = readStoredSelection().sessionsByRoom?.[roomId];
-		setSelectedRoomId(roomId);
-		setSelectedPiboSessionId(storedPiboSessionId ?? null);
+		flushSync(() => {
+			setSelectedRoomId(roomId);
+			setSelectedPiboSessionId(storedPiboSessionId ?? null);
+			setLoadingRoomId(roomId);
+			setMobileSidebarOpen(false);
+		});
 		try {
 			const data = await loadNavigation(storedPiboSessionId, showArchivedRef.current, roomId);
 			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
@@ -817,6 +823,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 			setSelectedPiboSessionId(null);
 			const data = await loadNavigation(undefined, showArchivedRef.current, roomId);
 			navigateToSelectedSession(data.selectedRoomId, data.selectedPiboSessionId, false, navigationOptions);
+		} finally {
+			setLoadingRoomId((current) => current === roomId ? null : current);
 		}
 	}, [loadNavigation, navigateToSelectedSession]);
 
@@ -1282,6 +1290,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 							creatingRoom={creatingRoom}
 							onCreateRoom={() => createRoom()}
 							onSelectRoom={selectRoom}
+							loadingRoomId={loadingRoomId}
+							roomSessionsLoading={loadingSelectedRoom}
 							onUpdateRoom={updateRoom}
 							onArchiveRoom={setRoomArchived}
 							onReadAllRoom={readAllRoom}
@@ -1337,6 +1347,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						selectedPiboSessionId={selectedPiboSessionId}
 						selectedRoomId={selectedRoomId}
 						selectedRoomArchived={selectedRoomArchived}
+						roomNavigationPending={loadingSelectedRoom}
 						selectedSessionProfile={selectedSessionNode?.profile ?? defaultProfileFromBootstrap(bootstrap)}
 						selectedSessionActiveModel={selectedSessionActiveModel}
 						selectedSessionStatus={signalLegacyStatus(selectedSessionSignal ?? selectedRootSignal) ?? selectedSessionNode?.status}
