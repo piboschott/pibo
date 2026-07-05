@@ -3,6 +3,9 @@ import type { ChatWebStoredEvent, PiboSessionTraceView, PiboTraceNode, TraceTime
 export function traceViewFromTimelinePage(page: TraceTimelinePage, rawEvents: ChatWebStoredEvent[] = []): PiboSessionTraceView {
 	const nodesById = new Map<string, PiboTraceNode>();
 	const roots: PiboTraceNode[] = [];
+	const hasOlderEvents = page.hasOlderEvents ?? page.cursor.hasOlder;
+	const nextBeforeCursor = hasOlderEvents ? page.nextBeforeCursor ?? page.cursor.before : undefined;
+	const nextBeforeSequence = hasOlderEvents ? page.nextBeforeSequence ?? sequenceFromCursor(page.cursor.before) : undefined;
 	for (const row of page.nodes) {
 		nodesById.set(row.nodeId, traceNodeFromTimelineNode(row));
 	}
@@ -25,9 +28,9 @@ export function traceViewFromTimelinePage(page: TraceTimelinePage, rawEvents: Ch
 		beforeCursor: page.cursor.before,
 		firstEventSequence: page.firstEventSequence ?? sequenceFromCursor(page.cursor.before),
 		lastEventSequence: page.lastEventSequence ?? sequenceFromCursor(page.cursor.after),
-		nextBeforeSequence: page.nextBeforeSequence ?? sequenceFromCursor(page.cursor.before),
-		nextBeforeCursor: page.nextBeforeCursor ?? page.cursor.before,
-		hasOlderEvents: page.hasOlderEvents ?? page.cursor.hasOlder,
+		nextBeforeSequence,
+		nextBeforeCursor,
+		hasOlderEvents,
 		nodes: roots,
 		rawEvents,
 	};

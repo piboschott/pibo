@@ -104,6 +104,25 @@ test("trace v2 timeline keeps large tool output behind payload refs", () => {
 	}
 });
 
+test("trace v2 timeline omits older-page cursors when history is exhausted", () => {
+	const store = tempStore();
+	try {
+		const page = traceTimelinePageFromView({
+			trace: largeTrace("done"),
+			payloadStore: store.payloads,
+			limit: 120,
+		});
+
+		assert.equal(page.cursor.hasOlder, false);
+		assert.equal(page.cursor.before, undefined);
+		assert.equal(page.nextBeforeSequence, undefined);
+		assert.equal(page.nextBeforeCursor, undefined);
+		assert.equal(page.hasOlderEvents, false);
+	} finally {
+		store.close();
+	}
+});
+
 test("trace v2 timeline keeps bounded transcript text renderable inline", () => {
 	const store = tempStore();
 	try {

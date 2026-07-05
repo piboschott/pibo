@@ -71,3 +71,26 @@ test("trace v2 adapter preserves non-numeric transcript cursors", async () => {
 	`;
 	await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], { cwd: process.cwd() });
 });
+
+test("trace v2 adapter does not synthesize older cursors for exhausted pages", async () => {
+	const script = `
+		import assert from "node:assert/strict";
+		const { traceViewFromTimelinePage } = await import("./src/apps/chat-ui/src/tracing/trace-v2-adapter.ts");
+		const trace = traceViewFromTimelinePage({
+			piboSessionId: "ps-test",
+			piSessionId: "pi-test",
+			title: "Test",
+			version: "v1",
+			projectionStatus: "ready",
+			pageSize: 50,
+			cursor: { before: "1", after: "39", hasOlder: false, hasNewer: false },
+			nextBeforeSequence: 1,
+			hasOlderEvents: false,
+			nodes: [],
+		});
+		assert.equal(trace.hasOlderEvents, false);
+		assert.equal(trace.nextBeforeSequence, undefined);
+		assert.equal(trace.nextBeforeCursor, undefined);
+	`;
+	await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], { cwd: process.cwd() });
+});
