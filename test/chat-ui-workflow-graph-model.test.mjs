@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const execFileAsync = promisify(execFile);
+const tsxCommand = process.platform === "win32" ? "cmd.exe" : "npx";
+const tsxArgsPrefix = process.platform === "win32" ? ["/c", "npx.cmd"] : [];
+const tsxCwd = process.env.PIBO_TEST_WORKSPACE ?? (process.platform === "win32" ? process.cwd() : "/workspace");
+const workflowGraphModelModule = pathToFileURL(resolve(tsxCwd, "src/apps/chat-ui/src/workflows/workflow-graph-model.ts")).href;
 
 async function runWorkflowGraphModelScenario() {
 	const script = `
@@ -28,7 +36,7 @@ async function runWorkflowGraphModelScenario() {
 			workflowNodeLabel,
 			writeWorkflowGraphLayout,
 			writeWorkflowGraphPositions,
-		} from "./src/apps/chat-ui/src/workflows/workflow-graph-model.ts";
+		} from ${JSON.stringify(workflowGraphModelModule)};
 
 		const definition = {
 			initial: ["agent_1", 42, "adapter_1"],
@@ -169,10 +177,17 @@ async function runWorkflowGraphModelScenario() {
 			edgeRoutes: { edge: { centerX: 99 } },
 		});
 	`;
-	return execFileAsync("npx", ["tsx", "--eval", script], {
-		cwd: "/workspace",
-		maxBuffer: 1024 * 1024,
-	});
+	const tempDir = await mkdtemp(join(tmpdir(), "pibo-workflow-graph-model-"));
+	const scenarioPath = join(tempDir, "scenario.mjs");
+	await writeFile(scenarioPath, script);
+	try {
+		return await execFileAsync(tsxCommand, [...tsxArgsPrefix, "tsx", scenarioPath], {
+			cwd: tsxCwd,
+			maxBuffer: 1024 * 1024,
+		});
+	} finally {
+		await rm(tempDir, { recursive: true, force: true });
+	}
 }
 
 test("workflow graph model projects nodes, edges, positions, and diagnostics", async () => {

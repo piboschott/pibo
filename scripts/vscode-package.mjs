@@ -23,13 +23,16 @@ const outDir = resolve(packageDir, "dist/extension");
 const sidecarBundleDir = resolve(packageDir, "dist/chat-vscode-web");
 const webviewOutDir = resolve(root, "dist/apps/chat-vscode-web");
 const artifactsDir = resolve(root, "dist/apps/vscode-artifacts");
+const npmCommand = process.platform === "win32" ? ["cmd.exe", "/c", "npm.cmd"] : ["npm"];
+const npxCommand = process.platform === "win32" ? ["cmd.exe", "/c", "npx.cmd"] : ["npx"];
 
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 if (!existsSync(artifactsDir)) mkdirSync(artifactsDir, { recursive: true });
 
-function run(command, args, cwd) {
-	console.log(`[vscode-package] ${command} ${args.join(" ")} (cwd=${cwd})`);
-	execFileSync(command, args, { cwd, stdio: "inherit" });
+function run(commandParts, args, cwd) {
+	const [command, ...prefixArgs] = commandParts;
+	console.log(`[vscode-package] ${[...commandParts, ...args].join(" ")} (cwd=${cwd})`);
+	execFileSync(command, [...prefixArgs, ...args], { cwd, stdio: "inherit" });
 }
 
 function copyDirectory(src, dst) {
@@ -49,8 +52,8 @@ function copyDirectory(src, dst) {
 	}
 }
 
-run("npm", ["run", "--silent", "vscode:webview:build"], root);
-run("npm", ["run", "--silent", "vscode:extension:build"], root);
+run(npmCommand, ["run", "--silent", "vscode:webview:build"], root);
+run(npmCommand, ["run", "--silent", "vscode:extension:build"], root);
 copyDirectory(webviewOutDir, sidecarBundleDir);
 console.log(`[vscode-package] copied ${webviewOutDir} -> ${sidecarBundleDir}`);
 
@@ -66,7 +69,7 @@ for (const entry of readdirSync(packageDir)) {
 	}
 }
 
-run("npx", ["--no-install", "vsce", "package", "--no-dependencies", "--out", expectedFilename], packageDir);
+run(npxCommand, ["--no-install", "vsce", "package", "--no-dependencies", "--out", expectedFilename], packageDir);
 
 const sourcePath = resolve(packageDir, expectedFilename);
 if (!existsSync(sourcePath)) {

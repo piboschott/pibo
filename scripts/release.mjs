@@ -29,6 +29,7 @@ const root = resolve(here, "..");
 const rootPackageJsonPath = resolve(root, "package.json");
 const extensionPackageJsonPath = resolve(root, "src/apps/chat-vscode/package.json");
 const artifactsDir = resolve(root, "dist/apps/vscode-artifacts");
+const npmCommand = process.platform === "win32" ? ["cmd.exe", "/c", "npm.cmd"] : ["npm"];
 
 function parseArgs(argv) {
 	const result = { version: undefined, publishNpm: false, createRelease: false, dryRun: false };
@@ -74,8 +75,9 @@ function runCaptured(command, args, options = {}) {
 	return execFileSync(command, args, { cwd: root, encoding: "utf8", ...options }).trim();
 }
 
-function runInherit(command, args, options = {}) {
-	return execFileSync(command, args, { cwd: root, stdio: "inherit", ...options });
+function runInherit(commandParts, args, options = {}) {
+	const [command, ...prefixArgs] = Array.isArray(commandParts) ? commandParts : [commandParts];
+	return execFileSync(command, [...prefixArgs, ...args], { cwd: root, stdio: "inherit", ...options });
 }
 
 function currentGitCommit() {
@@ -110,10 +112,10 @@ writeJson(extensionPackageJsonPath, currentExtension);
 
 console.log(`[release] updated version in both package.json files`);
 
-runInherit("npm", ["run", "--silent", "build"]);
+runInherit(npmCommand, ["run", "--silent", "build"]);
 console.log(`[release] built server + web UIs + VS Code WebView`);
 
-runInherit("npm", ["run", "--silent", "vscode:package"]);
+runInherit(npmCommand, ["run", "--silent", "vscode:package"]);
 console.log(`[release] packaged VS Code extension`);
 
 const expectedVsix = resolve(artifactsDir, `${currentExtension.name}-${args.version}.vsix`);
@@ -125,7 +127,7 @@ console.log(`[release] VSIX ready: ${expectedVsix} (${sizeBytes} bytes)`);
 
 if (args.publishNpm) {
 	console.log(`[release] publishing @pasko70/pibo@${args.version} to npm…`);
-	runInherit("npm", ["publish"]);
+	runInherit(npmCommand, ["publish"]);
 	console.log(`[release] published to npm`);
 } else {
 	console.log(`[release] (skipped npm publish; pass --publish-npm to enable)`);
