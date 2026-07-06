@@ -311,11 +311,15 @@ export function WorkflowGraphCanvas({
 
 	const handleEdgeContextMenu = useCallback((edgeId: string, event: WorkflowGraphContextMenuEvent) => {
 		setSelectedElement({ type: "edge", id: edgeId });
+		setNodes((currentNodes) => currentNodes.map((node) => node.selected ? { ...node, selected: false } : node));
+		setEdges((currentEdges) => currentEdges.map((edge) => ({ ...edge, selected: edge.id === edgeId })));
 		openContextMenu(event, { type: "edge", id: edgeId });
 	}, [openContextMenu]);
 
 	const handleEdgeSelect = useCallback((edgeId: string) => {
 		setSelectedElement({ type: "edge", id: edgeId });
+		setNodes((currentNodes) => currentNodes.map((node) => node.selected ? { ...node, selected: false } : node));
+		setEdges((currentEdges) => currentEdges.map((edge) => ({ ...edge, selected: edge.id === edgeId })));
 		setContextMenu(undefined);
 	}, []);
 
@@ -546,7 +550,7 @@ export function WorkflowGraphCanvas({
 						onEdgesChange={handleEdgesChange}
 						onConnect={handleConnect}
 						onNodeClick={(_, node) => setSelectedElement({ type: "node", id: node.id })}
-						onEdgeClick={(_, edge) => setSelectedElement({ type: "edge", id: edge.id })}
+						onEdgeClick={(_, edge) => handleEdgeSelect(edge.id)}
 						onPaneClick={() => { setSelectedElement(undefined); setContextMenu(undefined); }}
 						onNodeContextMenu={(event, node) => { setSelectedElement({ type: "node", id: node.id }); openContextMenu(event, { type: "node", id: node.id }); }}
 						onEdgeContextMenu={(event, edge) => { setSelectedElement({ type: "edge", id: edge.id }); openContextMenu(event, { type: "edge", id: edge.id }); }}
@@ -829,9 +833,13 @@ function WorkflowGraphRoutableEdge({
 		if (data?.readOnly || event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
-		data?.onSelect?.(id);
+		const startClientX = event.clientX;
+		const startClientY = event.clientY;
+		let didDrag = false;
 		dragRouteRef.current = { ...(data?.route ?? {}), ...(dragRouteRef.current ?? dragRoute ?? {}) };
 		const moveRoute = (moveEvent: PointerEvent) => {
+			if (!didDrag && Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) < 3) return;
+			didDrag = true;
 			const position = screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY });
 			const nextValue = Math.round(segment.axis === "x" ? position.x : position.y);
 			const nextRoute: WorkflowEdgeRoute = { ...(dragRouteRef.current ?? {}) };
@@ -844,7 +852,8 @@ function WorkflowGraphRoutableEdge({
 			document.removeEventListener("pointerup", stopRoute);
 			document.body.style.cursor = "";
 			document.body.style.userSelect = "";
-			if (dragRouteRef.current) data?.onRouteChange?.(id, dragRouteRef.current);
+			if (didDrag) data?.onRouteChange?.(id, dragRouteRef.current ?? {});
+			else data?.onSelect?.(id);
 		};
 		document.body.style.cursor = segment.cursor;
 		document.body.style.userSelect = "none";
@@ -878,7 +887,7 @@ function WorkflowGraphRoutableEdge({
 					stroke="transparent"
 					strokeWidth={22}
 					className={`nopan ${segment.cursorClass}`}
-					onClick={(event) => { event.stopPropagation(); data?.onSelect?.(id); }}
+					onClick={(event) => event.stopPropagation()}
 					onPointerDown={(event) => handlePointerDown(segment, event)}
 					onContextMenu={(event) => data?.onContextMenu?.(id, event)}
 					aria-label={`Move edge route ${id}`}
