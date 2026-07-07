@@ -75,7 +75,21 @@ type PiEventCandidate = {
 		delta?: unknown;
 		content?: unknown;
 		toolCall?: { id?: unknown; name?: unknown; arguments?: unknown };
+		item?: unknown;
+		status?: unknown;
+		action?: unknown;
+		query?: unknown;
+		result?: unknown;
+		error?: unknown;
+		sources?: unknown;
 	};
+	item?: unknown;
+	item_id?: unknown;
+	status?: unknown;
+	action?: unknown;
+	query?: unknown;
+	sources?: unknown;
+	error?: unknown;
 	toolCallId?: unknown;
 	toolName?: unknown;
 	args?: unknown;
@@ -94,6 +108,10 @@ type AssistantErrorMessage = {
 	provider?: unknown;
 	model?: unknown;
 	usage?: unknown;
+};
+
+type ActiveProviderWebSearchFallback = {
+	toolCallId: string;
 };
 
 type ErrorContext = { contextWindow?: number };
@@ -175,6 +193,17 @@ function messageContentIndex(candidate: PiEventCandidate): number | undefined {
 
 function promptSource(source: PiboEventSource | undefined): "interactive" | "rpc" {
 	return source === "user" || source === "ui" ? "interactive" : "rpc";
+}
+
+function payloadHasProviderWebSearchTool(payload: unknown): boolean {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+	const tools = (payload as { tools?: unknown }).tools;
+	if (!Array.isArray(tools)) return false;
+	return tools.some((tool) => {
+		if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
+		const type = (tool as { type?: unknown }).type;
+		return type === "web_search" || type === "web_search_preview";
+	});
 }
 
 function lastTextPartFromMessage(message: unknown): { text: string; contentIndex: number } | undefined {
@@ -281,10 +310,97 @@ function normalizeToolExecutionEvent(piboSessionId: string, candidate: PiEventCa
 	return undefined;
 }
 
-function normalizePiEvent(piboSessionId: string, event: unknown, context?: ErrorContext): PiboOutputEvent | undefined {
+type ProviderWebSearchStatus = "running" | "done" | "error";
+
+function isWebSearchProviderOutputEvent(event: PiboOutputEvent): boolean {
+	return (
+		(event.type === "tool_execution_started" || event.type === "tool_execution_updated" || event.type === "tool_execution_finished" || event.type === "tool_call") &&
+		event.toolName === "web_search" &&
+		event.toolCallId.startsWith("provider:web_search:")
+	);
+}
+
+function normalizeProviderWebSearchEvent(piboSessionId: string, candidate: PiEventCandidate): PiboOutputEvent | undefined {
+	const rawType = stringValue(candidate.type) ?? stringValue(candidate.assistantMessageEvent?.type);
+	if (!rawType || !rawType.toLowerCase().includes("web_search")) return undefined;
+
+	const item = recordValue(candidate.item) ?? recordValue(candidate.assistantMessageEvent?.item);
+	const action = recordValue(candidate.action) ?? recordValue(candidate.assistantMessageEvent?.action) ?? recordValue(item?.action);
+	const status = providerWebSearchStatus(rawType, candidate.status ?? candidate.assistantMessageEvent?.status ?? item?.status);
+	if (!status) return undefined;
+
+	const rawId =
+		stringValue(candidate.toolCallId) ??
+		stringValue(candidate.item_id) ??
+		stringValue(item?.id) ??
+		stringValue((candidate.assistantMessageEvent?.toolCall as { id?: unknown } | undefined)?.id) ??
+		(typeof candidate.assistantMessageEvent?.contentIndex === "number"
+			? `content-${candidate.assistantMessageEvent.contentIndex}`
+			: undefined) ??
+		"active";
+	const toolCallId = rawId.startsWith("provider:web_search:") ? rawId : `provider:web_search:${rawId}`;
+	const query =
+		stringValue(candidate.query) ??
+		stringValue(candidate.assistantMessageEvent?.query) ??
+		stringValue(action?.query) ??
+		stringValue(item?.query) ??
+		stringValue(item?.search_query);
+	const sources = firstArray(candidate.sources, candidate.assistantMessageEvent?.sources, item?.sources, item?.results, item?.citations);
+	const args = { providerTool: "web_search", ...(query ? { query } : {}) };
+
+	if (status === "running") {
+		return {
+			type: "tool_execution_started",
+			piboSessionId,
+			toolCallId,
+			toolName: "web_search",
+			args,
+		};
+	}
+
+	const error = candidate.error ?? candidate.assistantMessageEvent?.error ?? item?.error;
+	return {
+		type: "tool_execution_finished",
+		piboSessionId,
+		toolCallId,
+		toolName: "web_search",
+		result: status === "error"
+			? (error ?? "Web search failed")
+			: {
+					...(query ? { query } : {}),
+					...(sources ? { sources, sourceCount: sources.length } : {}),
+				},
+		isError: status === "error",
+	};
+}
+
+function providerWebSearchStatus(rawType: string, rawStatus: unknown): ProviderWebSearchStatus | undefined {
+	const type = rawType.toLowerCase();
+	const status = stringValue(rawStatus)?.toLowerCase();
+	if (type.includes("failed") || type.includes("error") || status === "failed" || status === "error") return "error";
+	if (type.includes("completed") || type.includes("done") || type.includes("end") || status === "completed" || status === "done") return "done";
+	if (type.includes("started") || type.includes("added") || type.includes("in_progress") || type.includes("searching") || status === "in_progress" || status === "running") return "running";
+	return undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function firstArray(...values: unknown[]): unknown[] | undefined {
+	for (const value of values) {
+		if (Array.isArray(value)) return value;
+	}
+	return undefined;
+}
+
+export function normalizePiEvent(piboSessionId: string, event: unknown, context?: ErrorContext): PiboOutputEvent | undefined {
 	if (!event || typeof event !== "object") return undefined;
 
 	const candidate = event as PiEventCandidate;
+
+	const providerToolEvent = normalizeProviderWebSearchEvent(piboSessionId, candidate);
+	if (providerToolEvent) return providerToolEvent;
 
 	if (
 		candidate.type === "message_update" &&
@@ -424,6 +540,8 @@ export class RoutedSession {
 	private nextAssistantIndex = 0;
 	private activeThinkingIndex?: number;
 	private nextThinkingIndex = 0;
+	private activeProviderWebSearchFallback?: ActiveProviderWebSearchFallback;
+	private nextProviderWebSearchFallbackIndex = 0;
 	private unsubscribe?: () => void;
 	private isContinuePatched = false;
 
@@ -469,7 +587,9 @@ export class RoutedSession {
 			const useFastTier = this.shouldUseFastServiceTier(model);
 			const payloadForHooks = useFastTier ? withFastServiceTier(payload) : payload;
 			const nextPayload = originalOnPayload ? await originalOnPayload(payloadForHooks, model) : payloadForHooks;
-			return useFastTier ? withFastServiceTier(nextPayload) : nextPayload;
+			const finalPayload = useFastTier ? withFastServiceTier(nextPayload) : nextPayload;
+			if (payloadHasProviderWebSearchTool(finalPayload)) this.startProviderWebSearchFallback();
+			return finalPayload;
 		};
 	}
 
@@ -522,8 +642,10 @@ export class RoutedSession {
 			const model = this.runtime.session.model as { contextWindow?: unknown } | undefined;
 			const normalized = normalizePiEvent(this.piboSessionId, event, { contextWindow: numberValue(model?.contextWindow) });
 			if (normalized) {
+				if (isWebSearchProviderOutputEvent(normalized)) this.finishProviderWebSearchFallback("done");
 				this.emit(this.withActiveMessage(normalized));
 			}
+			this.handleProviderWebSearchFallbackCompletion(event);
 			if (this.forwardPiEvents) {
 				this.emit({ type: "pi_event", piboSessionId: this.piboSessionId, event });
 			}
@@ -848,6 +970,7 @@ export class RoutedSession {
 			this.nextAssistantIndex = 0;
 			this.activeThinkingIndex = undefined;
 			this.nextThinkingIndex = 0;
+			this.activeProviderWebSearchFallback = undefined;
 			const expandedText = expandInlineSkills(
 				event.text,
 				this.runtime.session.resourceLoader.getSkills().skills,
@@ -861,6 +984,7 @@ export class RoutedSession {
 			});
 		} catch (error) {
 			const message = errorMessage(error);
+			this.finishProviderWebSearchFallback("error", message);
 			this.emit({
 				type: "session_error",
 				piboSessionId: this.piboSessionId,
@@ -874,6 +998,7 @@ export class RoutedSession {
 			this.nextAssistantIndex = 0;
 			this.activeThinkingIndex = undefined;
 			this.nextThinkingIndex = 0;
+			this.activeProviderWebSearchFallback = undefined;
 		}
 	}
 
@@ -1014,6 +1139,39 @@ export class RoutedSession {
 			sessionName: session.sessionName,
 			parentSessionFile: manager.getHeader()?.parentSession,
 		};
+	}
+
+	private startProviderWebSearchFallback(): void {
+		if (this.activeProviderWebSearchFallback) return;
+		const toolCallId = `provider:web_search:request-${++this.nextProviderWebSearchFallbackIndex}`;
+		this.activeProviderWebSearchFallback = { toolCallId };
+		this.emit(this.withActiveMessage({
+			type: "tool_execution_started",
+			piboSessionId: this.piboSessionId,
+			toolCallId,
+			toolName: "web_search",
+			args: { providerTool: "web_search", metadata: "provider request included hosted web_search" },
+		}));
+	}
+
+	private handleProviderWebSearchFallbackCompletion(event: unknown): void {
+		if (!this.activeProviderWebSearchFallback || !event || typeof event !== "object") return;
+		const type = (event as { type?: unknown }).type;
+		if (type === "message_end") this.finishProviderWebSearchFallback("done");
+	}
+
+	private finishProviderWebSearchFallback(status: "done" | "error", error?: string): void {
+		const active = this.activeProviderWebSearchFallback;
+		if (!active) return;
+		this.activeProviderWebSearchFallback = undefined;
+		this.emit(this.withActiveMessage({
+			type: "tool_execution_finished",
+			piboSessionId: this.piboSessionId,
+			toolCallId: active.toolCallId,
+			toolName: "web_search",
+			result: status === "error" ? (error ?? "Web search failed") : { generic: true },
+			isError: status === "error",
+		}));
 	}
 
 	private withActiveMessage(event: PiboOutputEvent): PiboOutputEvent {
