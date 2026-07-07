@@ -488,6 +488,7 @@ export function resolvePiboProfileNameFromRegistryOrDefault(registry: PiboPlugin
 		return registry.resolveProfileName(requestedProfileName);
 	} catch (error) {
 		if (requestedProfileName === DEFAULT_PIBO_PROFILE_NAME) return DEFAULT_PIBO_PROFILE_NAME;
+		if (requestedProfileName === "default") return selectDefaultPiboProfileName(registry);
 		throw error;
 	}
 }

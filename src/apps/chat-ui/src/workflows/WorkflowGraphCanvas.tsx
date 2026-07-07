@@ -19,15 +19,17 @@ import {
 	type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Activity, CheckCircle2, Crosshair, Layers, Link2, Loader2, MousePointer2, MoveRight, Plus, RotateCcw, Save, ScanSearch, SlidersHorizontal, Trash2, Wrench, X } from "lucide-react";
+import { Activity, CheckCircle2, Crosshair, Layers, Link2, Loader2, MousePointer2, MoveRight, Play, Plus, RotateCcw, Save, ScanSearch, SlidersHorizontal, Trash2, Wrench, X } from "lucide-react";
 import {
 	getWorkflowAdapterPicker,
 	getWorkflowHumanActionPicker,
 	getWorkflowProfilePicker,
 	getWorkflowVersionPicker,
 	patchWorkflowDraft,
+	postWorkflowDraftManualTriggerRun,
 	type WorkflowDraftDefinition,
 	type WorkflowDraftRecord,
+	type WorkflowManualTriggerRunResponse,
 	type WorkflowRegisteredRefOption,
 	type WorkflowValidationTrigger,
 	type WorkflowVersionPickerOption,
@@ -37,6 +39,7 @@ import {
 	createWorkflowGraphProjection,
 	deleteWorkflowGraphEdge,
 	deleteWorkflowGraphNode,
+	isWorkflowJsonObject,
 	nextGraphNodePosition,
 	nextWorkflowEdgeId,
 	nextWorkflowNodeId,
@@ -59,6 +62,7 @@ import {
 	addWorkflowGraphAdapterNode,
 	addWorkflowGraphAgentNode,
 	addWorkflowGraphHumanNode,
+	addWorkflowGraphManualTriggerNode,
 	addWorkflowGraphWorkflowNode,
 } from "./workflow-node-defaults";
 import { humanActionOptionLabel, registeredRefOptionLabel, workflowVersionOptionKey, workflowVersionOptionLabel } from "./workflow-picker-labels";
@@ -81,6 +85,24 @@ type WorkflowGraphContextMenuState = {
 	x: number;
 	y: number;
 	target: SelectedGraphElement | { type: "pane" };
+};
+
+type ManualTriggerDialogState = {
+	triggerNodeId: string;
+	input: string;
+	status: "idle" | "running" | "completed" | "error";
+	message?: string;
+	output?: string;
+	runId?: string;
+	nodeCount?: number;
+	edgeTransferCount?: number;
+};
+
+type WorkflowRunVisualState = {
+	runningNodeIds: Set<string>;
+	recentNodeIds: Set<string>;
+	recentEdgeIds: Set<string>;
+	lastRun?: WorkflowManualTriggerRunResponse;
 };
 
 type WorkflowGraphContextMenuEvent = {
@@ -128,7 +150,10 @@ export function WorkflowGraphCanvas({
 	const [inspectorWidth, setInspectorWidth] = useState(440);
 	const [inspectorTab, setInspectorTab] = useState<"build" | "inspect" | "status">("inspect");
 	const [contextMenu, setContextMenu] = useState<WorkflowGraphContextMenuState | undefined>();
+	const [manualTriggerDialog, setManualTriggerDialog] = useState<ManualTriggerDialogState | undefined>();
+	const [runVisualState, setRunVisualState] = useState<WorkflowRunVisualState>(() => ({ runningNodeIds: new Set(), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
 	const graphCanvasRef = useRef<HTMLDivElement | null>(null);
+	const runVisualTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -193,6 +218,50 @@ export function WorkflowGraphCanvas({
 	useEffect(() => {
 		setLayoutDirty(false);
 	}, [draft.draftId, draft.revision]);
+
+	useEffect(() => () => {
+		for (const timer of runVisualTimersRef.current) clearTimeout(timer);
+		runVisualTimersRef.current = [];
+	}, []);
+
+	const clearRunVisualTimers = useCallback(() => {
+		for (const timer of runVisualTimersRef.current) clearTimeout(timer);
+		runVisualTimersRef.current = [];
+	}, []);
+
+	const showRecentRunVisuals = useCallback((response: WorkflowManualTriggerRunResponse) => {
+		clearRunVisualTimers();
+		const agentAttempts = response.nodeAttempts.filter((attempt) => attempt.kind === "agent");
+		const steps = agentAttempts.length ? agentAttempts.map((attempt) => ({
+			nodeIds: [attempt.nodeId],
+			edgeIds: response.edgeTransfers.filter((transfer) => transfer.targetNodeId === attempt.nodeId).map((transfer) => transfer.edgeId),
+		})) : [{
+			nodeIds: response.nodeAttempts.map((attempt) => attempt.nodeId),
+			edgeIds: response.edgeTransfers.map((transfer) => transfer.edgeId),
+		}];
+		const stepMs = 900;
+		steps.forEach((step, index) => {
+			const timer = setTimeout(() => {
+				setRunVisualState({
+					runningNodeIds: new Set(),
+					recentNodeIds: new Set(step.nodeIds),
+					recentEdgeIds: new Set(step.edgeIds),
+					lastRun: response,
+				});
+			}, index * stepMs);
+			runVisualTimersRef.current.push(timer);
+		});
+		const clearTimer = setTimeout(() => {
+			setRunVisualState((current) => ({
+				...current,
+				runningNodeIds: new Set(),
+				recentNodeIds: new Set(),
+				recentEdgeIds: new Set(),
+			}));
+			runVisualTimersRef.current = [];
+		}, Math.max(steps.length, 1) * stepMs + 600);
+		runVisualTimersRef.current.push(clearTimer);
+	}, [clearRunVisualTimers]);
 
 	const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes]);
 
@@ -323,6 +392,23 @@ export function WorkflowGraphCanvas({
 		setContextMenu(undefined);
 	}, []);
 
+	const openManualTriggerDialog = useCallback((triggerNodeId: string) => {
+		setSelectedElement({ type: "node", id: triggerNodeId });
+		setInspectorTab("status");
+		setContextMenu(undefined);
+		setManualTriggerDialog({ triggerNodeId, input: "", status: "idle" });
+	}, []);
+
+	const renderedNodes = useMemo<WorkflowGraphFlowNode[]>(() => nodes.map((node) => ({
+		...node,
+		data: {
+			...node.data,
+			onManualTriggerRun: openManualTriggerDialog,
+			readOnly,
+			runVisualState: runVisualState.runningNodeIds.has(node.id) ? "running" : runVisualState.recentNodeIds.has(node.id) ? "recent" : undefined,
+		},
+	})), [nodes, openManualTriggerDialog, readOnly, runVisualState.recentNodeIds, runVisualState.runningNodeIds]);
+
 	const renderedEdges = useMemo<WorkflowGraphFlowEdge[]>(() => edges.map((edge) => ({
 		...edge,
 		data: {
@@ -333,8 +419,17 @@ export function WorkflowGraphCanvas({
 			onSelect: handleEdgeSelect,
 			onContextMenu: handleEdgeContextMenu,
 			readOnly,
+			recentTransition: runVisualState.recentEdgeIds.has(edge.id),
 		},
-	})), [edges, handleEdgeContextMenu, handleEdgeRouteChange, handleEdgeSelect, readOnly]);
+	})), [edges, handleEdgeContextMenu, handleEdgeRouteChange, handleEdgeSelect, readOnly, runVisualState.recentEdgeIds]);
+
+	const addManualTriggerNode = () => {
+		const nodeId = nextWorkflowNodeId(draft.definition, "trigger");
+		const position = nextGraphNodePosition(nodes);
+		const definition = addWorkflowGraphManualTriggerNode(draft.definition, nodeId, position);
+		setSelectedElement({ type: "node", id: nodeId });
+		void saveDefinition(definition, `Added manual trigger ${nodeId}.`);
+	};
 
 	const addAgentNode = () => {
 		const nodeId = nextWorkflowNodeId(draft.definition, "agent");
@@ -475,6 +570,41 @@ export function WorkflowGraphCanvas({
 		connectSelectedNodes(connection.source, connection.target);
 	}, [connectSelectedNodes, readOnly]);
 
+	const runManualTrigger = useCallback(async () => {
+		if (!manualTriggerDialog || manualTriggerDialog.status === "running") return;
+		const input = manualTriggerDialog.input;
+		clearRunVisualTimers();
+		const nodesById = readWorkflowNodeDefinitions(draft.definition);
+		const initialAgentTargets = Object.values(readWorkflowEdgeDefinitions(draft.definition)).flatMap((edge) => {
+			const source = readEdgeEndpointNodeId(edge.from);
+			const target = readEdgeEndpointNodeId(edge.to);
+			return source === manualTriggerDialog.triggerNodeId && target && workflowNodeKind(nodesById[target] ?? {}) === "agent" ? [target] : [];
+		});
+		setRunVisualState((current) => ({ ...current, runningNodeIds: new Set(initialAgentTargets.length ? initialAgentTargets : [manualTriggerDialog.triggerNodeId]), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
+		setManualTriggerDialog((current) => current ? { ...current, status: "running", message: "Running manual trigger…", output: undefined } : current);
+		publishStatus(`Running manual trigger ${manualTriggerDialog.triggerNodeId}…`);
+		try {
+			const response = await postWorkflowDraftManualTriggerRun(draft.draftId, { triggerNodeId: manualTriggerDialog.triggerNodeId, input });
+			onDraftChange(response.draft);
+			showRecentRunVisuals(response);
+			setManualTriggerDialog((current) => current ? {
+				...current,
+				status: response.ok ? "completed" : "error",
+				message: response.ok ? "Manual trigger run completed." : response.error?.message ?? "Manual trigger run failed.",
+				output: response.output,
+				runId: response.run?.id,
+				nodeCount: response.nodeAttempts.length,
+				edgeTransferCount: response.edgeTransfers.length,
+			} : current);
+			publishStatus(response.ok ? `Manual trigger ${manualTriggerDialog.triggerNodeId} completed.` : response.error?.message ?? "Manual trigger run failed.", response.ok ? "status" : "error");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Manual trigger run failed.";
+			setRunVisualState((current) => ({ ...current, runningNodeIds: new Set(), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
+			setManualTriggerDialog((current) => current ? { ...current, status: "error", message } : current);
+			publishStatus(message, "error");
+		}
+	}, [clearRunVisualTimers, draft.definition, draft.draftId, manualTriggerDialog, onDraftChange, publishStatus, showRecentRunVisuals]);
+
 	const startInspectorResize = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
 		const handleMove = (moveEvent: MouseEvent) => {
@@ -495,6 +625,7 @@ export function WorkflowGraphCanvas({
 	}, []);
 
 	const selectedDescription = describeSelectedGraphElement(draft.definition, selectedElement);
+	const selectedNodeDefinition = selectedElement?.type === "node" ? readWorkflowNodeDefinitions(draft.definition)[selectedElement.id] : undefined;
 	const isSaving = saveState === "saving";
 	const editDisabled = isSaving || readOnly;
 	const hasAtLeastTwoNodes = nodeIds.length > 1;
@@ -517,6 +648,7 @@ export function WorkflowGraphCanvas({
 
 	return (
 		<section className={`${fullHeight ? "flex h-full min-h-0 flex-col" : "grid"} gap-4 rounded-sm border border-slate-800 bg-[#151f24]/70 p-4`} aria-labelledby="workflow-graph-canvas-title">
+			<WorkflowGraphRunStyles />
 			{compactHeader ? null : <div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#11a4d4]">
@@ -541,7 +673,7 @@ export function WorkflowGraphCanvas({
 			>
 				<div ref={graphCanvasRef} className={`${fullHeight ? "h-full min-h-[360px]" : "h-[420px]"} relative min-w-0 overflow-hidden rounded-sm border border-slate-800 bg-[#0c171c]`} aria-label="Workflow graph canvas">
 					<ReactFlow<WorkflowGraphFlowNode, WorkflowGraphFlowEdge>
-						nodes={nodes}
+						nodes={renderedNodes}
 						edges={renderedEdges}
 						nodeTypes={WORKFLOW_GRAPH_NODE_TYPES}
 						edgeTypes={WORKFLOW_GRAPH_EDGE_TYPES}
@@ -568,6 +700,30 @@ export function WorkflowGraphCanvas({
 						<MiniMap pannable zoomable nodeColor={(node) => node.selected ? "#38bdf8" : "#1e293b"} />
 						<Controls showInteractive={false} />
 					</ReactFlow>
+					{manualTriggerDialog ? (
+						<div className="absolute bottom-3 left-3 z-40 w-[360px] max-w-[calc(100%-1.5rem)] rounded-sm border border-emerald-700/70 bg-[#101d22] p-3 text-xs shadow-xl shadow-black/40" role="dialog" aria-label="Manual trigger test run">
+							<div className="flex items-start justify-between gap-3">
+								<div>
+									<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-300">Manual trigger</div>
+									<div className="mt-1 font-mono text-[11px] text-slate-400">{manualTriggerDialog.triggerNodeId}</div>
+								</div>
+								<button type="button" className="rounded-sm border border-slate-700 px-2 py-1 text-slate-400 transition hover:border-slate-500 hover:text-slate-100" onClick={() => setManualTriggerDialog(undefined)} disabled={manualTriggerDialog.status === "running"} aria-label="Close manual trigger dialog"><X size={13} /></button>
+							</div>
+							<label className="mt-3 grid gap-1 font-semibold text-slate-300">
+								<span>Prompt input</span>
+								<textarea className="min-h-24 resize-y rounded-sm border border-slate-700 bg-[#151f24] px-2 py-2 font-mono text-[11px] text-slate-100 outline-none transition focus:border-emerald-500" value={manualTriggerDialog.input} onChange={(event) => setManualTriggerDialog((current) => current ? { ...current, input: event.target.value } : current)} disabled={manualTriggerDialog.status === "running"} placeholder="Write the text prompt for the first agent…" />
+							</label>
+							<div className="mt-3 flex gap-2">
+								<button type="button" className="inline-flex flex-1 items-center justify-center gap-2 rounded-sm border border-emerald-600/70 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-100 transition hover:border-emerald-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50" onClick={runManualTrigger} disabled={manualTriggerDialog.status === "running"}>
+									{manualTriggerDialog.status === "running" ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+									Run trigger
+								</button>
+							</div>
+							{manualTriggerDialog.message ? <div className={`mt-3 rounded-sm border p-2 text-[11px] leading-5 ${manualTriggerDialog.status === "error" ? "border-red-800 bg-red-950/30 text-red-200" : "border-emerald-800 bg-emerald-950/20 text-emerald-100"}`}>{manualTriggerDialog.message}</div> : null}
+							{manualTriggerDialog.output ? <pre className="mt-2 max-h-32 overflow-auto rounded-sm border border-slate-800 bg-[#0c171c] p-2 text-[11px] leading-5 text-slate-200">{manualTriggerDialog.output}</pre> : null}
+							{manualTriggerDialog.runId ? <div className="mt-2 text-[10px] text-slate-500">Run {manualTriggerDialog.runId} · {manualTriggerDialog.nodeCount ?? 0} node attempts · {manualTriggerDialog.edgeTransferCount ?? 0} edge transfers</div> : null}
+						</div>
+					) : null}
 					{contextMenu ? (
 						<div
 							className="absolute z-50 w-56 overflow-hidden rounded-sm border border-slate-700 bg-[#1a262b] py-1 text-xs shadow-xl shadow-black/40"
@@ -602,6 +758,7 @@ export function WorkflowGraphCanvas({
 							) : null}
 							{contextMenuTarget?.type === "pane" ? (
 								<>
+									<WorkflowGraphContextMenuItem icon={<Play size={14} />} label="Add Manual trigger" onSelect={() => { setContextMenu(undefined); addManualTriggerNode(); }} disabled={editDisabled} />
 									<WorkflowGraphContextMenuItem icon={<Plus size={14} />} label="Add Agent node" onSelect={() => { setContextMenu(undefined); addAgentNode(); }} disabled={editDisabled} />
 									<WorkflowGraphContextMenuItem icon={<Save size={14} />} label="Save layout" onSelect={() => { setContextMenu(undefined); saveLayout(); }} disabled={editDisabled || !nodes.length || !layoutDirty} />
 									<WorkflowGraphContextMenuItem icon={<X size={14} />} label="Clear selection" onSelect={() => { setSelectedElement(undefined); setContextMenu(undefined); }} disabled={!selectedElement} />
@@ -650,6 +807,10 @@ export function WorkflowGraphCanvas({
 									This published workflow is read-only. Duplicate it from the top bar to edit your own copy.
 								</div>
 							) : <div className="grid min-w-0 gap-2" aria-label="Graph edit controls">
+								<button type="button" className="inline-flex items-center justify-center gap-2 rounded-sm border border-emerald-700/70 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400 hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={addManualTriggerNode} disabled={editDisabled} title="Add Manual trigger node">
+									<Play size={13} />
+									Add Manual trigger
+								</button>
 								<button type="button" className="inline-flex items-center justify-center gap-2 rounded-sm border border-[#11a4d4]/50 px-3 py-2 text-xs font-semibold text-[#8bdcf4] transition hover:border-[#11a4d4] hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={addAgentNode} disabled={editDisabled} title="Add Agent node">
 									<Plus size={13} />
 									Add Agent node
@@ -716,6 +877,9 @@ export function WorkflowGraphCanvas({
 									<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Selected graph element</div>
 									<div className="mt-2 text-xs leading-5 text-slate-300">{selectedDescription}</div>
 								</div>
+								{selectedElement?.type === "node" && selectedNodeDefinition ? (
+									<WorkflowNodeViewer nodeId={selectedElement.id} node={selectedNodeDefinition} lastRun={runVisualState.lastRun} visualState={runVisualState.runningNodeIds.has(selectedElement.id) ? "running" : runVisualState.recentNodeIds.has(selectedElement.id) ? "recent" : undefined} />
+								) : null}
 								{renderInspectors({
 									draft,
 									selectedElement,
@@ -760,6 +924,19 @@ export function WorkflowGraphCanvas({
 	);
 }
 
+function WorkflowGraphRunStyles() {
+	return (
+		<style>{`
+			@keyframes workflow-node-outline-flow {
+				to { stroke-dashoffset: -32; }
+			}
+			@keyframes workflow-edge-flow {
+				to { stroke-dashoffset: -24; }
+			}
+		`}</style>
+	);
+}
+
 function WorkflowGraphContextMenuItem({ icon, label, onSelect, disabled = false, destructive = false }: { icon: ReactNode; label: string; onSelect: () => void; disabled?: boolean; destructive?: boolean }) {
 	return (
 		<button
@@ -775,20 +952,143 @@ function WorkflowGraphContextMenuItem({ icon, label, onSelect, disabled = false,
 	);
 }
 
-function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNode>) {
+function WorkflowNodeViewer({ nodeId, node, lastRun, visualState }: { nodeId: string; node: Record<string, unknown>; lastRun?: WorkflowManualTriggerRunResponse; visualState?: "running" | "recent" }) {
+	const kind = workflowNodeKind(node);
+	const lastAttempt = lastRun?.nodeAttempts.findLast((attempt) => attempt.nodeId === nodeId);
+	const input = isWorkflowJsonObject(node.input) ? node.input : undefined;
+	const output = isWorkflowJsonObject(node.output) ? node.output : undefined;
 	return (
-		<div className={`min-w-44 rounded-sm border bg-[#15242b] px-3 py-2 shadow-lg shadow-black/20 ${selected ? "border-[#38bdf8]" : "border-slate-700"}`}>
-			<Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-[#0f172a] !bg-[#38bdf8]" />
+		<div className="grid gap-3 rounded-sm border border-slate-800 bg-[#101d22] p-3" aria-label="Workflow node viewer">
+			<div className="flex items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#11a4d4]">Node viewer</div>
+					<div className="mt-1 truncate text-sm font-bold text-slate-100">{workflowNodeLabel(nodeId, node)}</div>
+					<div className="mt-1 font-mono text-[11px] text-slate-500">{nodeId}</div>
+				</div>
+				<div className="flex shrink-0 flex-wrap justify-end gap-1 text-[10px]">
+					<WorkflowPill label={kind} />
+					{visualState === "running" ? <WorkflowPill label="running" /> : null}
+					{visualState === "recent" ? <WorkflowPill label="last run" /> : null}
+				</div>
+			</div>
+			<div className="grid gap-2 text-[11px] leading-5 text-slate-300">
+				<WorkflowViewerRow label="Input port" value={formatWorkflowPortSummary(input)} />
+				<WorkflowViewerRow label="Output port" value={formatWorkflowPortSummary(output)} />
+				{kind === "trigger" ? <WorkflowViewerRow label="Trigger" value={formatTriggerSummary(node.trigger)} /> : null}
+				{kind === "agent" ? <WorkflowViewerRow label="Agent profile" value={formatAgentProfileSummary(node.profile)} /> : null}
+				{kind === "agent" ? <WorkflowViewerRow label="Prompt source" value={typeof node.promptTemplate === "string" ? "promptTemplate" : node.promptBuilder ? "promptBuilder" : "input"} /> : null}
+				{kind === "adapter" ? <WorkflowViewerRow label="Adapter" value={formatRegisteredRefSummary(node.handler)} /> : null}
+				{kind === "workflow" ? <WorkflowViewerRow label="Nested workflow" value={`${typeof node.workflowId === "string" ? node.workflowId : "<missing>"}@${typeof node.workflowVersion === "string" ? node.workflowVersion : "latest"}`} /> : null}
+				{kind === "human" ? <WorkflowViewerRow label="Human actions" value={Array.isArray(node.actions) ? `${node.actions.length} actions` : "none"} /> : null}
+			</div>
+			{lastAttempt ? (
+				<div className="grid gap-2 rounded-sm border border-slate-800 bg-[#151f24]/70 p-2 text-[11px] leading-5 text-slate-300" aria-label="Last node run facts">
+					<div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Last run facts</div>
+					<WorkflowViewerRow label="Attempt" value={`${lastAttempt.id} · ${lastAttempt.status}`} />
+					{lastAttempt.piboSessionId ? <WorkflowViewerRow label="Pibo Session" value={lastAttempt.piboSessionId} /> : null}
+					<WorkflowViewerValue label="Input" value={lastAttempt.input} />
+					{lastAttempt.output !== undefined ? <WorkflowViewerValue label="Output" value={lastAttempt.output} /> : null}
+				</div>
+			) : (
+				<div className="rounded-sm border border-dashed border-slate-700 bg-[#151f24]/50 p-2 text-[11px] leading-5 text-slate-500">No run facts for this node yet.</div>
+			)}
+		</div>
+	);
+}
+
+function WorkflowViewerRow({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
+			<div className="text-slate-500">{label}</div>
+			<div className="min-w-0 break-words font-mono text-slate-200">{value}</div>
+		</div>
+	);
+}
+
+function WorkflowViewerValue({ label, value }: { label: string; value: string }) {
+	return (
+		<div className="grid gap-1">
+			<div className="text-slate-500">{label}</div>
+			<pre className="max-h-28 overflow-auto rounded-sm border border-slate-800 bg-[#0c171c] p-2 whitespace-pre-wrap text-slate-200">{value}</pre>
+		</div>
+	);
+}
+
+function formatWorkflowPortSummary(port: Record<string, unknown> | undefined): string {
+	if (!port) return "none";
+	const kind = typeof port.kind === "string" ? port.kind : "unknown";
+	const description = typeof port.description === "string" && port.description.trim() ? ` · ${port.description.trim()}` : "";
+	return `${kind}${description}`;
+}
+
+function formatTriggerSummary(value: unknown): string {
+	if (!isWorkflowJsonObject(value)) return "<missing>";
+	const kind = typeof value.kind === "string" ? value.kind : "unknown";
+	const mode = typeof value.mode === "string" ? value.mode : "default";
+	return `${kind} · ${mode}`;
+}
+
+function formatAgentProfileSummary(value: unknown): string {
+	if (!isWorkflowJsonObject(value)) return "<missing>";
+	return typeof value.id === "string" ? value.id : "<missing>";
+}
+
+function formatRegisteredRefSummary(value: unknown): string {
+	if (typeof value === "string") return value;
+	if (!isWorkflowJsonObject(value)) return "<missing>";
+	return typeof value.id === "string" ? value.id : "<missing>";
+}
+
+function WorkflowNodeRunOutline({ color }: { color: string }) {
+	return (
+		<svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+			<rect
+				x="1"
+				y="1"
+				width="98"
+				height="98"
+				rx="2"
+				fill="none"
+				stroke={color}
+				strokeWidth="2"
+				strokeDasharray="9 7"
+				vectorEffect="non-scaling-stroke"
+				style={{ animation: "workflow-node-outline-flow 0.8s linear infinite" }}
+			/>
+		</svg>
+	);
+}
+
+function WorkflowGraphNodeCard({ data, selected }: NodeProps<WorkflowGraphFlowNode>) {
+	const isTrigger = data.kind === "trigger";
+	const isRunHighlighted = data.runVisualState === "running" || data.runVisualState === "recent";
+	const outlineColor = data.runVisualState === "running" ? "#facc15" : "#22c55e";
+	return (
+		<div className={`relative min-w-44 rounded-sm border px-3 py-2 shadow-lg shadow-black/20 ${isTrigger ? "bg-emerald-950/30" : "bg-[#15242b]"} ${isRunHighlighted ? "border-transparent" : selected ? "border-[#38bdf8]" : isTrigger ? "border-emerald-700/70" : "border-slate-700"}`}>
+			{isRunHighlighted ? <WorkflowNodeRunOutline color={outlineColor} /> : null}
+			{isTrigger ? null : <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-[#0f172a] !bg-[#38bdf8]" />}
 			<div className="flex items-center justify-between gap-2">
 				<div className="truncate text-xs font-bold text-slate-100">{data.label}</div>
-				<span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-400">{data.kind}</span>
+				<span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] ${isTrigger ? "border-emerald-500/50 text-emerald-200" : "border-slate-700 text-slate-400"}`}>{data.kind}</span>
 			</div>
 			<div className="mt-1 font-mono text-[10px] text-slate-500">{data.nodeId}</div>
 			<div className="mt-2 flex flex-wrap gap-1 text-[10px]">
 				{data.isInitial ? <span className="rounded-full border border-[#11a4d4]/40 bg-[#11a4d4]/10 px-2 py-0.5 text-[#8bdcf4]">initial</span> : null}
 				{data.validationCount ? <span className="rounded-full border border-amber-600/60 bg-amber-950/30 px-2 py-0.5 text-amber-200">{data.validationCount} diagnostics</span> : null}
 			</div>
-			<Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-[#0f172a] !bg-[#38bdf8]" />
+			{isTrigger ? (
+				<button
+					type="button"
+					className="nodrag nopan mt-2 inline-flex w-full items-center justify-center gap-2 rounded-sm border border-emerald-600/70 bg-emerald-500/10 px-2 py-1.5 text-[11px] font-bold text-emerald-100 transition hover:border-emerald-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+					onClick={(event) => { event.preventDefault(); event.stopPropagation(); data.onManualTriggerRun?.(data.nodeId); }}
+					disabled={data.readOnly}
+					title="Run this manual trigger"
+				>
+					<Play size={12} />
+					Play test
+				</button>
+			) : null}
+			<Handle type="source" position={Position.Right} className={`!h-2.5 !w-2.5 !border-[#0f172a] ${isTrigger ? "!bg-emerald-400" : "!bg-[#38bdf8]"}`} />
 		</div>
 	);
 }
@@ -829,6 +1129,13 @@ function WorkflowGraphRoutableEdge({
 		targetPosition,
 		route: { ...(data?.route ?? {}), ...(dragRoute ?? {}) },
 	});
+	const isRecentTransition = data?.recentTransition === true;
+	const edgeStyle = {
+		...style,
+		stroke: selected ? "#facc15" : isRecentTransition ? "#22c55e" : "#38bdf8",
+		strokeWidth: selected ? 2.2 : isRecentTransition ? 2.4 : 1.5,
+		...(isRecentTransition ? { strokeDasharray: "8 7", animation: "workflow-edge-flow 0.7s linear infinite" } : {}),
+	};
 	const handlePointerDown = (segment: WorkflowRoutedEdgeSegment, event: ReactPointerEvent<SVGPathElement>) => {
 		if (data?.readOnly || event.button !== 0) return;
 		event.preventDefault();
@@ -868,7 +1175,7 @@ function WorkflowGraphRoutableEdge({
 				path={routedEdge.path}
 				markerStart={markerStart}
 				markerEnd={markerEnd}
-				style={{ ...style, stroke: selected ? "#facc15" : "#38bdf8", strokeWidth: selected ? 2.2 : 1.5 }}
+				style={edgeStyle}
 				interactionWidth={22}
 				label={label}
 				labelX={routedEdge.labelX}

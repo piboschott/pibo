@@ -103,8 +103,24 @@ export function resolveWebGatewayAuthMode(options: WebGatewayServerOptions = {})
 	return "better-auth";
 }
 
+function rebaseLoopbackAuthBaseURL(baseURL: string | undefined, options: WebGatewayServerOptions): string | undefined {
+	if (!baseURL) return undefined;
+	if (options.web?.host === undefined && options.web?.port === undefined) return baseURL;
+	try {
+		const parsed = new URL(baseURL);
+		if (!isLoopbackHost(parsed.hostname)) return baseURL;
+		if (options.web?.host !== undefined && isLoopbackHost(options.web.host)) {
+			parsed.hostname = options.web.host.startsWith("[") && options.web.host.endsWith("]") ? options.web.host.slice(1, -1) : options.web.host;
+		}
+		if (options.web?.port !== undefined) parsed.port = String(options.web.port);
+		return parsed.toString().replace(/\/$/, "");
+	} catch {
+		return baseURL;
+	}
+}
+
 function authBaseURL(options: WebGatewayServerOptions): string | undefined {
-	return options.auth?.baseURL ?? loadPiboConfig().auth?.baseURL;
+	return options.auth?.baseURL ?? rebaseLoopbackAuthBaseURL(loadPiboConfig().auth?.baseURL, options);
 }
 
 function defaultWebHost(baseURL: string | undefined, options: WebGatewayServerOptions = {}): string {
@@ -126,6 +142,10 @@ export function resolveWebGatewayServerOptions(options: WebGatewayServerOptions 
 	const baseURL = authBaseURL(options);
 	return {
 		...options,
+		auth: {
+			...options.auth,
+			...(baseURL ? { baseURL } : {}),
+		},
 		web: {
 			...options.web,
 			host: options.web?.host ?? defaultWebHost(baseURL, options),
@@ -185,6 +205,7 @@ function createChatAppURL(options: WebGatewayServerOptions, host: string, port: 
 export async function runWebGatewayServer(options: WebGatewayServerOptions = {}): Promise<void> {
 	const resolvedOptions = resolveWebGatewayServerOptions(options);
 	const pluginRegistry = resolvedOptions.pluginRegistry ?? createWebPiboPluginRegistry(resolvedOptions);
+	const pidFilePort = resolvedOptions.port;
 	const server = new PiboGatewayServer({
 		...resolvedOptions,
 		pluginRegistry,
@@ -194,7 +215,7 @@ export async function runWebGatewayServer(options: WebGatewayServerOptions = {})
 		if (process.env.PIBO_FALLBACK_MODE === "1") {
 			writeFallbackGatewayPid();
 		} else {
-			writeGatewayPid();
+			writeGatewayPid(pidFilePort);
 		}
 	} catch (err) {
 		console.error(err instanceof Error ? err.message : String(err));
@@ -211,7 +232,7 @@ export async function runWebGatewayServer(options: WebGatewayServerOptions = {})
 		if (process.env.PIBO_FALLBACK_MODE === "1") {
 			clearFallbackPidFile();
 		} else {
-			clearPidFile();
+			clearPidFile(pidFilePort);
 		}
 	};
 	process.once("SIGINT", () => {
