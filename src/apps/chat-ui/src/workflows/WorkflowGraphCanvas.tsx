@@ -154,7 +154,7 @@ export function WorkflowGraphCanvas({
 	const [manualTriggerDialog, setManualTriggerDialog] = useState<ManualTriggerDialogState | undefined>();
 	const [runVisualState, setRunVisualState] = useState<WorkflowRunVisualState>(() => ({ runningNodeIds: new Set(), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
 	const graphCanvasRef = useRef<HTMLDivElement | null>(null);
-	const runVisualTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	const runVisualTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -221,32 +221,48 @@ export function WorkflowGraphCanvas({
 	}, [draft.draftId, draft.revision]);
 
 	useEffect(() => () => {
-		if (runVisualTimerRef.current) clearTimeout(runVisualTimerRef.current);
+		for (const timer of runVisualTimersRef.current) clearTimeout(timer);
+		runVisualTimersRef.current = [];
 	}, []);
 
-	const clearRunVisualTimer = useCallback(() => {
-		if (runVisualTimerRef.current) clearTimeout(runVisualTimerRef.current);
-		runVisualTimerRef.current = undefined;
+	const clearRunVisualTimers = useCallback(() => {
+		for (const timer of runVisualTimersRef.current) clearTimeout(timer);
+		runVisualTimersRef.current = [];
 	}, []);
 
 	const showRecentRunVisuals = useCallback((response: WorkflowManualTriggerRunResponse) => {
-		clearRunVisualTimer();
-		setRunVisualState({
-			runningNodeIds: new Set(),
-			recentNodeIds: new Set(response.nodeAttempts.map((attempt) => attempt.nodeId)),
-			recentEdgeIds: new Set(response.edgeTransfers.map((transfer) => transfer.edgeId)),
-			lastRun: response,
+		clearRunVisualTimers();
+		const agentAttempts = response.nodeAttempts.filter((attempt) => attempt.kind === "agent");
+		const steps = agentAttempts.length ? agentAttempts.map((attempt) => ({
+			nodeIds: [attempt.nodeId],
+			edgeIds: response.edgeTransfers.filter((transfer) => transfer.targetNodeId === attempt.nodeId).map((transfer) => transfer.edgeId),
+		})) : [{
+			nodeIds: response.nodeAttempts.map((attempt) => attempt.nodeId),
+			edgeIds: response.edgeTransfers.map((transfer) => transfer.edgeId),
+		}];
+		const stepMs = 900;
+		steps.forEach((step, index) => {
+			const timer = setTimeout(() => {
+				setRunVisualState({
+					runningNodeIds: new Set(),
+					recentNodeIds: new Set(step.nodeIds),
+					recentEdgeIds: new Set(step.edgeIds),
+					lastRun: response,
+				});
+			}, index * stepMs);
+			runVisualTimersRef.current.push(timer);
 		});
-		runVisualTimerRef.current = setTimeout(() => {
+		const clearTimer = setTimeout(() => {
 			setRunVisualState((current) => ({
 				...current,
 				runningNodeIds: new Set(),
 				recentNodeIds: new Set(),
 				recentEdgeIds: new Set(),
 			}));
-			runVisualTimerRef.current = undefined;
-		}, 4200);
-	}, [clearRunVisualTimer]);
+			runVisualTimersRef.current = [];
+		}, Math.max(steps.length, 1) * stepMs + 600);
+		runVisualTimersRef.current.push(clearTimer);
+	}, [clearRunVisualTimers]);
 
 	const nodeIds = useMemo(() => nodes.map((node) => node.id), [nodes]);
 
@@ -554,8 +570,14 @@ export function WorkflowGraphCanvas({
 	const runManualTrigger = useCallback(async () => {
 		if (!manualTriggerDialog || manualTriggerDialog.status === "running") return;
 		const input = manualTriggerDialog.input;
-		clearRunVisualTimer();
-		setRunVisualState((current) => ({ ...current, runningNodeIds: new Set([manualTriggerDialog.triggerNodeId]), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
+		clearRunVisualTimers();
+		const nodesById = readWorkflowNodeDefinitions(draft.definition);
+		const initialAgentTargets = Object.values(readWorkflowEdgeDefinitions(draft.definition)).flatMap((edge) => {
+			const source = readEdgeEndpointNodeId(edge.from);
+			const target = readEdgeEndpointNodeId(edge.to);
+			return source === manualTriggerDialog.triggerNodeId && target && workflowNodeKind(nodesById[target] ?? {}) === "agent" ? [target] : [];
+		});
+		setRunVisualState((current) => ({ ...current, runningNodeIds: new Set(initialAgentTargets.length ? initialAgentTargets : [manualTriggerDialog.triggerNodeId]), recentNodeIds: new Set(), recentEdgeIds: new Set() }));
 		setManualTriggerDialog((current) => current ? { ...current, status: "running", message: "Running manual trigger…", output: undefined } : current);
 		publishStatus(`Running manual trigger ${manualTriggerDialog.triggerNodeId}…`);
 		try {
@@ -578,7 +600,7 @@ export function WorkflowGraphCanvas({
 			setManualTriggerDialog((current) => current ? { ...current, status: "error", message } : current);
 			publishStatus(message, "error");
 		}
-	}, [clearRunVisualTimer, draft.draftId, manualTriggerDialog, onDraftChange, publishStatus, showRecentRunVisuals]);
+	}, [clearRunVisualTimers, draft.definition, draft.draftId, manualTriggerDialog, onDraftChange, publishStatus, showRecentRunVisuals]);
 
 	const startInspectorResize = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
@@ -1016,17 +1038,18 @@ function formatRegisteredRefSummary(value: unknown): string {
 
 function WorkflowNodeRunOutline({ color }: { color: string }) {
 	return (
-		<svg className="pointer-events-none absolute -inset-1.5 z-10 overflow-visible" aria-hidden="true">
+		<svg className="pointer-events-none absolute inset-0 z-10 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
 			<rect
-				x="0"
-				y="0"
-				width="100%"
-				height="100%"
-				rx="4"
+				x="1"
+				y="1"
+				width="98"
+				height="98"
+				rx="2"
 				fill="none"
 				stroke={color}
 				strokeWidth="2"
 				strokeDasharray="9 7"
+				vectorEffect="non-scaling-stroke"
 				style={{ animation: "workflow-node-outline-flow 0.8s linear infinite" }}
 			/>
 		</svg>
