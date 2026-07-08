@@ -18,8 +18,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
 	DEFAULT_BUILTIN_TOOL_NAMES,
+	InitialSessionContext,
 	type ContextFileProfile,
-	type InitialSessionContext,
 	type ModelProfile,
 	type ToolDefinitionContext,
 	type ToolProfile,
@@ -76,9 +76,23 @@ export type PiboRuntimeSessionContext = {
 
 export type PiboProfileInspection = {
 	profileName: string;
+	model?: ModelProfile;
+	mainModel?: ModelProfile;
+	subagentModel?: ModelProfile;
+	thinkingLevel?: PiboThinkingLevel;
+	mainThinkingLevel?: PiboThinkingLevel;
+	subagentThinkingLevel?: PiboThinkingLevel;
+	fast?: boolean;
+	mainFast?: boolean;
+	subagentFast?: boolean;
+	builtinTools: InitialSessionContext["builtinTools"];
+	builtinToolNames: readonly string[];
+	autoContextFiles: boolean;
+	toolPackages: InitialSessionContext["toolPackages"];
 	skills: Array<{ name: string; path: string }>;
 	tools: Array<{ name: string; hasDefinition: boolean; registered: boolean; active: boolean }>;
 	subagents: Array<{ name: string; targetProfile: string; active: boolean }>;
+	mcpServers: string[];
 	piPackages: Array<{ id: string; active: boolean }>;
 	contextFiles: Array<{ path: string; bytes: number }>;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
@@ -486,6 +500,21 @@ function resolveProfileModel(
 export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Promise<PiboProfileInspection> {
 	const cwd = options.cwd ?? process.cwd();
 	const profile = options.profile ?? createDefaultPiboProfile();
+	const runtimeProfile = new InitialSessionContext({
+		profileName: profile.profileName,
+		sessionId: profile.sessionId,
+		parentSessionId: profile.parentSessionId,
+		skills: profile.skills,
+		tools: profile.tools,
+		subagents: profile.subagents,
+		mcpServers: profile.mcpServers,
+		piPackages: profile.piPackages,
+		contextFiles: profile.contextFiles,
+		builtinTools: profile.builtinTools,
+		builtinToolNames: profile.builtinToolNames,
+		autoContextFiles: profile.autoContextFiles,
+		toolPackages: profile.toolPackages,
+	});
 	const hasEnabledSubagents = profile.subagents.some((subagent) => subagent.enabled !== false);
 	const hasYieldableTools =
 		profile.toolPackages.runControl === true ||
@@ -493,8 +522,11 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 		profile.tools.some((tool) => tool.enabled !== false && (tool.definition !== undefined || tool.createDefinition !== undefined) && tool.yieldable !== false);
 	const runtime = await createPiboRuntime({
 		cwd,
-		profile,
+		...options,
+		profile: runtimeProfile,
 		persistSession: false,
+		modelDefaults: {},
+		activeModel: undefined,
 		subagentRunner: options.subagentRunner ?? (hasEnabledSubagents ? createInspectionSubagentRunner() : undefined),
 		runToolController:
 			options.runToolController ?? (hasYieldableTools ? createInspectionRunToolController() : undefined),
@@ -517,6 +549,19 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 
 		return {
 			profileName: profile.profileName,
+			...(profile.model ? { model: { ...profile.model } } : {}),
+			...(profile.mainModel ? { mainModel: { ...profile.mainModel } } : {}),
+			...(profile.subagentModel ? { subagentModel: { ...profile.subagentModel } } : {}),
+			...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
+			...(profile.mainThinkingLevel ? { mainThinkingLevel: profile.mainThinkingLevel } : {}),
+			...(profile.subagentThinkingLevel ? { subagentThinkingLevel: profile.subagentThinkingLevel } : {}),
+			...(profile.fast !== undefined ? { fast: profile.fast } : {}),
+			...(profile.mainFast !== undefined ? { mainFast: profile.mainFast } : {}),
+			...(profile.subagentFast !== undefined ? { subagentFast: profile.subagentFast } : {}),
+			builtinTools: profile.builtinTools,
+			builtinToolNames: [...profile.builtinToolNames],
+			autoContextFiles: profile.autoContextFiles,
+			toolPackages: { ...profile.toolPackages },
 			skills: resourceLoader.getSkills().skills.map((skill) => ({
 				name: skill.name,
 				path: skill.filePath,
@@ -535,6 +580,7 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 					active: activeToolNames.has(toolName),
 				};
 			}),
+			mcpServers: [...profile.mcpServers],
 			piPackages: profile.piPackages.map((pkg) => ({
 				id: pkg.id,
 				active: pkg.enabled !== false,
