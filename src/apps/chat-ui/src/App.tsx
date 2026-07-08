@@ -126,6 +126,7 @@ import {
 	upsertAgentCatalogUserSkill,
 } from "./app-agent-catalog-mutations";
 import { useAppDeleteActions } from "./app-delete-actions";
+import { roomSummaryStreamUrl } from "./room-summary-stream";
 
 export type { ChatAppRoute } from "./app-routes";
 
@@ -676,12 +677,14 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const latestRoomStreamId = bootstrap?.latestRoomStreamId;
 
 	useEffect(() => {
-		if (area !== "sessions" || !activeRoomId) return;
-		if (bootstrap?.selectedRoomId !== activeRoomId || typeof latestRoomStreamId !== "number") return;
-		const params = new URLSearchParams({ roomId: activeRoomId });
-		params.set("mode", "summary");
-		params.set("since", `${latestRoomStreamId}:999999`);
-		const events = new EventSource(`/api/chat/events?${params.toString()}`);
+		const roomSummaryUrl = roomSummaryStreamUrl({
+			area,
+			activeRoomId,
+			bootstrapSelectedRoomId: bootstrap?.selectedRoomId,
+			latestRoomStreamId,
+		});
+		if (!roomSummaryUrl || !activeRoomId || typeof latestRoomStreamId !== "number") return;
+		const events = new EventSource(roomSummaryUrl);
 		let navigationTimer: ReturnType<typeof setTimeout> | undefined;
 		const scheduleNavigationRefresh = () => {
 			if (navigationTimer) clearTimeout(navigationTimer);
