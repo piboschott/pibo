@@ -47,6 +47,7 @@ import { getDefaultPiboWorkspace } from "./workspace.js";
 import { DEFAULT_USER_TIMEZONE } from "./user-settings.js";
 import { registerMiniMaxProvider, type MiniMaxModelRegistryLike } from "../providers/minimax.js";
 import { registerGlmProvider, type GlmModelRegistryLike } from "../providers/glm.js";
+import { registerOpenAiGpt56Models, type OpenAiGpt56ModelRegistryLike } from "../providers/openai-gpt56.js";
 import { PIBO_APP_CONTEXT } from "../app-context.js";
 import { createRuntimeToolDefinition, type PiboRuntimeToolController } from "../tools/runtime/tool.js";
 import { RuntimeSessionRegistry } from "../tools/runtime/registry.js";
@@ -373,6 +374,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 				}),
 			},
 		});
+		registerOpenAiGpt56Models(services.modelRegistry as OpenAiGpt56ModelRegistryLike);
 		registerMiniMaxProvider(services.modelRegistry as MiniMaxModelRegistryLike);
 		registerGlmProvider(services.modelRegistry as GlmModelRegistryLike);
 		const ownsLocalRuntimeRegistry = options.runtimeToolController === undefined && profile.tools.some(isEnabledRuntimeTool);
