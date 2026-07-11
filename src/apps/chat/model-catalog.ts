@@ -1,5 +1,5 @@
-import { createAgentSessionServices } from "@mariozechner/pi-coding-agent";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import { createAgentSessionServices } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { registerMiniMaxProvider, type MiniMaxModelRegistryLike } from "../../providers/minimax.js";
 import { registerGlmProvider, type GlmModelRegistryLike } from "../../providers/glm.js";
 import { registerOpenAiGpt56Models, type OpenAiGpt56ModelRegistryLike } from "../../providers/openai-gpt56.js";

@@ -1,5 +1,5 @@
-import { StringEnum, Type } from "@mariozechner/pi-ai";
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ToolProfile } from "../../core/profiles.js";
 import type {
 	RuntimeCloseInput,

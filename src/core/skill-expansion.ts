@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { Skill } from "@mariozechner/pi-coding-agent";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 
 export function expandInlineSkills(text: string, skills: Skill[]): string {
 	try {

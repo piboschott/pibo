@@ -1,4 +1,4 @@
-import type { CreateAgentSessionOptions } from "@mariozechner/pi-coding-agent";
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 
 export const PIBO_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 

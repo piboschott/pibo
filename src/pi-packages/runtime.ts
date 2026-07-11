@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { AgentSessionRuntimeDiagnostic } from "@mariozechner/pi-coding-agent";
+import type { AgentSessionRuntimeDiagnostic } from "@earendil-works/pi-coding-agent";
 import type { InitialSessionContext } from "../core/profiles.js";
 import { findPiPackage } from "./store.js";
 

@@ -90,7 +90,7 @@ import {
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const sessionManager = SessionManager.open(sessionFile, sessionDir, workspaceDir);
 const settingsManager = SettingsManager.create(workspaceDir, agentDir);

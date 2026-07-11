@@ -2,8 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { completeSimple, type Model } from "@mariozechner/pi-ai";
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Model } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import {
 	buildSessionContext,
 	convertToLlm,
@@ -11,7 +12,7 @@ import {
 	type CompactionResult,
 	type ExtensionFactory,
 	type SessionBeforeCompactEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 export type PiboCompactionPromptMode = "library" | "custom";
 
