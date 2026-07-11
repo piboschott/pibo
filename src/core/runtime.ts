@@ -15,7 +15,7 @@ import {
 	type ExtensionFactory,
 	type ResourceDiagnostic,
 	type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
 	DEFAULT_BUILTIN_TOOL_NAMES,
 	InitialSessionContext,

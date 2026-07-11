@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createDefaultPiboProfile } from "../plugins/builtin.js";
 import { getMcpAgentContextFile } from "../mcp/agent-context.js";
 import { createRunToolDefinitions, type PiboRunToolController } from "../runs/tools.js";
@@ -338,7 +338,7 @@ async function readSkillMarkdown(path: string): Promise<string | undefined> {
 }
 
 // Skills are advertised to the model via a small XML summary in the system
-// prompt (see formatSkillsForPrompt in @mariozechner/pi-coding-agent). Only the
+// prompt (see formatSkillsForPrompt in @earendil-works/pi-coding-agent). Only the
 // name, description, and location land in the prompt; the full SKILL.md body
 // is loaded lazily by the model via the read tool. Mirror that exact
 // per-skill entry shape here so the inspector's token estimate matches what

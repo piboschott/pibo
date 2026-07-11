@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, resolve } from "node:path";
-import { StringEnum, Type } from "@mariozechner/pi-ai";
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 function resolveCwd(baseCwd: string, workdir: string | undefined): string {
 	if (!workdir || workdir.trim().length === 0) return baseCwd;

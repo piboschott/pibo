@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { brotliDecompressSync, gunzipSync, inflateSync, zstdDecompressSync } from "node:zlib";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { createPiboRuntime } from "../dist/core/runtime.js";
 import { RoutedSession } from "../dist/core/routed-session.js";
@@ -19,12 +20,23 @@ function fakeCodexToken() {
 
 function readRequestBody(req) {
 	return new Promise((resolve, reject) => {
-		let body = "";
-		req.setEncoding("utf8");
+		const chunks = [];
 		req.on("data", (chunk) => {
-			body += chunk;
+			chunks.push(chunk);
 		});
-		req.on("end", () => resolve(body));
+		req.on("end", () => {
+			const encoded = Buffer.concat(chunks);
+			const body = req.headers["content-encoding"] === "gzip"
+				? gunzipSync(encoded)
+				: req.headers["content-encoding"] === "deflate"
+					? inflateSync(encoded)
+					: req.headers["content-encoding"] === "br"
+						? brotliDecompressSync(encoded)
+						: req.headers["content-encoding"] === "zstd"
+							? zstdDecompressSync(encoded)
+							: encoded;
+			resolve(body.toString("utf8"));
+		});
 		req.on("error", reject);
 	});
 }
@@ -166,7 +178,7 @@ test("fast mode sends priority service tier through the HTTP provider request", 
 		runtime.session.setThinkingLevel("high");
 
 		const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
-		routed = new RoutedSession("route:http-fast", runtime, (event) => events.push(event), registry, false, false);
+		routed = new RoutedSession("route:http-fast", runtime, (event) => events.push(event), registry, false, undefined, false);
 
 		const action = await routed.executeAction({
 			type: "execution",

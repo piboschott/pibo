@@ -351,7 +351,7 @@ async function createPiboRuntime(options): Promise<AgentSessionRuntime> {
 ```
 
 ```ts
-// @mariozechner/pi-coding-agent
+// @earendil-works/pi-coding-agent
 
 class AgentSession {
   async prompt(text: string, options: PromptOptions) {
@@ -371,7 +371,7 @@ class AgentSession {
 ```
 
 ```ts
-// @mariozechner/pi-agent-core
+// @earendil-works/pi-agent-core
 
 class Agent {
   async prompt(messages: AgentMessage[]) {

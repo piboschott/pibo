@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initTheme } from "../node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { createLocalRoutedTuiClient, createLocalRoutedTuiExtension } from "../dist/local/tui.js";
 
 // Pi message components read the interactive theme singleton during render.

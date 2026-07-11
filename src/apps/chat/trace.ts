@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { parseSessionEntries, SessionManager, type SessionEntry } from "@mariozechner/pi-coding-agent";
+import { parseSessionEntries, SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { PiboSessionListItem } from "../../core/events.js";
 import type { ModelProfile } from "../../core/profiles.js";
 import type { PiboSession } from "../../sessions/store.js";

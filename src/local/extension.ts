@@ -1,12 +1,12 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
 	ToolExecutionComponent,
 	UserMessageComponent,
 	type ExtensionContext,
 	type ExtensionFactory,
-} from "@mariozechner/pi-coding-agent";
-import { type AutocompleteProvider, Container, Spacer, type TUI } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { type AutocompleteProvider, Container, Spacer, type TUI } from "@earendil-works/pi-tui";
 import type { PiboJsonValue, PiboOutputEvent, PiboSessionStatus } from "../core/events.js";
 import { parsePiboThinkingLevel } from "../core/thinking.js";
 import type { LocalRoutedTuiCapabilities, LocalRoutedTuiClientLike } from "./client.js";
