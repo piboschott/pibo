@@ -7,7 +7,7 @@ import {
 } from "./profiles.js";
 import { createDefaultPiboPluginRegistry, createPiboProfileFromRegistryOrDefault, resolvePiboProfileNameFromRegistryOrDefault, selectDefaultPiboProfileName } from "../plugins/builtin.js";
 import type { PiboPluginRegistry } from "../plugins/registry.js";
-import { createPiboRuntime, type PiboRuntimeOptions } from "./runtime.js";
+import { createPiboRuntime, type PiboRuntimeOptions, type PiboRuntimeRetryDefaults } from "./runtime.js";
 import { RoutedSession } from "./routed-session.js";
 import { runtimeSessionErrorDetails } from "./session-errors.js";
 import type {
@@ -72,6 +72,19 @@ export type PiboSessionRouterOptions = Omit<
 };
 
 const DEFAULT_SUBAGENT_REPLY_TIMEOUT_MS = 10 * 60 * 1000;
+
+export const RALPH_RUNTIME_RETRY_DEFAULTS = {
+	enabled: true,
+	maxRetries: 7,
+	baseDelayMs: 2_000,
+} as const satisfies PiboRuntimeRetryDefaults;
+
+export function resolvePiboSessionRetryDefaults(
+	kind: string,
+	configured?: PiboRuntimeRetryDefaults,
+): PiboRuntimeRetryDefaults | undefined {
+	return configured ?? (kind === "ralph" ? RALPH_RUNTIME_RETRY_DEFAULTS : undefined);
+}
 
 export function resolvePiboSessionInitialThinkingLevel(session: Pick<PiboSession, "metadata">): PiboThinkingLevel | undefined {
 	const value = session.metadata?.initialThinkingLevel;
@@ -453,6 +466,7 @@ export class PiboSessionRouter {
 			cwd: piboSession.workspace ?? this.options.cwd,
 			persistSession: this.options.persistSession,
 			thinkingLevel: initialThinkingLevel ?? this.options.thinkingLevel,
+			retryDefaults: resolvePiboSessionRetryDefaults(piboSession.kind, this.options.retryDefaults),
 			profile: profileForSession(profile, piboSession.piSessionId, parentPiSessionId),
 			extensionFactories: [
 				...(telemetryExtension ? [telemetryExtension] : []),

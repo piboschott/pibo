@@ -697,6 +697,7 @@ export class RoutedSession {
 	getStatus(): PiboSessionStatus {
 		const enabledTools = this.runtime.session.getActiveToolNames();
 		const thinkingLevel = this.runtime.session.thinkingLevel as PiboThinkingLevel;
+		const settingsManager = this.runtime.session.settingsManager as typeof this.runtime.session.settingsManager | undefined;
 		return {
 			piboSessionId: this.piboSessionId,
 			queuedMessages: this.queue.length,
@@ -708,6 +709,12 @@ export class RoutedSession {
 			disposed: this.disposed,
 			thinkingLevel,
 			fastMode: this.getFastModeResult().mode === "fast",
+			...(settingsManager ? {
+				retry: {
+					...settingsManager.getRetrySettings(),
+					provider: settingsManager.getProviderRetrySettings(),
+				},
+			} : {}),
 		};
 	}
 

@@ -62,7 +62,7 @@ export type {
 } from "./plugins/types.js";
 export { createPiboGatewayToolProfiles } from "./gateway/tool.js";
 export { createPiboRuntime, inspectPiboProfile, runPiboTui } from "./core/runtime.js";
-export type { PiboProfileInspection, PiboRuntimeOptions } from "./core/runtime.js";
+export type { PiboProfileInspection, PiboRuntimeOptions, PiboRuntimeRetryDefaults } from "./core/runtime.js";
 export { PiboSessionRouter } from "./core/session-router.js";
 export { PiboReliabilityStore, createDefaultPiboReliabilityStore } from "./reliability/store.js";
 export { InMemoryPiboSignalRegistry, createPiboSignalRegistry } from "./signals/registry.js";

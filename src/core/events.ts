@@ -129,6 +129,12 @@ export type PiboSessionStatus = {
 	disposed: boolean;
 	thinkingLevel?: PiboThinkingLevel;
 	fastMode?: boolean;
+	retry?: {
+		enabled: boolean;
+		maxRetries: number;
+		baseDelayMs: number;
+		provider: { timeoutMs?: number; maxRetries?: number; maxRetryDelayMs: number };
+	};
 	contextUsage?: { tokens?: number; contextWindow?: number; percent?: number } | null;
 	providerUsage?: {
 		provider?: string;

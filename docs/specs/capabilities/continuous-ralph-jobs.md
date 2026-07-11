@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Created:** 2026-05-11
-**Updated:** 2026-05-17
+**Updated:** 2026-07-11
 **Controller / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code; 2026-05-17 compute/browser resource incident analysis
 **Related docs:** `docs/specs/capabilities/pibo-session-routing.md`, `docs/specs/capabilities/chat-web-rooms-and-event-streams.md`, `docs/specs/capabilities/scheduled-pibo-jobs.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`, `docs/specs/changes/extensible-ralph-stop-conditions/spec.md`, `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`
 
@@ -20,7 +20,7 @@ Ralph MUST let an allowed operator create, inspect, start, stop, cancel, and del
 
 The current code registers `pibo.ralph` as a plugin channel in the web gateway. The channel starts a `PiboRalphService`, which uses `pibo-ralph.sqlite` by default to persist jobs and runs.
 
-A job stores target, profile, prompt, optional maximum completed run attempts, optional stop policy, enabled state, runtime overrides, and run state. Legacy stores may retain an controller value for migration compatibility. When the service reserves a run, it first evaluates before-run stop conditions, creates a routed Pibo Session with `kind: "ralph"`, channel metadata for the target Chat room, and `ralphJobId` / `ralphRunId` metadata, sends a service-authored message containing the job prompt, and waits for the correlated session to finish.
+A job stores target, profile, prompt, optional maximum completed run attempts, optional stop policy, enabled state, runtime overrides, and run state. Legacy stores may retain an controller value for migration compatibility. When the service reserves a run, it first evaluates before-run stop conditions, creates a routed Pibo Session with `kind: "ralph"`, channel metadata for the target Chat room, and `ralphJobId` / `ralphRunId` metadata, sends a service-authored message containing the job prompt, and waits for the correlated session to finish. Ralph runtimes receive a larger in-memory Pi session retry budget when the user has not set the corresponding global or project retry fields.
 
 Stop behavior is now policy-driven. Built-in stop conditions cover maximum completed run attempts, a completion marker that must appear on its own line in a successful final answer, and fact-count checks. Plugins can register additional stop conditions; policy evaluation supports `any` and `all` modes, per-condition enablement, fail-closed errors, timeouts, and persisted condition state.
 
@@ -277,6 +277,35 @@ Unexpected interruption does not leave a job permanently marked running without 
 - THEN that run is completed with status `error`
 - AND the job no longer has `runningAt`
 - AND the error explains that the run was interrupted by gateway restart.
+
+### Requirement: Ralph transport retries are bounded and inspectable
+
+The system MUST give unattended Ralph sessions a longer bounded recovery window for transient provider transport failures without overriding explicit Pi settings or silently multiplying provider-level attempts.
+
+#### Current
+
+Pi retries retryable assistant failures three times by default with a 2-second exponential-backoff base. Pibo inherits that policy for every session. Provider request retries remain provider-specific and may be unset. Pibo classifies WebSocket and timeout failures as provider transport errors, but generic network failures such as `fetch failed` fall back to an unstructured provider or runtime error.
+
+#### Target
+
+When global and project Pi settings omit a retry field, Ralph applies runtime-only defaults of `enabled: true`, `maxRetries: 7`, and `baseDelayMs: 2000`. Explicit Pi settings retain precedence. Ralph does not enable provider-level retries implicitly. Runtime status exposes the effective session and provider retry settings, and provider telemetry retains structured transport categories.
+
+#### Acceptance
+
+- A Ralph runtime with no explicit Pi retry fields uses seven session retries with a 2-second exponential-backoff base.
+- Explicit global or project Pi retry values, including `enabled: false` and `maxRetries: 0`, override Ralph defaults.
+- Ralph leaves provider-level request retries unchanged unless Pi settings configure them.
+- Runtime status reports the effective session and provider retry settings.
+- `fetch failed` and equivalent network failures are classified as retryable `provider_transport` errors and retain that category in provider telemetry.
+- Non-Ralph sessions retain their normal Pi retry defaults.
+
+#### Scenario: Transient network outage exceeds the normal retry window
+
+- GIVEN a Ralph session has no explicit Pi retry configuration
+- WHEN consecutive provider turns fail with `fetch failed`
+- THEN Pi may retry the turn up to seven times with exponential backoff
+- AND Pibo reports the failure category as `provider_transport`
+- AND provider-level retries remain unchanged.
 
 ### Requirement: Chat Web Ralph API is authenticated, app-context, and same-origin protected
 

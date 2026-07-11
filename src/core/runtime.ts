@@ -9,11 +9,13 @@ import {
 	getAgentDir,
 	InteractiveMode,
 	SessionManager,
+	SettingsManager,
 	type AgentSessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
 	type CreateAgentSessionRuntimeFactory,
 	type ExtensionFactory,
 	type ResourceDiagnostic,
+	type RetrySettings,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -53,11 +55,40 @@ import { createRuntimeToolDefinition, type PiboRuntimeToolController } from "../
 import { RuntimeSessionRegistry } from "../tools/runtime/registry.js";
 import { compactValidationToolResultForContext } from "./test-output-compaction.js";
 
+export type PiboRuntimeRetryDefaults = Readonly<Pick<RetrySettings, "enabled" | "maxRetries" | "baseDelayMs">>;
+
+function hasOwnRetrySetting(settings: RetrySettings | undefined, key: keyof PiboRuntimeRetryDefaults): boolean {
+	return settings !== undefined && settings !== null && Object.prototype.hasOwnProperty.call(settings, key);
+}
+
+export function applyPiboRuntimeRetryDefaults(
+	settingsManager: SettingsManager,
+	defaults: PiboRuntimeRetryDefaults | undefined,
+): void {
+	if (!defaults) return;
+	const globalRetry = settingsManager.getGlobalSettings().retry;
+	const projectRetry = settingsManager.getProjectSettings().retry;
+	const overrides: RetrySettings = {};
+
+	if (!hasOwnRetrySetting(globalRetry, "enabled") && !hasOwnRetrySetting(projectRetry, "enabled") && defaults.enabled !== undefined) {
+		overrides.enabled = defaults.enabled;
+	}
+	if (!hasOwnRetrySetting(globalRetry, "maxRetries") && !hasOwnRetrySetting(projectRetry, "maxRetries") && defaults.maxRetries !== undefined) {
+		overrides.maxRetries = defaults.maxRetries;
+	}
+	if (!hasOwnRetrySetting(globalRetry, "baseDelayMs") && !hasOwnRetrySetting(projectRetry, "baseDelayMs") && defaults.baseDelayMs !== undefined) {
+		overrides.baseDelayMs = defaults.baseDelayMs;
+	}
+	if (Object.keys(overrides).length > 0) settingsManager.applyOverrides({ retry: overrides });
+}
+
 export type PiboRuntimeOptions = {
 	cwd?: string;
 	persistSession?: boolean;
 	profile?: InitialSessionContext;
 	thinkingLevel?: PiboThinkingLevel;
+	/** Runtime-only retry defaults. Explicit Pi global or project settings take precedence. */
+	retryDefaults?: PiboRuntimeRetryDefaults;
 	extensionFactories?: ExtensionFactory[];
 	subagentRunner?: PiboSubagentRunner;
 	runToolController?: PiboRunToolController;
@@ -374,6 +405,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 				}),
 			},
 		});
+		applyPiboRuntimeRetryDefaults(services.settingsManager, options.retryDefaults);
 		registerOpenAiGpt56Models(services.modelRegistry as OpenAiGpt56ModelRegistryLike);
 		registerMiniMaxProvider(services.modelRegistry as MiniMaxModelRegistryLike);
 		registerGlmProvider(services.modelRegistry as GlmModelRegistryLike);
