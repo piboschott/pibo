@@ -1,5 +1,5 @@
-import type { Model } from "@mariozechner/pi-ai";
-import { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
+import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export const OPENAI_COMPLETIONS_API = "openai-completions" as const;
 

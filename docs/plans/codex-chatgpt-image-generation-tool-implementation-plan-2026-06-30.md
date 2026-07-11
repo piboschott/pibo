@@ -47,7 +47,7 @@ Relevant behavior:
 
 ### Pi provider stack
 
-`@mariozechner/pi-ai` uses Codex Responses at default base URL:
+`@earendil-works/pi-ai` uses Codex Responses at default base URL:
 
 ```text
 https://chatgpt.com/backend-api
@@ -550,6 +550,6 @@ Use these defaults unless the requester overrides them:
 - Pibo Codex-compatible tools: `src/tools/codex-compat.ts`
 - Pibo Web Search provider adapter: `src/tools/web-search.ts`
 - Pibo Codex compatibility plugin: `src/plugins/codex-compat.ts`
-- Pi Codex Responses provider: `node_modules/@mariozechner/pi-ai/dist/providers/openai-codex-responses.js`
+- Pi Codex Responses provider: `node_modules/@earendil-works/pi-ai/dist/providers/openai-codex-responses.js`
 - Codex image extension: `/root/code/codex/codex-rs/ext/image-generation/`
 - Official OpenAI image generation docs, for contrast only: https://platform.openai.com/docs/guides/image-generation

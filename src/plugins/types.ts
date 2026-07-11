@@ -11,8 +11,8 @@ import type {
 	PiboSessionTreeResult,
 	PiboThinkingResult,
 } from "../core/events.js";
-import type { CompactionResult } from "@mariozechner/pi-coding-agent";
-import type { ContextUsage } from "@mariozechner/pi-coding-agent";
+import type { CompactionResult } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 import type { PiboThinkingLevel } from "../core/thinking.js";
 import type { PiboChannel } from "../channels/types.js";
 import type { PiboAuthService } from "../auth/types.js";

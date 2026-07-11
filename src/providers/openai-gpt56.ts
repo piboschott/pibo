@@ -1,6 +1,7 @@
-import { getModels, type Model } from "@mariozechner/pi-ai";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
+import { getModels } from "@earendil-works/pi-ai/compat";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export const OPENAI_PROVIDER_ID = "openai";
 export const OPENAI_RESPONSES_API = "openai-responses";

@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { platform, release, arch } from "node:os";
 import { dirname, extname, isAbsolute, join, resolve } from "node:path";
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
-import { Type, type ImageContent } from "@mariozechner/pi-ai";
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { Type, type ImageContent } from "@earendil-works/pi-ai";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ToolDefinitionContext, ToolProfile } from "../core/profiles.js";
 import { getPiboHome } from "../core/pibo-home.js";
 

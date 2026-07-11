@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { Type } from "@mariozechner/pi-ai";
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PiboAssistantMessageEvent } from "../core/events.js";
 import type { SubagentProfile } from "../core/profiles.js";
 

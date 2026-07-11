@@ -4,8 +4,8 @@ import {
 	estimateTokens,
 	type ExtensionContext,
 	type ExtensionFactory,
-} from "@mariozechner/pi-coding-agent";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+} from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 export const PIBO_CONTEXT_GUARD_NOTICE = "Context safety interrupted this response before adding it to long-term context. Pibo is compacting the session before continuing.";
 const DEFAULT_MIN_COMPACTION_RESERVE_TOKENS = 1024;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { PiboSession } from "../sessions/store.js";
 import {
 	BestEffortTelemetryService,

@@ -1,4 +1,4 @@
-import { SessionManager, type AgentSessionRuntime, shouldCompact } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type AgentSessionRuntime, shouldCompact } from "@earendil-works/pi-coding-agent";
 import type { PiboPluginRegistry } from "../plugins/registry.js";
 import type {
 	PiboForkCandidate,
@@ -21,8 +21,8 @@ import type {
 	PiboThinkingResult,
 } from "./events.js";
 import type { PiboThinkingLevel } from "./thinking.js";
-import type { CompactionResult } from "@mariozechner/pi-coding-agent";
-import type { ContextUsage } from "@mariozechner/pi-coding-agent";
+import type { CompactionResult } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 import { getOpenAiCodexProviderUsageForActiveModel } from "../auth/openai-codex-usage.js";
 import { normalizeSessionErrorDetails, runtimeSessionErrorDetails } from "./session-errors.js";
 import { expandInlineSkills } from "./skill-expansion.js";

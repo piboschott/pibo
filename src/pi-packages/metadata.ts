@@ -7,7 +7,7 @@ import {
 	getAgentDir,
 	SettingsManager,
 	type ResolvedPaths,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { installOrResolvePiPackage } from "./installer.js";
 import type { ParsedPiPackageSource, PiboPiPackageDiagnostic, PiboPiPackageInput, PiPackageResourceType } from "./types.js";
 

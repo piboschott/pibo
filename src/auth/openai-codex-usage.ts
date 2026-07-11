@@ -1,4 +1,4 @@
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 const OPENAI_CODEX_PROVIDER = "openai-codex";
 const OPENAI_CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
