@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Created:** 2026-05-11
-**Updated:** 2026-05-17
+**Updated:** 2026-07-11
 **Controller / Source:** Scheduled Pibo Source Specs Coverage, based on current workspace code; 2026-05-17 compute/browser resource incident analysis
 **Related docs:** `docs/specs/capabilities/pibo-session-routing.md`, `docs/specs/capabilities/chat-web-rooms-and-event-streams.md`, `docs/specs/capabilities/scheduled-pibo-jobs.md`, `docs/specs/capabilities/web-auth-and-same-origin-host.md`, `docs/specs/changes/extensible-ralph-stop-conditions/spec.md`, `docs/specs/changes/compute-browser-resource-lifecycle/spec.md`
 
@@ -20,7 +20,7 @@ Ralph MUST let an allowed operator create, inspect, start, stop, cancel, and del
 
 The current code registers `pibo.ralph` as a plugin channel in the web gateway. The channel starts a `PiboRalphService`, which uses `pibo-ralph.sqlite` by default to persist jobs and runs.
 
-A job stores target, profile, prompt, optional maximum completed run attempts, optional stop policy, enabled state, runtime overrides, and run state. Legacy stores may retain an controller value for migration compatibility. When the service reserves a run, it first evaluates before-run stop conditions, creates a routed Pibo Session with `kind: "ralph"`, channel metadata for the target Chat room, and `ralphJobId` / `ralphRunId` metadata, sends a service-authored message containing the job prompt, and waits for the correlated session to finish.
+A job stores target, profile, prompt, optional maximum completed run attempts, optional stop policy, enabled state, runtime overrides, and run state. Legacy stores may retain an controller value for migration compatibility. When the service reserves a run, it first evaluates before-run stop conditions, creates a routed Pibo Session with `kind: "ralph"`, channel metadata for the target Chat room, and `ralphJobId` / `ralphRunId` metadata, sends a service-authored message containing the job prompt, and waits for the correlated session to finish. Ralph runtimes receive a larger in-memory Pi session retry budget when the user has not set the corresponding global or project retry fields.
 
 Stop behavior is now policy-driven. Built-in stop conditions cover maximum completed run attempts, a completion marker that must appear on its own line in a successful final answer, and fact-count checks. Plugins can register additional stop conditions; policy evaluation supports `any` and `all` modes, per-condition enablement, fail-closed errors, timeouts, and persisted condition state.
 
@@ -256,7 +256,7 @@ The system MUST record run failures with enough state for Chat Web, CLI, and ope
 
 #### Current
 
-`emitMessageAndWait()` waits without a time limit by default so an active agent can complete long-running work. Hosts and tests may set `runTimeoutMs` explicitly to opt into a bounded run. Correlated provider-attempt `session_error` events remain observable while Pi may recover through auto-retry or compaction. A later assistant response clears the attempt error; `message_finished` without a recovered response fails the run. Runtime and preflight session errors terminate immediately. Configured timeout errors include the latest session error. `recoverInterruptedRuns()` marks old running jobs as failed after a cutoff and records `Ralph run was interrupted by gateway restart` with reason `interrupted`.
+`emitMessageAndWait()` waits without a time limit by default so an active agent can complete long-running work. Hosts and tests may set `runTimeoutMs` explicitly to opt into a bounded run. An explicit timeout aborts the attached Pibo Session before completing the run with an error. If the abort fails, Ralph disables the job with reason `timeout-abort-failed` so no successor can overlap the still-active session. Correlated provider-attempt `session_error` events remain observable while Pi may recover through auto-retry or compaction. A later assistant response clears the attempt error; `message_finished` without a recovered response fails the run. Runtime and preflight session errors terminate immediately. Configured timeout errors include the latest session error. `recoverInterruptedRuns()` marks old running jobs as failed after a cutoff and records `Ralph run was interrupted by gateway restart` with reason `interrupted`.
 
 #### Target
 
@@ -265,7 +265,8 @@ Unexpected interruption does not leave a job permanently marked running without 
 #### Acceptance
 
 - A run has no time limit unless `runTimeoutMs` is configured explicitly.
-- An explicitly timed-out run completes with status `error` unless it was cancelled.
+- An explicitly timed-out run aborts its attached Pibo Session before completing with status `error` unless it was cancelled.
+- A failed timeout abort disables the job and records reason `timeout-abort-failed`.
 - A non-cancel error increments `consecutiveErrors`.
 - A later successful run resets `consecutiveErrors` to zero.
 - Restart recovery marks stale running runs as error with reason `interrupted`.
@@ -277,6 +278,35 @@ Unexpected interruption does not leave a job permanently marked running without 
 - THEN that run is completed with status `error`
 - AND the job no longer has `runningAt`
 - AND the error explains that the run was interrupted by gateway restart.
+
+### Requirement: Ralph transport retries are bounded and inspectable
+
+The system MUST give unattended Ralph sessions a longer bounded recovery window for transient provider transport failures without overriding explicit Pi settings or silently multiplying provider-level attempts.
+
+#### Current
+
+Pi retries retryable assistant failures three times by default with a 2-second exponential-backoff base. Pibo inherits that policy for every session. Provider request retries remain provider-specific and may be unset. Pibo classifies WebSocket and timeout failures as provider transport errors, but generic network failures such as `fetch failed` fall back to an unstructured provider or runtime error.
+
+#### Target
+
+When global and project Pi settings omit a retry field, Ralph applies runtime-only defaults of `enabled: true`, `maxRetries: 7`, and `baseDelayMs: 2000`. Explicit Pi settings retain precedence. Ralph does not enable provider-level retries implicitly. Runtime status exposes the effective session and provider retry settings, and provider telemetry retains structured transport categories.
+
+#### Acceptance
+
+- A Ralph runtime with no explicit Pi retry fields uses seven session retries with a 2-second exponential-backoff base.
+- Explicit global or project Pi retry values, including `enabled: false` and `maxRetries: 0`, override Ralph defaults.
+- Ralph leaves provider-level request retries unchanged unless Pi settings configure them.
+- Runtime status reports the effective session and provider retry settings.
+- `fetch failed` and equivalent network failures are classified as retryable `provider_transport` errors and retain that category in provider telemetry.
+- Non-Ralph sessions retain their normal Pi retry defaults.
+
+#### Scenario: Transient network outage exceeds the normal retry window
+
+- GIVEN a Ralph session has no explicit Pi retry configuration
+- WHEN consecutive provider turns fail with `fetch failed`
+- THEN Pi may retry the turn up to seven times with exponential backoff
+- AND Pibo reports the failure category as `provider_transport`
+- AND provider-level retries remain unchanged.
 
 ### Requirement: Chat Web Ralph API is authenticated, app-context, and same-origin protected
 
@@ -408,7 +438,7 @@ This capability participates in the compute/browser resource lifecycle change. I
 - `test/ralph-runtime-overrides.test.mjs` verifies the Ralph service passes model, thinking-level, and fast-mode overrides to created sessions.
 - `test/ralph-stop-conditions.test.mjs` verifies plugin registry exposure, fact-count stop decisions, `any`/`all` policy composition, stateful custom conditions, max-iteration behavior after failed outcomes, own-line completion-marker matching, and service preservation of promise-complete and max-iteration stop behavior through stop policies.
 - `test/ralph-templates.test.mjs` verifies built-in templates use explicit stop policies and that template prompt text avoids exposing the literal completion marker directly where the policy can carry the rule.
-- `test/ralph-run-timeout.test.mjs` verifies that Ralph runs have no timeout by default, provider session errors allow Pi retry recovery, exhausted retries and terminal runtime errors fail the run, and explicitly configured run timeouts still work.
+- `test/ralph-run-timeout.test.mjs` verifies that Ralph runs have no timeout by default, provider session errors allow Pi retry recovery, exhausted retries and terminal runtime errors fail the run, explicitly configured timeouts abort their sessions, and failed timeout aborts disable the job.
 
 ### Source-Inspected Only
 

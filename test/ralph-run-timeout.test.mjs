@@ -6,14 +6,19 @@ import test from "node:test";
 import { PiboRalphService } from "../dist/ralph/service.js";
 import { PiboRalphStore } from "../dist/ralph/store.js";
 
-function createContext() {
+function createContext({ abortError } = {}) {
 	const listeners = new Set();
 	const emitted = [];
+	let sessionNumber = 0;
 	return {
 		emitted,
 		context: {
-			async emit(event) { emitted.push(event); },
+			async emit(event) {
+				emitted.push(event);
+				if (event.type === "execution" && event.action === "abort" && abortError) throw abortError;
+			},
 			subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+			createSession() { sessionNumber += 1; return { id: `ps_timeout_${sessionNumber}` }; },
 		},
 		finish(text = "done") {
 			const message = emitted.find((event) => event.type === "message");
@@ -40,11 +45,12 @@ function createContext() {
 	};
 }
 
-async function createService(runTimeoutMs) {
+async function createService(runTimeoutMs, contextOptions) {
 	const dir = await mkdtemp(join(tmpdir(), "pibo-ralph-run-timeout-"));
-	const controlled = createContext();
+	const controlled = createContext(contextOptions);
+	const store = new PiboRalphStore({ path: ":memory:" });
 	const service = new PiboRalphService({
-		store: new PiboRalphStore({ path: ":memory:" }),
+		store,
 		context: controlled.context,
 		dataStorePath: join(dir, "data.sqlite"),
 		dataPayloadRootDir: join(dir, "payloads"),
@@ -52,6 +58,7 @@ async function createService(runTimeoutMs) {
 	});
 	return {
 		service,
+		store,
 		controlled,
 		async cleanup() {
 			service.stop();
@@ -132,14 +139,43 @@ test("Ralph terminates immediately on a runtime session error", async () => {
 	}
 });
 
-test("Ralph still supports an explicitly configured run timeout", async () => {
+test("Ralph aborts the session before completing an explicitly timed-out run", async () => {
 	const fixture = await createService(20);
 	try {
 		await assert.rejects(
 			fixture.service.emitMessageAndWait("ps_limited", "work"),
 			/Ralph run timed out/,
 		);
+		const abort = fixture.controlled.emitted.find((event) => event.type === "execution" && event.action === "abort");
+		assert.equal(abort?.piboSessionId, "ps_limited");
+		assert.match(abort?.id ?? "", /^ralph_timeout_/);
 	} finally {
 		await fixture.cleanup();
 	}
 });
+
+test("Ralph disables the job when a timed-out session cannot be aborted", async () => {
+	const fixture = await createService(20, { abortError: new Error("abort unavailable") });
+	try {
+		const job = fixture.store.createJob({ target: { kind: "default-chat" }, profile: "codex", prompt: "work" });
+		const run = await fixture.service.startJob(job.id);
+		assert.ok(run);
+		await waitFor(() => fixture.store.getJob(job.id)?.state.lastStatus === "error");
+
+		const updated = fixture.store.getJob(job.id);
+		assert.equal(updated?.enabled, false);
+		assert.match(updated?.state.lastError ?? "", /session abort failed: abort unavailable/);
+		const completed = fixture.store.listRuns({ jobId: job.id }).find((candidate) => candidate.id === run.id);
+		assert.equal(completed?.reason, "timeout-abort-failed");
+	} finally {
+		await fixture.cleanup();
+	}
+});
+
+async function waitFor(predicate, timeoutMs = 1_000) {
+	const started = Date.now();
+	while (!predicate()) {
+		if (Date.now() - started > timeoutMs) throw new Error("Timed out waiting for condition");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}

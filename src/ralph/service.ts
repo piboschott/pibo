@@ -18,6 +18,9 @@ export type PiboRalphBrowserPoolRelease = (paths: BrowserPoolPaths, identity: Br
 export type PiboRalphResourceCleanupOptions = { browserPoolRootDir?: string; browserPoolId?: string; releaseBrowserPoolLease?: PiboRalphBrowserPoolRelease };
 export type PiboRalphServiceOptions = { store?: PiboRalphStore; context: PiboChannelContext; dataStorePath?: string; dataPayloadRootDir?: string; intervalMs?: number; maxConcurrentRuns?: number; runTimeoutMs?: number; resourceCleanup?: PiboRalphResourceCleanupOptions };
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+class RalphRunTimeoutError extends Error {
+	constructor(message: string, readonly abortFailed = false) { super(message); this.name = 'RalphRunTimeoutError'; }
+}
 function isUnknownProfileErrorMessage(message: string): boolean { return /^Unknown profile "[^"]+"/.test(message); }
 function buildRalphPrompt(job: PiboRalphJob): string { return ['You are running a continuous Pibo Ralph job.', `Job: ${job.name}`, `Target: ${job.target.kind}`, '', 'Complete the task below. Return the result in this session. When this session finishes, Ralph may start a fresh session with the same task unless a configured stop condition is satisfied.', 'Important: if this job uses a promise-complete stop condition, do not quote, negate, explain, or mention its literal completion marker unless the task is fully complete and you intend to stop the job.', '', 'Task:', job.prompt].join('\n'); }
 function isJsonObject(value: unknown): value is PiboJsonObject { return !!value && typeof value === 'object' && !Array.isArray(value); }
@@ -96,7 +99,7 @@ export class PiboRalphService {
 	private async executeReserved(job: PiboRalphJob, run: PiboRalphRun): Promise<void> {
 		this.activeRuns += 1;
 		try { const result = await this.executeJob(job, run); const cancelled = this.cancelledRuns.delete(run.id); const outcome: PiboRalphRunOutcome = { status: cancelled ? 'cancelled' : 'ok', piboSessionId: result.piboSessionId, finalAnswer: result.finalAnswer }; const { evaluation, conditionStates } = await this.evaluateStopPolicy(this.store.getJob(job.id) ?? job, 'after-run', run, outcome); this.store.completeRun({ jobId: job.id, runId: run.id, status: outcome.status, piboSessionId: result.piboSessionId, reason: cancelled ? 'cancelled' : evaluation.reason, stopAfterRun: evaluation.finalAction !== 'continue', stopEvaluation: evaluation, conditionStates }); await this.cleanupRunResources(job, run); }
-		catch (error) { const cancelled = this.cancelledRuns.delete(run.id); const message = errorMessage(error); const fatalProfileError = !cancelled && isUnknownProfileErrorMessage(message); const outcome: PiboRalphRunOutcome = { status: cancelled ? 'cancelled' : 'error', error: cancelled ? undefined : message }; const { evaluation, conditionStates } = await this.evaluateStopPolicy(this.store.getJob(job.id) ?? job, 'after-run', run, outcome); this.store.completeRun({ jobId: job.id, runId: run.id, status: outcome.status, error: outcome.error, reason: cancelled ? 'cancelled' : fatalProfileError ? 'unknown-profile' : evaluation.reason, stopAfterRun: fatalProfileError || evaluation.finalAction !== 'continue', stopEvaluation: evaluation, conditionStates }); await this.cleanupRunResources(job, run); if (!cancelled) console.error(`[ralph] job ${job.id} failed`, error); }
+		catch (error) { const cancelled = this.cancelledRuns.delete(run.id); const message = errorMessage(error); const fatalProfileError = !cancelled && isUnknownProfileErrorMessage(message); const timeoutAbortFailed = error instanceof RalphRunTimeoutError && error.abortFailed; const outcome: PiboRalphRunOutcome = { status: cancelled ? 'cancelled' : 'error', error: cancelled ? undefined : message }; const { evaluation, conditionStates } = await this.evaluateStopPolicy(this.store.getJob(job.id) ?? job, 'after-run', run, outcome); this.store.completeRun({ jobId: job.id, runId: run.id, status: outcome.status, error: outcome.error, reason: cancelled ? 'cancelled' : fatalProfileError ? 'unknown-profile' : timeoutAbortFailed ? 'timeout-abort-failed' : evaluation.reason, stopAfterRun: fatalProfileError || timeoutAbortFailed || evaluation.finalAction !== 'continue', stopEvaluation: evaluation, conditionStates }); await this.cleanupRunResources(job, run); if (!cancelled) console.error(`[ralph] job ${job.id} failed`, error); }
 		finally { this.activeRuns -= 1; }
 	}
 	private markRunResourcesDirty(job: PiboRalphJob, dirtyReason: string): void {
@@ -186,6 +189,43 @@ export class PiboRalphService {
 	private resolveTarget(job: PiboRalphJob): { roomId: string; workspace?: string; metadata?: Record<string, unknown> } { if (job.target.kind === 'room') { const room = this.roomService.getRoom(job.target.roomId); if (!room) throw new Error('Target room no longer exists'); if (isPiboRoomArchived(room)) throw new Error('Target room is archived'); return { roomId: room.id, workspace: room.workspace ?? getDefaultPiboWorkspace() }; } const room = this.roomService.ensureDefaultRoom({ name: 'Shared Chat' }); return { roomId: room.id, workspace: room.workspace ?? getDefaultPiboWorkspace() }; }
 	private async emitMessageAndWait(piboSessionId: string, text: string, options: { isCancelled?: () => boolean } = {}): Promise<string> {
 		const eventId = `ralph_msg_${randomUUID()}`;
-		return await new Promise<string>((resolve, reject) => { let settled = false; let deltaAnswer = ''; let finalAnswer = ''; let lastSessionError: string | undefined; let unsubscribe: (() => void) | undefined; let timeout: NodeJS.Timeout | undefined; const finish = (error?: Error) => { if (settled) return; settled = true; if (timeout) clearTimeout(timeout); unsubscribe?.(); if (error) reject(error); else resolve(finalAnswer || deltaAnswer); }; if (this.runTimeoutMs !== undefined) timeout = setTimeout(() => finish(new Error(lastSessionError ? `Ralph run timed out after session error: ${lastSessionError}` : 'Ralph run timed out')), this.runTimeoutMs); unsubscribe = this.options.context.subscribe((event: PiboOutputEvent) => { if (event.piboSessionId !== piboSessionId) return; if ('eventId' in event && event.eventId !== eventId) return; if (event.type === 'assistant_delta') deltaAnswer += event.text; if (event.type === 'assistant_message') { finalAnswer = event.text; lastSessionError = undefined; } if (event.type === 'message_finished') finish(lastSessionError ? new Error(lastSessionError) : undefined); if (event.type === 'session_error') { lastSessionError = event.error; const providerAttempt = event.errorDetails?.origin === 'provider' && Boolean(event.errorDetails.api || event.errorDetails.provider || event.errorDetails.model); if (!providerAttempt || options.isCancelled?.()) finish(new Error(event.error)); } }); this.options.context.emit({ type: 'message', piboSessionId, id: eventId, source: 'service', text }).catch((error) => finish(error instanceof Error ? error : new Error(String(error)))); });
+		return await new Promise<string>((resolve, reject) => {
+			let settled = false;
+			let deltaAnswer = '';
+			let finalAnswer = '';
+			let lastSessionError: string | undefined;
+			let timingOut = false;
+			let unsubscribe: (() => void) | undefined;
+			let timeout: NodeJS.Timeout | undefined;
+			const finish = (error?: Error) => {
+				if (settled) return;
+				settled = true;
+				if (timeout) clearTimeout(timeout);
+				unsubscribe?.();
+				if (error) reject(error);
+				else resolve(finalAnswer || deltaAnswer);
+			};
+			if (this.runTimeoutMs !== undefined) {
+				timeout = setTimeout(() => {
+					timingOut = true;
+					const message = lastSessionError ? `Ralph run timed out after session error: ${lastSessionError}` : 'Ralph run timed out';
+					void this.options.context.emit({ type: 'execution', piboSessionId, action: 'abort', id: `ralph_timeout_${randomUUID()}` })
+						.then(() => finish(new RalphRunTimeoutError(message)), (abortError) => finish(new RalphRunTimeoutError(`${message}; session abort failed: ${errorMessage(abortError)}`, true)));
+				}, this.runTimeoutMs);
+			}
+			unsubscribe = this.options.context.subscribe((event: PiboOutputEvent) => {
+				if (timingOut || event.piboSessionId !== piboSessionId) return;
+				if ('eventId' in event && event.eventId !== eventId) return;
+				if (event.type === 'assistant_delta') deltaAnswer += event.text;
+				if (event.type === 'assistant_message') { finalAnswer = event.text; lastSessionError = undefined; }
+				if (event.type === 'message_finished') finish(lastSessionError ? new Error(lastSessionError) : undefined);
+				if (event.type === 'session_error') {
+					lastSessionError = event.error;
+					const providerAttempt = event.errorDetails?.origin === 'provider' && Boolean(event.errorDetails.api || event.errorDetails.provider || event.errorDetails.model);
+					if (!providerAttempt || options.isCancelled?.()) finish(new Error(event.error));
+				}
+			});
+			this.options.context.emit({ type: 'message', piboSessionId, id: eventId, source: 'service', text }).catch((error) => finish(error instanceof Error ? error : new Error(String(error))));
+		});
 	}
 }

@@ -441,6 +441,39 @@ test("provider telemetry marks active provider requests errored safely", () => {
 	}
 });
 
+test("provider telemetry preserves structured session error categories", () => {
+	const store = createStore();
+	try {
+		const runtime = new PiboRuntimeTelemetryRecorder(store.telemetry);
+		const provider = providerRecorder(store);
+		const eventId = "evt_provider_transport_error";
+		runtime.recordOutput({ type: "message_queued", piboSessionId: session.id, eventId, queuedMessages: 1, text: "error", source: "user" }, { session, status: status(1) });
+		runtime.recordOutput({ type: "message_started", piboSessionId: session.id, eventId, text: "error", source: "user" }, { session, status: status(0) });
+		provider.recordRequestStart({ model: "gpt-test" }, { at: "2026-05-16T00:02:01.000Z" });
+		runtime.recordOutput({
+			type: "session_error",
+			piboSessionId: session.id,
+			eventId,
+			error: "fetch failed",
+			errorDetails: {
+				category: "provider_transport",
+				errorClass: "provider_transport",
+				code: "network_error",
+				origin: "provider",
+				retryable: true,
+			},
+		}, { session, status: status(0) });
+
+		const timeline = store.telemetry.getTurnTimeline(turnIdForEvent(eventId));
+		assert.ok(timeline);
+		assert.equal(timeline.providerRequests[0].status, "error");
+		assert.equal(timeline.providerRequests[0].errorCategory, "provider_transport");
+		assert.equal(timeline.providerRequests[0].errorMessage, "fetch failed");
+	} finally {
+		store.close();
+	}
+});
+
 test("provider telemetry keeps no-first-byte requests open", () => {
 	const store = createStore();
 	try {

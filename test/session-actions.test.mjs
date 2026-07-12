@@ -74,6 +74,18 @@ async function createSessionHarness() {
 	};
 }
 
+test("session status exposes the effective retry policy", async () => {
+	const harness = await createSessionHarness();
+	try {
+		assert.deepEqual(harness.routed.getStatus().retry, {
+			...harness.routed.runtime.session.settingsManager.getRetrySettings(),
+			provider: harness.routed.runtime.session.settingsManager.getProviderRetrySettings(),
+		});
+	} finally {
+		await harness.dispose();
+	}
+});
+
 test("provider-backed web search availability without use does not emit a tool event", async () => {
 	const harness = await createSessionHarness();
 	try {
