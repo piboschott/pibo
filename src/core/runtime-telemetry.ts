@@ -125,7 +125,7 @@ export class PiboRuntimeTelemetryRecorder {
 				this.recordToolExecutionFinished(event, context);
 				return;
 			case "session_error":
-				this.recordTurnTerminal(event, context, "error", "error", event.error);
+				this.recordTurnTerminal(event, context, "error", "error", event.error, event.errorDetails?.category ?? event.errorDetails?.errorClass);
 				return;
 			case "execution_result":
 				this.recordExecutionResult(event, context);
@@ -466,12 +466,13 @@ export class PiboRuntimeTelemetryRecorder {
 		status: Extract<TelemetryTurnStatus, "ok" | "error" | "aborted" | "timeout">,
 		phaseName: TelemetryPhaseName,
 		summary: string,
+		errorCategory?: string,
 	): void {
 		const turn = this.turnContextForEvent(event.piboSessionId, event.eventId, undefined, context) ?? this.activeTurnContext(event.piboSessionId, context);
 		if (!turn) return;
 		const now = new Date().toISOString();
 		this.finishOpenPhases(turn.turnId, terminalPhaseStatus(status), now);
-		this.finishActiveProviderRequests(turn.turnId, providerStatusForTurnStatus(status), now, summary);
+		this.finishActiveProviderRequests(turn.turnId, providerStatusForTurnStatus(status), now, summary, errorCategory);
 		this.finishActiveToolCalls(turn.turnId, status, now, summary);
 		this.telemetry.upsertPhase({
 			phaseId: phaseId(turn.turnId, phaseName),
@@ -594,14 +595,20 @@ export class PiboRuntimeTelemetryRecorder {
 		});
 	}
 
-	private finishActiveProviderRequests(turnId: string, status: TelemetryProviderRequestStatus, now: string, summary: string): void {
+	private finishActiveProviderRequests(
+		turnId: string,
+		status: TelemetryProviderRequestStatus,
+		now: string,
+		summary: string,
+		errorCategory?: string,
+	): void {
 		const timeline = this.store?.getTurnTimeline(turnId, { limit: 100 });
 		for (const request of timeline?.providerRequests ?? []) {
 			if (isTerminalProviderStatus(request.status)) continue;
 			this.upsertProviderRequestFromExisting(request, {
 				status,
 				completedAt: now,
-				errorCategory: status === "error" ? "runtime_error" : undefined,
+				errorCategory: status === "error" ? errorCategory ?? "runtime_error" : undefined,
 				errorMessage: status === "error" ? safeSummary(summary) : undefined,
 			});
 		}

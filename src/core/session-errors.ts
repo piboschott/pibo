@@ -1,5 +1,19 @@
 import type { PiboSessionErrorDetails } from "./events.js";
 
+const PROVIDER_NETWORK_ERROR_MARKERS = [
+	"fetch failed",
+	"network error",
+	"connection error",
+	"connection refused",
+	"connection lost",
+	"connection reset",
+	"other side closed",
+	"upstream connect",
+	"reset before headers",
+	"socket hang up",
+	"socket connection was closed",
+];
+
 export function classifySessionErrorMessage(
 	message: string,
 	options: { hasProviderContext?: boolean } = {},
@@ -22,6 +36,9 @@ export function classifySessionErrorMessage(
 	}
 	if (normalized.includes("timeout") || normalized.includes("timed out")) {
 		return { category: "provider_transport", errorClass: "provider_transport", code: "timeout", origin: "provider", retryable: true, userMessage: "The provider request timed out." };
+	}
+	if (PROVIDER_NETWORK_ERROR_MARKERS.some((marker) => normalized.includes(marker))) {
+		return { category: "provider_transport", errorClass: "provider_transport", code: "network_error", origin: "provider", retryable: true, userMessage: "The provider network connection failed." };
 	}
 	if (/\b5\d\d\b/.test(normalized)) {
 		return { category: "provider_server", errorClass: "provider_server", code: "provider_server_error", origin: "provider", retryable: true, userMessage: "The provider returned a server error." };
