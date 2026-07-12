@@ -256,7 +256,7 @@ The system MUST record run failures with enough state for Chat Web, CLI, and ope
 
 #### Current
 
-`emitMessageAndWait()` waits without a time limit by default so an active agent can complete long-running work. Hosts and tests may set `runTimeoutMs` explicitly to opt into a bounded run. Correlated provider-attempt `session_error` events remain observable while Pi may recover through auto-retry or compaction. A later assistant response clears the attempt error; `message_finished` without a recovered response fails the run. Runtime and preflight session errors terminate immediately. Configured timeout errors include the latest session error. `recoverInterruptedRuns()` marks old running jobs as failed after a cutoff and records `Ralph run was interrupted by gateway restart` with reason `interrupted`.
+`emitMessageAndWait()` waits without a time limit by default so an active agent can complete long-running work. Hosts and tests may set `runTimeoutMs` explicitly to opt into a bounded run. An explicit timeout aborts the attached Pibo Session before completing the run with an error. If the abort fails, Ralph disables the job with reason `timeout-abort-failed` so no successor can overlap the still-active session. Correlated provider-attempt `session_error` events remain observable while Pi may recover through auto-retry or compaction. A later assistant response clears the attempt error; `message_finished` without a recovered response fails the run. Runtime and preflight session errors terminate immediately. Configured timeout errors include the latest session error. `recoverInterruptedRuns()` marks old running jobs as failed after a cutoff and records `Ralph run was interrupted by gateway restart` with reason `interrupted`.
 
 #### Target
 
@@ -265,7 +265,8 @@ Unexpected interruption does not leave a job permanently marked running without 
 #### Acceptance
 
 - A run has no time limit unless `runTimeoutMs` is configured explicitly.
-- An explicitly timed-out run completes with status `error` unless it was cancelled.
+- An explicitly timed-out run aborts its attached Pibo Session before completing with status `error` unless it was cancelled.
+- A failed timeout abort disables the job and records reason `timeout-abort-failed`.
 - A non-cancel error increments `consecutiveErrors`.
 - A later successful run resets `consecutiveErrors` to zero.
 - Restart recovery marks stale running runs as error with reason `interrupted`.
@@ -408,7 +409,7 @@ This capability participates in the compute/browser resource lifecycle change. I
 - `test/ralph-runtime-overrides.test.mjs` verifies the Ralph service passes model, thinking-level, and fast-mode overrides to created sessions.
 - `test/ralph-stop-conditions.test.mjs` verifies plugin registry exposure, fact-count stop decisions, `any`/`all` policy composition, stateful custom conditions, max-iteration behavior after failed outcomes, own-line completion-marker matching, and service preservation of promise-complete and max-iteration stop behavior through stop policies.
 - `test/ralph-templates.test.mjs` verifies built-in templates use explicit stop policies and that template prompt text avoids exposing the literal completion marker directly where the policy can carry the rule.
-- `test/ralph-run-timeout.test.mjs` verifies that Ralph runs have no timeout by default, provider session errors allow Pi retry recovery, exhausted retries and terminal runtime errors fail the run, and explicitly configured run timeouts still work.
+- `test/ralph-run-timeout.test.mjs` verifies that Ralph runs have no timeout by default, provider session errors allow Pi retry recovery, exhausted retries and terminal runtime errors fail the run, explicitly configured timeouts abort their sessions, and failed timeout aborts disable the job.
 
 ### Source-Inspected Only
 
