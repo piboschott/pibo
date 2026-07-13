@@ -43,7 +43,14 @@ import { getMcpAgentContextFile } from "../mcp/agent-context.js";
 import { createPiboSystemPromptTemplateExtension } from "./system-prompt-template.js";
 import { getActivePiboBasePromptPath } from "./base-prompt.js";
 import { createPiboCompactionPromptExtension } from "./compaction-prompt.js";
-import { createPiboAssistantContextGuardExtension } from "./context-guard.js";
+import {
+	cancelPiboAssistantContextGuardRecovery,
+	createPiboAssistantContextGuardExtension,
+	createPiboAssistantContextGuardRecovery,
+	isPiboAssistantContextGuardRecoveryPending,
+	registerPiboAssistantContextGuardRecovery,
+	type PiboAssistantContextGuardRecovery,
+} from "./context-guard.js";
 import { getPiPackageRuntimeOptions } from "../pi-packages/runtime.js";
 import { getDefaultPiboWorkspace } from "./workspace.js";
 import { DEFAULT_USER_TIMEZONE } from "./user-settings.js";
@@ -99,6 +106,8 @@ export type PiboRuntimeOptions = {
 	activeModel?: ModelProfile;
 	/** Product metadata that is always injected into runtime context. */
 	sessionContext?: PiboRuntimeSessionContext;
+	/** Keep direct-TUI input behind context-guard continuation turns. */
+	contextGuardTuiQueueOrdering?: boolean;
 };
 
 export type PiboRuntimeSessionContext = {
@@ -288,10 +297,11 @@ function getBuiltinToolAllowlist(profile: InitialSessionContext, customTools: re
 function getProfileExtensionFactories(
 	profile: InitialSessionContext,
 	extensionFactories: readonly ExtensionFactory[] | undefined,
+	contextGuardRecovery: PiboAssistantContextGuardRecovery,
 ): ExtensionFactory[] | undefined {
 	const piboPromptTemplateExtension = createPiboSystemPromptTemplateExtension();
 	const piboCompactionPromptExtension = createPiboCompactionPromptExtension();
-	const piboContextGuardExtension = createPiboAssistantContextGuardExtension();
+	const piboContextGuardExtension = createPiboAssistantContextGuardExtension({}, contextGuardRecovery);
 	const providerToolExtensions = profile.tools
 		.filter((tool) => tool.enabled !== false)
 		.filter(isWebSearchProviderTool)
@@ -372,6 +382,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 		sessionManager: runtimeSessionManager,
 		sessionStartEvent,
 	}) => {
+		const contextGuardRecovery = createPiboAssistantContextGuardRecovery();
 		const contextFiles = await loadContextFiles(runtimeCwd, profile.contextFiles);
 		const sessionContextFile = createSessionContextFile({ piboSessionId: profile.sessionId, ...options.sessionContext });
 		const installedToolContextFile = getInstalledCliToolContextFile();
@@ -385,7 +396,7 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			resourceLoaderOptions: {
 				...piPackageOptions.resourceLoaderOptions,
 				additionalSkillPaths: skillPaths,
-				extensionFactories: getProfileExtensionFactories(profile, options.extensionFactories),
+				extensionFactories: getProfileExtensionFactories(profile, options.extensionFactories, contextGuardRecovery),
 				noExtensions: true,
 				noSkills: true,
 				noPromptTemplates: true,
@@ -442,6 +453,10 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 		});
 
 		installValidationOutputCompaction(created.session.agent);
+		registerPiboAssistantContextGuardRecovery(created.session, contextGuardRecovery);
+		if (options.contextGuardTuiQueueOrdering === true) {
+			installPiboContextGuardTuiQueueOrdering(created.session);
+		}
 
 		const resourceLoader = services.resourceLoader;
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
@@ -454,13 +469,17 @@ export async function createPiboRuntime(options: PiboRuntimeOptions = {}): Promi
 			})),
 		];
 
-		if (localRuntimeRegistry) {
-			const originalDispose = created.session.dispose.bind(created.session);
-			created.session.dispose = () => {
+		const originalDispose = created.session.dispose.bind(created.session);
+		created.session.dispose = () => {
+			cancelPiboAssistantContextGuardRecovery(
+				created.session,
+				new Error("Context guard recovery cancelled because the Pi session was disposed"),
+			);
+			if (localRuntimeRegistry) {
 				void localRuntimeRegistry.closeControllerSessions(profile.sessionId ?? "local", { force: true });
-				originalDispose();
-			};
-		}
+			}
+			originalDispose();
+		};
 
 		return {
 			...created,
@@ -634,6 +653,46 @@ export async function inspectPiboProfile(options: PiboRuntimeOptions = {}): Prom
 	}
 }
 
+function installPiboContextGuardTuiQueueOrdering(session: AgentSessionRuntime["session"]): void {
+	const originalSubscribe = session.subscribe.bind(session);
+	const originalPrompt = session.prompt.bind(session);
+	const originalSteer = session.steer.bind(session);
+
+	session.subscribe = ((listener) => originalSubscribe((event) => {
+		if (
+			event.type === "compaction_end"
+			&& event.result
+			&& isPiboAssistantContextGuardRecoveryPending(session)
+		) {
+			listener({ ...event, willRetry: true });
+			return;
+		}
+		listener(event);
+	})) as typeof session.subscribe;
+
+	session.prompt = async (text, options) => {
+		if (isPiboAssistantContextGuardRecoveryPending(session)) {
+			if (!session.isStreaming) {
+				await session.followUp(text, options?.images);
+				options?.preflightResult?.(true);
+				return;
+			}
+			await originalPrompt(text, { ...options, streamingBehavior: "followUp" });
+			return;
+		}
+		await originalPrompt(text, options);
+	};
+
+	session.steer = async (text, images) => {
+		if (isPiboAssistantContextGuardRecoveryPending(session)) {
+			await session.followUp(text, images);
+			return;
+		}
+		await originalSteer(text, images);
+	};
+
+}
+
 export async function runPiboTui(options: PiboRuntimeOptions = {}): Promise<void> {
 	const profile = options.profile ?? createDefaultPiboProfile();
 	const hasEnabledSubagents = profile.subagents.some((subagent) => subagent.enabled !== false);
@@ -646,7 +705,7 @@ export async function runPiboTui(options: PiboRuntimeOptions = {}): Promise<void
 		return;
 	}
 
-	const runtime = await createPiboRuntime({ ...options, profile });
+	const runtime = await createPiboRuntime({ ...options, profile, contextGuardTuiQueueOrdering: true });
 
 	try {
 		const fatal = runtime.diagnostics.find((diagnostic) => diagnostic.type === "error");

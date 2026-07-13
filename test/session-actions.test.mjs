@@ -3,6 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import {
+	createPiboAssistantContextGuardRecovery,
+	registerPiboAssistantContextGuardRecovery,
+} from "../dist/core/context-guard.js";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { RoutedSession } from "../dist/core/routed-session.js";
 import { createPiboRuntime } from "../dist/core/runtime.js";
@@ -299,6 +303,7 @@ test("routed session surfaces assistant provider errors with the active event id
 						errorMessage: "Invalid prompt_cache_key",
 					},
 				});
+				listener({ type: "agent_settled" });
 			},
 			isStreaming: false,
 			getActiveToolNames() {
@@ -345,6 +350,53 @@ test("routed session surfaces assistant provider errors with the active event id
 	const error = events.find((event) => event.type === "session_error");
 	assert.equal(error.eventId, "event-1");
 	assert.equal(error.error, "Invalid prompt_cache_key");
+	assert.equal(events.some((event) => event.type === "message_finished"), false);
+});
+
+test("routed session suppresses transient assistant errors when a retry settles successfully", async () => {
+	let listener;
+	const events = [];
+	const runtime = {
+		cwd: process.cwd(),
+		session: {
+			subscribe(callback) {
+				listener = callback;
+				return () => {};
+			},
+			async prompt() {
+				listener({
+					type: "message_end",
+					message: { role: "assistant", content: [], stopReason: "error", errorMessage: "temporary 503" },
+				});
+				listener({
+					type: "message_end",
+					message: { role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "stop" },
+				});
+				listener({ type: "agent_settled" });
+			},
+			isStreaming: false,
+			getActiveToolNames() { return []; },
+			getAllTools() { return []; },
+			resourceLoader: { getSkills() { return { skills: [] }; } },
+			sessionManager: {
+				getPiSessionId() { return "session-id"; },
+				getSessionFile() { return undefined; },
+				getLeafId() { return null; },
+				getHeader() { return undefined; },
+			},
+		},
+		setRebindSession() {},
+		async dispose() {},
+	};
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "event-retry", text: "hello", source: "actor" });
+	await new Promise((resolve) => setImmediate(resolve));
+
+	assert.equal(events.some((event) => event.type === "session_error"), false);
+	assert.equal(events.some((event) => event.type === "assistant_message" && event.text === "recovered"), true);
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "event-retry"), true);
 });
 
 test("routed session expands context overflow errors with provider details", async () => {
@@ -372,6 +424,7 @@ test("routed session expands context overflow errors with provider details", asy
 						errorMessage: 'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}',
 					},
 				});
+				listener({ type: "agent_settled" });
 			},
 			isStreaming: false,
 			getActiveToolNames() {
@@ -730,6 +783,9 @@ function createQueuedCompactRuntime(order, promptBlocks, compactBlock) {
 				await compactBlock.promise;
 				return { summary: "summary", firstKeptEntryId: "kept", tokensBefore: 123 };
 			},
+			async sendCustomMessage(message, options) {
+				order.push(`resume:${message.customType}:${options?.triggerTurn === true}`);
+			},
 			subscribe() { return () => {}; },
 			isStreaming: false,
 			getActiveToolNames() { return []; },
@@ -815,6 +871,50 @@ test("compact action is serialized between queued messages", async () => {
 	await routed.dispose();
 });
 
+test("context guard recovery holds the routed queue until continuation finishes", async () => {
+	const events = [];
+	const order = [];
+	const firstPrompt = deferred();
+	const secondPrompt = deferred();
+	const compactBlock = deferred();
+	const runtime = createQueuedCompactRuntime(order, [firstPrompt, secondPrompt], compactBlock);
+	const recovery = createPiboAssistantContextGuardRecovery();
+	registerPiboAssistantContextGuardRecovery(runtime.session, recovery);
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "route:test",
+		id: "message-a",
+		text: "A",
+		source: "user",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	recovery.begin();
+	firstPrompt.resolve();
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "route:test",
+		id: "message-b",
+		text: "B",
+		source: "user",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(order, ["prompt:A"], "queued input must wait through compaction and continuation");
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "message-a"), false);
+
+	recovery.complete();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(order, ["prompt:A", "resume:pibo-context-guard-resume:true", "prompt:B"]);
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "message-a"), true);
+
+	secondPrompt.resolve();
+	await new Promise((resolve) => setImmediate(resolve));
+	await routed.dispose();
+});
+
 test("non-compact actions still execute immediately while a message is active", async () => {
 	const events = [];
 	const order = [];
@@ -847,6 +947,70 @@ test("non-compact actions still execute immediately while a message is active", 
 	firstPrompt.resolve();
 	await new Promise((resolve) => setImmediate(resolve));
 	await routed.dispose();
+});
+
+test("clear_queue leaves the active long-running message alone and reports only discarded messages", async () => {
+	const events = [];
+	const interruptions = [];
+	const firstPrompt = deferred();
+	const runtime = createQueuedCompactRuntime([], [firstPrompt], deferred());
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession(
+		"route:test",
+		runtime,
+		(event) => events.push(event),
+		registry,
+		false,
+		undefined,
+		false,
+		undefined,
+		undefined,
+		undefined,
+		(messages, reason) => interruptions.push({ ids: messages.map((message) => message.id), reason }),
+	);
+
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "message-active", text: "active", source: "user" });
+	await new Promise((resolve) => setImmediate(resolve));
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "message-b", text: "B", source: "user" });
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "message-c", text: "C", source: "user" });
+
+	const cleared = await routed.executeAction({ type: "execution", piboSessionId: "route:test", id: "clear-1", action: "clear_queue" });
+	assert.deepEqual(cleared.result, { cleared: 2 });
+	assert.deepEqual(interruptions, [{ ids: ["message-b", "message-c"], reason: "queue cleared" }]);
+	assert.equal(routed.getStatus().processing, true);
+	assert.equal(interruptions[0].ids.includes("message-active"), false);
+
+	firstPrompt.resolve();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "message-active"), true);
+	await routed.dispose();
+});
+
+test("dispose reports active and queued messages as interrupted", async () => {
+	const interruptions = [];
+	const firstPrompt = deferred();
+	const runtime = createQueuedCompactRuntime([], [firstPrompt], deferred());
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession(
+		"route:test",
+		runtime,
+		() => {},
+		registry,
+		false,
+		undefined,
+		false,
+		undefined,
+		undefined,
+		undefined,
+		(messages, reason) => interruptions.push({ ids: messages.map((message) => message.id).sort(), reason }),
+	);
+
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "message-active", text: "active", source: "user" });
+	await new Promise((resolve) => setImmediate(resolve));
+	routed.enqueueMessage({ type: "message", piboSessionId: "route:test", id: "message-queued", text: "queued", source: "user" });
+	await routed.dispose();
+	assert.deepEqual(interruptions, [{ ids: ["message-active", "message-queued"], reason: "session disposed" }]);
+	firstPrompt.resolve();
 });
 
 test("routed session patches agent.continue to trigger preemptive compaction", async () => {
