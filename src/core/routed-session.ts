@@ -26,6 +26,13 @@ import type { ContextUsage } from "@earendil-works/pi-coding-agent";
 import { getOpenAiCodexProviderUsageForActiveModel } from "../auth/openai-codex-usage.js";
 import { normalizeSessionErrorDetails, runtimeSessionErrorDetails } from "./session-errors.js";
 import { expandInlineSkills } from "./skill-expansion.js";
+import {
+	PIBO_CONTEXT_GUARD_RESUME_MESSAGE_TYPE,
+	PIBO_CONTEXT_GUARD_RESUME_PROMPT,
+	cancelPiboAssistantContextGuardRecovery,
+	claimPiboAssistantContextGuardRecovery,
+	waitForPiboAssistantContextGuardRecovery,
+} from "./context-guard.js";
 import type { ModelProfile } from "./profiles.js";
 
 type PiSessionTreeNode = ReturnType<SessionManager["getTree"]>[number];
@@ -520,6 +527,7 @@ export class RoutedSession {
 	private activeThinkingIndex?: number;
 	private nextThinkingIndex = 0;
 	private unsubscribe?: () => void;
+	private recoverySession?: AgentSessionRuntime["session"];
 	private isContinuePatched = false;
 
 	constructor(
@@ -612,7 +620,16 @@ export class RoutedSession {
 
 	private bindRuntimeSession(): void {
 		this.unsubscribe?.();
-		this.unsubscribe = this.runtime.session.subscribe((event) => {
+		const session = this.runtime.session;
+		if (this.recoverySession && this.recoverySession !== session) {
+			cancelPiboAssistantContextGuardRecovery(
+				this.recoverySession,
+				new Error("Context guard recovery cancelled because the Pi session changed"),
+			);
+		}
+		this.recoverySession = session;
+		claimPiboAssistantContextGuardRecovery(session);
+		this.unsubscribe = session.subscribe((event) => {
 			this.onPiEventTelemetry?.(this.piboSessionId, event, { status: this.getStatus(), activeEventId: this.activeMessage?.id });
 			const model = this.runtime.session.model as { contextWindow?: unknown } | undefined;
 			const normalized = normalizePiEvent(this.piboSessionId, event, { contextWindow: numberValue(model?.contextWindow) });
@@ -885,6 +902,10 @@ export class RoutedSession {
 		this.onStateChange?.({ processing: this.processing, queuedMessages: this.queue.length, disposed: true });
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
+		if (this.recoverySession) {
+			this.cancelContextGuardRecovery("Context guard recovery cancelled because the routed session was disposed");
+			this.recoverySession = undefined;
+		}
 		this.disposed = true;
 		await this.runtime.dispose();
 	}
@@ -892,6 +913,7 @@ export class RoutedSession {
 	async kill(): Promise<string> {
 		this.queue.length = 0;
 		this.onStateChange?.({ processing: this.processing, queuedMessages: this.queue.length, disposed: this.disposed });
+		this.cancelContextGuardRecovery("Context guard recovery cancelled because the routed session was killed");
 		await this.runtime.session.abort();
 		return this.piboSessionId;
 	}
@@ -907,6 +929,7 @@ export class RoutedSession {
 		}
 
 		if (this.activeMessage?.id === eventId) {
+			this.cancelContextGuardRecovery("Context guard recovery cancelled with the active message");
 			await this.runtime.session.abort();
 			return true;
 		}
@@ -950,11 +973,25 @@ export class RoutedSession {
 			this.nextAssistantIndex = 0;
 			this.activeThinkingIndex = undefined;
 			this.nextThinkingIndex = 0;
+			const session = this.runtime.session;
 			const expandedText = expandInlineSkills(
 				event.text,
-				this.runtime.session.resourceLoader.getSkills().skills,
+				session.resourceLoader.getSkills().skills,
 			);
-			await this.runtime.session.prompt(expandedText, { source: promptSource(event.source) });
+			await session.prompt(expandedText, { source: promptSource(event.source) });
+			while (await waitForPiboAssistantContextGuardRecovery(session)) {
+				try {
+					await session.sendCustomMessage({
+						customType: PIBO_CONTEXT_GUARD_RESUME_MESSAGE_TYPE,
+						content: [{ type: "text", text: PIBO_CONTEXT_GUARD_RESUME_PROMPT }],
+						display: false,
+					}, { triggerTurn: true });
+				} catch (error) {
+					const resumeError = error instanceof Error ? error : new Error(String(error));
+					cancelPiboAssistantContextGuardRecovery(session, resumeError);
+					throw resumeError;
+				}
+			}
 			this.emit({
 				type: "message_finished",
 				piboSessionId: this.piboSessionId,
@@ -1032,6 +1069,7 @@ export class RoutedSession {
 				getProviderUsage: () => this.getProviderUsage(),
 				clearQueue: () => this.clearQueue(),
 				abort: async () => {
+					this.cancelContextGuardRecovery("Context guard recovery cancelled by abort");
 					await this.runtime.session.abort();
 				},
 				dispose: () => this.dispose(),
@@ -1073,6 +1111,12 @@ export class RoutedSession {
 			},
 			event,
 		);
+	}
+
+	private cancelContextGuardRecovery(message: string): void {
+		const session = this.recoverySession ?? this.runtime.session;
+		cancelPiboAssistantContextGuardRecovery(session, new Error(message));
+		(session as { abortCompaction?: () => void }).abortCompaction?.();
 	}
 
 	private assertActive(): void {

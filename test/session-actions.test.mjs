@@ -3,6 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import {
+	createPiboAssistantContextGuardRecovery,
+	registerPiboAssistantContextGuardRecovery,
+} from "../dist/core/context-guard.js";
 import { InitialSessionContextBuilder } from "../dist/core/profiles.js";
 import { RoutedSession } from "../dist/core/routed-session.js";
 import { createPiboRuntime } from "../dist/core/runtime.js";
@@ -730,6 +734,9 @@ function createQueuedCompactRuntime(order, promptBlocks, compactBlock) {
 				await compactBlock.promise;
 				return { summary: "summary", firstKeptEntryId: "kept", tokensBefore: 123 };
 			},
+			async sendCustomMessage(message, options) {
+				order.push(`resume:${message.customType}:${options?.triggerTurn === true}`);
+			},
 			subscribe() { return () => {}; },
 			isStreaming: false,
 			getActiveToolNames() { return []; },
@@ -812,6 +819,50 @@ test("compact action is serialized between queued messages", async () => {
 	assert.equal(compactResults.length, 2);
 	assert.deepEqual(compactResults[1].result, { summary: "summary", firstKeptEntryId: "kept", tokensBefore: 123 });
 
+	await routed.dispose();
+});
+
+test("context guard recovery holds the routed queue until continuation finishes", async () => {
+	const events = [];
+	const order = [];
+	const firstPrompt = deferred();
+	const secondPrompt = deferred();
+	const compactBlock = deferred();
+	const runtime = createQueuedCompactRuntime(order, [firstPrompt, secondPrompt], compactBlock);
+	const recovery = createPiboAssistantContextGuardRecovery();
+	registerPiboAssistantContextGuardRecovery(runtime.session, recovery);
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const routed = new RoutedSession("route:test", runtime, (event) => events.push(event), registry, false);
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "route:test",
+		id: "message-a",
+		text: "A",
+		source: "user",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	recovery.begin();
+	firstPrompt.resolve();
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "route:test",
+		id: "message-b",
+		text: "B",
+		source: "user",
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(order, ["prompt:A"], "queued input must wait through compaction and continuation");
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "message-a"), false);
+
+	recovery.complete();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(order, ["prompt:A", "resume:pibo-context-guard-resume:true", "prompt:B"]);
+	assert.equal(events.some((event) => event.type === "message_finished" && event.eventId === "message-a"), true);
+
+	secondPrompt.resolve();
+	await new Promise((resolve) => setImmediate(resolve));
 	await routed.dispose();
 });
 
