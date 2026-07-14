@@ -57,6 +57,7 @@ export function SessionTracePane({
   selectedSessionActiveModel,
   selectedSessionStatus,
   selectedSessionSignal,
+  signals,
   workflowProjectSession,
   workflowLifecycleEvents,
   projectSessionCreatePanel,
@@ -101,6 +102,7 @@ export function SessionTracePane({
   selectedSessionActiveModel?: string;
   selectedSessionStatus?: PiboWebSessionStatus;
   selectedSessionSignal?: PiboSignalSnapshot["sessions"][string];
+  signals?: PiboSignalSnapshot;
   workflowProjectSession?: PiboProjectSession;
   workflowLifecycleEvents?: readonly WorkflowLifecycleEventRecord[];
   projectSessionCreatePanel?: ReactNode;
@@ -298,6 +300,7 @@ export function SessionTracePane({
     sessionActiveModelBadge,
     selectedSessionStatus,
     selectedSessionSignal,
+    signals,
     workflowProjectSession,
     workflowLifecycleEvents,
     sessionNodes: bootstrap.sessions,
