@@ -661,7 +661,11 @@ function PiPackagesSettings({
 					<input
 						value={source}
 						disabled={!packages || busy === "add"}
-						onChange={(event) => setSource(event.target.value)}
+						onChange={(event) => {
+							const nextSource = event.target.value;
+							setSource(nextSource);
+							if (!nextSource.trim()) setError(null);
+						}}
 						className="min-w-0 bg-[#0e1116] border border-slate-700 rounded-sm px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
 						placeholder="https://pi.dev/packages/package-name"
 					/>
