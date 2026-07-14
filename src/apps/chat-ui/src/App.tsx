@@ -42,6 +42,7 @@ import {
 	readStoredShowArchivedSessions,
 	readStoredShowRawEvents,
 	readStoredShowThinking,
+	removeStoredNewSessionProfile,
 	removeStoredRoomSelection,
 	writeStoredComposerDraft,
 	writeStoredExpandThinking,
@@ -252,7 +253,8 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [showRawEvents, setShowRawEvents] = useState(readStoredShowRawEvents);
 	const [showArchived, setShowArchived] = useState(readStoredShowArchivedSessions);
 	const [showArchivedRooms, setShowArchivedRooms] = useState(readStoredShowArchivedRooms);
-	const [newSessionProfile, setNewSessionProfile] = useState(readStoredNewSessionProfile);
+	const [newSessionProfile, setNewSessionProfile] = useState("");
+	const [newSessionProfileRoomId, setNewSessionProfileRoomId] = useState<string | null>(null);
 	const [sessionViewId, setSessionViewId] = useState<ChatSessionViewId>(() => routeSessionViewId ?? readStoredSessionView());
 	const [composerText, setComposerText] = useState("");
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
@@ -652,25 +654,27 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 	useEffect(() => {
 		if (!bootstrap?.agents.length) return;
+		const roomId = bootstrap.selectedRoomId;
+		if (loadingRoomId || !roomId || roomId.startsWith("optimistic-room-")) return;
 		const sessionProfile = defaultProfileFromBootstrap(bootstrap);
-		const preferredProfile = newSessionProfile || sessionProfile;
-		const matchedProfile = findAgentProfile(bootstrap.agents, preferredProfile);
-		if (matchedProfile) {
-			if (newSessionProfile !== matchedProfile.name) {
-				setNewSessionProfile(matchedProfile.name);
-				writeStoredNewSessionProfile(matchedProfile.name);
-			}
-			return;
-		}
-		const fallbackProfile = findAgentProfile(bootstrap.agents, sessionProfile)?.name ?? bootstrap.agents[0].name;
-		setNewSessionProfile(fallbackProfile);
-		writeStoredNewSessionProfile(fallbackProfile);
-	}, [bootstrap, newSessionProfile]);
+		const storedProfile = readStoredNewSessionProfile(roomId);
+		const legacyProfile = storedProfile ? "" : readStoredNewSessionProfile();
+		const matchedProfile = findAgentProfile(bootstrap.agents, storedProfile || legacyProfile || sessionProfile);
+		const nextProfile = matchedProfile?.name ?? findAgentProfile(bootstrap.agents, sessionProfile)?.name ?? bootstrap.agents[0].name;
+		setNewSessionProfile(nextProfile);
+		setNewSessionProfileRoomId(roomId);
+		if (storedProfile !== nextProfile) writeStoredNewSessionProfile(nextProfile, roomId);
+		if (legacyProfile) writeStoredNewSessionProfile("");
+	}, [bootstrap, loadingRoomId]);
 
 	const setPreferredNewSessionProfile = useCallback((profile: string) => {
 		setNewSessionProfile(profile);
-		writeStoredNewSessionProfile(profile);
-	}, []);
+		const roomId = selectedRoomId ?? bootstrapRef.current?.selectedRoomId;
+		if (roomId) {
+			setNewSessionProfileRoomId(roomId);
+			writeStoredNewSessionProfile(profile, roomId);
+		}
+	}, [selectedRoomId]);
 
 	const refreshTrace = useCallback(async (piboSessionId: string) => {
 		const startedAt = recordStreamingDebugTraceRefreshStart(piboSessionId);
@@ -904,6 +908,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 		flushSync(() => {
 			setSelectedRoomId(roomId);
 			setSelectedPiboSessionId(storedPiboSessionId ?? null);
+			setNewSessionProfileRoomId(null);
 			setLoadingRoomId(roomId);
 			setMobileSidebarOpen(false);
 		});
@@ -1008,18 +1013,25 @@ export function App({ route }: { route: ChatAppRoute }) {
 		const optimisticRoom = createOptimisticRoom(tempId, "New Chat");
 		setSelectedRoomId(tempId);
 		setSelectedPiboSessionId(null);
+		setNewSessionProfileRoomId(null);
+		setLoadingRoomId(tempId);
 		updateBootstrapCache((data) => addRoomToBootstrap(data, optimisticRoom));
 		try {
 			const created = await postRoom({ name: "New Chat" });
+			removeStoredRoomSelection(tempId);
+			removeStoredNewSessionProfile(tempId);
 			updateBootstrapCache((data) => replaceRoomInBootstrap(data, tempId, created.room));
 			await selectRoom(created.room.id, { closeMobileSidebar: false });
 			setError(null);
 		} catch (caught) {
+			removeStoredRoomSelection(tempId);
+			removeStoredNewSessionProfile(tempId);
 			restoreBootstrapSnapshot(snapshot);
 			setSelectedRoomId(selectedRoomId);
 			setSelectedPiboSessionId(selectedPiboSessionId);
 			setError(caught instanceof Error ? caught.message : String(caught));
 		} finally {
+			setLoadingRoomId((current) => current === tempId ? null : current);
 			setCreatingRoom(false);
 		}
 	};
@@ -1443,6 +1455,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 							onReadAllRoom={readAllRoom}
 							onDeleteRoom={requestRoomDelete}
 							newSessionProfile={newSessionProfile}
+							newSessionProfileReady={newSessionProfileRoomId === (selectedRoomId ?? bootstrap.selectedRoomId)}
 							onNewSessionProfileChange={setPreferredNewSessionProfile}
 							selectedRoomArchived={selectedRoomArchived}
 							creatingSession={creatingSession}
