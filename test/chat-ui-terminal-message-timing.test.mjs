@@ -72,13 +72,13 @@ test("persisted transcript keeps queued user time and final turn timing after re
 		{
 			id: "entry-user",
 			type: "message",
-			timestamp: "2026-07-14T10:00:00.000Z",
+			timestamp: "2026-07-14T10:00:30.000Z",
 			message: { role: "user", content: [{ type: "text", text: "Use a tool" }] },
 		},
 		{
 			id: "entry-assistant-intermediate",
 			type: "message",
-			timestamp: "2026-07-14T10:00:05.000Z",
+			timestamp: "2026-07-14T10:00:35.000Z",
 			message: {
 				role: "assistant",
 				content: [
@@ -91,13 +91,13 @@ test("persisted transcript keeps queued user time and final turn timing after re
 		{
 			id: "entry-tool",
 			type: "message",
-			timestamp: "2026-07-14T10:00:07.000Z",
+			timestamp: "2026-07-14T10:00:37.000Z",
 			message: { role: "toolResult", toolCallId: "tool-1", toolName: "read", content: "ok", isError: false },
 		},
 		{
 			id: "entry-assistant-final",
 			type: "message",
-			timestamp: "2026-07-14T10:00:09.000Z",
+			timestamp: "2026-07-14T10:00:39.000Z",
 			message: { role: "assistant", content: [{ type: "text", text: "Done." }], stopReason: "stop" },
 		},
 		{
@@ -109,8 +109,8 @@ test("persisted transcript keeps queued user time and final turn timing after re
 	];
 	const reloaded = view([
 		event(1, "message_queued", "2026-07-14T10:00:00.000Z", { eventId: "turn-1", text: "Use a tool", source: "user", queuedMessages: 1 }),
-		event(2, "message_started", "2026-07-14T10:00:03.000Z", { eventId: "turn-1", text: "Use a tool", source: "user" }),
-		event(3, "message_finished", "2026-07-14T10:00:13.000Z", { eventId: "turn-1", source: "user" }),
+		event(2, "message_started", "2026-07-14T10:00:30.000Z", { eventId: "turn-1", text: "Use a tool", source: "user" }),
+		event(3, "message_finished", "2026-07-14T10:00:40.000Z", { eventId: "turn-1", source: "user" }),
 		event(4, "message_started", "2026-07-14T10:01:01.000Z", { eventId: "turn-2", text: "Use a tool", source: "user" }),
 		event(5, "message_finished", "2026-07-14T10:01:02.000Z", { eventId: "turn-2", source: "user" }),
 	], "idle", transcriptEntries);
@@ -122,7 +122,7 @@ test("persisted transcript keeps queued user time and final turn timing after re
 	assert.equal(assistants.length, 2);
 	assert.equal(assistants[0].completedAt, undefined, "intermediate assistant text must not receive final timing");
 	assert.equal(assistants[0].durationMs, undefined);
-	assert.equal(assistants[1].completedAt, "2026-07-14T10:00:13.000Z");
+	assert.equal(assistants[1].completedAt, "2026-07-14T10:00:40.000Z");
 	assert.equal(assistants[1].durationMs, 10_000);
 });
 

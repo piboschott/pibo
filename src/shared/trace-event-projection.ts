@@ -228,6 +228,28 @@ export function contentDeltaPatchNodeId(event: PiboOutputEvent): string | undefi
 	return undefined;
 }
 
+export function reconcileTranscriptUserMessageTimestamps(
+	nodes: readonly PiboTraceNode[],
+	events: readonly ChatWebStoredEvent[],
+): void {
+	const transcriptUsers = nodes.filter((node) => node.type === "user.message" && node.source === "transcript");
+	let userCursor = 0;
+	for (const storedEvent of events) {
+		const event = storedEvent.payload as PiboOutputEvent;
+		if (event.type !== "message_queued" || event.source !== "user") continue;
+		const eventId = typeof event.eventId === "string" ? event.eventId : storedEvent.eventId;
+		const text = typeof event.text === "string" ? event.text : undefined;
+		const matchIndex = transcriptUsers.findIndex((node, index) => {
+			if (index < userCursor) return false;
+			if (eventId && (node.entryId === eventId || node.stableKey === `entry:${eventId}`)) return true;
+			return Boolean(text && traceNodeText(node) === text);
+		});
+		if (matchIndex === -1) continue;
+		transcriptUsers[matchIndex]!.startedAt = storedEvent.createdAt;
+		userCursor = matchIndex + 1;
+	}
+}
+
 export function isConfirmedUserMessageEcho(nodes: readonly PiboTraceNode[], event: ChatWebStoredEvent): boolean {
 	const payload = event.payload as PiboOutputEvent;
 	if (payload.type !== "message_queued" || payload.source !== "user") return false;
