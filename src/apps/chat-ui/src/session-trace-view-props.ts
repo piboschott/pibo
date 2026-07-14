@@ -5,6 +5,18 @@ import type { SessionBreadcrumbItem, SessionDerivationLink, SessionOriginLink } 
 
 export type SessionTraceViewLinks = Pick<ChatSessionViewProps, "sessionBreadcrumbs" | "originSession" | "derivedSessions">;
 
+export function resolveSessionTraceTitle(input: {
+	sessionNodes: readonly PiboWebSessionNode[];
+	selectedPiboSessionId: string | null;
+	traceTitle?: string;
+	fallback?: string;
+}): string | undefined {
+	const selectedSession = input.selectedPiboSessionId
+		? findSessionNode(input.sessionNodes, input.selectedPiboSessionId)
+		: undefined;
+	return selectedSession?.title || input.traceTitle || input.selectedPiboSessionId || input.fallback;
+}
+
 export function createSessionTraceViewLinks(
 	nodes: readonly PiboWebSessionNode[],
 	piboSessionId: string | null,

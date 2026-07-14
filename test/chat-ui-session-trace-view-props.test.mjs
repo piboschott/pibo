@@ -12,6 +12,7 @@ async function runSessionTraceViewPropsScenario() {
 			createSessionTraceViewLinks,
 			createSessionTraceViewProps,
 			resolveSessionTraceModelBadge,
+			resolveSessionTraceTitle,
 		} = await import("./src/apps/chat-ui/src/session-trace-view-props.ts");
 
 		function session(overrides) {
@@ -54,6 +55,17 @@ async function runSessionTraceViewPropsScenario() {
 		});
 		const root = session({ piboSessionId: "ps-root", profile: "root-profile", title: "Root title", children: [child] });
 		const sessions = [origin, root];
+
+		assert.equal(resolveSessionTraceTitle({
+			sessionNodes: sessions,
+			selectedPiboSessionId: "ps-child",
+			traceTitle: "Untitled Session",
+		}), "Child title");
+		assert.equal(resolveSessionTraceTitle({
+			sessionNodes: sessions,
+			selectedPiboSessionId: "ps-missing",
+			traceTitle: "Trace title",
+		}), "Trace title");
 
 		assert.deepEqual(createSessionTraceViewLinks(sessions, null), {
 			sessionBreadcrumbs: [],

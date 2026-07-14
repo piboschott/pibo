@@ -34,6 +34,7 @@ import {
   createSessionTraceViewLinks,
   createSessionTraceViewProps,
   resolveSessionTraceModelBadge,
+  resolveSessionTraceTitle,
 } from "./session-trace-view-props";
 import {
   appendComposerOptimisticEvent,
@@ -336,11 +337,12 @@ export function SessionTracePane({
       tracePageFetching={showRawEvents ? rawEventsQuery.isFetching : tracePageQuery.isFetching}
       onLoadMoreRawEvents={loadMoreRawEvents}
       headerProps={{
-        title:
-          currentTraceView?.title ??
-          selectedPiboSessionId ??
-          bootstrap.room?.name ??
-          selectedRoomId,
+        title: resolveSessionTraceTitle({
+          sessionNodes: bootstrap.sessions,
+          selectedPiboSessionId,
+          traceTitle: currentTraceView?.title,
+          fallback: bootstrap.room?.name ?? selectedRoomId ?? undefined,
+        }),
         roomLabel: bootstrap.room?.name ?? selectedRoomId ?? "Room",
         headerPiboSessionId,
         piboSessionId: selectedPiboSessionId,
