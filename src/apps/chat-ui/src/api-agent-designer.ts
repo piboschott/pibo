@@ -109,6 +109,10 @@ export async function patchCustomAgent(
 	});
 }
 
+export function saveCustomAgentDraft(id: string | undefined, input: SaveCustomAgentInput): Promise<{ agent: CustomAgent }> {
+	return id ? patchCustomAgent(id, input) : postCustomAgent(input);
+}
+
 export async function deleteCustomAgent(id: string, confirmName: string): Promise<{ deletedAgentId: string; deletedSessionIds: string[] }> {
 	return requestJson(`/api/chat/agents/${encodeURIComponent(id)}`, {
 		method: "DELETE",

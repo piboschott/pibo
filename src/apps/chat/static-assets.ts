@@ -13,7 +13,7 @@ const CHAT_VSCODE_DIST_DIR = resolve(fileURLToPath(new URL("../../../dist/apps/c
 const compressedAssetCache = new Map<string, Uint8Array>();
 
 export function responseChatAppShell(): Response {
-	return responseBuiltChatIndex() ?? responseHtml(createChatHtml());
+	return responseBuiltChatIndex() ?? responseHtml(createFallbackChatHtml());
 }
 
 export function responseBuiltChatIndex(): Response | undefined {
@@ -139,7 +139,7 @@ function compressedAssetBody(path: string, body: Uint8Array, encoding: "br" | "g
 	return compressed;
 }
 
-function createChatHtml(): string {
+export function createFallbackChatHtml(): string {
 	return `<!doctype html>
 <html lang="de">
 <head>
@@ -162,7 +162,8 @@ function createChatHtml(): string {
 		button.ghost { background: transparent; }
 		.app { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
 		.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: #1a262b; border-bottom: 1px solid #1e293b; }
-		.brand { font-size: 17px; font-weight: 800; letter-spacing: .08em; color: #e7f7fb; text-transform: uppercase; white-space: nowrap; }
+		.brand { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 800; letter-spacing: .08em; color: #e7f7fb; text-transform: uppercase; white-space: nowrap; }
+		.fallback-badge { border: 1px solid #f59e0b; border-radius: 999px; padding: 2px 6px; color: #fbbf24; font-size: 9px; letter-spacing: .06em; }
 		.tabs { display: flex; gap: 6px; }
 		.tab { height: 32px; text-transform: uppercase; font-size: 12px; letter-spacing: .06em; }
 		.tab.active { border-color: #11a4d4; color: #11a4d4; background: rgba(17,164,212,.08); }
@@ -296,7 +297,7 @@ function createChatHtml(): string {
 <body>
 	<div class="app">
 		<header class="topbar">
-			<div class="brand">Pibo Chat</div>
+			<div class="brand">Pibo Chat <span class="fallback-badge" title="Built React Chat assets are unavailable">Fallback UI</span></div>
 			<nav class="tabs">
 				<button class="tab active" data-area="sessions">Sessions</button>
 				<button class="tab" data-area="agents">Agents</button>
@@ -653,7 +654,7 @@ function createChatHtml(): string {
 			const row = document.createElement("div");
 			row.className = "session-row" + (node.piboSessionId === selectedPiboSessionId ? " active" : "");
 			row.style.paddingLeft = 8 + depth * 14 + "px";
-			row.title = (node.title || "Untitled Session") + "\n" + node.piboSessionId;
+			row.title = (node.title || "Untitled Session") + "\\n" + node.piboSessionId;
 			if (hasChildren) {
 				const toggle = document.createElement("button");
 				toggle.type = "button";

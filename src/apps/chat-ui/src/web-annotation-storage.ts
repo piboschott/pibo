@@ -1,5 +1,6 @@
 const WEB_ANNOTATIONS_CDP_URL_STORAGE_KEY = "pibo.chat.webAnnotations.cdpUrl";
-const WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX = "pibo.chat.webAnnotations.selected.";
+const WEB_ANNOTATIONS_SELECTED_STORAGE_KEY = "pibo.chat.webAnnotations.selected";
+const LEGACY_WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX = `${WEB_ANNOTATIONS_SELECTED_STORAGE_KEY}.`;
 const WEB_ANNOTATIONS_OVERLAY_STORAGE_PREFIX = "pibo.chat.webAnnotations.overlay.";
 const WEB_ANNOTATIONS_PANEL_COLLAPSED_STORAGE_KEY = "pibo.chat.webAnnotations.panelCollapsed";
 const WEB_ANNOTATIONS_TOGGLE_SHORTCUT_STORAGE_KEY = "pibo.chat.shortcuts.webAnnotationsToggle";
@@ -67,6 +68,19 @@ export function normalizeShortcutLabel(value: string): string {
 	return value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
 }
 
+export function shortcutFromKeyboardEvent(event: { key: string; code?: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): string | null {
+	if (["Alt", "Control", "Meta", "Shift"].includes(event.key)) return null;
+	if (!event.altKey && !event.ctrlKey && !event.metaKey) return null;
+	const key = event.code?.match(/^Key[A-Z]$/) ? event.code.slice(3) : event.key === " " ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key;
+	const parts = [];
+	if (event.ctrlKey) parts.push("Ctrl");
+	if (event.altKey) parts.push("Alt");
+	if (event.shiftKey) parts.push("Shift");
+	if (event.metaKey) parts.push("Meta");
+	parts.push(key);
+	return parts.join("+");
+}
+
 export function readStoredWebAnnotationOverlayState(piboSessionId: string): WebAnnotationOverlayPanelState | null {
 	try {
 		return parseStoredWebAnnotationOverlayState(localStorage.getItem(storedWebAnnotationOverlayStateKey(piboSessionId)));
@@ -105,25 +119,40 @@ export function parseWebAnnotationOverlayState(value: unknown): WebAnnotationOve
 	};
 }
 
-export function readStoredSelectedWebAnnotationIds(piboSessionId: string): string[] {
+export function readStoredSelectedWebAnnotationIds(piboSessionId?: string): string[] {
 	try {
-		const raw = localStorage.getItem(WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX + piboSessionId);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).slice(0, 5) : [];
+		const stored = parseStoredSelectedWebAnnotationIds(localStorage.getItem(WEB_ANNOTATIONS_SELECTED_STORAGE_KEY));
+		if (stored.length || !piboSessionId) return stored;
+		const legacyKey = LEGACY_WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX + piboSessionId;
+		const legacy = parseStoredSelectedWebAnnotationIds(localStorage.getItem(legacyKey));
+		if (legacy.length) {
+			localStorage.setItem(WEB_ANNOTATIONS_SELECTED_STORAGE_KEY, JSON.stringify(legacy));
+			localStorage.removeItem(legacyKey);
+		}
+		return legacy;
 	} catch {
 		return [];
 	}
 }
 
-export function writeStoredSelectedWebAnnotationIds(piboSessionId: string, ids: readonly string[]): void {
+export function writeStoredSelectedWebAnnotationIds(piboSessionId: string | undefined, ids: readonly string[]): void {
 	try {
-		const key = WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX + piboSessionId;
 		const unique = [...new Set(ids.filter((id) => id.trim()))].slice(0, 5);
-		if (unique.length) localStorage.setItem(key, JSON.stringify(unique));
-		else localStorage.removeItem(key);
+		if (unique.length) localStorage.setItem(WEB_ANNOTATIONS_SELECTED_STORAGE_KEY, JSON.stringify(unique));
+		else localStorage.removeItem(WEB_ANNOTATIONS_SELECTED_STORAGE_KEY);
+		if (piboSessionId) localStorage.removeItem(LEGACY_WEB_ANNOTATIONS_SELECTED_STORAGE_PREFIX + piboSessionId);
 	} catch {
 		// Ignore storage errors in private windows or locked-down browser contexts.
+	}
+}
+
+function parseStoredSelectedWebAnnotationIds(raw: string | null): string[] {
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).slice(0, 5) : [];
+	} catch {
+		return [];
 	}
 }
 

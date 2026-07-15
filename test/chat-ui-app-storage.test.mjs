@@ -27,6 +27,8 @@ async function runAppStorageScenario() {
 			readStoredShowArchivedSessions,
 			readStoredShowRawEvents,
 			readStoredShowThinking,
+			removeStoredNewSessionProfile,
+			removeStoredRoomSelection,
 			writeStoredExpandThinking,
 			writeStoredNewSessionProfile,
 			writeStoredShowArchivedRooms,
@@ -41,6 +43,7 @@ async function runAppStorageScenario() {
 		assert.equal(readStoredShowArchivedSessions(), false);
 		assert.equal(readStoredShowArchivedRooms(), false);
 		assert.equal(readStoredNewSessionProfile(), "");
+		assert.equal(readStoredNewSessionProfile("room-a"), "");
 
 		writeStoredShowThinking(false);
 		writeStoredExpandThinking(false);
@@ -48,6 +51,8 @@ async function runAppStorageScenario() {
 		writeStoredShowArchivedSessions(true);
 		writeStoredShowArchivedRooms(true);
 		writeStoredNewSessionProfile("pibo-agent");
+		writeStoredNewSessionProfile("agent-a", "room-a");
+		writeStoredNewSessionProfile("agent-b", "room-b");
 
 		assert.equal(readStoredShowThinking(), false);
 		assert.equal(readStoredExpandThinking(), false);
@@ -55,6 +60,13 @@ async function runAppStorageScenario() {
 		assert.equal(readStoredShowArchivedSessions(), true);
 		assert.equal(readStoredShowArchivedRooms(), true);
 		assert.equal(readStoredNewSessionProfile(), "pibo-agent");
+		assert.equal(readStoredNewSessionProfile("room-a"), "agent-a");
+		assert.equal(readStoredNewSessionProfile("room-b"), "agent-b");
+		removeStoredRoomSelection("room-a");
+		assert.equal(readStoredNewSessionProfile("room-a"), "agent-a");
+		removeStoredNewSessionProfile("room-a");
+		assert.equal(readStoredNewSessionProfile("room-a"), "");
+		assert.equal(readStoredNewSessionProfile("room-b"), "agent-b");
 
 		storage.set("pibo.chat.showThinking", "unexpected");
 		storage.set("pibo.chat.showRawEvents", "unexpected");
@@ -69,8 +81,11 @@ async function runAppStorageScenario() {
 		assert.equal(readStoredShowThinking(), true);
 		assert.equal(readStoredShowRawEvents(), false);
 		assert.equal(readStoredNewSessionProfile(), "");
+		assert.equal(readStoredNewSessionProfile("room-a"), "");
 		assert.doesNotThrow(() => writeStoredShowThinking(false));
 		assert.doesNotThrow(() => writeStoredNewSessionProfile("other"));
+		assert.doesNotThrow(() => writeStoredNewSessionProfile("other", "room-a"));
+		assert.doesNotThrow(() => removeStoredNewSessionProfile("room-a"));
 	`;
 	await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], { cwd: process.cwd() });
 }

@@ -67,6 +67,7 @@ export type SessionSidebarProps = {
 	onReadAllRoom: (roomId: string) => void | Promise<void>;
 	onDeleteRoom: (room: PiboRoom) => void;
 	newSessionProfile: string;
+	newSessionProfileReady: boolean;
 	onNewSessionProfileChange: (profile: string) => void;
 	selectedRoomArchived: boolean;
 	creatingSession: boolean;
@@ -111,6 +112,7 @@ export function SessionSidebar({
 	onReadAllRoom,
 	onDeleteRoom,
 	newSessionProfile,
+	newSessionProfileReady,
 	onNewSessionProfileChange,
 	selectedRoomArchived,
 	creatingSession,
@@ -236,7 +238,7 @@ export function SessionSidebar({
 						<select
 							value={newSessionProfile}
 							onChange={(event) => onNewSessionProfileChange(event.target.value)}
-							disabled={!newSessionProfileOptions.length || selectedRoomArchived}
+							disabled={!newSessionProfileReady || !newSessionProfileOptions.length || creatingRoom || selectedRoomArchived || roomSessionsLoading}
 							title="Agent for new sessions"
 							aria-label="Agent for new sessions"
 							className="h-6 w-28 max-[980px]:h-8 max-[980px]:w-32 max-[980px]:text-sm rounded-sm border border-slate-700 bg-[#101d22] px-1.5 text-[11px] font-medium normal-case tracking-normal text-slate-300 outline-none hover:border-[#11a4d4] focus:border-[#11a4d4] disabled:opacity-50"
@@ -250,10 +252,10 @@ export function SessionSidebar({
 						<button
 							data-pibo-debug="new-session-button"
 							data-pibo-room-id={selectedRoomId ?? bootstrap.selectedRoomId ?? undefined}
-							data-pibo-state={creatingSession ? "creating" : selectedRoomArchived ? "archived-disabled" : "ready"}
+							data-pibo-state={creatingSession ? "creating" : creatingRoom ? "room-creating" : roomSessionsLoading ? "room-loading" : !newSessionProfileReady ? "profile-loading" : selectedRoomArchived ? "archived-disabled" : "ready"}
 							type="button"
 							onClick={() => void onCreateSession()}
-							disabled={creatingSession || selectedRoomArchived}
+							disabled={!newSessionProfileReady || creatingSession || creatingRoom || selectedRoomArchived || roomSessionsLoading}
 							title="New Session"
 							aria-label="New Session"
 							className="h-6 w-6 max-[980px]:h-8 max-[980px]:w-8 inline-flex items-center justify-center border border-slate-700 rounded-sm text-slate-400 hover:border-[#11a4d4] hover:text-[#11a4d4] disabled:opacity-50"

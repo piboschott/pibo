@@ -34,6 +34,7 @@ import {
   createSessionTraceViewLinks,
   createSessionTraceViewProps,
   resolveSessionTraceModelBadge,
+  resolveSessionTraceTitle,
 } from "./session-trace-view-props";
 import {
   appendComposerOptimisticEvent,
@@ -57,6 +58,7 @@ export function SessionTracePane({
   selectedSessionActiveModel,
   selectedSessionStatus,
   selectedSessionSignal,
+  signals,
   workflowProjectSession,
   workflowLifecycleEvents,
   projectSessionCreatePanel,
@@ -101,6 +103,7 @@ export function SessionTracePane({
   selectedSessionActiveModel?: string;
   selectedSessionStatus?: PiboWebSessionStatus;
   selectedSessionSignal?: PiboSignalSnapshot["sessions"][string];
+  signals?: PiboSignalSnapshot;
   workflowProjectSession?: PiboProjectSession;
   workflowLifecycleEvents?: readonly WorkflowLifecycleEventRecord[];
   projectSessionCreatePanel?: ReactNode;
@@ -298,6 +301,7 @@ export function SessionTracePane({
     sessionActiveModelBadge,
     selectedSessionStatus,
     selectedSessionSignal,
+    signals,
     workflowProjectSession,
     workflowLifecycleEvents,
     sessionNodes: bootstrap.sessions,
@@ -336,11 +340,12 @@ export function SessionTracePane({
       tracePageFetching={showRawEvents ? rawEventsQuery.isFetching : tracePageQuery.isFetching}
       onLoadMoreRawEvents={loadMoreRawEvents}
       headerProps={{
-        title:
-          currentTraceView?.title ??
-          selectedPiboSessionId ??
-          bootstrap.room?.name ??
-          selectedRoomId,
+        title: resolveSessionTraceTitle({
+          sessionNodes: bootstrap.sessions,
+          selectedPiboSessionId,
+          traceTitle: currentTraceView?.title,
+          fallback: bootstrap.room?.name ?? selectedRoomId ?? undefined,
+        }),
         roomLabel: bootstrap.room?.name ?? selectedRoomId ?? "Room",
         headerPiboSessionId,
         piboSessionId: selectedPiboSessionId,
