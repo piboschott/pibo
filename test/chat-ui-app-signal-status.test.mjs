@@ -12,6 +12,7 @@ async function runAppSignalStatusScenario() {
 			applySignalPatch,
 			applySignalPatchToBootstrap,
 			applySignalSnapshotToBootstrap,
+			signalLegacyStatus,
 		} = await import("./src/apps/chat-ui/src/app-signal-status.ts");
 
 		function sessionNode(overrides = {}) {
@@ -113,6 +114,17 @@ async function runAppSignalStatusScenario() {
 		function assertAtLeastIso(value, minimum) {
 			assert.ok(Date.parse(value) >= Date.parse(minimum), \`expected \${value} to be at or after \${minimum}\`);
 		}
+
+		const runningTurn = {
+			nodeId: "turn:ps-root:event-1",
+			eventId: "event-1",
+			state: "running",
+			startedAt: "2026-05-27T00:04:00.000Z",
+			updatedAt: "2026-05-27T00:05:00.000Z",
+		};
+		assert.equal(signalLegacyStatus(signalSession({ latestTurn: runningTurn })), "running", "the canonical running turn keeps sidebar status active");
+		assert.equal(signalLegacyStatus(signalSession({ isTreeActive: true, latestTurn: { ...runningTurn, state: "completed", completedAt: runningTurn.updatedAt } })), "running", "background tree activity stays visible after the local turn ends");
+		assert.equal(signalLegacyStatus(signalSession({ latestTurn: { ...runningTurn, state: "completed", completedAt: runningTurn.updatedAt } })), "idle", "terminal local turn settles sidebar status with the tree");
 
 		const withSnapshot = applySignalSnapshotToBootstrap(base, snapshot);
 		const updatedChild = withSnapshot.sessions[0].children[0];

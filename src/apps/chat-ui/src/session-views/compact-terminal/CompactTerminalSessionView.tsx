@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer, MessageSquare } 
 import { Virtuoso } from "react-virtuoso";
 import { AgentDelegationCard } from "../../components/AgentDelegationCard";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
+import { useSessionActivity } from "../../hooks/useSessionActivity";
 import { MarkdownRenderer } from "../../tracing/MarkdownRenderer";
 import type { ChatSessionViewProps } from "../types";
 import { TerminalDetails } from "./TerminalDetails";
@@ -12,16 +13,6 @@ import { TerminalLoginCard } from "./TerminalLoginCard";
 import { TerminalModelCard } from "./TerminalModelCard";
 import { TerminalStatusCard } from "./TerminalStatusCard";
 import { TerminalThinkingCard } from "./TerminalThinkingCard";
-import {
-	EMPTY_STABLE_ACTIVE_TURN,
-	findLatestActiveTurnTerminal,
-	findSignalActiveTurnStartedAt,
-	findSignalActiveTurnTerminal,
-	latestActiveTurnTerminal,
-	resolveStableActiveTurn,
-	type ActiveTurnObservation,
-	type StableActiveTurnState,
-} from "../../../../../session-ui/activeTurn.js";
 import { buildCompactTerminalRows, findActiveTurnStartedAt, formatTerminalDuration, type CompactTerminalLine, type CompactTerminalRow } from "../../../../../session-ui/terminalRows.js";
 
 const SHOW_LATEST_THRESHOLD_PX = 180;
@@ -35,7 +26,6 @@ type TerminalNavigationKind = "system" | "tool" | "user";
 
 export function CompactTerminalSessionView({
 	traceView,
-	selectedTrace,
 	isLoading,
 	showThinking,
 	expandThinking,
@@ -67,28 +57,17 @@ export function CompactTerminalSessionView({
 	const navigationCursorRef = useRef<Partial<Record<TerminalNavigationKind, string>>>({});
 	const rangePrefetchReadyRef = useRef(false);
 	const olderTraceIntentRef = useRef(false);
-	const runningCount = rows.filter((row) => row.status === "running").length;
 	const userMessageCount = rows.filter((row) => isNavigableTerminalRow(row, "user")).length;
 	const toolErrorCount = rows.filter((row) => isNavigableTerminalRow(row, "tool")).length;
 	const errorCount = rows.filter((row) => isNavigableTerminalRow(row, "system")).length;
 	const traceTurnStartedAt = useMemo(() => findActiveTurnStartedAt(traceView), [traceView]);
-	const signalTurnStartedAt = useMemo(
-		() => findSignalActiveTurnStartedAt(selectedSessionSignal, signals),
-		[selectedSessionSignal, signals],
-	);
-	const terminalObservation = useMemo(
-		() => latestActiveTurnTerminal(findLatestActiveTurnTerminal(traceView), findSignalActiveTurnTerminal(selectedSessionSignal)),
-		[selectedSessionSignal, traceView],
-	);
-	const activeTurn = useStableActiveTurn({
-		sessionId: selectedSessionSignal?.piboSessionId ?? traceView?.piboSessionId,
-		startedAt: traceTurnStartedAt ?? signalTurnStartedAt,
-		activeEvidence: selectedSessionSignal?.isTreeActive === true || traceTurnStartedAt !== undefined || signalTurnStartedAt !== undefined ||
-			selectedSessionStatus === "running" || runningCount > 0 || selectedTrace?.status === "UNSET",
-		terminal: terminalObservation,
+	const sessionActivity = useSessionActivity({
+		signal: selectedSessionSignal,
+		fallbackStatus: selectedSessionStatus,
+		fallbackTurnStartedAt: traceTurnStartedAt,
 	});
-	const activeTurnStartedAt = activeTurn.startedAt;
-	const isStreaming = activeTurn.active;
+	const activeTurnStartedAt = sessionActivity.activeTurnStartedAt;
+	const isStreaming = sessionActivity.isTurnActive;
 	const loadOlderTracePage = useCallback(() => {
 		if (!hasOlderTraceEvents || isFetchingOlderTracePage) return;
 		olderTraceIntentRef.current = false;
@@ -672,15 +651,6 @@ function isInteractiveEventTarget(event: MouseEvent<HTMLElement> | KeyboardEvent
 const WORKING_SCRAMBLE_TARGET = "Working...";
 const WORKING_SCRAMBLE_ASCII_START = 33;
 const WORKING_SCRAMBLE_ASCII_END = 126;
-
-function useStableActiveTurn(observation: ActiveTurnObservation): StableActiveTurnState {
-	const [state, setState] = useState<StableActiveTurnState>(EMPTY_STABLE_ACTIVE_TURN);
-	const resolved = resolveStableActiveTurn(state, observation);
-	useEffect(() => {
-		if (resolved !== state) setState(resolved);
-	}, [resolved, state]);
-	return resolved;
-}
 
 function TerminalStreamingFooter({ startedAt }: { startedAt?: string }) {
 	const { chars, activeIndex } = useWorkingScramble(WORKING_SCRAMBLE_TARGET);

@@ -228,6 +228,17 @@ export type { PiboSessionTraceSummary, PiboSessionTraceView } from "../../../sha
 
 export type PiboSignalStatus = string;
 
+export type PiboTurnSignalState = "running" | "completed" | "failed" | "cancelled" | "interrupted";
+
+export type PiboTurnSignalSummary = {
+	nodeId: string;
+	eventId: string;
+	state: PiboTurnSignalState;
+	startedAt: string;
+	updatedAt: string;
+	completedAt?: string;
+};
+
 export type PiboSignalError = {
 	message: string;
 	code?: string;
@@ -265,6 +276,7 @@ export type PiboSessionSignalSnapshot = {
 	queuedMessages: number;
 	currentMessageId?: string;
 	currentTurnId?: string;
+	latestTurn?: PiboTurnSignalSummary;
 	isLocalActive: boolean;
 	hasActiveDescendant: boolean;
 	isTreeActive: boolean;

@@ -89,6 +89,17 @@ export type ChildSessionSignalSummary = {
 	updatedAt: string;
 };
 
+export type PiboTurnSignalState = "running" | "completed" | "failed" | "cancelled" | "interrupted";
+
+export type PiboTurnSignalSummary = {
+	nodeId: string;
+	eventId: string;
+	state: PiboTurnSignalState;
+	startedAt: string;
+	updatedAt: string;
+	completedAt?: string;
+};
+
 export type PiboActiveTelemetrySignalHint = {
 	source: "signals";
 	activeTurnId?: string;
@@ -114,6 +125,7 @@ export type PiboSessionSignalSnapshot = {
 	queuedMessages: number;
 	currentMessageId?: string;
 	currentTurnId?: string;
+	latestTurn?: PiboTurnSignalSummary;
 	isLocalActive: boolean;
 	hasActiveDescendant: boolean;
 	isTreeActive: boolean;
@@ -153,6 +165,7 @@ export type PiboSignalInput =
 	| { type: "pibo_output"; event: PiboOutputEvent; session?: PiboSession }
 	| { type: "session_created"; session: PiboSession }
 	| { type: "session_disposed"; piboSessionId: string; reason?: string }
+	| { type: "session_interrupted"; piboSessionId: string; reason?: string }
 	| { type: "session_processing_changed"; piboSessionId: string; processing: boolean; queuedMessages: number }
 	| { type: "run_changed"; run: PiboRunSnapshot; previousStatus?: PiboRunStatus; reason?: string }
 	| { type: "run_removed"; runId: string; controllerPiboSessionId: string }
