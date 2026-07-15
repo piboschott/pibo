@@ -257,6 +257,28 @@ export class ChatProjectService {
 		const folder = resolve(input.projectFolder ?? piboHomePath("projects/workspace"));
 		mkdirSync(folder, { recursive: true });
 		const now = new Date().toISOString();
+		const legacy = this.db.prepare(`SELECT * FROM projects
+			WHERE project_folder = ?
+				AND (id LIKE 'personal_%' OR json_extract(metadata_json, '$.personal') IS 1 OR json_extract(metadata_json, '$.default') IS 1)`)
+			.get(folder) as ProjectRow | undefined;
+		if (legacy) {
+			const { personal: _personal, ...metadata } = safeJsonObject(legacy.metadata_json);
+			const nameConflict = this.db.prepare("SELECT id FROM projects WHERE lower(name) = lower(?) AND id != ?")
+				.get("Project Manager", legacy.id) as { id: string } | undefined;
+			this.db.exec("BEGIN IMMEDIATE; PRAGMA defer_foreign_keys = ON;");
+			try {
+				this.db.prepare("UPDATE projects SET id = ?, name = ?, metadata_json = ?, archived_at = NULL, updated_at = ? WHERE id = ?")
+					.run(id, nameConflict ? legacy.name : "Project Manager", JSON.stringify({ ...metadata, default: true }), now, legacy.id);
+				for (const table of ["project_sessions", "project_workflow_session_snapshots", "project_workflow_runs", "project_workflow_wait_tokens", "project_workflow_human_actions"]) {
+					this.db.prepare(`UPDATE ${table} SET project_id = ? WHERE project_id = ?`).run(id, legacy.id);
+				}
+				this.db.exec("COMMIT");
+			} catch (error) {
+				this.db.exec("ROLLBACK");
+				throw error;
+			}
+			return this.requireProject(id);
+		}
 		this.db.prepare(`INSERT INTO projects (id, name, description, project_folder, configuration_status, metadata_json, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, "Project Manager", null, folder, "configured", JSON.stringify({ default: true }), now, now);
 		return this.requireProject(id);

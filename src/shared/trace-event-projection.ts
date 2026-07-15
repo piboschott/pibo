@@ -70,10 +70,8 @@ export function applySingleEventToNodes(
 		const existing = byId.get(node.id);
 		if (existing) {
 			mergeAssistantMessageEvent(existing, node);
-			closeParentTurnForFinalAssistant(byId, existing);
 			return;
 		}
-		closeParentTurnForFinalAssistant(byId, node);
 		nodes.push(node);
 		byId.set(node.id, node);
 		return;
@@ -104,10 +102,8 @@ export function applySingleEventToNodes(
 		const existing = byId.get(node.id);
 		if (existing) {
 			mergeAssistantMessageEvent(existing, node);
-			closeParentTurnForFinalAssistant(byId, existing);
 			return;
 		}
-		closeParentTurnForFinalAssistant(byId, node);
 	}
 	if (node.type === "execution.compaction") {
 		const existing = findLatestCompactionNode(nodes);
@@ -120,6 +116,13 @@ export function applySingleEventToNodes(
 		const existing = byId.get(node.id);
 		if (existing) {
 			mergeReasoningEvent(existing, node);
+			return;
+		}
+	}
+	if (node.type === "agent.delegation" && !node.toolCallId && node.linkedPiboSessionId) {
+		const existing = findLegacySubagentLinkTarget([...byId.values()], node);
+		if (existing) {
+			mergeSubagentSessionLink(existing, node);
 			return;
 		}
 	}
@@ -166,6 +169,7 @@ function assistantMessageNodeFromEvent(
 		title: "Agent Message",
 		status: "done",
 		startedAt: createdAt,
+		completedAt: createdAt,
 		summary: event.text,
 		output: event.text,
 		source: "event-log",
@@ -229,6 +233,28 @@ export function contentDeltaPatchNodeId(event: PiboOutputEvent): string | undefi
 		return thinkingId ? thinkingNodeId(thinkingId) : undefined;
 	}
 	return undefined;
+}
+
+export function reconcileTranscriptUserMessageTimestamps(
+	nodes: readonly PiboTraceNode[],
+	events: readonly ChatWebStoredEvent[],
+): void {
+	const transcriptUsers = nodes.filter((node) => node.type === "user.message" && node.source === "transcript");
+	let userCursor = 0;
+	for (const storedEvent of events) {
+		const event = storedEvent.payload as PiboOutputEvent;
+		if (event.type !== "message_queued" || event.source !== "user") continue;
+		const eventId = typeof event.eventId === "string" ? event.eventId : storedEvent.eventId;
+		const text = typeof event.text === "string" ? event.text : undefined;
+		const matchIndex = transcriptUsers.findIndex((node, index) => {
+			if (index < userCursor) return false;
+			if (eventId && (node.entryId === eventId || node.stableKey === `entry:${eventId}`)) return true;
+			return Boolean(text && traceNodeText(node) === text);
+		});
+		if (matchIndex === -1) continue;
+		transcriptUsers[matchIndex]!.startedAt = storedEvent.createdAt;
+		userCursor = matchIndex + 1;
+	}
 }
 
 export function isConfirmedUserMessageEcho(nodes: readonly PiboTraceNode[], event: ChatWebStoredEvent): boolean {
@@ -343,6 +369,7 @@ function traceNodeFromEvent(
 				...base,
 				id: eventId ? messageTurnNodeId(eventId) : id,
 				type: "agent.turn",
+				startedAt: event.type === "message_started" ? createdAt : undefined,
 				title: "Agent Turn",
 				status:
 					event.type === "message_finished" || sessionStatus !== "running" ? "done" : "running",
@@ -373,6 +400,7 @@ function traceNodeFromEvent(
 				type: "assistant.message",
 				title: "Agent Message",
 				status: "done",
+				completedAt: createdAt,
 				summary: event.text,
 				output: event.text,
 				stableKey: assistantId ? `assistant:${assistantId}` : base.stableKey,
@@ -588,14 +616,6 @@ function mergeReasoningEvent(target: PiboTraceNode, update: PiboTraceNode): void
 	target.completedAt = update.completedAt ?? target.completedAt;
 }
 
-function closeParentTurnForFinalAssistant(byId: Map<string, PiboTraceNode>, assistant: PiboTraceNode): void {
-	if (!assistant.parentId || assistant.status !== "done") return;
-	const parent = byId.get(assistant.parentId);
-	if (!parent || parent.type !== "agent.turn") return;
-	parent.status = "done";
-	parent.completedAt = assistant.completedAt ?? assistant.startedAt ?? parent.completedAt;
-}
-
 function isInternalSessionOperation(action: string): boolean {
 	return action === "session.fork" || action === "session.clone" || action === "session.switch";
 }
@@ -623,6 +643,59 @@ function shouldKeepTranscriptEchoEvent(
 
 function isStaleToolCallEchoEvent(event: PiboOutputEvent, sessionStatus: PiboWebSessionStatus): boolean {
 	return sessionStatus !== "running" && event.type === "tool_call";
+}
+
+export type TraceMessageTurnTiming = {
+	eventId: string;
+	userText?: string;
+	startedAt?: string;
+	completedAt: string;
+	durationMs?: number;
+};
+
+export function messageTurnTimingsFromEvents(events: readonly ChatWebStoredEvent[]): TraceMessageTurnTiming[] {
+	const timings = new Map<string, { userText?: string; startedAt?: string; completedAt?: string }>();
+	const completedEventIds: string[] = [];
+	const completedEventIdSet = new Set<string>();
+	const ignoredEventIds = new Set<string>();
+	for (const storedEvent of events) {
+		const event = storedEvent.payload as PiboOutputEvent;
+		if (event.type !== "message_started" && event.type !== "message_finished") continue;
+		const eventId = typeof event.eventId === "string" ? event.eventId : undefined;
+		if (!eventId) continue;
+		if (event.type === "message_started" && event.source === "service") {
+			ignoredEventIds.add(eventId);
+			continue;
+		}
+		if (ignoredEventIds.has(eventId)) continue;
+		const timing = timings.get(eventId) ?? {};
+		if (event.type === "message_started") {
+			timing.userText ??= event.text;
+			timing.startedAt ??= storedEvent.createdAt;
+		} else {
+			timing.completedAt = storedEvent.createdAt;
+			if (!completedEventIdSet.has(eventId)) {
+				completedEventIds.push(eventId);
+				completedEventIdSet.add(eventId);
+			}
+		}
+		timings.set(eventId, timing);
+	}
+	return completedEventIds.flatMap((eventId) => {
+		const timing = timings.get(eventId);
+		if (!timing?.completedAt) return [];
+		const startedAtMs = parseTimestamp(timing.startedAt);
+		const completedAtMs = parseTimestamp(timing.completedAt);
+		return [{
+			eventId,
+			userText: timing.userText,
+			startedAt: timing.startedAt,
+			completedAt: timing.completedAt,
+			durationMs: startedAtMs === undefined || completedAtMs === undefined
+				? undefined
+				: Math.max(0, completedAtMs - startedAtMs),
+		}];
+	});
 }
 
 export function findOpenTranscriptEventIds(
@@ -760,11 +833,55 @@ function thinkingEventNodeId(
 function mergeToolEvent(target: PiboTraceNode, update: PiboTraceNode): void {
 	target.status = update.status;
 	target.summary = update.summary ?? target.summary;
-	target.input = update.input ?? target.input;
+	target.input = mergeDelegationInput(target, update);
 	target.output = update.output ?? target.output;
 	target.error = update.error ?? target.error;
 	target.completedAt = update.completedAt ?? target.completedAt;
 	target.linkedPiboSessionId = update.linkedPiboSessionId ?? target.linkedPiboSessionId;
+}
+
+function mergeSubagentSessionLink(target: PiboTraceNode, update: PiboTraceNode): void {
+	target.summary = update.summary ?? target.summary;
+	target.input = mergeDelegationInput(target, update);
+	target.linkedPiboSessionId = update.linkedPiboSessionId ?? target.linkedPiboSessionId;
+}
+
+function findLegacySubagentLinkTarget(nodes: readonly PiboTraceNode[], update: PiboTraceNode): PiboTraceNode | undefined {
+	const delegations = [...nodes].reverse().filter((candidate) => candidate.type === "agent.delegation");
+	const agentName = delegationAgentName(update);
+	const candidates = delegations.filter(
+		(candidate) => !candidate.linkedPiboSessionId && delegationAgentName(candidate) === agentName,
+	);
+	const threadKey = delegationThreadKey(update.input);
+	const matchingCandidate = threadKey
+		? candidates.find((candidate) => delegationThreadKey(candidate.input) === threadKey)
+		: candidates.length === 1 ? candidates[0] : undefined;
+	if (matchingCandidate) return matchingCandidate;
+	return delegations.find((candidate) => candidate.linkedPiboSessionId === update.linkedPiboSessionId);
+}
+
+function delegationAgentName(node: PiboTraceNode): string | undefined {
+	const input = isObjectRecord(node.input) ? node.input : undefined;
+	const value = typeof input?.subagentName === "string" ? input.subagentName : node.summary ?? node.title;
+	return typeof value === "string" ? value.replace(/^pibo_subagent_/, "").trim().toLowerCase() || undefined : undefined;
+}
+
+function delegationThreadKey(value: unknown): string | undefined {
+	if (!isObjectRecord(value) || typeof value.threadKey !== "string") return undefined;
+	return value.threadKey.trim() || undefined;
+}
+
+function mergeDelegationInput(target: PiboTraceNode, update: PiboTraceNode): unknown {
+	if (target.type !== "agent.delegation" || !isObjectRecord(target.input) || !isObjectRecord(update.input)) {
+		return update.input ?? target.input;
+	}
+	return Object.fromEntries(
+		Object.entries({ ...target.input, ...update.input }).filter(([, value]) => value !== undefined),
+	);
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function findLatestCompactionNode(nodes: readonly PiboTraceNode[]): PiboTraceNode | undefined {
@@ -791,6 +908,12 @@ function stringifyPreview(value: unknown): string {
 	} catch {
 		return String(value);
 	}
+}
+
+function parseTimestamp(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const timestamp = new Date(value).getTime();
+	return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 function cryptoSafeId(value: unknown): string {

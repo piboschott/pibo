@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { ChatProjectService } from "../dist/apps/chat/data/project-service.js";
@@ -46,6 +47,39 @@ test("project service uses app-global storage and lists projects", () => {
 		assert.equal(retiredPartitionField in service.requireProject(second.id), false);
 		const renamedSecond = service.updateProject(second.id, { name: "Second Project Renamed" });
 		assert.equal(renamedSecond?.name, "Second Project Renamed");
+	} finally {
+		service.close();
+		rmSync(tempRoot, { recursive: true, force: true });
+	}
+});
+
+test("shared default project adopts a legacy personal project using the default folder", () => {
+	const tempRoot = mkdtempSync(join(tmpdir(), "pibo-project-legacy-default-"));
+	const databasePath = join(tempRoot, "web-projects.sqlite");
+	const projectFolder = join(tempRoot, "default");
+	const initialized = new ChatProjectService(databasePath);
+	initialized.close();
+
+	const fixture = new DatabaseSync(databasePath);
+	const createdAt = "2026-05-01T00:00:00.000Z";
+	fixture.prepare(`INSERT INTO projects (id, name, description, project_folder, configuration_status, current_main_session_id, metadata_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run("personal_legacy", "Personal Chat", null, projectFolder, "configured", "ps_legacy_project", JSON.stringify({ personal: true }), createdAt, createdAt);
+	fixture.prepare(`INSERT INTO project_sessions (project_id, pibo_session_id, kind, workflow_id, title, archived, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run("personal_legacy", "ps_legacy_project", "main", "simple-chat", "Legacy session", 0, createdAt, createdAt);
+	fixture.close();
+
+	const service = new ChatProjectService(databasePath);
+	try {
+		const adopted = service.ensureSharedDefaultProject({ projectFolder });
+		assert.equal(adopted.id, "prj_default");
+		assert.equal(adopted.name, "Project Manager");
+		assert.equal(adopted.currentMainSessionId, "ps_legacy_project");
+		assert.equal(adopted.metadata.default, true);
+		assert.equal(adopted.metadata.personal, undefined);
+		assert.equal(service.ensureSharedDefaultProject({ projectFolder: join(tempRoot, "ignored-default") }).id, adopted.id);
+		assert.equal(service.listProjects().length, 0);
+		assert.deepEqual(service.listProjectSessions(adopted.id).map((session) => session.piboSessionId), ["ps_legacy_project"]);
+		assert.equal(service.getProject("personal_legacy", { includeArchived: true }), undefined);
 	} finally {
 		service.close();
 		rmSync(tempRoot, { recursive: true, force: true });

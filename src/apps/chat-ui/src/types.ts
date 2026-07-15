@@ -557,6 +557,7 @@ export type CustomAgentSubagent = {
 export type CustomAgent = {
 	id: string;
 	profileName: string;
+	profileAliases?: string[];
 	displayName: string;
 	description?: string;
 	nativeTools: string[];
