@@ -881,7 +881,10 @@ function UserSkillsSettings({
 				<SkillEditModal
 					title="Create Skill"
 					onSave={handleCreate}
-					onClose={() => setCreateOpen(false)}
+					onClose={() => {
+						setCreateOpen(false);
+						setError(null);
+					}}
 					busy={busy === "create"}
 				/>
 			) : null}
