@@ -900,7 +900,10 @@ function UserSkillsSettings({
 			{installOpen ? (
 				<SkillInstallModal
 					onInstall={handleInstall}
-					onClose={() => setInstallOpen(false)}
+					onClose={() => {
+						setInstallOpen(false);
+						setError(null);
+					}}
 					busy={busy === "install"}
 				/>
 			) : null}
