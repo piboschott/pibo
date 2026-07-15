@@ -15,7 +15,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { deleteCustomAgent, patchCustomAgent, postCustomAgent, type SaveCustomAgentInput } from "../api-agent-designer";
+import { deleteCustomAgent, patchCustomAgent, saveCustomAgentDraft, type SaveCustomAgentInput } from "../api-agent-designer";
 import { listContextFiles, postContextFile } from "../api-context-files";
 import type { AgentCatalog, BootstrapData, CustomAgent, CustomAgentSubagent, ModelCatalog, ModelProfile } from "../types";
 import {
@@ -81,8 +81,8 @@ export function AgentsView({
 }) {
 	const [catalog, setCatalog] = useState<AgentCatalog | null>(initialCatalog ?? null);
 	const [customAgents, setCustomAgents] = useState(initialCustomAgents);
-	const [draft, setDraft] = useState<AgentDraft>(() => createBlankAgentDraft(initialCatalog));
-	const [showUnsavedAgentDraft, setShowUnsavedAgentDraft] = useState(false);
+	const [draft, setDraft] = useState<AgentDraft>(() => createBlankAgentDraft(initialCatalog, uniqueDraftAgentName(agentNamesInUse(agents, initialCustomAgents))));
+	const [showUnsavedAgentDraft, setShowUnsavedAgentDraft] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [refreshingContextFiles, setRefreshingContextFiles] = useState(false);
 	const autoRefreshedBrokenContextFilesRef = useRef(new Set<string>());
@@ -188,8 +188,7 @@ export function AgentsView({
 
 	const createNewAgentDraft = () => {
 		const usedNames = [
-			...agents.map((agent) => agent.name),
-			...customAgents.flatMap((agent) => [agent.profileName, agent.displayName]),
+			...agentNamesInUse(agents, customAgents),
 			...(unsavedAgentDraftVisible ? [draft.displayName] : []),
 		];
 		setDraft(createBlankAgentDraft(catalog ?? undefined, uniqueDraftAgentName(usedNames)));
@@ -231,7 +230,7 @@ export function AgentsView({
 				autoContextFiles: draft.autoContextFiles,
 				runControl: draft.runControl,
 			};
-			const response = draft.id ? await patchCustomAgent(draft.id, input) : await postCustomAgent(input);
+			const response = await saveCustomAgentDraft(draft.id, input);
 			setCustomAgents((current) => {
 				const withoutSaved = current.filter((agent) => agent.id !== response.agent.id);
 				return [response.agent, ...withoutSaved];
@@ -304,9 +303,10 @@ export function AgentsView({
 		setSaving(true);
 		try {
 			await deleteCustomAgent(draft.id, deleteConfirmName);
-			setCustomAgents((current) => current.filter((agent) => agent.id !== draft.id));
-			setDraft(createBlankAgentDraft(catalog ?? undefined));
-			setShowUnsavedAgentDraft(false);
+			const remainingAgents = customAgents.filter((agent) => agent.id !== draft.id);
+			setCustomAgents(remainingAgents);
+			setDraft(createBlankAgentDraft(catalog ?? undefined, uniqueDraftAgentName(agentNamesInUse(agents, remainingAgents))));
+			setShowUnsavedAgentDraft(true);
 			setDeleteConfirmName("");
 			onAgentsChanged();
 			setLocalError(null);
@@ -916,6 +916,14 @@ function McpServersDesigner({
 		</DesignerPanel>
 	);
 }
+
+function agentNamesInUse(agents: BootstrapData["agents"], customAgents: CustomAgent[]): string[] {
+	return [
+		...agents.flatMap((agent) => [agent.name, ...agent.aliases]),
+		...customAgents.flatMap((agent) => [agent.profileName, ...(agent.profileAliases ?? []), agent.displayName]),
+	];
+}
+
 function formatModelProfile(model: ModelProfile): string {
 	return `${model.provider}/${model.id}`;
 }
