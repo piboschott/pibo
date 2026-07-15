@@ -1,3 +1,4 @@
+import { resolveSessionActivity } from "../../../session-ui/sessionActivity.js";
 import type { BootstrapData, PiboSignalPatch, PiboSignalSnapshot, PiboWebSessionNode } from "./types";
 
 type SignalSessionUpdate = { status?: PiboWebSessionNode["status"]; updatedAt?: string; isTreeActive?: boolean };
@@ -67,10 +68,7 @@ function signalSessionUpdate(snapshot: PiboSignalSnapshot["sessions"][string] | 
 }
 
 export function signalLegacyStatus(snapshot: PiboSignalSnapshot["sessions"][string] | undefined): PiboWebSessionNode["status"] | undefined {
-	if (!snapshot) return undefined;
-	if (snapshot.hasError || snapshot.hasErrorDescendant || snapshot.aggregateStatus === "error") return "error";
-	if (snapshot.isTreeActive) return "running";
-	return "idle";
+	return snapshot ? resolveSessionActivity(snapshot).status : undefined;
 }
 
 function latestIsoTimestamp(...values: Array<string | undefined>): string | undefined {

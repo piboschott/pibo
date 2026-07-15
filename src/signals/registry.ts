@@ -16,6 +16,8 @@ import type {
 	PiboSignalRegistryDiagnostics,
 	PiboSignalRegistryPruneOptions,
 	PiboSignalSnapshot,
+	PiboTurnSignalState,
+	PiboTurnSignalSummary,
 	RunSignalSummary,
 	ToolCallSignalSummary,
 } from "./types.js";
@@ -123,6 +125,39 @@ function telemetryTurnIdFromNode(node: PiboSignalNode | undefined, piboSessionId
 	return `turn_${node.id.slice(prefix.length)}`;
 }
 
+function latestTurnSummary(nodes: PiboSignalNode[], piboSessionId: string): PiboTurnSignalSummary | undefined {
+	const turn = nodes
+		.filter((node) => node.kind === "turn" && node.startedAt)
+		.sort((left, right) => Date.parse(left.startedAt ?? left.createdAt) - Date.parse(right.startedAt ?? right.createdAt))
+		.at(-1);
+	if (!turn?.startedAt) return undefined;
+	const state = turnSignalState(turn.status);
+	if (!state) return undefined;
+	const prefix = `turn:${piboSessionId}:`;
+	const eventId = typeof turn.metadata?.eventId === "string"
+		? turn.metadata.eventId
+		: turn.id.startsWith(prefix)
+			? turn.id.slice(prefix.length)
+			: turn.id;
+	return {
+		nodeId: turn.id,
+		eventId,
+		state,
+		startedAt: turn.startedAt,
+		updatedAt: turn.updatedAt,
+		completedAt: turn.completedAt,
+	};
+}
+
+function turnSignalState(status: PiboSignalNode["status"]): PiboTurnSignalState | undefined {
+	if (isActiveSignalStatus(status)) return "running";
+	if (status === "done") return "completed";
+	if (status === "error") return "failed";
+	if (status === "cancelled" || status === "disposed") return "cancelled";
+	if (status === "interrupted") return "interrupted";
+	return undefined;
+}
+
 function signalNodeEqual(a: PiboSignalNode | undefined, b: PiboSignalNode): boolean {
 	if (!a) return false;
 	return a.id === b.id
@@ -181,6 +216,7 @@ function sessionSnapshotSemanticallyEqual(a: PiboSessionSignalSnapshot | undefin
 		&& a.queuedMessages === b.queuedMessages
 		&& a.currentMessageId === b.currentMessageId
 		&& a.currentTurnId === b.currentTurnId
+		&& jsonValueEqual(a.latestTurn, b.latestTurn)
 		&& a.isLocalActive === b.isLocalActive
 		&& a.hasActiveDescendant === b.hasActiveDescendant
 		&& a.isTreeActive === b.isTreeActive
@@ -471,6 +507,7 @@ export class InMemoryPiboSignalRegistry implements PiboSignalRegistry {
 		const activeRuns: RunSignalSummary[] = nodes.filter((node) => node.kind === "yielded_run" && isActiveSignalStatus(node.status)).map((node) => ({ nodeId: node.id, runId: String(node.metadata?.runId ?? node.id.replace(/^run:/, "")), toolName: typeof node.metadata?.toolName === "string" ? node.metadata.toolName : undefined, status: node.status, completionPolicy: typeof node.metadata?.completionPolicy === "string" ? node.metadata.completionPolicy : undefined, consumed: typeof node.metadata?.consumed === "boolean" ? node.metadata.consumed : undefined, startedAt: node.startedAt, updatedAt: node.updatedAt }));
 		const activeChildren: ChildSessionSignalSummary[] = childSnapshots.filter((snapshot) => snapshot.isTreeActive).map((snapshot) => ({ nodeId: `session:${snapshot.piboSessionId}`, piboSessionId: snapshot.piboSessionId, status: snapshot.aggregateStatus, isTreeActive: snapshot.isTreeActive, hasError: snapshot.hasError || snapshot.hasErrorDescendant, updatedAt: snapshot.updatedAt }));
 		const activeTelemetry = activeTelemetryHint(piboSessionId, activeLocalNodes, queuedMessages, now());
+		const latestTurn = latestTurnSummary(nodes, piboSessionId);
 		const localErrors = nodes.flatMap((node) => {
 			if (node.kind === "tool_call" || node.kind === "yielded_run") return [];
 			return errorFromNode(node) ?? [];
@@ -491,6 +528,7 @@ export class InMemoryPiboSignalRegistry implements PiboSignalRegistry {
 			queuedMessages,
 			currentMessageId: activeLocalNodes.find((node) => node.kind === "message")?.id,
 			currentTurnId: activeLocalNodes.find((node) => node.kind === "turn")?.id,
+			latestTurn,
 			isLocalActive,
 			hasActiveDescendant,
 			isTreeActive: isLocalActive || hasActiveDescendant,

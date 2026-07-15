@@ -182,7 +182,10 @@ test("prune terminal node sends remove patch", async () => {
 	const removePatch = patches.find((patch) => patch.removes.includes("turn:root:m1"));
 	assert.equal(pruned >= 1, true);
 	assert.ok(removePatch);
-	assert.equal(registry.snapshotTree("root").nodes["turn:root:m1"], undefined);
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.nodes["turn:root:m1"], undefined);
+	assert.equal(snapshot.sessions.root.latestTurn, undefined);
+	assert.equal(snapshot.sessions.root.isTreeActive, false);
 });
 
 test("metadata change produces a patch and identical metadata input does not", () => {
@@ -237,9 +240,20 @@ test("turn signal remains active between model, tool, and reasoning phases until
 	assert.equal(active.sessions.root.isTreeActive, true);
 	assert.equal(active.sessions.root.currentTurnId, "turn:root:m1");
 	assert.equal(active.nodes["turn:root:m1"].startedAt, startedAt);
+	assert.deepEqual(active.sessions.root.latestTurn, {
+		nodeId: "turn:root:m1",
+		eventId: "m1",
+		state: "running",
+		startedAt,
+		updatedAt: active.nodes["turn:root:m1"].updatedAt,
+		completedAt: undefined,
+	});
 
 	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
-	assert.equal(registry.snapshotTree("root").sessions.root.isTreeActive, false);
+	const completed = registry.snapshotTree("root");
+	assert.equal(completed.sessions.root.isTreeActive, false);
+	assert.equal(completed.sessions.root.latestTurn.state, "completed");
+	assert.equal(typeof completed.sessions.root.latestTurn.completedAt, "string");
 });
 
 test("message finish settles active tool signals without matching tool finish", () => {
@@ -257,7 +271,7 @@ test("message finish settles active tool signals without matching tool finish", 
 	assert.equal(snapshot.sessions.root.isTreeActive, false);
 });
 
-test("processing false settles orphan active tool signals", () => {
+test("processing false interrupts an unresolved turn and its orphan active tools", () => {
 	const registry = createPiboSignalRegistry();
 	registry.project({ type: "session_created", session: session("root") });
 	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
@@ -266,9 +280,63 @@ test("processing false settles orphan active tool signals", () => {
 	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
 
 	const snapshot = registry.snapshotTree("root");
-	assert.equal(snapshot.nodes["tool:root:tc1"].status, "done");
+	assert.equal(snapshot.nodes["tool:root:tc1"].status, "interrupted");
+	assert.equal(snapshot.nodes["turn:root:m1"].status, "interrupted");
+	assert.equal(snapshot.sessions.root.latestTurn.state, "interrupted");
 	assert.equal(snapshot.sessions.root.aggregateStatus, "idle");
 	assert.equal(snapshot.sessions.root.isTreeActive, false);
+});
+
+test("explicit completion is not overwritten by a later processing stop", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "late duplicate" } });
+	registry.project({ type: "pibo_output", event: { type: "assistant_delta", piboSessionId: "root", eventId: "m1", assistantIndex: 0, text: "late" } });
+	const snapshot = registry.snapshotTree("root");
+	assert.equal(snapshot.sessions.root.latestTurn.state, "completed");
+	assert.equal(snapshot.sessions.root.isTreeActive, false);
+	assert.equal(snapshot.nodes["assistant_stream:root:m1:0"], undefined);
+});
+
+test("message completion upgrades an earlier processing-stop fallback", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
+	assert.equal(registry.snapshotTree("root").sessions.root.latestTurn.state, "interrupted");
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+	assert.equal(registry.snapshotTree("root").sessions.root.latestTurn.state, "completed");
+});
+
+test("interruption and disposal terminalize unresolved turns", () => {
+	for (const [input, expected] of [
+		[{ type: "session_interrupted", piboSessionId: "root", reason: "abort" }, "interrupted"],
+		[{ type: "session_disposed", piboSessionId: "root", reason: "dispose" }, "cancelled"],
+	]) {
+		const registry = createPiboSignalRegistry();
+		registry.project({ type: "session_created", session: session("root") });
+		registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
+		registry.project(input);
+		registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: true, queuedMessages: 0 });
+		registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+		const snapshot = registry.snapshotTree("root");
+		assert.equal(snapshot.sessions.root.latestTurn.state, expected);
+		assert.equal(snapshot.sessions.root.isTreeActive, false);
+	}
+});
+
+test("a new turn replaces the latest terminal turn without reviving its id", () => {
+	const registry = createPiboSignalRegistry();
+	registry.project({ type: "session_created", session: session("root") });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "one" } });
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
+	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m2", text: "two" } });
+	const latest = registry.snapshotTree("root").sessions.root.latestTurn;
+	assert.equal(latest.eventId, "m2");
+	assert.equal(latest.state, "running");
 });
 
 test("tool call errors do not mark the session signal as failed", () => {
@@ -293,12 +361,14 @@ test("queued message signal settles after a provider error", () => {
 	registry.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "root", eventId: "m1", text: "hi" } });
 	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
 	registry.project({ type: "pibo_output", event: { type: "session_error", piboSessionId: "root", eventId: "m1", error: "No API key" } });
+	registry.project({ type: "pibo_output", event: { type: "message_finished", piboSessionId: "root", eventId: "m1" } });
 	registry.project({ type: "session_processing_changed", piboSessionId: "root", processing: false, queuedMessages: 0 });
 
 	const snapshot = registry.snapshotTree("root");
 	assert.equal(snapshot.sessions.root.localStatus, "error");
 	assert.equal(snapshot.sessions.root.aggregateStatus, "error");
 	assert.equal(snapshot.sessions.root.isTreeActive, false);
+	assert.equal(snapshot.sessions.root.latestTurn.state, "failed");
 	assert.equal(snapshot.nodes["message:root:m1"].status, "error");
 });
 

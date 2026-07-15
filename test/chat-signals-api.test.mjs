@@ -116,12 +116,14 @@ test("chat signal snapshots are app-global and include local session state", asy
 	try {
 		const session = createSession(sessions, "ps_signal_root");
 		signals.project({ type: "session_created", session });
-		signals.project({ type: "session_processing_changed", piboSessionId: session.id, processing: true, queuedMessages: 0 });
+		signals.project({ type: "pibo_output", event: { type: "message_started", piboSessionId: session.id, eventId: "event-1", text: "hello" }, session });
 
 		const ok = await fetch(`${baseURL}/api/chat/signals/session/${session.id}`, { headers: { "x-test-user": "user-1" } });
 		assert.equal(ok.status, 200);
 		const snapshot = await ok.json();
 		assert.equal(snapshot.sessions[session.id].isTreeActive, true);
+		assert.equal(snapshot.sessions[session.id].latestTurn.eventId, "event-1");
+		assert.equal(snapshot.sessions[session.id].latestTurn.state, "running");
 
 		const crossAccount = await fetch(`${baseURL}/api/chat/signals/session/${session.id}`, { headers: { "x-test-user": "user-2" } });
 		assert.equal(crossAccount.status, 200);
@@ -158,11 +160,17 @@ test("chat signal SSE sends snapshot then monotonic patches", async () => {
 		signals.project({ type: "session_created", session });
 		const response = await fetch(`${baseURL}/api/chat/signals/events?rootPiboSessionId=${session.id}`, { headers: { "x-test-user": "user-1" } });
 		assert.equal(response.status, 200);
-		setTimeout(() => signals.project({ type: "queue_changed", piboSessionId: session.id, queuedMessages: 1 }), 10);
+		setTimeout(() => signals.project({
+			type: "pibo_output",
+			event: { type: "message_started", piboSessionId: session.id, eventId: "event-sse", text: "hello" },
+			session,
+		}), 10);
 		const events = await readSseEvents(response, 2);
 		assert.equal(events[0].event, "signal_snapshot");
 		assert.equal(events[1].event, "signal_patch");
 		assert.equal(events[1].data.fromVersion + 1, events[1].data.toVersion);
+		assert.equal(events[1].data.sessionSnapshots[0].latestTurn.eventId, "event-sse");
+		assert.equal(events[1].data.sessionSnapshots[0].latestTurn.state, "running");
 	} finally {
 		await channel.stop?.();
 	}

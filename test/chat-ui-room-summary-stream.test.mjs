@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -25,4 +27,10 @@ async function runRoomSummaryStreamScenario() {
 
 test("room summary stream waits for the selected room's latest stream id", async () => {
 	await assert.doesNotReject(runRoomSummaryStreamScenario());
+});
+
+test("room summary status cannot override an available signal snapshot", () => {
+	const source = fs.readFileSync(path.resolve("src/apps/chat-ui/src/App.tsx"), "utf8");
+	assert.match(source, /const signalStatus = signalLegacyStatus\(sessionSignalsRef\.current\?\.sessions\[targetPiboSessionId\]\)/);
+	assert.match(source, /const status = signalStatus \?\? streamStatus/);
 });
