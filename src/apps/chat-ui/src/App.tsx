@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useBlocker, useNavigate } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
 import { RefreshCw, X } from "lucide-react";
 import { getBootstrap, getNavigation, getSessionPage, markRoomRead, markSessionRead, patchRoom, patchSession, postAction, postMessage, postRoom, postSession } from "./api-chat-sessions";
@@ -259,6 +259,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const [composerFocusSignal, setComposerFocusSignal] = useState(0);
 	const [creatingSession, setCreatingSession] = useState(false);
 	const creatingSessionRef = useRef(false);
+	const agentAutosaveHandlerRef = useRef<(() => Promise<void>) | null>(null);
 	const [loadingActiveSessions, setLoadingActiveSessions] = useState(false);
 	const [loadingArchivedSessions, setLoadingArchivedSessions] = useState(false);
 	const [visibleActiveSessionCount, setVisibleActiveSessionCount] = useState(SESSION_PAGE_SIZE);
@@ -411,6 +412,26 @@ export function App({ route }: { route: ChatAppRoute }) {
 		},
 		[navigate, sessionViewId],
 	);
+
+	const updateAgentAutosaveHandler = useCallback((handler: (() => Promise<void>) | null) => {
+		agentAutosaveHandlerRef.current = handler;
+	}, []);
+	const flushAgentBeforeNavigation = useCallback(async ({ current, next }: { current: { pathname: string }; next: { pathname: string } }) => {
+		if (current.pathname === next.pathname) return false;
+		const autosave = agentAutosaveHandlerRef.current;
+		if (!autosave) return false;
+		try {
+			await autosave();
+			return false;
+		} catch {
+			return true;
+		}
+	}, []);
+	useBlocker({
+		disabled: area !== "agents",
+		enableBeforeUnload: false,
+		shouldBlockFn: flushAgentBeforeNavigation,
+	});
 
 	const navigateToSelectedSession = useCallback(
 		(roomId: string | undefined, piboSessionId: string | undefined, replace = false, options: NavigationOptions = {}) => {
@@ -1346,6 +1367,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 						onEditContextFile={openContextFileEditor}
 						onEditMcpServer={openMcpToolsEditor}
 						onAgentsChanged={() => void loadBootstrap(selectedPiboSessionId ?? undefined, showArchivedRef.current, selectedRoomId ?? undefined, { selectSession: false })}
+						onAutosaveHandlerChange={updateAgentAutosaveHandler}
 						creatingSession={creatingSession || selectedRoomArchived}
 					/>
 				) : area === "workflows" ? (

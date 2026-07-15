@@ -8,10 +8,10 @@ const execFileAsync = promisify(execFile);
 
 test("Agent Designer exposes a uniquely named unsaved draft on initial load", async () => {
 	const source = readFileSync("src/apps/chat-ui/src/agents/AgentsView.tsx", "utf8");
-	assert.match(source, /createBlankAgentDraft\(initialCatalog, uniqueDraftAgentName\(agentNamesInUse\(agents, initialCustomAgents\)\)\)/);
+	assert.match(source, /createBlankAgentDraft\(\s*initialCatalog,\s*uniqueDraftAgentName\(agentNamesInUse\(agents, initialCustomAgents\)\),?\s*\)/);
 	assert.match(source, /agents\.flatMap\(\(agent\) => \[agent\.name, \.\.\.agent\.aliases\]\)/);
 	assert.match(source, /customAgents\.flatMap\(\(agent\) => \[agent\.profileName, \.\.\.\(agent\.profileAliases \?\? \[\]\), agent\.displayName\]\)/);
-	assert.match(source, /const \[showUnsavedAgentDraft, setShowUnsavedAgentDraft\] = useState\(true\)/);
+	assert.match(source, /const \[showUnsavedAgentDraft, setShowUnsavedAgentDraft\] = useState\(!initialDraftState\.draft\.id\)/);
 
 	const script = `
 		import assert from "node:assert/strict";

@@ -11,7 +11,7 @@ const source = readFileSync(agentsViewPath, "utf8");
 function archivedAgentToggleHandler() {
 	const start = source.indexOf("const toggleArchivedAgents = () => {");
 	if (start < 0) throw new Error("toggleArchivedAgents handler not found");
-	const end = source.indexOf("\n\tconst createNewAgentDraft", start);
+	const end = source.indexOf("\n\tconst setDraftArchived", start);
 	if (end < 0) throw new Error("toggleArchivedAgents handler end not found");
 	return source.slice(start, end);
 }
@@ -20,10 +20,10 @@ test("hiding archived agents switches the designer away from a hidden archived s
 	const handler = archivedAgentToggleHandler();
 	assert.match(handler, /if \(next \|\| !archivedDraft\) return;/);
 	assert.match(handler, /const fallbackCustomAgent = activeCustomAgents\[0\];/);
-	assert.match(handler, /setDraft\(agentToDraft\(fallbackCustomAgent\)\);/);
+	assert.match(handler, /activateDraft\(nextDraft, agentDraftSignature\(nextDraft\)\);/);
 	assert.match(handler, /onSelect\(fallbackCustomAgent\.profileName\);/);
 	assert.match(handler, /const fallbackProfile = pluginProfiles\[0\];/);
-	assert.match(handler, /setDraft\(profileToDraft\(fallbackProfile, catalog \?\? undefined\)\);/);
+	assert.match(handler, /const nextDraft = profileToDraft\(fallbackProfile, catalog \?\? undefined\);/);
 	assert.match(handler, /onSelect\(fallbackProfile\.name\);/);
 });
 
