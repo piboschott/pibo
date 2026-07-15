@@ -10,6 +10,7 @@ const SHOW_RAW_EVENTS_STORAGE_KEY = "pibo.chat.showRawEvents";
 const SHOW_ARCHIVED_SESSIONS_STORAGE_KEY = "pibo.chat.showArchived";
 const SHOW_ARCHIVED_ROOMS_STORAGE_KEY = "pibo.chat.showArchivedRooms";
 const NEW_SESSION_PROFILE_STORAGE_KEY = "pibo.chat.newSessionProfile";
+const NEW_SESSION_PROFILES_BY_ROOM_STORAGE_KEY = "pibo.chat.newSessionProfilesByRoom";
 const COMPOSER_HISTORY_LIMIT = 100;
 
 export type StoredSelection = {
@@ -62,16 +63,17 @@ export function writeStoredSelection(selection: StoredSelection): void {
 export function removeStoredRoomSelection(roomId: string): void {
 	try {
 		const stored = readStoredSelection();
-		if (!stored.sessionsByRoom?.[roomId]) return;
-		const { [roomId]: _removed, ...sessionsByRoom } = stored.sessionsByRoom;
-		localStorage.setItem(
-			LAST_SELECTION_STORAGE_KEY,
-			JSON.stringify({
-				roomId: stored.roomId,
-				piboSessionId: stored.piboSessionId,
-				...(Object.keys(sessionsByRoom).length ? { sessionsByRoom } : {}),
-			}),
-		);
+		if (stored.sessionsByRoom?.[roomId]) {
+			const { [roomId]: _removed, ...sessionsByRoom } = stored.sessionsByRoom;
+			localStorage.setItem(
+				LAST_SELECTION_STORAGE_KEY,
+				JSON.stringify({
+					roomId: stored.roomId,
+					piboSessionId: stored.piboSessionId,
+					...(Object.keys(sessionsByRoom).length ? { sessionsByRoom } : {}),
+				}),
+			);
+		}
 	} catch {
 		// Browser storage can be unavailable in private or locked-down contexts.
 	}
@@ -181,20 +183,48 @@ export function writeStoredShowArchivedRooms(value: boolean): void {
 	writeStoredBoolean(SHOW_ARCHIVED_ROOMS_STORAGE_KEY, value);
 }
 
-export function readStoredNewSessionProfile(): string {
+export function readStoredNewSessionProfile(roomId?: string): string {
 	try {
+		if (roomId) return readStoredNewSessionProfilesByRoom()[roomId] ?? "";
 		return localStorage.getItem(NEW_SESSION_PROFILE_STORAGE_KEY) ?? "";
 	} catch {
 		return "";
 	}
 }
 
-export function writeStoredNewSessionProfile(profile: string): void {
+export function removeStoredNewSessionProfile(roomId: string): void {
 	try {
-		localStorage.setItem(NEW_SESSION_PROFILE_STORAGE_KEY, profile);
+		const profiles = readStoredNewSessionProfilesByRoom();
+		if (!profiles[roomId]) return;
+		delete profiles[roomId];
+		localStorage.setItem(NEW_SESSION_PROFILES_BY_ROOM_STORAGE_KEY, JSON.stringify(profiles));
 	} catch {
 		// Browser storage can be unavailable in private or locked-down contexts.
 	}
+}
+
+export function writeStoredNewSessionProfile(profile: string, roomId?: string): void {
+	try {
+		if (!roomId) {
+			localStorage.setItem(NEW_SESSION_PROFILE_STORAGE_KEY, profile);
+			return;
+		}
+		const profiles = readStoredNewSessionProfilesByRoom();
+		profiles[roomId] = profile;
+		localStorage.setItem(NEW_SESSION_PROFILES_BY_ROOM_STORAGE_KEY, JSON.stringify(profiles));
+	} catch {
+		// Browser storage can be unavailable in private or locked-down contexts.
+	}
+}
+
+function readStoredNewSessionProfilesByRoom(): Record<string, string> {
+	const raw = localStorage.getItem(NEW_SESSION_PROFILES_BY_ROOM_STORAGE_KEY);
+	if (!raw) return {};
+	const value: unknown = JSON.parse(raw);
+	if (!isRecord(value)) return {};
+	return Object.fromEntries(Object.entries(value).filter(
+		(entry): entry is [string, string] => Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1]),
+	));
 }
 
 export function clearStoredSelection(): void {

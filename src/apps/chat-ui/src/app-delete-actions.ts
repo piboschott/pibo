@@ -15,6 +15,7 @@ import {
 	responseDeletesSelectedSession,
 } from "./app-delete-flow";
 import type { NavigationOptions } from "./app-routes";
+import { removeStoredNewSessionProfile, removeStoredRoomSelection } from "./app-storage";
 import type { BootstrapData, PiboRoom, PiboWebSessionNode } from "./types";
 
 type LoadBootstrapOptions = {
@@ -145,6 +146,10 @@ export function useAppDeleteActions({
 		updateBootstrapCache((data) => removeRoomsFromBootstrap(data, optimisticDelete.deletedRoomIds));
 		try {
 			await deleteRoom(deleteRoomTarget.id, deleteRoomConfirmName);
+			for (const roomId of optimisticDelete.deletedRoomIds) {
+				removeStoredRoomSelection(roomId);
+				removeStoredNewSessionProfile(roomId);
+			}
 			if (deleteTargetMatchesSelectedRoom(deleteRoomTarget.id, selectedRoomId)) {
 				setSelectedRoomId(null);
 				setSelectedPiboSessionId(null);
