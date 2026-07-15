@@ -131,7 +131,10 @@ export function AgentsView({
 }) {
 	const [initialDraftState] = useState(() => {
 		const pending = readPendingAgentDraft();
-		const initialDraft = pending?.draft ?? createBlankAgentDraft(initialCatalog);
+		const initialDraft = pending?.draft ?? createBlankAgentDraft(
+			initialCatalog,
+			uniqueDraftAgentName(agentNamesInUse(agents, initialCustomAgents)),
+		);
 		return {
 			draft: initialDraft,
 			savedSignature: pending ? pending.savedSignature : agentDraftSignature(initialDraft),
@@ -141,7 +144,7 @@ export function AgentsView({
 	const [catalog, setCatalog] = useState<AgentCatalog | null>(initialCatalog ?? null);
 	const [customAgents, setCustomAgents] = useState(initialCustomAgents);
 	const [draft, setDraft] = useState<AgentDraft>(initialDraftState.draft);
-	const [showUnsavedAgentDraft, setShowUnsavedAgentDraft] = useState(initialDraftState.restored && !initialDraftState.draft.id);
+	const [showUnsavedAgentDraft, setShowUnsavedAgentDraft] = useState(!initialDraftState.draft.id);
 	const [saveState, setSaveState] = useState<SaveState>(initialDraftState.restored ? "idle" : "saved");
 	const [editingName, setEditingName] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -424,13 +427,39 @@ export function AgentsView({
 	const createNewAgentDraft = () => {
 		void runAfterAutosave(() => {
 			const usedNames = [
-				...agents.flatMap((agent) => [agent.name, ...agent.aliases]),
-				...customAgents.flatMap((agent) => [agent.profileName, agent.displayName]),
+				...agentNamesInUse(agents, customAgents),
 				...(unsavedAgentDraftVisible ? [draft.displayName] : []),
 			];
 			const nextDraft = createBlankAgentDraft(catalog ?? undefined, uniqueDraftAgentName(usedNames));
 			activateDraft(nextDraft, null);
 		});
+	};
+
+	const toggleArchivedAgents = () => {
+		const next = !showArchivedAgents;
+		setShowArchivedAgents(next);
+		localStorage.setItem("pibo.chat.showArchivedAgents", String(next));
+		if (next || !archivedDraft) return;
+
+		const fallbackCustomAgent = activeCustomAgents[0];
+		if (fallbackCustomAgent) {
+			const nextDraft = agentToDraft(fallbackCustomAgent);
+			activateDraft(nextDraft, agentDraftSignature(nextDraft));
+			onSelect(fallbackCustomAgent.profileName);
+			return;
+		}
+		const fallbackProfile = pluginProfiles[0];
+		if (fallbackProfile) {
+			const nextDraft = profileToDraft(fallbackProfile, catalog ?? undefined);
+			activateDraft(nextDraft, agentDraftSignature(nextDraft));
+			onSelect(fallbackProfile.name);
+			return;
+		}
+		const nextDraft = createBlankAgentDraft(
+			catalog ?? undefined,
+			uniqueDraftAgentName(agentNamesInUse(agents, customAgents)),
+		);
+		activateDraft(nextDraft, agentDraftSignature(nextDraft));
 	};
 
 	const setDraftArchived = async (archived: boolean) => {
@@ -489,10 +518,13 @@ export function AgentsView({
 		setSaving(true);
 		try {
 			await deleteCustomAgent(draft.id, deleteConfirmName);
-			setCustomAgents((current) => current.filter((agent) => agent.id !== draft.id));
-			const nextDraft = createBlankAgentDraft(catalog ?? undefined);
+			const remainingAgents = customAgents.filter((agent) => agent.id !== draft.id);
+			setCustomAgents(remainingAgents);
+			const nextDraft = createBlankAgentDraft(
+				catalog ?? undefined,
+				uniqueDraftAgentName(agentNamesInUse(agents, remainingAgents)),
+			);
 			activateDraft(nextDraft, agentDraftSignature(nextDraft));
-			setShowUnsavedAgentDraft(false);
 			setDeleteConfirmName("");
 			onAgentsChangedRef.current();
 			setLocalError(null);
@@ -514,11 +546,7 @@ export function AgentsView({
 						</button>
 						<button
 							type="button"
-							onClick={() => {
-								const next = !showArchivedAgents;
-								setShowArchivedAgents(next);
-								localStorage.setItem("pibo.chat.showArchivedAgents", String(next));
-							}}
+							onClick={toggleArchivedAgents}
 							title={showArchivedAgents ? "Hide Archived Agents" : "Show Archived Agents"}
 							aria-label={showArchivedAgents ? "Hide Archived Agents" : "Show Archived Agents"}
 							className={`p-1 border rounded-sm hover:border-[#11a4d4] hover:text-[#11a4d4] ${showArchivedAgents ? "border-[#11a4d4] text-[#11a4d4]" : "border-slate-700 text-slate-400"}`}
@@ -1120,6 +1148,13 @@ function McpServersDesigner({
 		</DesignerPanel>
 	);
 }
+function agentNamesInUse(agents: BootstrapData["agents"], customAgents: CustomAgent[]): string[] {
+	return [
+		...agents.flatMap((agent) => [agent.name, ...agent.aliases]),
+		...customAgents.flatMap((agent) => [agent.profileName, ...(agent.profileAliases ?? []), agent.displayName]),
+	];
+}
+
 function formatModelProfile(model: ModelProfile): string {
 	return `${model.provider}/${model.id}`;
 }
