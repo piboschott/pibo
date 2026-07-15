@@ -235,9 +235,10 @@ test("Web Compact Terminal source preserves shared flow ordering hooks and strea
 	assert.match(compactSource, /data-order-stream-id=\{row\.orderStreamId\}/, "Web terminal should expose stream id hooks");
 	assert.match(compactSource, /data-order-frame-index=\{row\.orderStreamFrameIndex\}/, "Web terminal should expose stream frame hooks");
 	assert.match(compactSource, /followOutput=\{stickyView\.followOutput\}/, "Web terminal should preserve sticky follow-output behavior for streaming");
-	assert.match(compactSource, /selectedSessionStatus === "running"/, "Web terminal should treat running sessions as streaming");
-	assert.match(compactSource, /runningCount > 0/, "Web terminal should treat running shared rows as streaming");
-	assert.match(compactSource, /TerminalStreamingFooter/, "Web terminal should render a streaming footer while work is active");
+	assert.match(compactSource, /useSessionActivity\(\{/, "Web terminal should use the shared session activity hook");
+	assert.match(compactSource, /sessionActivity\.isTurnActive/, "Web terminal should show Working only for the canonical active turn");
+	assert.doesNotMatch(compactSource, /runningCount > 0|selectedTrace\?\.status/, "Web terminal must not infer turn lifecycle from trace rows or trace status");
+	assert.match(compactSource, /TerminalStreamingFooter/, "Web terminal should render a streaming footer while a turn is active");
 });
 
 test("all shared session-ui view-model modules stay renderer-neutral", () => {

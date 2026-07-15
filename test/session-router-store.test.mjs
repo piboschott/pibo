@@ -463,6 +463,29 @@ test("dispose removes cached parent and child routed runtimes", async () => {
 	}
 });
 
+test("abort action terminalizes the active turn before runtime abort work", async () => {
+	const store = new InMemoryPiboSessionStore();
+	store.create({
+		id: "ps_abort_action",
+		piSessionId: "22222222-2222-4222-8222-222222222223",
+		channel: "pibo.test",
+		kind: "chat",
+		profile: "base",
+	});
+	const router = new PiboSessionRouter({ persistSession: false, sessionStore: store });
+
+	try {
+		await router.emit({ type: "execution", piboSessionId: "ps_abort_action", action: "status" });
+		router.getSignalRegistry().project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "ps_abort_action", eventId: "m1", text: "hi" } });
+		await router.emit({ type: "execution", piboSessionId: "ps_abort_action", action: "abort" });
+		const snapshot = router.getSignalRegistry().snapshotTree("ps_abort_action");
+		assert.equal(snapshot.sessions.ps_abort_action.latestTurn.state, "interrupted");
+		assert.equal(snapshot.sessions.ps_abort_action.isTreeActive, false);
+	} finally {
+		await router.disposeAll();
+	}
+});
+
 test("kill action disposes cached runtimes without cancelling yielded runs", async () => {
 	const store = new InMemoryPiboSessionStore();
 	store.create({
@@ -476,10 +499,14 @@ test("kill action disposes cached runtimes without cancelling yielded runs", asy
 
 	try {
 		await router.emit({ type: "execution", piboSessionId: "ps_kill_action", action: "status" });
+		router.getSignalRegistry().project({ type: "pibo_output", event: { type: "message_started", piboSessionId: "ps_kill_action", eventId: "m1", text: "hi" } });
 		const run = router.runRegistry.startToolRun({ controllerPiboSessionId: "ps_kill_action", toolName: "bash" });
 		const output = await router.emit({ type: "execution", piboSessionId: "ps_kill_action", action: "kill" });
 		assert.deepEqual(output.result.killed, ["ps_kill_action"]);
 		assert.deepEqual(router.getPiboSessionIds(), []);
+		const snapshot = router.getSignalRegistry().snapshotTree("ps_kill_action");
+		assert.equal(snapshot.sessions.ps_kill_action.latestTurn.state, "cancelled");
+		assert.equal(snapshot.sessions.ps_kill_action.isTreeActive, false);
 		assert.equal(router.runRegistry.status("ps_kill_action", run.runId).status, "running");
 		router.runRegistry.cancel("ps_kill_action", run.runId);
 	} finally {

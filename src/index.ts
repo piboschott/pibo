@@ -79,6 +79,8 @@ export type {
 	PiboSignalRegistry,
 	PiboSignalSnapshot,
 	PiboSignalStatus,
+	PiboTurnSignalState,
+	PiboTurnSignalSummary,
 } from "./signals/types.js";
 export type {
 	PiboDeadJobListInput,

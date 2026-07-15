@@ -269,10 +269,12 @@ export class PiboSessionRouter {
 				return session.enqueueMessage(event);
 			}
 
-			const output = await session.executeAction(event);
 			if (event.action === "abort") {
 				this.signalRegistry.project({ type: "session_interrupted", piboSessionId: event.piboSessionId, reason: "abort action" });
+			} else if (event.action === "dispose" || event.action === "kill" || event.action === "kill_all") {
+				this.signalRegistry.project({ type: "session_disposed", piboSessionId: event.piboSessionId, reason: `${event.action} action` });
 			}
+			const output = await session.executeAction(event);
 			if (event.action === "dispose") {
 				await this.disposeSessionSubtree(event.piboSessionId, "dispose action", { cancelRuns: true });
 			} else if (event.action === "kill" || event.action === "kill_all") {
@@ -291,12 +293,12 @@ export class PiboSessionRouter {
 		const cancelledRuns: string[] = [];
 		const session = this.sessions.get(piboSessionId);
 		if (session) {
+			this.signalRegistry.project({ type: "session_disposed", piboSessionId, reason: "kill" });
 			killed.push(await session.kill());
 			if (options?.includeRuns) {
 				const runs = this.runRegistry.cancelControllerRuns(piboSessionId);
 				cancelledRuns.push(...runs.map((r) => r.runId));
 			}
-			this.signalRegistry.project({ type: "session_interrupted", piboSessionId, reason: "kill" });
 			const children = await this.killChildSessions(piboSessionId, options);
 			killed.push(...children.killed);
 			cancelledRuns.push(...children.cancelledRuns);

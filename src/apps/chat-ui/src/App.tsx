@@ -278,6 +278,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 	const mobileAreaMenuRef = useRef<HTMLDivElement>(null);
 	const [gatewayMode, setGatewayMode] = useState<"main" | "fallback" | null>(null);
 	const [sessionSignals, setSessionSignals] = useState<PiboSignalSnapshot | null>(null);
+	const sessionSignalsRef = useRef<PiboSignalSnapshot | null>(null);
 	const [signalNow, setSignalNow] = useState(() => Date.now());
 	const showArchivedRef = useRef(showArchived);
 	const sessionListScrollRef = useRef<HTMLDivElement>(null);
@@ -328,6 +329,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 
 	useEffect(() => {
 		if (area !== "sessions" || !selectedPiboSessionId) {
+			sessionSignalsRef.current = null;
 			setSessionSignals(null);
 			return;
 		}
@@ -340,6 +342,7 @@ export function App({ route }: { route: ChatAppRoute }) {
 				fetchSignalTree(selectedPiboSessionId, { signal: controller.signal })
 					.then((snapshot) => {
 						if (controller.signal.aborted) return;
+						sessionSignalsRef.current = snapshot;
 						setSessionSignals(snapshot);
 						setBootstrap((latest) => latest ? applySignalSnapshotToBootstrap(latest, snapshot) : latest);
 					})
@@ -352,16 +355,17 @@ export function App({ route }: { route: ChatAppRoute }) {
 					clearTimeout(signalRecoveryTimer);
 					signalRecoveryTimer = undefined;
 				}
+				sessionSignalsRef.current = snapshot;
 				setSessionSignals(snapshot);
 				setBootstrap((current) => current ? applySignalSnapshotToBootstrap(current, snapshot) : current);
 			},
 			onPatch: (patch) => {
-				setSessionSignals((current) => {
-					const next = applySignalPatch(current, patch);
-					if (current && next === current) refreshSignalSnapshot(0);
-					return next;
-				});
-				setBootstrap((current) => current ? applySignalPatchToBootstrap(current, patch) : current);
+				const current = sessionSignalsRef.current;
+				const next = applySignalPatch(current, patch);
+				if (current && next === current) refreshSignalSnapshot(0);
+				sessionSignalsRef.current = next;
+				setSessionSignals(next);
+				setBootstrap((bootstrapData) => bootstrapData ? applySignalPatchToBootstrap(bootstrapData, patch) : bootstrapData);
 			},
 			onError: () => refreshSignalSnapshot(SIGNAL_TREE_ERROR_RECOVERY_DELAY_MS),
 		});
@@ -765,8 +769,10 @@ export function App({ route }: { route: ChatAppRoute }) {
 			const messageStreamId = streamIdFromEventSourceId((message as MessageEvent).lastEventId);
 			const replayFrame = messageStreamId !== undefined && messageStreamId <= latestRoomStreamId;
 			const targetPiboSessionId = event.piboSessionId;
-			const status = liveSessionStatusFromEvent(event);
-			if (targetPiboSessionId && status) {
+			const streamStatus = liveSessionStatusFromEvent(event);
+			if (targetPiboSessionId && streamStatus) {
+				const signalStatus = signalLegacyStatus(sessionSignalsRef.current?.sessions[targetPiboSessionId]);
+				const status = signalStatus ?? streamStatus;
 				const lastActivityAt = new Date().toISOString();
 				updateBootstrapCache((data) => updateSessionNodeInBootstrap(data, targetPiboSessionId, (node) => ({ ...node, status, lastActivityAt })));
 			}

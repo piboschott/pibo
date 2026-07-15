@@ -102,9 +102,37 @@ Each supported event changes only the matching node(s) and affected session snap
 #### Scenario: Message and tool lifecycle
 
 - GIVEN a session has an active message and active tool node
-- WHEN a matching message finish or processing-false event arrives
+- WHEN a matching message finish arrives
 - THEN orphan active tool nodes for that session settle to `done`
+- WHEN processing changes to false without a matching terminal message
+- THEN unresolved active nodes settle to `interrupted`
 - AND the session returns to `idle` unless an error or queued state remains.
+
+### Requirement: Turn lifecycle is explicit and monotonic
+
+The system MUST expose the newest local turn as `latestTurn` with its id, start time, update time, optional completion time, and one of these states: `running`, `completed`, `failed`, `cancelled`, or `interrupted`.
+
+A running turn MUST remain running across assistant, reasoning, tool, subagent, and compaction phase changes. It MUST become terminal only when the message finishes, the session fails, the operation is interrupted or disposed, or runtime processing stops without an explicit terminal event. A processing-stop fallback MAY be refined by a later explicit terminal event. After an explicit terminal event, the turn MUST NOT change state or return to running; only a different turn id may start new work.
+
+#### Acceptance
+
+Chat Web can decide whether to show Working and its elapsed timer from the signal snapshot without reading trace pages or raw events. Runtime processing shutdown leaves no unresolved running turn.
+
+#### Scenario: Tool phases do not end a turn
+
+- GIVEN `message_started` created a running turn
+- WHEN assistant output, reasoning, and tool calls start and finish
+- THEN `latestTurn.state` remains `running`
+- WHEN the matching `message_finished` arrives
+- THEN `latestTurn.state` becomes `completed`
+- AND `latestTurn.completedAt` is present.
+
+#### Scenario: Runtime stops without a terminal message
+
+- GIVEN a turn is running
+- WHEN session processing changes to false without `message_finished` or `session_error`
+- THEN the unresolved turn becomes `interrupted`
+- AND the session exposes no running local turn.
 
 ### Requirement: Queue state is represented explicitly
 
@@ -316,6 +344,8 @@ The project SHOULD provide an operator-run benchmark that measures signal regist
 - `snapshotSession` returns the requested session's root tree context, not an isolated one-node object, so clients can evaluate parent or child effects when needed.
 - If the signal registry is unavailable on a channel, Chat Web signal routes MUST return a service-unavailable error instead of fabricating state.
 - If an SSE client falls behind and receives a patch whose `fromVersion` does not match its local version, it MUST refresh with a full snapshot.
+- Trace pagination and raw-event visibility MUST NOT determine whether a signal turn is running.
+- Active yielded runs or descendants may keep `isTreeActive` true after the local turn ends; `latestTurn` still describes only the local message turn.
 - Recovery events mark sessions as `unknown` with a reason so operators can distinguish recovered-but-not-confirmed state from idle state.
 
 ## Constraints
@@ -334,6 +364,8 @@ The project SHOULD provide an operator-run benchmark that measures signal regist
 - [ ] SC-004: A failed tool call or yielded run remains visible as a node error without incorrectly marking the whole session failed.
 - [ ] SC-005: `scripts/bench-signal-registry.mjs` runs after build and prints timing for deep-tree propagation, no-op queue updates, and metadata-changing tool updates.
 - [ ] SC-006: Active snapshots expose compact `activeTelemetry` hints for active or queued sessions and omit the hint for idle sessions.
+- [ ] SC-007: `latestTurn` remains running through intermediate phases and becomes terminal on completion, failure, interruption, disposal, or unresolved processing shutdown.
+- [ ] SC-008: Chat Web derives selected-session status, Working visibility, and the live timer from the shared signal activity model rather than trace lifecycle inference.
 
 ## Assumptions and Open Questions
 
