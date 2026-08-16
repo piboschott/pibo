@@ -8,6 +8,36 @@ export type ProjectArchiveGroups = {
 	archived: PiboProject[];
 };
 
+export type ProjectsTraceSelection = {
+	project: PiboProject | undefined;
+	selectedPiboSessionId: string | null;
+	navigationPending: boolean;
+};
+
+export function resolveProjectsTraceSelection(
+	data: ProjectsBootstrapData | null,
+	routeProjectId?: string,
+	routePiboSessionId?: string,
+): ProjectsTraceSelection {
+	const projectNavigationPending = Boolean(
+		routeProjectId && data?.selectedProjectId !== routeProjectId,
+	);
+	const sessionNavigationPending = Boolean(
+		routePiboSessionId && data?.selectedPiboSessionId !== routePiboSessionId,
+	);
+	const navigationPending = projectNavigationPending || sessionNavigationPending;
+	const project = !routeProjectId || data?.project?.id === routeProjectId
+		? data?.project
+		: data?.projects.find((candidate) => candidate.id === routeProjectId);
+	return {
+		project,
+		selectedPiboSessionId: navigationPending
+			? routePiboSessionId ?? null
+			: data?.selectedPiboSessionId ?? null,
+		navigationPending,
+	};
+}
+
 export function splitProjectsByArchive(projects: readonly PiboProject[] | undefined): ProjectArchiveGroups {
 	const active: PiboProject[] = [];
 	const archived: PiboProject[] = [];
