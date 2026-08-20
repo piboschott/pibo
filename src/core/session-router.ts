@@ -384,6 +384,7 @@ export class PiboSessionRouter {
 	private readonly activeSubagentChildren = new Map<string, Map<string, number>>();
 	private readonly scheduledRunReminders = new Map<string, ScheduledRunReminder>();
 	private readonly runReminderGenerations = new Map<string, number>();
+	private readonly runCancellationHandlers = new Map<string, () => Promise<void>>();
 	private readonly quiescingSessions = new Set<string>();
 	private readonly disposingSessions = new Map<string, Promise<void>>();
 	private readonly idleSessionTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1795,7 +1796,7 @@ export class PiboSessionRouter {
 
 	private createRunToolController(parentPiboSessionId: string): PiboRunToolController {
 		return {
-			startToolRun: ({ toolName, params, completionPolicy, retryable, maxAttempts, timeoutMs, serviceWarning, resources, execute }) => {
+			startToolRun: ({ toolName, params, completionPolicy, retryable, maxAttempts, timeoutMs, serviceWarning, resources, execute, cancel }) => {
 				const admission = this.gatewayWorkAdmission.reserve(`yielded run ${toolName}`);
 				if (resources) resources.admission = admission.admission;
 				const reminderGeneration = this.runReminderGeneration(parentPiboSessionId);
@@ -1816,6 +1817,7 @@ export class PiboSessionRouter {
 					admission.release();
 					throw error;
 				}
+				if (cancel) this.runCancellationHandlers.set(run.runId, cancel);
 
 				void (async () => {
 					try {
@@ -1833,6 +1835,7 @@ export class PiboSessionRouter {
 								: this.runRegistry.fail(run.runId, message);
 						if (terminalRun) this.handleTerminalRunReminder(parentPiboSessionId, terminalRun.runId, reminderGeneration);
 					} finally {
+						this.runCancellationHandlers.delete(run.runId);
 						admission.release();
 					}
 				})();
@@ -1849,7 +1852,13 @@ export class PiboSessionRouter {
 			},
 			cancelRun: async (runId) => {
 				const cancelled = this.runRegistry.cancel(parentPiboSessionId, runId);
-				this.refreshQueuedRunReminders(parentPiboSessionId);
+				const cancel = this.runCancellationHandlers.get(runId);
+				try {
+					await cancel?.();
+				} finally {
+					this.runCancellationHandlers.delete(runId);
+					this.refreshQueuedRunReminders(parentPiboSessionId);
+				}
 				return cancelled;
 			},
 			ackRun: (runId) => {
