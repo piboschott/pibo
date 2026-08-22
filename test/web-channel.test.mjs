@@ -381,6 +381,18 @@ test("chat web app serves the React shell for deep app links", async () => {
 	}
 });
 
+test("web host redirects the root URL to the first app and preserves its query", async () => {
+	const { channel, baseURL } = await startWebHostChannel();
+
+	try {
+		const response = await fetch(`${baseURL}/?view=terminal&profileRef=codex-native`, { redirect: "manual" });
+		assert.equal(response.status, 302);
+		assert.equal(response.headers.get("location"), "/apps/chat?view=terminal&profileRef=codex-native");
+	} finally {
+		await channel.stop?.();
+	}
+});
+
 test("chat web app serves shell metadata, favicon, and built assets", async () => {
 	const { channel, baseURL } = await startWebHostChannel();
 
