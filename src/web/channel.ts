@@ -327,7 +327,7 @@ export function createWebHostChannel(options: WebHostChannelOptions = {}): WebHo
 			}
 
 			if (url.pathname === "/" && apps[0]) {
-				await sendResponse(nodeResponse, redirect(apps[0].mountPath));
+				await sendResponse(nodeResponse, redirect(`${apps[0].mountPath}${url.search}`));
 				return;
 			}
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request as nodeHttpRequest } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -103,6 +103,25 @@ async function withHome(home, run) {
 		if (previousUserProfile === undefined) delete process.env.USERPROFILE;
 		else process.env.USERPROFILE = previousUserProfile;
 	}
+}
+
+function openSqliteFileDescriptors(storageDir) {
+	if (process.platform !== "linux") return [];
+	let descriptors;
+	try {
+		descriptors = readdirSync("/proc/self/fd");
+	} catch {
+		return [];
+	}
+	return descriptors.flatMap((descriptor) => {
+		try {
+			const target = readlinkSync(`/proc/self/fd/${descriptor}`);
+			const path = target.replace(/ \(deleted\)$/, "");
+			return path.startsWith(`${storageDir}/`) && /\.sqlite(?:-(?:journal|shm|wal))?$/.test(path) ? [target] : [];
+		} catch {
+			return [];
+		}
+	});
 }
 
 function assertStructuredMissingRefDiagnostic(diagnostics, expected) {
@@ -277,6 +296,29 @@ async function startWebHostChannel(options = {}) {
 
 	const address = channel.getAddress();
 	assert.ok(address);
+	const stopChannel = channel.stop?.bind(channel);
+	let cleanupPromise;
+	channel.stop = async () => {
+		cleanupPromise ??= (async () => {
+			const failures = [];
+			try {
+				await stopChannel?.();
+			} catch (error) {
+				failures.push(error);
+			}
+			const disposalResults = await Promise.allSettled(webApps.map(async (app) => await app.dispose?.()));
+			failures.push(...disposalResults.flatMap((result) => result.status === "rejected" ? [result.reason] : []));
+			const openSqliteFds = openSqliteFileDescriptors(storageDir);
+			if (openSqliteFds.length > 0) failures.push(new Error(`Open SQLite file descriptors remain: ${openSqliteFds.join(", ")}`));
+			try {
+				rmSync(storageDir, { recursive: true });
+			} catch (error) {
+				failures.push(error);
+			}
+			if (failures.length > 0) throw new AggregateError(failures, "Failed to clean up the web channel test fixture");
+		})();
+		return await cleanupPromise;
+	};
 	return {
 		channel,
 		emitted,
@@ -378,6 +420,21 @@ test("chat web app serves the React shell for deep app links", async () => {
 		assert.match(await response.text(), /<div id="root"><\/div>/);
 	} finally {
 		await channel.stop?.();
+	}
+});
+
+test("web host redirects the root URL to the first app and preserves its query", async () => {
+	const { channel, baseURL, storageDir } = await startWebHostChannel();
+
+	try {
+		assert.equal(statSync(storageDir).isDirectory(), true);
+		const response = await fetch(`${baseURL}/?view=terminal&profileRef=codex-native`, { redirect: "manual" });
+		assert.equal(response.status, 302);
+		assert.equal(response.headers.get("location"), "/apps/chat?view=terminal&profileRef=codex-native");
+	} finally {
+		await channel.stop?.();
+		assert.throws(() => statSync(storageDir), { code: "ENOENT" });
+		assert.deepEqual(openSqliteFileDescriptors(storageDir), []);
 	}
 });
 
