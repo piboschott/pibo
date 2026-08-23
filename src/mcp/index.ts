@@ -18,6 +18,7 @@ import {
   DEFAULT_RETRY_DELAY_MS,
   DEFAULT_TIMEOUT_SECONDS,
   ensureConfigExists,
+  getConfigSearchPaths,
   listServerNames,
   loadConfig,
 } from './config.js';
@@ -195,13 +196,7 @@ function parseArgs(args: string[]): ParsedArgs {
     if (!server) {
       // Try to load config synchronously to show available servers
       let availableServers: string[] = [];
-      const configPaths = [
-        result.configPath,
-        process.env.MCP_CONFIG_PATH,
-        './mcp_servers.json',
-        `${process.env.HOME}/.mcp_servers.json`,
-        `${process.env.HOME}/.config/mcp/mcp_servers.json`,
-      ].filter(Boolean) as string[];
+      const configPaths = getConfigSearchPaths(result.configPath);
 
       for (const cfgPath of configPaths) {
         try {

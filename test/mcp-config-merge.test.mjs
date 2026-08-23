@@ -29,6 +29,15 @@ test("MCP config loading merges local and global files with specific entries win
 			}),
 		);
 		await writeFile(
+			join(home, "mcp_servers.json"),
+			JSON.stringify({
+				mcpServers: {
+					homeLocal: { command: "node", args: ["home-local.js"] },
+					shared: { command: "node", args: ["home-local-shared.js"] },
+				},
+			}),
+		);
+		await writeFile(
 			join(home, ".mcp_servers.json"),
 			JSON.stringify({
 				mcpServers: {
@@ -53,7 +62,8 @@ test("MCP config loading merges local and global files with specific entries win
 		delete process.env.MCP_CONFIG_PATH;
 
 		const config = await loadConfig();
-		assert.deepEqual(Object.keys(config.mcpServers).sort(), ["deep", "local", "shared", "unity"]);
+		assert.deepEqual(Object.keys(config.mcpServers).sort(), ["deep", "homeLocal", "local", "shared", "unity"]);
+		assert.deepEqual(config.mcpServers.homeLocal, { command: "node", args: ["home-local.js"] });
 		assert.deepEqual(config.mcpServers.unity, { command: "uvx", args: ["mcp-unity"] });
 		assert.deepEqual(config.mcpServers.shared, { command: "node", args: ["local-shared.js"] });
 		assert.deepEqual(config.mcpServers.deep, { url: "https://example.com/mcp" });
