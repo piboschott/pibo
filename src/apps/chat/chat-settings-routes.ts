@@ -1,5 +1,6 @@
 import { readPiboBasePrompt, savePiboCustomBasePrompt, setPiboBasePromptMode } from "../../core/base-prompt.js";
 import { readPiboCompactionPrompt, savePiboCustomCompactionPrompt, setPiboCompactionPromptMode } from "../../core/compaction-prompt.js";
+import { sanitizePreviewServerSettings } from "../../core/preview-server-settings.js";
 import { sanitizeTelemetryRetentionDays, sanitizeTelemetryRetentionSettings } from "../../core/telemetry-retention-settings.js";
 import { loadPiboUserSettings, sanitizeShortcutSettings, sanitizeTimezone, sanitizeTranscriptionProviderId, updatePiboUserSettings, updateTelemetryRetentionLastPrunedAt } from "../../core/user-settings.js";
 import { PiboWebHttpError, readJsonBody, responseJson } from "../../web/http.js";
@@ -112,6 +113,16 @@ function userSettingsPatch(body: ChatUserSettingsBody, transcriptionProviderIds?
 			throw new PiboWebHttpError(`Unknown transcription provider "${providerId}"`, 400);
 		}
 		patch.transcription = { providerId };
+	}
+	if (body.previewServers !== undefined) {
+		const sanitized = sanitizePreviewServerSettings(body.previewServers);
+		const raw = body.previewServers && typeof body.previewServers === "object" && !Array.isArray(body.previewServers)
+			? body.previewServers as Record<string, unknown>
+			: {};
+		if (raw.maxRunningServers !== sanitized.maxRunningServers || raw.autoStopMinutes !== sanitized.autoStopMinutes) {
+			throw new PiboWebHttpError("Invalid Preview server settings", 400);
+		}
+		patch.previewServers = sanitized;
 	}
 	if (body.telemetryRetention !== undefined) {
 		const current = loadPiboUserSettings().telemetryRetention;

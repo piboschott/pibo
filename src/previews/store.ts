@@ -7,9 +7,11 @@ import { protectPrivateFileSync } from "../core/private-path.js";
 import { loadPreviewConfig } from "./config.js";
 import type {
 	CreatePreviewExposureInput,
+	ManagedPreviewServerState,
 	PreviewBrowserSession,
 	PreviewExposure,
 	PreviewExposureState,
+	PreviewManagerIdentity,
 	PreviewTicket,
 } from "./types.js";
 
@@ -23,6 +25,18 @@ type ExposureRow = {
 	target_process_id: number | null;
 	target_process_start_ticks: string | null;
 	workspace: string;
+	management_mode: "external" | "managed";
+	start_command: string | null;
+	server_state: ManagedPreviewServerState | "external";
+	server_generation: string | null;
+	server_started_at: string | null;
+	server_stop_at: string | null;
+	server_stopped_at: string | null;
+	server_error: string | null;
+	manager_kind: "systemd" | "process" | null;
+	manager_id: string | null;
+	manager_pid: number | null;
+	manager_process_start_ticks: string | null;
 	created_at: string;
 	expires_at: string;
 	closed_at: string | null;
@@ -34,6 +48,13 @@ type TicketRow = {
 	used_at: string | null;
 };
 
+export class PreviewCapacityError extends Error {
+	constructor(readonly maxRunningServers: number) {
+		super(`Managed Preview server limit reached (${maxRunningServers})`);
+		this.name = "PreviewCapacityError";
+	}
+}
+
 function tokenHash(token: string): string {
 	return createHash("sha256").update(token).digest("hex");
 }
@@ -43,6 +64,7 @@ function opaqueToken(): string {
 }
 
 function exposureFromRow(row: ExposureRow): PreviewExposure {
+	const managementMode = row.management_mode === "managed" ? "managed" : "external";
 	return {
 		id: row.id,
 		piboSessionId: row.pibo_session_id,
@@ -53,6 +75,18 @@ function exposureFromRow(row: ExposureRow): PreviewExposure {
 		targetProcessId: row.target_process_id ?? undefined,
 		targetProcessStartTicks: row.target_process_start_ticks ?? undefined,
 		workspace: row.workspace,
+		managementMode,
+		startCommand: row.start_command ?? undefined,
+		serverState: managementMode === "managed" && row.server_state !== "external" ? row.server_state : undefined,
+		serverGeneration: row.server_generation ?? undefined,
+		serverStartedAt: row.server_started_at ?? undefined,
+		serverStopAt: row.server_stop_at ?? undefined,
+		serverStoppedAt: row.server_stopped_at ?? undefined,
+		serverError: row.server_error ?? undefined,
+		managerKind: row.manager_kind ?? undefined,
+		managerId: row.manager_id ?? undefined,
+		managerPid: row.manager_pid ?? undefined,
+		managerProcessStartTicks: row.manager_process_start_ticks ?? undefined,
 		createdAt: row.created_at,
 		expiresAt: row.expires_at,
 		closedAt: row.closed_at ?? undefined,
@@ -96,6 +130,18 @@ export class PreviewStore {
 				target_process_id INTEGER,
 				target_process_start_ticks TEXT,
 				workspace TEXT NOT NULL,
+				management_mode TEXT NOT NULL DEFAULT 'external',
+				start_command TEXT,
+				server_state TEXT NOT NULL DEFAULT 'external',
+				server_generation TEXT,
+				server_started_at TEXT,
+				server_stop_at TEXT,
+				server_stopped_at TEXT,
+				server_error TEXT,
+				manager_kind TEXT,
+				manager_id TEXT,
+				manager_pid INTEGER,
+				manager_process_start_ticks TEXT,
 				created_at TEXT NOT NULL,
 				expires_at TEXT NOT NULL,
 				closed_at TEXT
@@ -121,16 +167,41 @@ export class PreviewStore {
 				ON preview_browser_sessions (preview_id, expires_at);
 		`);
 		const columns = new Set((this.db.prepare("PRAGMA table_info(preview_exposures)").all() as Array<{ name: string }>).map((column) => column.name));
-		if (!columns.has("target_process_id")) this.db.exec("ALTER TABLE preview_exposures ADD COLUMN target_process_id INTEGER");
-		if (!columns.has("target_process_start_ticks")) this.db.exec("ALTER TABLE preview_exposures ADD COLUMN target_process_start_ticks TEXT");
+		const additions: Array<[string, string]> = [
+			["target_process_id", "INTEGER"],
+			["target_process_start_ticks", "TEXT"],
+			["management_mode", "TEXT NOT NULL DEFAULT 'external'"],
+			["start_command", "TEXT"],
+			["server_state", "TEXT NOT NULL DEFAULT 'external'"],
+			["server_generation", "TEXT"],
+			["server_started_at", "TEXT"],
+			["server_stop_at", "TEXT"],
+			["server_stopped_at", "TEXT"],
+			["server_error", "TEXT"],
+			["manager_kind", "TEXT"],
+			["manager_id", "TEXT"],
+			["manager_pid", "INTEGER"],
+			["manager_process_start_ticks", "TEXT"],
+		];
+		for (const [name, declaration] of additions) {
+			if (!columns.has(name)) this.db.exec(`ALTER TABLE preview_exposures ADD COLUMN ${name} ${declaration}`);
+		}
+		this.db.exec(`
+			CREATE INDEX IF NOT EXISTS preview_exposures_managed_state_idx
+				ON preview_exposures (management_mode, server_state, expires_at)
+		`);
 	}
 
 	createExposure(input: CreatePreviewExposureInput): PreviewExposure {
+		const managementMode = input.managementMode ?? "external";
+		const serverState = managementMode === "managed" ? input.serverState ?? "stopped" : "external";
 		this.db.prepare(`
 			INSERT INTO preview_exposures (
 				id, pibo_session_id, project_id, label, target_host, target_port,
-				target_process_id, target_process_start_ticks, workspace, created_at, expires_at, closed_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+				target_process_id, target_process_start_ticks, workspace,
+				management_mode, start_command, server_state,
+				created_at, expires_at, closed_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 		`).run(
 			input.id,
 			input.piboSessionId,
@@ -141,6 +212,9 @@ export class PreviewStore {
 			input.targetProcessId ?? null,
 			input.targetProcessStartTicks ?? null,
 			input.workspace,
+			managementMode,
+			input.startCommand ?? null,
+			serverState,
 			input.createdAt,
 			input.expiresAt,
 		);
@@ -175,8 +249,117 @@ export class PreviewStore {
 			.map(exposureFromRow);
 	}
 
+	listManagedServerCandidates(): PreviewExposure[] {
+		return (this.db.prepare(`
+			SELECT * FROM preview_exposures
+			WHERE management_mode = 'managed'
+				AND server_state IN ('starting', 'running')
+			ORDER BY created_at ASC
+		`).all() as ExposureRow[]).map(exposureFromRow);
+	}
+
+	reserveManagedServerStart(id: string, maxRunningServers: number, startedAt: string, stopAt: string): { exposure: PreviewExposure; reserved: boolean } {
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			const exposure = this.requireExposure(id);
+			if (previewExposureState(exposure, new Date(startedAt)) !== "active") throw new Error(`Preview "${id}" is not active`);
+			if (exposure.managementMode !== "managed" || !exposure.startCommand) throw new Error(`Preview "${id}" has no managed start command`);
+			if (exposure.serverState === "starting" || exposure.serverState === "running") {
+				this.db.exec("COMMIT");
+				return { exposure, reserved: false };
+			}
+			const row = this.db.prepare(`
+				SELECT COUNT(*) AS count FROM preview_exposures
+				WHERE management_mode = 'managed'
+					AND server_state IN ('starting', 'running')
+					AND closed_at IS NULL
+					AND expires_at > ?
+			`).get(startedAt) as { count: number };
+			if (Number(row.count) >= maxRunningServers) throw new PreviewCapacityError(maxRunningServers);
+			const generation = opaqueToken();
+			this.db.prepare(`
+				UPDATE preview_exposures SET
+					server_state = 'starting', server_generation = ?, server_started_at = ?, server_stop_at = ?,
+					server_stopped_at = NULL, server_error = NULL,
+					manager_kind = NULL, manager_id = NULL, manager_pid = NULL, manager_process_start_ticks = NULL,
+					target_process_id = NULL, target_process_start_ticks = NULL
+				WHERE id = ?
+			`).run(generation, startedAt, stopAt, id);
+			this.db.exec("COMMIT");
+			return { exposure: this.requireExposure(id), reserved: true };
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+			throw error;
+		}
+	}
+
+	markManagedServerManager(id: string, generation: string, manager: PreviewManagerIdentity): PreviewExposure {
+		this.db.prepare(`
+			UPDATE preview_exposures SET
+				manager_kind = ?, manager_id = ?, manager_pid = ?, manager_process_start_ticks = ?
+			WHERE id = ? AND management_mode = 'managed'
+				AND server_state = 'starting' AND server_generation = ? AND closed_at IS NULL
+		`).run(manager.kind, manager.id, manager.pid ?? null, manager.processStartTicks ?? null, id, generation);
+		return this.requireExposure(id);
+	}
+
+	markManagedServerRunning(id: string, generation: string, input: {
+		targetHost: PreviewExposure["targetHost"];
+		targetProcessId?: number;
+		targetProcessStartTicks?: string;
+		manager: PreviewManagerIdentity;
+	}): PreviewExposure {
+		this.db.prepare(`
+			UPDATE preview_exposures SET
+				server_state = 'running', server_error = NULL,
+				target_host = ?, target_process_id = ?, target_process_start_ticks = ?,
+				manager_kind = ?, manager_id = ?, manager_pid = ?, manager_process_start_ticks = ?
+			WHERE id = ? AND management_mode = 'managed'
+				AND server_state = 'starting' AND server_generation = ? AND closed_at IS NULL
+		`).run(
+			input.targetHost,
+			input.targetProcessId ?? null,
+			input.targetProcessStartTicks ?? null,
+			input.manager.kind,
+			input.manager.id,
+			input.manager.pid ?? null,
+			input.manager.processStartTicks ?? null,
+			id,
+			generation,
+		);
+		return this.requireExposure(id);
+	}
+
+	markManagedServerStopped(id: string, input: { stoppedAt?: string; error?: string; expectedGeneration?: string } = {}): PreviewExposure {
+		const stoppedAt = input.stoppedAt ?? new Date().toISOString();
+		const generationClause = input.expectedGeneration ? " AND server_generation = ?" : "";
+		this.db.prepare(`
+			UPDATE preview_exposures SET
+				server_state = ?, server_generation = NULL, server_stopped_at = ?, server_error = ?,
+				manager_kind = NULL, manager_id = NULL, manager_pid = NULL, manager_process_start_ticks = NULL,
+				target_process_id = NULL, target_process_start_ticks = NULL
+			WHERE id = ? AND management_mode = 'managed'${generationClause}
+		`).run(
+			input.error ? "error" : "stopped",
+			stoppedAt,
+			input.error ?? null,
+			id,
+			...(input.expectedGeneration ? [input.expectedGeneration] : []),
+		);
+		return this.requireExposure(id);
+	}
+
 	closeExposure(id: string, closedAt = new Date().toISOString()): PreviewExposure | undefined {
-		const result = this.db.prepare("UPDATE preview_exposures SET closed_at = COALESCE(closed_at, ?) WHERE id = ?").run(closedAt, id);
+		const result = this.db.prepare(`
+			UPDATE preview_exposures SET
+				closed_at = COALESCE(closed_at, ?), start_command = NULL,
+				server_state = CASE WHEN management_mode = 'managed' THEN 'stopped' ELSE server_state END,
+				server_generation = NULL,
+				server_stopped_at = CASE WHEN management_mode = 'managed' THEN ? ELSE server_stopped_at END,
+				manager_kind = NULL, manager_id = NULL, manager_pid = NULL, manager_process_start_ticks = NULL,
+				target_process_id = NULL, target_process_start_ticks = NULL
+			WHERE id = ?
+		`).run(closedAt, closedAt, id);
 		if (Number(result.changes ?? 0) === 0) return undefined;
 		this.db.prepare("DELETE FROM preview_tickets WHERE preview_id = ?").run(id);
 		this.db.prepare("DELETE FROM preview_browser_sessions WHERE preview_id = ?").run(id);

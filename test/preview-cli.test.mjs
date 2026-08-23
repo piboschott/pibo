@@ -55,6 +55,41 @@ test("preview CLI discovers and manages a session-linked exposure", async (t) =>
 	assert.equal(listed.length, 1);
 	assert.equal(listed[0].id, preview.id);
 	assert.equal(JSON.parse((await run(home, ["preview", "doctor", preview.id, "--json"])).stdout).health, "online");
-	assert.equal(JSON.parse((await run(home, ["preview", "close", preview.id, "--json"])).stdout).closed, true);
+	assert.equal(JSON.parse((await run(home, ["preview", "close", preview.id, "--json"])).stdout).removed, true);
 	assert.deepEqual(JSON.parse((await run(home, ["preview", "list", "--session", "ps_cli_preview", "--json"])).stdout), []);
+});
+
+test("preview CLI starts, stops, restarts, and removes a detached managed server", async (t) => {
+	const home = mkdtempSync(join(tmpdir(), "pibo-preview-managed-cli-"));
+	const probe = createServer((_req, res) => res.end("probe"));
+	const port = await listen(probe);
+	await close(probe);
+	let managedPreviewId;
+	t.after(async () => {
+		if (managedPreviewId) await run(home, ["preview", "remove", managedPreviewId, "--json"]).catch(() => undefined);
+		rmSync(home, { recursive: true, force: true });
+	});
+	const sessionStore = new PiboDataSessionStore(join(home, "pibo.sqlite"));
+	sessionStore.create({ id: "ps_cli_managed", channel: "web", kind: "chat", profile: "base", workspace: home });
+	sessionStore.close();
+	await run(home, ["config", "set", "preview.baseURL", "https://preview.example.test"]);
+
+	const childScript = "require('node:http').createServer((_q,r)=>r.end('managed')).listen(Number(process.env.PIBO_PREVIEW_PORT),'127.0.0.1')";
+	const parentScript = `const { spawn } = require('node:child_process'); spawn(${JSON.stringify(process.execPath)}, ['-e', ${JSON.stringify(childScript)}], { stdio: 'inherit' }); setInterval(() => {}, 1000);`;
+	const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(parentScript)}`;
+	const created = JSON.parse((await run(home, ["preview", "expose", String(port), "--session", "ps_cli_managed", "--command", command, "--json"])).stdout);
+	managedPreviewId = created.id;
+	assert.equal(created.managed, true);
+	assert.equal(created.serverState, "running");
+	assert.equal(created.health, "online");
+	assert.ok(created.serverStopAt);
+
+	const stopped = JSON.parse((await run(home, ["preview", "stop", created.id, "--json"])).stdout);
+	assert.equal(stopped.serverState, "stopped");
+	assert.equal(stopped.health, "stopped");
+	const restarted = JSON.parse((await run(home, ["preview", "start", created.id, "--json"])).stdout);
+	assert.equal(restarted.serverState, "running");
+	assert.equal(restarted.health, "online");
+	const removed = JSON.parse((await run(home, ["preview", "remove", created.id, "--json"])).stdout);
+	assert.equal(removed.removed, true);
 });

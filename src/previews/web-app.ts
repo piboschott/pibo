@@ -10,10 +10,17 @@ import {
 	previewPublicURL,
 	requirePreviewBaseURL,
 } from "./config.js";
+import {
+	createDefaultPreviewProcessController,
+	reconcileManagedPreviews,
+	startManagedPreview,
+	stopManagedPreview,
+	type PreviewManagerOptions,
+} from "./manager.js";
 import { isPreviewTargetProcessCurrent, probePreviewTarget } from "./network.js";
 import { cookieValue, PREVIEW_SESSION_COOKIE, proxyPreviewHttp, proxyPreviewWebSocket } from "./proxy.js";
 import { PreviewStore, createDefaultPreviewStore, previewExposureState } from "./store.js";
-import type { PreviewExposure, PublicPreviewExposure } from "./types.js";
+import type { PreviewExposure, PreviewHealthState, PublicPreviewExposure } from "./types.js";
 
 export const PREVIEW_WEB_APP_NAME = "pibo.session-live-previews";
 export const PREVIEW_WEB_MOUNT_PATH = "/apps/previews";
@@ -26,6 +33,8 @@ export type PreviewWebAppOptions = {
 	piboBaseURL?: string;
 	ticketTtlSeconds?: number;
 	browserSessionTtlMinutes?: number;
+	managerOptions?: PreviewManagerOptions;
+	reaperIntervalMs?: number | false;
 };
 
 function escapeHtml(value: string): string {
@@ -52,15 +61,47 @@ function withStore<T>(path: string | undefined, action: (store: PreviewStore) =>
 	}
 }
 
-async function publicExposure(exposure: PreviewExposure, baseURL: URL): Promise<PublicPreviewExposure> {
+async function withStoreAsync<T>(path: string | undefined, action: (store: PreviewStore) => Promise<T>): Promise<T> {
+	const store = path ? new PreviewStore(path) : createDefaultPreviewStore();
+	try {
+		return await action(store);
+	} finally {
+		store.close();
+	}
+}
+
+async function exposureHealth(exposure: PreviewExposure): Promise<PreviewHealthState> {
 	const state = previewExposureState(exposure);
-	const processCurrent = state === "active" ? isPreviewTargetProcessCurrent(exposure) : false;
+	if (state !== "active") return state;
+	if (exposure.managementMode === "managed") {
+		if (exposure.serverState === "starting") return "starting";
+		if (exposure.serverState === "stopped") return "stopped";
+		if (exposure.serverState === "error") return "error";
+	}
+	const processCurrent = isPreviewTargetProcessCurrent(exposure);
 	const online = processCurrent ? Boolean(await probePreviewTarget(exposure.targetPort, { timeoutMs: 500 })) : false;
-	const { workspace: _workspace, targetProcessId: _targetProcessId, targetProcessStartTicks: _targetProcessStartTicks, ...publicFields } = exposure;
+	return online ? "online" : "offline";
+}
+
+async function publicExposure(exposure: PreviewExposure, baseURL: URL): Promise<PublicPreviewExposure> {
+	const {
+		workspace: _workspace,
+		startCommand: _startCommand,
+		targetProcessId: _targetProcessId,
+		targetProcessStartTicks: _targetProcessStartTicks,
+		serverError: _serverError,
+		serverGeneration: _serverGeneration,
+		managerKind: _managerKind,
+		managerId: _managerId,
+		managerPid: _managerPid,
+		managerProcessStartTicks: _managerProcessStartTicks,
+		...publicFields
+	} = exposure;
 	return {
 		...publicFields,
-		state,
-		health: state === "active" ? (online ? "online" : "offline") : state,
+		managed: exposure.managementMode === "managed",
+		state: previewExposureState(exposure),
+		health: await exposureHealth(exposure),
 		publicUrl: previewPublicURL(exposure.id, baseURL).toString(),
 		openUrl: `${PREVIEW_WEB_API_PREFIX}/${encodeURIComponent(exposure.id)}/open`,
 	};
@@ -88,6 +129,15 @@ function readBody(request: IncomingMessage, maxBytes: number): Promise<Buffer> {
 function nodeJson(response: ServerResponse, status: number, payload: unknown): void {
 	response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
 	response.end(JSON.stringify(payload));
+}
+
+function nodePreviewUnavailable(response: ServerResponse, status = 503): void {
+	response.writeHead(status, {
+		"content-type": "text/html; charset=utf-8",
+		"cache-control": "no-store",
+		"content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+	});
+	response.end("<!doctype html><title>Preview server stopped</title><p>Start this Preview server from Chat Web and reload.</p>");
 }
 
 function unauthorizedPreview(response: ServerResponse): void {
@@ -133,12 +183,24 @@ function previewOpenHtml(exposure: PreviewExposure, ticket: string, baseURL: URL
 	});
 }
 
-function validPreviewExposure(store: PreviewStore, previewId: string): PreviewExposure | undefined {
+async function proxyablePreviewExposure(
+	store: PreviewStore,
+	previewId: string,
+	managerOptions: PreviewManagerOptions,
+): Promise<PreviewExposure | undefined> {
+	await reconcileManagedPreviews(store, managerOptions);
 	const exposure = store.getExposure(previewId);
 	if (!exposure || previewExposureState(exposure) !== "active") return undefined;
-	if (isPreviewTargetProcessCurrent(exposure)) return exposure;
-	store.closeExposure(previewId);
-	return undefined;
+	if (exposure.managementMode === "managed" && exposure.serverState !== "running") return undefined;
+	if (!isPreviewTargetProcessCurrent(exposure)) {
+		if (exposure.managementMode === "external") store.closeExposure(previewId);
+		return undefined;
+	}
+	return await probePreviewTarget(exposure.targetPort, { timeoutMs: 500 }) ? exposure : undefined;
+}
+
+function lifecycleErrorResponse(error: unknown): Response {
+	return responseJson({ error: error instanceof Error ? error.message : String(error) }, { status: 409 });
 }
 
 export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWebApp {
@@ -152,11 +214,30 @@ export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWeb
 	})();
 	const ticketTtlSeconds = options.ticketTtlSeconds ?? DEFAULT_PREVIEW_TICKET_TTL_SECONDS;
 	const browserSessionTtlMinutes = options.browserSessionTtlMinutes ?? DEFAULT_PREVIEW_SESSION_TTL_MINUTES;
+	const managerOptions: PreviewManagerOptions = {
+		...options.managerOptions,
+		controller: options.managerOptions?.controller ?? createDefaultPreviewProcessController(),
+	};
+	let reaperPromise: Promise<void> | undefined;
+	const runReaper = () => {
+		if (reaperPromise) return;
+		reaperPromise = withStoreAsync(databasePath, (store) => reconcileManagedPreviews(store, managerOptions))
+			.catch((error) => console.error(`Preview server reconciliation failed: ${error instanceof Error ? error.message : String(error)}`))
+			.finally(() => { reaperPromise = undefined; });
+	};
+	const reaperIntervalMs = options.reaperIntervalMs === false ? false : Math.max(1_000, options.reaperIntervalMs ?? 5_000);
+	const reaperTimer = reaperIntervalMs === false ? undefined : setInterval(runReaper, reaperIntervalMs);
+	reaperTimer?.unref();
+	if (reaperTimer) runReaper();
 
 	return {
 		name: PREVIEW_WEB_APP_NAME,
 		mountPath: PREVIEW_WEB_MOUNT_PATH,
 		apiPrefix: PREVIEW_WEB_API_PREFIX,
+		async dispose() {
+			if (reaperTimer) clearInterval(reaperTimer);
+			await reaperPromise;
+		},
 		matchesHost(hostname) {
 			return baseURL ? previewIdFromHostname(hostname, baseURL) !== undefined : false;
 		},
@@ -169,7 +250,10 @@ export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWeb
 				const piboSessionId = url.searchParams.get("piboSessionId")?.trim();
 				if (!piboSessionId) return responseJson({ error: "piboSessionId is required" }, { status: 400 });
 				if (!baseURL) return responseJson({ configured: false, previews: [] });
-				const exposures = withStore(databasePath, (store) => store.listExposures({ piboSessionId }));
+				const exposures = await withStoreAsync(databasePath, async (store) => {
+					await reconcileManagedPreviews(store, managerOptions);
+					return store.listExposures({ piboSessionId });
+				});
 				return responseJson({ configured: true, previews: await Promise.all(exposures.map((exposure) => publicExposure(exposure, baseURL))) });
 			}
 
@@ -178,28 +262,56 @@ export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWeb
 			const openMatch = url.pathname.match(/^\/api\/previews\/([^/]+)\/open$/);
 			if (openMatch && request.method === "GET") {
 				const id = decodeURIComponent(openMatch[1]!);
-				const result = withStore(databasePath, (store) => {
-					const exposure = validPreviewExposure(store, id);
+				const result = await withStoreAsync(databasePath, async (store) => {
+					const exposure = await proxyablePreviewExposure(store, id, managerOptions);
 					if (!exposure) return undefined;
 					return { exposure, ticket: store.createTicket(id, ticketTtlSeconds).token };
 				});
-				if (!result) return responseJson({ error: "Preview not found or inactive" }, { status: 404 });
+				if (!result) return responseJson({ error: "Preview server is not running" }, { status: 409 });
 				return previewOpenHtml(result.exposure, result.ticket, baseURL);
+			}
+
+			const lifecycleMatch = url.pathname.match(/^\/api\/previews\/([^/]+)\/(start|stop)$/);
+			if (lifecycleMatch && request.method === "POST") {
+				sameOriginMutation(request);
+				const id = decodeURIComponent(lifecycleMatch[1]!);
+				try {
+					const exposure = await withStoreAsync(databasePath, (store) => lifecycleMatch[2] === "start"
+						? startManagedPreview(store, id, managerOptions)
+						: stopManagedPreview(store, id, managerOptions));
+					return responseJson({ preview: await publicExposure(exposure, baseURL) });
+				} catch (error) {
+					return lifecycleErrorResponse(error);
+				}
 			}
 
 			const previewMatch = url.pathname.match(/^\/api\/previews\/([^/]+)$/);
 			if (previewMatch && request.method === "GET") {
 				const id = decodeURIComponent(previewMatch[1]!);
-				const exposure = withStore(databasePath, (store) => store.getExposure(id));
+				const exposure = await withStoreAsync(databasePath, async (store) => {
+					await reconcileManagedPreviews(store, managerOptions);
+					return store.getExposure(id);
+				});
 				if (!exposure) return responseJson({ error: "Preview not found" }, { status: 404 });
 				return responseJson({ preview: await publicExposure(exposure, baseURL) });
 			}
 			if (previewMatch && request.method === "DELETE") {
 				sameOriginMutation(request);
 				const id = decodeURIComponent(previewMatch[1]!);
-				const exposure = withStore(databasePath, (store) => store.closeExposure(id));
-				if (!exposure) return responseJson({ error: "Preview not found" }, { status: 404 });
-				return responseJson({ closed: true, preview: await publicExposure(exposure, baseURL) });
+				try {
+					const exposure = await withStoreAsync(databasePath, async (store) => {
+						const current = store.getExposure(id);
+						if (!current) return undefined;
+						if (current.managementMode === "managed" && (current.serverState === "running" || current.serverState === "starting")) {
+							await stopManagedPreview(store, id, managerOptions);
+						}
+						return store.closeExposure(id);
+					});
+					if (!exposure) return responseJson({ error: "Preview not found" }, { status: 404 });
+					return responseJson({ removed: true, preview: await publicExposure(exposure, baseURL) });
+				} catch (error) {
+					return lifecycleErrorResponse(error);
+				}
 			}
 
 			return responseJson({ error: "Not found" }, { status: 404 });
@@ -245,15 +357,22 @@ export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWeb
 			}
 
 			const cookie = cookieValue(request.headers.cookie, PREVIEW_SESSION_COOKIE);
-			const exposure = withStore(databasePath, (store) => {
-				if (!store.authenticateBrowserSession(cookie, previewId)) return undefined;
-				return validPreviewExposure(store, previewId);
+			const access = await withStoreAsync(databasePath, async (store) => {
+				if (!store.authenticateBrowserSession(cookie, previewId)) return { authenticated: false as const };
+				return {
+					authenticated: true as const,
+					exposure: await proxyablePreviewExposure(store, previewId, managerOptions),
+				};
 			});
-			if (!exposure) {
+			if (!access.authenticated) {
 				unauthorizedPreview(response);
 				return;
 			}
-			await proxyPreviewHttp({ request, response, requestURL, exposure, piboOrigin });
+			if (!access.exposure) {
+				nodePreviewUnavailable(response);
+				return;
+			}
+			await proxyPreviewHttp({ request, response, requestURL, exposure: access.exposure, piboOrigin });
 		},
 		async handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, _context: PiboWebAppContext, requestURL: URL) {
 			if (!baseURL) {
@@ -262,15 +381,19 @@ export function createPreviewWebApp(options: PreviewWebAppOptions = {}): PiboWeb
 			}
 			const previewId = previewIdFromHostname(requestURL.hostname, baseURL);
 			const cookie = cookieValue(request.headers.cookie, PREVIEW_SESSION_COOKIE);
-			const exposure = previewId ? withStore(databasePath, (store) => {
-				if (!store.authenticateBrowserSession(cookie, previewId)) return undefined;
-				return validPreviewExposure(store, previewId);
+			const access = previewId ? await withStoreAsync(databasePath, async (store) => {
+				if (!store.authenticateBrowserSession(cookie, previewId)) return { authenticated: false as const };
+				return { authenticated: true as const, exposure: await proxyablePreviewExposure(store, previewId, managerOptions) };
 			}) : undefined;
-			if (!exposure) {
+			if (!access?.authenticated) {
 				socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
 				return;
 			}
-			await proxyPreviewWebSocket({ request, socket, head, requestURL, exposure });
+			if (!access.exposure) {
+				socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+				return;
+			}
+			await proxyPreviewWebSocket({ request, socket, head, requestURL, exposure: access.exposure });
 		},
 	};
 }

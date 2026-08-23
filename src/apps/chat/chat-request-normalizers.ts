@@ -133,6 +133,7 @@ export type ChatUserSettingsBody = {
 	timezone?: unknown;
 	shortcuts?: unknown;
 	transcription?: unknown;
+	previewServers?: unknown;
 	telemetryRetention?: unknown;
 };
 

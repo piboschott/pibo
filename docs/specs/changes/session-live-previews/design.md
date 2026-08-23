@@ -9,8 +9,9 @@ Pibo's Web Gateway currently routes Fetch-style requests by path and delegates a
 - Support arbitrary root-hosted development applications without base-path rewriting.
 - Keep Preview JavaScript outside the canonical Pibo origin.
 - Reuse existing Pibo authentication without forwarding its cookie.
-- Keep CLI-created exposures ephemeral and bounded.
-- Do not supervise the development process or create anonymous links.
+- Keep CLI-created exposures and managed server processes ephemeral and bounded.
+- Separate managed development-server lifetime from agent-turn and yielded-run lifetime.
+- Do not create anonymous links or let browser APIs define arbitrary commands.
 
 ## Decisions
 
@@ -28,13 +29,25 @@ Pibo's Web Gateway currently routes Fetch-style requests by path and delegates a
 
 ### Decision: Persistent SQLite registry with runtime health checks
 
-- **Choice:** Store exposures, tickets, and preview sessions in `previews.sqlite` under `PIBO_HOME`.
-- **Rationale:** CLI and gateway are separate processes and need one durable coordination boundary.
+- **Choice:** Store exposures, optional start commands, managed process identity, runtime leases, tickets, and preview sessions in `previews.sqlite` under `PIBO_HOME`.
+- **Rationale:** CLI and gateway are separate processes and need one durable coordination boundary. The command is local operator data and is omitted from every browser response.
 
 ### Decision: Extend web apps with host and upgrade handlers
 
 - **Choice:** Add optional host matching and Node HTTP/WebSocket handlers to `PiboWebApp`. Host-routed apps run before canonical-origin redirects.
 - **Rationale:** Preview traffic needs streaming and upgrades and should remain a plugin capability rather than hard-coded Chat routing.
+
+### Decision: Preview-owned process supervision
+
+- **Choice:** `pibo preview expose --command` launches the command as a detached Preview resource, preferably in its own transient systemd service and otherwise in a detached process group. The CLI waits only for startup readiness and then exits.
+- **Rationale:** A web server must not remain a tracked yielded run or keep the Routed Session active. A Preview-specific process group also permits reliable whole-tree stop and automatic cleanup.
+- **Alternative considered:** Continue using `pibo_run_start` or a background shell child. Rejected because yielded runs affect session delivery state and unowned background children accumulate.
+
+### Decision: Fixed runtime lease and bounded pool
+
+- **Choice:** Each managed start receives a fixed runtime lease, default ten minutes, and consumes one pool slot, default maximum three. Settings > Previews changes both instance-wide values. Proxy traffic does not silently extend the lease.
+- **Rationale:** Fixed leases are predictable and still stop servers that maintain SSE, WebSocket, or HMR traffic indefinitely. A stopped definition remains restartable with a fresh lease.
+- **Alternative considered:** Network-idle timeout. Rejected because normal HMR and streaming traffic can keep an abandoned preview artificially active.
 
 ### Decision: Session-level Preview view
 
@@ -49,6 +62,7 @@ Pibo's Web Gateway currently routes Fetch-style requests by path and delegates a
 ## Risks / Trade-offs
 
 - Wildcard DNS/TLS is required before arbitrary preview ids can operate permanently on a public deployment.
+- Preview-managed commands execute with a minimal environment and can load project-specific `.env` files themselves; Pibo provider and authentication secrets are not deliberately forwarded.
 - A preview-only session remains valid until its short expiry even if the main Pibo login logs out.
 - Linux exposures are pinned to the original listening process and socket; other platforms retain the hard boundary of explicit local CLI registration, loopback-only targeting, port restrictions, and expiry.
 - Some applications deliberately reject reverse-proxy Host or Origin values and may require their own development-server configuration.
@@ -59,4 +73,4 @@ The feature is inactive unless `preview.baseURL` is configured and a preview is 
 
 ## Open Questions
 
-None blocking. Access policy is resolved: all accounts allowed by the Pibo instance may access previews.
+None blocking. Access policy is resolved: all accounts allowed by the Pibo instance may access previews. Automatic stop is a fixed runtime lease rather than an inactivity timeout.
