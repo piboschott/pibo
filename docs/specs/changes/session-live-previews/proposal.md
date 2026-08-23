@@ -6,11 +6,13 @@ Pibo agents commonly develop web applications on remote servers. The user curren
 
 ## What Changes
 
-- Add a `pibo preview` CLI for exposing, listing, inspecting, checking, and closing loopback development ports.
-- Add a persistent preview registry scoped to the current Pibo home.
+- Add a `pibo preview` CLI for external exposure plus Preview-managed start, stop, restart, inspection, and removal of loopback development servers.
+- Add a persistent preview registry for start commands, managed process identity, runtime leases, and browser sessions under the current Pibo home.
+- Add configurable defaults of three concurrently running managed servers and ten minutes per start.
 - Add authenticated preview bootstrap tickets and preview-only browser sessions.
 - Add an HTTP and WebSocket reverse proxy on isolated preview hostnames.
-- Add a Preview tab and application fullscreen mode to Chat Web sessions and Project sessions.
+- Add a Preview tab and application fullscreen mode to Chat Web sessions and Project sessions, including Start, Stop, and Remove controls for managed servers.
+- Keep managed web servers independent of agent turns and yielded runs so a completed agent remains normally messageable.
 
 ## Capabilities
 
@@ -25,8 +27,8 @@ Pibo agents commonly develop web applications on remote servers. The user curren
 
 ## Impact
 
-- **Code:** New preview service, store, proxy, CLI, plugin, Chat Web API client, and UI components; web-host support for host-routed HTTP and WebSocket handling.
-- **APIs / CLI:** New `/api/previews` authenticated API and `pibo preview` command group.
-- **Data:** New `previews.sqlite` registry under `PIBO_HOME`.
+- **Code:** New preview process manager, store, proxy, CLI, plugin, settings surface, Chat Web API client, and UI components; web-host support for host-routed HTTP and WebSocket handling.
+- **APIs / CLI:** New `/api/previews` authenticated lifecycle API and `pibo preview` command group.
+- **Data:** `previews.sqlite` stores exposure definitions, optional start commands, managed process metadata, runtime leases, and browser sessions under `PIBO_HOME`.
 - **Auth / Security:** Any authenticated account allowed by the Pibo instance may open active previews. Preview applications never receive Pibo auth cookies.
 - **Host:** Operators configure a preview base domain whose wildcard DNS/TLS route reaches the Pibo Web Gateway.

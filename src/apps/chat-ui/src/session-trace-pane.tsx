@@ -67,7 +67,7 @@ import {
   openCurrentPwaSessionWindow,
 } from "./pwa-session-window";
 import { RuntimeRequestPanel } from "./runtime-request-panel";
-import { closeSessionLivePreview, getSessionLivePreviews } from "./api-previews";
+import { getSessionLivePreviews, removeSessionLivePreview, startSessionLivePreview, stopSessionLivePreview } from "./api-previews";
 import { PreviewFullscreenTopBar, SessionLivePreviewPanel } from "./session-live-preview";
 
 export function SessionTracePane({
@@ -231,6 +231,7 @@ export function SessionTracePane({
   const [livePreviewSelected, setLivePreviewSelected] = useState(false);
   const [selectedLivePreviewId, setSelectedLivePreviewId] = useState<string | null>(null);
   const [livePreviewReloadKey, setLivePreviewReloadKey] = useState(0);
+  const [livePreviewActionId, setLivePreviewActionId] = useState<string | null>(null);
   const livePreviewsQuery = useQuery({
     queryKey: selectedBackendPiboSessionId
       ? ["chat", "session-live-previews", selectedBackendPiboSessionId]
@@ -245,6 +246,7 @@ export function SessionTracePane({
     setLivePreviewSelected(false);
     setSelectedLivePreviewId(null);
     setLivePreviewReloadKey(0);
+    setLivePreviewActionId(null);
   }, [selectedBackendPiboSessionId]);
   useEffect(() => {
     if (livePreviews.length === 0) {
@@ -522,9 +524,33 @@ export function SessionTracePane({
     onError,
   });
   const refreshLivePreview = () => setLivePreviewReloadKey((current) => current + 1);
-  const closeLivePreview = async (previewId: string) => {
+  const startLivePreview = async (previewId: string) => {
+    setLivePreviewActionId(previewId);
     try {
-      await closeSessionLivePreview(previewId);
+      await startSessionLivePreview(previewId);
+      await livePreviewsQuery.refetch();
+      setLivePreviewReloadKey((current) => current + 1);
+    } catch (caught) {
+      onError(errorMessage(caught));
+    } finally {
+      setLivePreviewActionId(null);
+    }
+  };
+  const stopLivePreview = async (previewId: string) => {
+    setLivePreviewActionId(previewId);
+    try {
+      await stopSessionLivePreview(previewId);
+      await livePreviewsQuery.refetch();
+    } catch (caught) {
+      onError(errorMessage(caught));
+    } finally {
+      setLivePreviewActionId(null);
+    }
+  };
+  const removeLivePreview = async (previewId: string) => {
+    setLivePreviewActionId(previewId);
+    try {
+      await removeSessionLivePreview(previewId);
       const refreshed = await livePreviewsQuery.refetch();
       const remaining = refreshed.data?.previews ?? [];
       setSelectedLivePreviewId(remaining[0]?.id ?? null);
@@ -534,6 +560,8 @@ export function SessionTracePane({
       }
     } catch (caught) {
       onError(errorMessage(caught));
+    } finally {
+      setLivePreviewActionId(null);
     }
   };
   const parentExtraViewTabs = extraViewTabs?.map((tab) => ({
@@ -565,7 +593,10 @@ export function SessionTracePane({
       onSelect={setSelectedLivePreviewId}
       onReload={refreshLivePreview}
       onRefresh={() => void livePreviewsQuery.refetch()}
-      onClose={(previewId) => void closeLivePreview(previewId)}
+      onStart={(previewId) => void startLivePreview(previewId)}
+      onStop={(previewId) => void stopLivePreview(previewId)}
+      onRemove={(previewId) => void removeLivePreview(previewId)}
+      actionPending={livePreviewActionId === selectedLivePreview?.id}
       onEnterFullscreen={onEnterTerminalFullscreen}
     />
   ) : projectModulePanel;
@@ -580,13 +611,19 @@ export function SessionTracePane({
       onSelect={setSelectedLivePreviewId}
       onReload={refreshLivePreview}
       onRefresh={() => void livePreviewsQuery.refetch()}
-      onClose={(previewId) => void closeLivePreview(previewId)}
+      onStart={(previewId) => void startLivePreview(previewId)}
+      onStop={(previewId) => void stopLivePreview(previewId)}
+      onRemove={(previewId) => void removeLivePreview(previewId)}
+      actionPending={livePreviewActionId === selectedLivePreview?.id}
     />
   ) : undefined;
   const previewFullscreenTopBar = livePreviewSelected && selectedLivePreview ? (
     <PreviewFullscreenTopBar
       preview={selectedLivePreview}
       onReload={refreshLivePreview}
+      onStart={() => void startLivePreview(selectedLivePreview.id)}
+      onStop={() => void stopLivePreview(selectedLivePreview.id)}
+      actionPending={livePreviewActionId === selectedLivePreview.id}
       onExit={onExitTerminalFullscreen ?? (() => undefined)}
     />
   ) : undefined;

@@ -1,4 +1,4 @@
-import { Database, Key, Keyboard, Layers, Mic, Settings, Wrench } from "lucide-react";
+import { Database, Key, Keyboard, Layers, Mic, MonitorPlay, Settings, Wrench } from "lucide-react";
 import type { SettingsPanel } from "./types";
 
 export function SettingsSidebar({
@@ -29,6 +29,21 @@ export function SettingsSidebar({
 					<div className="min-w-0">
 						<span className="block truncate text-sm text-slate-200">General</span>
 						<span className="block truncate font-mono text-[10px] text-slate-500">browser + runtime</span>
+					</div>
+				</button>
+				<button
+					type="button"
+					onClick={() => onSelect("previews")}
+					className={`mb-1 flex w-full items-center gap-2 border p-2 text-left ${
+						activePanel === "previews"
+							? "border-[#11a4d4] bg-[#11a4d4]/10"
+							: "border-slate-800 bg-[#151f24] hover:border-slate-700"
+					}`}
+				>
+					<MonitorPlay size={13} className="text-[#11a4d4]" />
+					<div className="min-w-0">
+						<span className="block truncate text-sm text-slate-200">Previews</span>
+						<span className="block truncate font-mono text-[10px] text-slate-500">server pool + timeout</span>
 					</div>
 				</button>
 				<button

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { previewIdFromHostname, previewPublicURL, requirePreviewBaseURL } from "../dist/previews/config.js";
 import { PreviewStore, previewExposureState } from "../dist/previews/store.js";
@@ -61,6 +62,43 @@ test("preview tickets are single-use and preview browser sessions are scoped and
 		assert.equal(store.authenticateBrowserSession(session.token, "pv-other123", new Date("2026-08-22T12:00:20.000Z")), false);
 		store.closeExposure(exposure.id, "2026-08-22T12:00:30.000Z");
 		assert.equal(store.authenticateBrowserSession(session.token, exposure.id, new Date("2026-08-22T12:00:31.000Z")), false);
+	} finally {
+		store.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("preview store migrates an existing exposure database before creating managed indexes", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pibo-preview-store-migration-"));
+	const path = join(dir, "previews.sqlite");
+	const legacy = new DatabaseSync(path);
+	legacy.exec(`
+		CREATE TABLE preview_exposures (
+			id TEXT PRIMARY KEY,
+			pibo_session_id TEXT NOT NULL,
+			project_id TEXT,
+			label TEXT NOT NULL,
+			target_host TEXT NOT NULL,
+			target_port INTEGER NOT NULL,
+			target_process_id INTEGER,
+			target_process_start_ticks TEXT,
+			workspace TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
+			closed_at TEXT
+		);
+		INSERT INTO preview_exposures VALUES (
+			'pv-legacy', 'ps-legacy', NULL, 'Legacy', '127.0.0.1', 5173,
+			NULL, NULL, '/workspace', '2026-08-22T00:00:00.000Z', '2030-08-22T00:00:00.000Z', NULL
+		);
+	`);
+	legacy.close();
+	const store = new PreviewStore(path);
+	try {
+		const migrated = store.requireExposure("pv-legacy");
+		assert.equal(migrated.managementMode, "external");
+		assert.equal(migrated.serverState, undefined);
+		assert.equal(store.listManagedServerCandidates().length, 0);
 	} finally {
 		store.close();
 		rmSync(dir, { recursive: true, force: true });

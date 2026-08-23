@@ -236,3 +236,142 @@ test("authenticated accounts bootstrap isolated HTTP, SSE, redirect, and WebSock
 	});
 	assert.equal(replay.status, 401);
 });
+
+
+test("Preview lifecycle API starts, stops, and removes managed servers without exposing commands", async (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "pibo-preview-managed-web-"));
+	const databasePath = join(dir, "previews.sqlite");
+	const portProbe = createServer();
+	const targetPort = await listen(portProbe);
+	await close(portProbe);
+	const store = new PreviewStore(databasePath);
+	store.createExposure({
+		id: "pv-managed-web",
+		piboSessionId: "ps_preview_managed_web",
+		label: "Managed fixture",
+		targetHost: "127.0.0.1",
+		targetPort,
+		workspace: "/secret/workspace",
+		managementMode: "managed",
+		startCommand: "secret-preview-command --serve",
+		serverState: "stopped",
+		createdAt: new Date().toISOString(),
+		expiresAt: new Date(Date.now() + 60_000).toISOString(),
+	});
+	store.close();
+
+	let sequence = 0;
+	const servers = new Map();
+	const controller = {
+		async launch(input) {
+			const server = createServer((_request, response) => response.end("managed-web"));
+			await new Promise((resolve, reject) => {
+				server.once("error", reject);
+				server.listen(input.port, "127.0.0.1", resolve);
+			});
+			const id = `managed-web-${++sequence}`;
+			servers.set(id, server);
+			return { kind: "process", id };
+		},
+		async isRunning(identity) { return servers.has(identity.id); },
+		async ownsTarget(identity) { return servers.has(identity.id); },
+		async stop(identity) {
+			const server = servers.get(identity.id);
+			if (!server) return;
+			servers.delete(identity.id);
+			await close(server);
+		},
+	};
+	const app = createPreviewWebApp({
+		baseURL: "http://preview.localhost",
+		databasePath,
+		reaperIntervalMs: false,
+		managerOptions: {
+			controller,
+			settings: { maxRunningServers: 3, autoStopMinutes: 10 },
+			startupTimeoutMs: 2_000,
+			pollIntervalMs: 10,
+		},
+	});
+	const channel = createWebHostChannel({ host: "127.0.0.1", port: 0, announce: false });
+	await channel.start({
+		auth: fakeAuth(),
+		getWebApps: () => [app],
+		emit() { throw new Error("not used"); },
+		subscribe() { return () => undefined; },
+		getSession() { return undefined; },
+		createSession() { throw new Error("not used"); },
+		findSessions() { return []; },
+		getGatewayActions() { return []; },
+	});
+	const webPort = channel.getAddress().port;
+	const piboHost = `pibo.localhost:${webPort}`;
+	const origin = `http://${piboHost}`;
+	t.after(async () => {
+		for (const [id] of [...servers]) await controller.stop({ kind: "process", id });
+		await channel.stop();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const listed = JSON.parse((await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews?piboSessionId=ps_preview_managed_web",
+		headers: { "x-test-user": "account-a" },
+	})).body).previews[0];
+	assert.equal(listed.health, "stopped");
+	assert.equal(listed.managed, true);
+	for (const sensitive of ["startCommand", "workspace", "serverError", "serverGeneration", "managerId", "managerPid", "targetProcessId"]) {
+		assert.equal(sensitive in listed, false, `${sensitive} must not be sent to the browser`);
+	}
+
+	const missingOrigin = await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews/pv-managed-web/start",
+		method: "POST",
+		headers: { "x-test-user": "account-a" },
+	});
+	assert.equal(missingOrigin.status, 403);
+
+	const startedResponse = await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews/pv-managed-web/start",
+		method: "POST",
+		headers: { "x-test-user": "account-a", origin },
+	});
+	assert.equal(startedResponse.status, 200);
+	const started = JSON.parse(startedResponse.body).preview;
+	assert.equal(started.health, "online");
+	assert.equal(started.serverState, "running");
+	assert.ok(started.serverStopAt);
+	assert.equal("startCommand" in started, false);
+
+	const stoppedResponse = await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews/pv-managed-web/stop",
+		method: "POST",
+		headers: { "x-test-user": "account-a", origin },
+	});
+	assert.equal(stoppedResponse.status, 200);
+	assert.equal(JSON.parse(stoppedResponse.body).preview.health, "stopped");
+
+	const removedResponse = await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews/pv-managed-web",
+		method: "DELETE",
+		headers: { "x-test-user": "account-a", origin },
+	});
+	assert.equal(removedResponse.status, 200);
+	assert.equal(JSON.parse(removedResponse.body).removed, true);
+	const afterRemoval = JSON.parse((await request({
+		port: webPort,
+		host: piboHost,
+		path: "/api/previews?piboSessionId=ps_preview_managed_web",
+		headers: { "x-test-user": "account-a" },
+	})).body);
+	assert.deepEqual(afterRemoval.previews, []);
+});

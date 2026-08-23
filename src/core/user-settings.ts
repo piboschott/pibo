@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { piboHomePath } from "./pibo-home.js";
+import { sanitizePreviewServerSettings, type PreviewServerSettings } from "./preview-server-settings.js";
 import { sanitizeTelemetryRetentionSettings, type TelemetryRetentionSettings } from "./telemetry-retention-settings.js";
 import { sanitizeTelemetryStaleThresholdSettings, type TelemetryStaleThresholdSettings } from "./telemetry-staleness.js";
 
@@ -22,6 +23,7 @@ export type PiboUserSettings = {
 	timezone: string;
 	shortcuts: PiboShortcutSettings;
 	transcription: PiboTranscriptionSettings;
+	previewServers: PreviewServerSettings;
 	telemetryStaleThresholds: TelemetryStaleThresholdSettings;
 	telemetryRetention: TelemetryRetentionSettings;
 };
@@ -103,6 +105,7 @@ function sanitizeUserSettings(value: unknown): PiboUserSettings {
 		timezone: sanitizeTimezone(raw.timezone) ?? DEFAULT_USER_TIMEZONE,
 		shortcuts: sanitizeShortcutSettings(raw.shortcuts),
 		transcription: sanitizeTranscriptionSettings(raw.transcription),
+		previewServers: sanitizePreviewServerSettings(raw.previewServers),
 		telemetryStaleThresholds: sanitizeTelemetryStaleThresholdSettings(raw.telemetryStaleThresholds),
 		telemetryRetention: sanitizeTelemetryRetentionSettings(raw.telemetryRetention),
 	};

@@ -10,6 +10,7 @@ import {
 	Keyboard,
 	Layers,
 	Mic,
+	MonitorPlay,
 	Plus,
 	Power,
 	PowerOff,
@@ -90,6 +91,20 @@ export function SettingsView({
 					Skills
 				</h1>
 				<UserSkillsSettings skills={userSkills} onSkillChanged={onUserSkillChanged} onSkillRemoved={onUserSkillRemoved} />
+			</div>
+		);
+	}
+
+	if (activePanel === "previews") {
+		return (
+			<div className="p-6 overflow-auto max-[640px]:p-3">
+				<h1 className="text-sm font-bold uppercase tracking-wider mb-4 flex items-center gap-2">
+					<MonitorPlay size={16} />
+					Previews
+				</h1>
+				<DesignerPanel title="Managed Preview servers">
+					<PreviewServerSettings />
+				</DesignerPanel>
 			</div>
 		);
 	}
@@ -177,6 +192,82 @@ export function SettingsView({
 					onChanged={onModelDefaultsChanged}
 				/>
 			</DesignerPanel>
+		</div>
+	);
+}
+
+function PreviewServerSettings() {
+	const queryClient = useQueryClient();
+	const { data, isLoading } = useQuery({ queryKey: ["user-settings"], queryFn: getUserSettings });
+	const [maxRunningServers, setMaxRunningServers] = useState(3);
+	const [autoStopMinutes, setAutoStopMinutes] = useState(10);
+	const [saving, setSaving] = useState(false);
+	const [message, setMessage] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!data?.previewServers) return;
+		setMaxRunningServers(data.previewServers.maxRunningServers);
+		setAutoStopMinutes(data.previewServers.autoStopMinutes);
+	}, [data?.previewServers]);
+
+	const save = async () => {
+		setSaving(true);
+		setMessage(null);
+		try {
+			const saved = await patchUserSettings({ previewServers: { maxRunningServers, autoStopMinutes } });
+			queryClient.setQueryData(["user-settings"], saved);
+			setMaxRunningServers(saved.previewServers.maxRunningServers);
+			setAutoStopMinutes(saved.previewServers.autoStopMinutes);
+			setMessage("Preview server settings saved.");
+		} catch (error) {
+			setMessage(error instanceof Error ? error.message : String(error));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="max-w-2xl space-y-5">
+			<div>
+				<label htmlFor="preview-max-running" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">Maximum running servers</label>
+				<input
+					id="preview-max-running"
+					type="number"
+					min={1}
+					max={20}
+					value={maxRunningServers}
+					disabled={isLoading || saving}
+					onChange={(event) => setMaxRunningServers(Number(event.target.value))}
+					className="w-32 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+				/>
+				<div className="mt-1 text-[11px] text-slate-500">Managed Preview starts fail when this instance-wide pool is full. Existing servers are never stopped to make room.</div>
+			</div>
+			<div>
+				<label htmlFor="preview-auto-stop" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">Automatic stop after each start</label>
+				<div className="flex items-center gap-2">
+					<input
+						id="preview-auto-stop"
+						type="number"
+						min={1}
+						max={1440}
+						value={autoStopMinutes}
+						disabled={isLoading || saving}
+						onChange={(event) => setAutoStopMinutes(Number(event.target.value))}
+						className="w-32 rounded-sm border border-slate-700 bg-[#0e1116] px-3 py-2 text-sm outline-none focus:border-[#11a4d4] disabled:opacity-60"
+					/>
+					<span className="text-xs text-slate-500">minutes</span>
+				</div>
+				<div className="mt-1 text-[11px] text-slate-500">This is a fixed runtime lease, not an inactivity timer. A stopped Preview remains available and can be started again.</div>
+			</div>
+			<button
+				type="button"
+				disabled={isLoading || saving || !Number.isInteger(maxRunningServers) || maxRunningServers < 1 || maxRunningServers > 20 || !Number.isInteger(autoStopMinutes) || autoStopMinutes < 1 || autoStopMinutes > 1440}
+				onClick={() => void save()}
+				className="border border-[#11a4d4] bg-[#11a4d4]/10 px-3 py-2 text-xs font-semibold text-[#7ddfff] hover:bg-[#11a4d4]/20 disabled:cursor-not-allowed disabled:opacity-50"
+			>
+				{saving ? "Saving…" : "Save Preview settings"}
+			</button>
+			{message ? <div className="text-xs text-slate-400">{message}</div> : null}
 		</div>
 	);
 }

@@ -61,7 +61,7 @@ export async function probePreviewTarget(
 	return undefined;
 }
 
-function processStartTicks(pid: number): string | undefined {
+export function previewProcessStartTicks(pid: number): string | undefined {
 	try {
 		const stat = readFileSync(`/proc/${pid}/stat`, "utf8").trim();
 		const closingParen = stat.lastIndexOf(")");
@@ -69,6 +69,15 @@ function processStartTicks(pid: number): string | undefined {
 		return stat.slice(closingParen + 1).trim().split(/\s+/)[19];
 	} catch {
 		return undefined;
+	}
+}
+
+export function isPiboYieldedProcess(pid: number): boolean {
+	if (process.platform !== "linux") return false;
+	try {
+		return /(?:^|\/)pibo-yielded-[^/\n]+\.service(?:$|\/)/m.test(readFileSync(`/proc/${pid}/cgroup`, "utf8"));
+	} catch {
+		return false;
 	}
 }
 
@@ -120,7 +129,7 @@ export function findPreviewTargetProcess(
 		if (!/^\d+$/.test(entry)) continue;
 		const pid = Number(entry);
 		if (!processOwnsSocket(pid, inodes)) continue;
-		const startTicks = processStartTicks(pid);
+		const startTicks = previewProcessStartTicks(pid);
 		if (startTicks) return { pid, startTicks };
 	}
 	return undefined;
@@ -135,7 +144,7 @@ export function isPreviewTargetProcessCurrent(
 	const cached = targetIdentityCache.get(exposure.id);
 	const now = Date.now();
 	if (cached && now - cached.checkedAt < cacheMs) return cached.current;
-	const current = processStartTicks(exposure.targetProcessId) === exposure.targetProcessStartTicks &&
+	const current = previewProcessStartTicks(exposure.targetProcessId) === exposure.targetProcessStartTicks &&
 		processOwnsSocket(exposure.targetProcessId, loopbackSocketInodes(exposure.targetHost, exposure.targetPort));
 	targetIdentityCache.set(exposure.id, { checkedAt: now, current });
 	return current;

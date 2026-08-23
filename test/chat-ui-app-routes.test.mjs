@@ -31,6 +31,10 @@ async function runAppRoutesScenario() {
 			{ area: "vscode" },
 		);
 		assert.deepEqual(
+			chatRouteFromLocation("/settings/previews", {}),
+			{ area: "settings", panel: "previews" },
+		);
+		assert.deepEqual(
 			chatRouteFromLocation("/settings/transcription", {}),
 			{ area: "settings", panel: "transcription" },
 		);
@@ -72,6 +76,10 @@ async function runAppRoutesScenario() {
 		assert.deepEqual(
 			chatNavigationRequest({ area: "settings", panel: "skills" }, true, "terminal"),
 			{ to: "/settings/skills", replace: true },
+		);
+		assert.deepEqual(
+			chatNavigationRequest({ area: "settings", panel: "previews" }, true, "terminal"),
+			{ to: "/settings/previews", replace: true },
 		);
 		assert.deepEqual(
 			chatNavigationRequest({ area: "settings", panel: "transcription" }, true, "terminal"),
