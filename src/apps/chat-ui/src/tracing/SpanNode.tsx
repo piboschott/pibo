@@ -20,6 +20,7 @@ import type { PiboSignalSnapshot, Span, SpanStatus, SpanType } from "../types";
 import type { ToolDisplayMode } from "../session-views/types";
 import { AgentDelegationCard } from "../components/AgentDelegationCard";
 import { PendingUserMessageDelivery } from "../components/PendingUserMessageDelivery";
+import { MessageSpeechButton } from "../components/MessageSpeechButton";
 import { countRender } from "../renderMetrics";
 import { JsonRenderer } from "./JsonRenderer";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -377,6 +378,9 @@ function SpanHeader({
 }) {
 	const compactToolDisplay = toolDisplayMode !== "default" && isToolDisplaySpan(span);
 	const intent = toolDisplayMode === "intent" ? stringField(span.attributes.intent) : undefined;
+	const speechText = span.spanType === "model.response" && !isActive
+		? stringField(span.attributes.content ?? span.attributes.output ?? span.attributes.message)
+		: undefined;
 	const userMessageHeaderClass = span.spanType === "user.prompt" || span.spanType === "user_input" ? "bg-[#11a4d4]/10" : statusStyles.headerClass;
 	const headerClassName = `${contentExpanded && !compactToolDisplay ? `border-b ${config.borderColor}/20` : ""} ${userMessageHeaderClass}`;
 
@@ -408,7 +412,7 @@ function SpanHeader({
 					onFork={onFork}
 					onOpenSession={onOpenSession}
 				/>
-				<SpanHeaderTiming duration={duration} relativeTime={relativeTime} />
+				<SpanHeaderTiming duration={duration} relativeTime={relativeTime} speechText={speechText} />
 			</div>
 		</div>
 	);
@@ -435,10 +439,19 @@ function SpanIconBadge({
 	);
 }
 
-function SpanHeaderTiming({ duration, relativeTime }: { duration: string | null; relativeTime: string }) {
+function SpanHeaderTiming({
+	duration,
+	relativeTime,
+	speechText,
+}: {
+	duration: string | null;
+	relativeTime: string;
+	speechText?: string;
+}) {
 	return (
-		<div className="ml-2 mr-4 flex w-36 shrink-0 items-center justify-end gap-2 font-mono tabular-nums">
+		<div className="ml-2 mr-4 flex w-40 shrink-0 items-center justify-end gap-2 font-mono tabular-nums">
 			{duration ? <span className="text-[10px] text-slate-500 dark:text-slate-400">{duration}</span> : null}
+			{speechText?.trim() ? <MessageSpeechButton text={speechText} /> : null}
 			<span className="text-xs text-slate-400 dark:text-slate-500">{relativeTime}</span>
 		</div>
 	);

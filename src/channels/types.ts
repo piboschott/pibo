@@ -17,6 +17,12 @@ import type {
 	PiboTranscriptionRequest,
 	PiboTranscriptionResult,
 } from "../transcription/types.js";
+import type {
+	PiboSpeechProviderInfo,
+	PiboSpeechRequest,
+	PiboSpeechSessionStartRequest,
+	PiboSpeechSessionStartResult,
+} from "../speech/types.js";
 import type { PiboLoopStopConditionDefinition, PiboLoopStopConditionInfo } from "../loops/types.js";
 import type { ContextFileProfile, InitialSessionContext, ModelProfile, SkillProfile } from "../core/profiles.js";
 import type { RuntimeSessionBinding, RuntimeSessionBindingRebindInput } from "../sessions/runtime-binding.js";
@@ -77,6 +83,11 @@ export type PiboChannelContext = {
 	getCapabilityCatalog?(): PiboCapabilityCatalog;
 	getTranscriptionProviderInfos?(): Promise<PiboTranscriptionProviderInfo[]>;
 	transcribe?(providerId: string, input: PiboTranscriptionRequest): Promise<PiboTranscriptionResult>;
+	getSpeechProviderIds?(): string[];
+	getSpeechProviderInfos?(): Promise<PiboSpeechProviderInfo[]>;
+	startSpeechSession?(providerId: string, input: PiboSpeechSessionStartRequest): Promise<PiboSpeechSessionStartResult>;
+	speakSpeechSession?(sessionId: string, input: PiboSpeechRequest): Promise<void>;
+	stopSpeechSession?(sessionId: string): Promise<void>;
 	inspectAgentRuntimeInstances?(): Promise<AgentRuntimeInstanceInspection[]>;
 	getAgentRuntimeAuthStatus?(runtimeInstanceId: string): Promise<readonly AgentRuntimeAuthStatus[]>;
 	startAgentRuntimeAuth?(runtimeInstanceId: string, input: StartAgentRuntimeAuthInput): Promise<AgentRuntimeAuthTargetOperationResult>;

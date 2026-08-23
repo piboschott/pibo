@@ -122,6 +122,12 @@ import {
 import { ensurePrivateChatUploadDirectory, prepareChatFileAttachments, resolveDownloadPath, responseChatFileDownload, saveUploadedChatFiles } from "./chat-files.js";
 import { responseChatTranscription, responseChatTranscriptionProviders } from "./chat-transcription.js";
 import {
+	responseChatSpeechProviders,
+	responseChatSpeechSessionSpeak,
+	responseChatSpeechSessionStart,
+	responseChatSpeechSessionStop,
+} from "./chat-speech.js";
+import {
 	chatSettingsRoute,
 	chatSettingsRouteInvalidatesBootstrapCatalog,
 	chatSettingsRouteRequiresSameOrigin,
@@ -4542,6 +4548,30 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 				return await responseChatTranscription(request, context);
 			}
 
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/speech/providers` && request.method === "GET") {
+				await requireSession(request, context);
+				return await responseChatSpeechProviders(context);
+			}
+
+			if (url.pathname === `${CHAT_WEB_API_PREFIX}/speech/sessions` && request.method === "POST") {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				return await responseChatSpeechSessionStart(request, context);
+			}
+
+			const speechSessionMatch = url.pathname.match(/^\/api\/chat\/speech\/sessions\/([^/]+)(?:\/(speak))?$/);
+			if (speechSessionMatch && (request.method === "POST" || request.method === "DELETE")) {
+				requireSameOriginJsonRequest(request);
+				await requireSession(request, context);
+				const sessionId = speechSessionMatch[1]!;
+				if (speechSessionMatch[2] === "speak" && request.method === "POST") {
+					return await responseChatSpeechSessionSpeak(request, context, sessionId);
+				}
+				if (!speechSessionMatch[2] && request.method === "DELETE") {
+					return await responseChatSpeechSessionStop(context, sessionId);
+				}
+			}
+
 			if (url.pathname === CHAT_WEB_API_PREFIX + "/download" && request.method === "GET") {
 				const webSession = await requireSession(request, context);
 				const path = url.searchParams.get("path")?.trim();
@@ -5404,8 +5434,12 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 			if (settingsRoute) {
 				if (chatSettingsRouteRequiresSameOrigin(settingsRoute)) requireSameOriginJsonRequest(request);
 				const webSession = await requireSession(request, context);
-				const transcriptionProviderIds = settingsRoute.kind === "user-settings" && settingsRoute.action === "update"
+				const updatingUserSettings = settingsRoute.kind === "user-settings" && settingsRoute.action === "update";
+				const transcriptionProviderIds = updatingUserSettings
 					? (await context.channelContext.getTranscriptionProviderInfos?.())?.map((provider) => provider.id)
+					: undefined;
+				const speechProviderIds = updatingUserSettings
+					? context.channelContext.getSpeechProviderIds?.()
 					: undefined;
 				const response = await handleChatSettingsRoute({
 					route: settingsRoute,
@@ -5413,6 +5447,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 					cwd: process.cwd(),
 					dataStore: state.dataStore,
 					transcriptionProviderIds,
+					speechProviderIds,
 				});
 				if (chatSettingsRouteInvalidatesBootstrapCatalog(settingsRoute)) invalidateBootstrapCatalogCache(state);
 				return response;

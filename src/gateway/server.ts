@@ -295,6 +295,7 @@ export class PiboGatewayServer {
 			: this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry] : [];
 		for (const registry of ownedPluginRegistries) {
 			for (const app of registry.getWebApps()) await app.dispose?.();
+			await registry.disposeSpeechProviders();
 		}
 
 		if (this.ownsSessionStore) {
@@ -525,6 +526,11 @@ export class PiboGatewayServer {
 			getCapabilityCatalog: () => this.pluginRegistry.getCapabilityCatalog(),
 			getTranscriptionProviderInfos: () => this.pluginRegistry.getTranscriptionProviderInfos(),
 			transcribe: (providerId, input) => this.pluginRegistry.transcribe(providerId, input),
+			getSpeechProviderIds: () => this.pluginRegistry.getSpeechProviderIds(),
+			getSpeechProviderInfos: () => this.pluginRegistry.getSpeechProviderInfos(),
+			startSpeechSession: (providerId, input) => this.pluginRegistry.startSpeechSession(providerId, input),
+			speakSpeechSession: (sessionId, input) => this.pluginRegistry.speakSpeechSession(sessionId, input),
+			stopSpeechSession: (sessionId) => this.pluginRegistry.stopSpeechSession(sessionId),
 			inspectAgentRuntimeInstances: () => this.pluginRegistry.inspectAgentRuntimeInstances(),
 			getAgentRuntimeAuthStatus: (runtimeInstanceId) => this.requireRouter().getAgentRuntimeAuthStatus(runtimeInstanceId),
 			startAgentRuntimeAuth: (runtimeInstanceId, input) => this.requireRouter().startAgentRuntimeAuth(runtimeInstanceId, input),

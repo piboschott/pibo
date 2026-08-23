@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, CircleX, GitBranch, Hammer, MessageSquare } 
 import { Virtuoso } from "react-virtuoso";
 import { AgentDelegationCard } from "../../components/AgentDelegationCard";
 import { PendingUserMessageDelivery } from "../../components/PendingUserMessageDelivery";
+import { MessageSpeechButton } from "../../components/MessageSpeechButton";
 import { useStickyVirtuoso } from "../../components/useStickyVirtuoso";
 import { useSessionActivity } from "../../hooks/useSessionActivity";
 import { SessionGoalIndicator, sessionGoalIndicatorStatus } from "../../session-goal-indicator";
@@ -596,7 +597,13 @@ function TerminalRowContent({
 				<div className="compact-terminal-markdown" data-pibo-component="MarkdownRendererHost" data-pibo-markdown-kind="assistant-message">
 					<MarkdownRenderer streaming={row.status === "running"}>{typeof row.output === "string" ? row.output : ""}</MarkdownRenderer>
 				</div>
-				{row.status === "running" ? null : <TerminalMessageMetadata timestamp={row.completedAt} durationMs={row.durationMs} />}
+				{row.status === "running" ? null : (
+					<TerminalMessageMetadata
+						timestamp={row.completedAt}
+						durationMs={row.durationMs}
+						speechText={typeof row.output === "string" ? row.output : undefined}
+					/>
+				)}
 			</div>
 		);
 	}
@@ -647,12 +654,21 @@ function TerminalLines({
 	));
 }
 
-function TerminalMessageMetadata({ timestamp, durationMs }: { timestamp?: string; durationMs?: number }) {
+function TerminalMessageMetadata({
+	timestamp,
+	durationMs,
+	speechText,
+}: {
+	timestamp?: string;
+	durationMs?: number;
+	speechText?: string;
+}) {
 	const time = formatLocalMessageTime(timestamp);
 	if (!time) return null;
 	return (
-		<div className="mt-1 text-right font-mono text-[10px] tabular-nums text-[#737373]" data-pibo-component="TerminalMessageMetadata">
-			{time}{durationMs === undefined ? null : ` · ${formatTerminalDuration(durationMs)}`}
+		<div className="mt-1 flex items-center justify-end gap-1 font-mono text-[10px] tabular-nums text-[#737373]" data-pibo-component="TerminalMessageMetadata">
+			{speechText?.trim() ? <MessageSpeechButton text={speechText} /> : null}
+			<span>{time}{durationMs === undefined ? null : ` · ${formatTerminalDuration(durationMs)}`}</span>
 		</div>
 	);
 }

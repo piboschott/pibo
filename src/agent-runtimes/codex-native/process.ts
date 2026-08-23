@@ -87,6 +87,10 @@ export type PrepareCodexNativeSessionPathsInput = {
 export type StartCodexNativeAppServerInput = PrepareCodexNativeSessionPathsInput & {
 	workspace: string;
 	clientVersion: string;
+	experimentalApi?: boolean;
+	realtimeConversation?: boolean;
+	realtimeSidebandBaseUrl?: string;
+	realtimeWebrtcCallBaseUrl?: string;
 	baseEnvironment?: NodeJS.ProcessEnv;
 	resourceEnvironment?: Readonly<NodeJS.ProcessEnv>;
 	onDiagnostic?: (diagnostic: CodexAppServerDiagnostic) => void;
@@ -527,10 +531,16 @@ export async function startCodexNativeAppServer(
 	if (!input.clientVersion.trim()) {
 		throw new CodexNativeProcessError("start_failed", "Codex App Server client version is required.");
 	}
+	if (input.realtimeSidebandBaseUrl !== undefined && !input.realtimeSidebandBaseUrl.trim()) {
+		throw new CodexNativeProcessError("start_failed", "Codex realtime sideband base URL must not be empty.");
+	}
+	if (input.realtimeWebrtcCallBaseUrl !== undefined && !input.realtimeWebrtcCallBaseUrl.trim()) {
+		throw new CodexNativeProcessError("start_failed", "Codex realtime WebRTC call base URL must not be empty.");
+	}
 	const paths = await prepareCodexNativeSessionPaths(input);
 	let client: CodexAppServerClient | undefined;
 	try {
-		const capabilities: CodexAppServerInitializeCapabilities = { experimentalApi: false };
+		const capabilities: CodexAppServerInitializeCapabilities = { experimentalApi: input.experimentalApi === true };
 		const invocation = codexExecutableInvocation(input.config.executable, [
 			"app-server",
 			"--stdio",
@@ -539,6 +549,13 @@ export async function startCodexNativeAppServer(
 			`tools.experimental_request_user_input.enabled=${input.config.experimentalUserInput}`,
 			"-c",
 			`features.default_mode_request_user_input=${input.config.experimentalUserInput}`,
+			...(input.realtimeConversation ? ["-c", "features.realtime_conversation=true"] : []),
+			...(input.realtimeSidebandBaseUrl
+				? ["-c", `experimental_realtime_ws_base_url=${JSON.stringify(input.realtimeSidebandBaseUrl)}`]
+				: []),
+			...(input.realtimeWebrtcCallBaseUrl
+				? ["-c", `experimental_realtime_webrtc_call_base_url=${JSON.stringify(input.realtimeWebrtcCallBaseUrl)}`]
+				: []),
 		]);
 		client = await CodexAppServerClient.start({
 			command: invocation.command,
