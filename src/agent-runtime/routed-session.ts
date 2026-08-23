@@ -380,10 +380,10 @@ export class RuntimeRoutedSession {
 		return (await listSessions()).map((info) => nativeSessionInfoToPiCompatibility(this.runtimeSession, info));
 	}
 
-	getForkCandidates(): PiboForkCandidate[] {
+	async getForkCandidates(): Promise<PiboForkCandidate[]> {
 		const getForkCandidates = this.runtimeSession.controls?.getForkCandidates;
 		if (!getForkCandidates) throw runtimeCapabilityError(this.runtimeSession, "native session fork candidates");
-		return getForkCandidates();
+		return await getForkCandidates();
 	}
 
 	async forkSession(entryId: string): Promise<PiboSessionOperationResult> {

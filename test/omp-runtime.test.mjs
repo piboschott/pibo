@@ -27,10 +27,13 @@ function registerCleanup(t, root, client) {
 	});
 }
 
-async function startClient(t, label) {
+async function startClient(t, label, environment = {}) {
 	const root = await testRoot(t, label);
 	const client = new OmpRpcClient({ startupTimeoutMs: 10_000, requestTimeoutMs: 30_000 });
-	await client.connect([process.execPath, fixturePath], { cwd: root, env: { ...process.env, PI_CODING_AGENT_DIR: join(root, "agent") } });
+	await client.connect([process.execPath, fixturePath], {
+		cwd: root,
+		env: { ...process.env, ...environment, PI_CODING_AGENT_DIR: join(root, "agent") },
+	});
 	registerCleanup(t, root, client);
 	return client;
 }
@@ -153,6 +156,28 @@ test("OMP thread controller reads native session snapshot and commands", async (
 	const commands = await readOmpAvailableCommands(client);
 	assert.ok(commands.some((c) => c.name === "compact"));
 	assert.ok(commands.some((c) => c.name === "model"));
+
+	const candidates = await threads.loadForkCandidates("omp-native");
+	assert.deepEqual(candidates, [
+		{ entryId: "fork-1", text: "hi" },
+		{ entryId: "fork-2", text: "hello" },
+	]);
+	const forked = await threads.forkSession("omp-native", "fork-2");
+	assert.equal(forked.previous.nativeSessionId, "fake-session-1");
+	assert.equal(forked.current.nativeSessionId, "fake-session-fork");
+	assert.equal(forked.selectedText, "hello");
+	assert.equal(forked.summaryEntryId, "fork-2");
+	assert.equal(forked.cancelled, false);
+});
+
+test("OMP thread controller falls back to legacy branch RPC names only when modern fork commands are unsupported", async (t) => {
+	const client = await startClient(t, "thread-legacy-fork", { OMP_FAKE_LEGACY_FORK_RPC: "1" });
+	const threads = new OmpThreadController(client, process.cwd(), { sessionId: "fake-session-1" });
+	const candidates = await threads.loadForkCandidates("omp-native");
+	assert.deepEqual(candidates.map((candidate) => candidate.entryId), ["fork-1", "fork-2"]);
+	const forked = await threads.forkSession("omp-native", "fork-1");
+	assert.equal(forked.current.nativeSessionId, "fake-session-branch");
+	assert.equal(forked.selectedText, "hi");
 });
 
 test("OMP RPC client round-trips state in an error-ish environment", async (t) => {

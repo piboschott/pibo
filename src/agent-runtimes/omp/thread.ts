@@ -5,7 +5,7 @@ import type {
 	AgentRuntimeSessionOperationResult,
 } from "../../agent-runtime/types.js";
 import type { RuntimeSessionBinding } from "../../sessions/runtime-binding.js";
-import { OmpRpcClient } from "./client.js";
+import { OmpRpcClient, OmpRpcResponseError } from "./client.js";
 import { OMP_RPC_PROTOCOL_NAME, OMP_RPC_PROTOCOL_VERSION, type OmpRpcAvailableSlashCommand } from "./protocol-types.js";
 
 export const OMP_ADAPTER_ID = "orp";
@@ -19,6 +19,12 @@ export type OmpSessionSnapshot = {
 	cwd: string;
 };
 
+function isUnsupportedForkCommand(error: unknown): boolean {
+	if (!(error instanceof OmpRpcResponseError)) return false;
+	return /unknown_command|unsupported_command|method_not_found|(?:unknown|unsupported|unrecognized|invalid)\s+(?:rpc\s+)?(?:command|method)|(?:command|method)\s+(?:is\s+)?(?:unknown|unsupported|unrecognized|not implemented|not found)/i
+		.test(`${error.errorCode ?? ""} ${error.error}`);
+}
+
 /**
  * OMP session-file lifecycle controller. OMP owns its session files (JSONL
  * session transcripts) under the isolated `PI_CODING_AGENT_DIR` sessions dir.
@@ -27,8 +33,6 @@ export type OmpSessionSnapshot = {
  */
 export class OmpThreadController {
 	private snapshot: OmpSessionSnapshot;
-	private forkCandidatesCache: AgentRuntimeForkCandidate[] = [];
-
 	constructor(
 		private readonly client: OmpRpcClient,
 		private readonly cwd: string,
@@ -80,10 +84,16 @@ export class OmpThreadController {
 		return [{ ...snapshot, messageCount: this.snapshot.messageCount, name: this.snapshot.sessionName }];
 	}
 
-	/** Fetch branch candidates from OMP and cache them for the sync SPI. */
-	async loadForkCandidates(runtimeInstanceId: string): Promise<AgentRuntimeForkCandidate[]> {
+	/** Fetch fork candidates from current OMP RPC names with legacy branch compatibility. */
+	async loadForkCandidates(_runtimeInstanceId: string): Promise<AgentRuntimeForkCandidate[]> {
 		try {
-			const result = await this.client.request({ type: "get_branch_messages" }, "get_branch_messages");
+			let result;
+			try {
+				result = await this.client.request({ type: "get_fork_messages" }, "get_fork_messages");
+			} catch (error) {
+				if (!isUnsupportedForkCommand(error)) throw error;
+				result = await this.client.request({ type: "get_branch_messages" }, "get_branch_messages");
+			}
 			const data = result["data" as keyof typeof result];
 			if (data && typeof data === "object" && !Array.isArray(data) && "messages" in data) {
 				const messages = (data as { messages: unknown }).messages;
@@ -100,20 +110,13 @@ export class OmpThreadController {
 							}
 						}
 					}
-					this.forkCandidatesCache = candidates;
 					return candidates;
 				}
 			}
 		} catch {
-			// Branch candidates are optional; fall through to empty.
+			// Fork candidates are optional; fall through to empty.
 		}
-		this.forkCandidatesCache = [];
 		return [];
-	}
-
-	/** Sync accessor for the SPI (get_available_commands via a warm-up load). */
-	cachedForkCandidates(): AgentRuntimeForkCandidate[] {
-		return this.forkCandidatesCache;
 	}
 
 	async forkSession(
@@ -121,14 +124,25 @@ export class OmpThreadController {
 		entryId: string,
 	): Promise<AgentRuntimeSessionOperationResult> {
 		const previous = structuredClone(this.getSessionSnapshot(runtimeInstanceId));
-		const result = await this.client.request({ type: "branch", entryId }, "branch");
+		let result;
+		try {
+			result = await this.client.request({ type: "fork", entryId }, "fork");
+		} catch (error) {
+			if (!isUnsupportedForkCommand(error)) throw error;
+			result = await this.client.request({ type: "branch", entryId }, "branch");
+		}
 		const data = result["data" as keyof typeof result];
-		const cancelled = Boolean(
-			data && typeof data === "object" && !Array.isArray(data) && (data as Record<string, unknown>).cancelled === true,
-		);
+		const record = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : undefined;
+		const cancelled = record?.cancelled === true;
 		await this.refresh();
 		const current = this.getSessionSnapshot(runtimeInstanceId);
-		return { previous, current, cancelled };
+		return {
+			previous,
+			current,
+			cancelled,
+			summaryEntryId: entryId,
+			...(typeof record?.text === "string" ? { selectedText: record.text } : {}),
+		};
 	}
 
 	async switchSession(runtimeInstanceId: string, sessionPath: string): Promise<AgentRuntimeSessionOperationResult> {

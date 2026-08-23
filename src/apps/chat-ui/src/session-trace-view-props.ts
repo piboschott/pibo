@@ -5,6 +5,76 @@ import type { SessionBreadcrumbItem, SessionDerivationLink, SessionOriginLink } 
 import { adaptTrace } from "./tracing/adapt";
 
 export type SessionTraceViewLinks = Pick<ChatSessionViewProps, "sessionBreadcrumbs" | "originSession" | "derivedSessions">;
+export type SessionForkCandidate = { entryId: string; text: string };
+
+export function sessionSupportsFork(
+	bootstrap: BootstrapData,
+	piboSessionId: string | null,
+	profileName: string,
+): boolean {
+	const session = piboSessionId ? findSessionNode(bootstrap.sessions, piboSessionId) : undefined;
+	const staticProfile = bootstrap.agents.find((agent) => agent.name === profileName);
+	const customProfile = bootstrap.customAgents.find((agent) => agent.profileName === profileName);
+	const runtimeInstanceId = session?.runtimeInstanceId ?? customProfile?.runtimeInstanceId ?? staticProfile?.runtimeInstanceId;
+	const runtime = bootstrap.agentCatalog?.agentRuntimes.find((candidate) =>
+		runtimeInstanceId ? candidate.id === runtimeInstanceId : session?.runtimeAdapterId ? candidate.adapterId === session.runtimeAdapterId : false,
+	);
+	return runtime?.capabilities.lifecycle.fork === true;
+}
+
+export function traceUserMessageRevision(traceView: PiboSessionTraceView | null): string {
+	if (!traceView) return "none";
+	const users = flattenTraceNodes(traceView.nodes).filter((node) => node.type === "user.message");
+	return `${users.length}:${users.at(-1)?.id ?? ""}`;
+}
+
+export function withSessionForkCandidates(
+	traceView: PiboSessionTraceView | null,
+	candidates: readonly SessionForkCandidate[],
+): PiboSessionTraceView | null {
+	if (!traceView || candidates.length === 0) return traceView;
+	const userNodes = flattenTraceNodes(traceView.nodes).filter((node) => node.type === "user.message");
+	const usedEntryIds = new Set(userNodes.flatMap((node) => node.entryId ? [node.entryId] : []));
+	const assignments = new Map<string, string>();
+	let candidateIndex = candidates.length - 1;
+	for (let nodeIndex = userNodes.length - 1; nodeIndex >= 0; nodeIndex -= 1) {
+		const node = userNodes[nodeIndex]!;
+		if (node.entryId) continue;
+		while (candidateIndex >= 0 && usedEntryIds.has(candidates[candidateIndex]!.entryId)) candidateIndex -= 1;
+		if (candidateIndex < 0) break;
+		const text = traceUserMessageText(node);
+		let matchedIndex = -1;
+		for (let index = candidateIndex; index >= 0; index -= 1) {
+			const candidate = candidates[index]!;
+			if (!usedEntryIds.has(candidate.entryId) && candidate.text === text) {
+				matchedIndex = index;
+				break;
+			}
+		}
+		const selectedIndex = matchedIndex >= 0 ? matchedIndex : candidateIndex;
+		const selected = candidates[selectedIndex]!;
+		assignments.set(node.id, selected.entryId);
+		usedEntryIds.add(selected.entryId);
+		candidateIndex = selectedIndex - 1;
+	}
+	if (assignments.size === 0) return traceView;
+	return { ...traceView, nodes: assignForkEntryIds(traceView.nodes, assignments) };
+}
+
+function traceUserMessageText(node: PiboTraceNode): string {
+	if (typeof node.output === "string") return node.output;
+	if (typeof node.summary === "string") return node.summary;
+	return node.title;
+}
+
+function assignForkEntryIds(nodes: readonly PiboTraceNode[], assignments: ReadonlyMap<string, string>): PiboTraceNode[] {
+	return nodes.map((node) => {
+		const children = assignForkEntryIds(node.children, assignments);
+		const entryId = assignments.get(node.id);
+		if (!entryId && children.every((child, index) => child === node.children[index])) return node;
+		return { ...node, ...(entryId ? { entryId } : {}), children };
+	});
+}
 
 export function sessionSupportsToolIntent(
 	bootstrap: BootstrapData,

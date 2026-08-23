@@ -209,16 +209,13 @@ function secondsToIso(seconds: number | null | undefined): string | undefined {
 	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-function itemText(item: CodexAppServerThreadItem): string | undefined {
-	if (item.type === "agentMessage" && typeof item.text === "string") return redactCodexNativeSensitiveText(item.text);
-	if (item.type === "userMessage" && Array.isArray(item.content)) {
-		const text = item.content
-			.filter((part): part is { type: string; text: string } => isRecord(part) && part.type === "text" && typeof part.text === "string")
-			.map((part) => redactCodexNativeSensitiveText(part.text))
-			.join("\n");
-		return text || undefined;
-	}
-	return undefined;
+function userMessageText(item: CodexAppServerThreadItem): string | undefined {
+	if (item.type !== "userMessage" || !Array.isArray(item.content)) return undefined;
+	const text = item.content
+		.filter((part): part is { type: string; text: string } => isRecord(part) && part.type === "text" && typeof part.text === "string")
+		.map((part) => redactCodexNativeSensitiveText(part.text))
+		.join("\n");
+	return text || undefined;
 }
 
 function threadLeafId(thread: CodexAppServerThread): string | null {
@@ -257,11 +254,24 @@ export function codexThreadInfo(
 	};
 }
 
-export function codexThreadForkCandidates(thread: CodexAppServerThread): AgentRuntimeForkCandidate[] {
-	return thread.turns.map((turn) => {
-		const text = [...turn.items].reverse().map(itemText).find((candidate) => candidate?.trim()) ?? `Codex turn ${turn.id}`;
-		return { entryId: turn.id, text };
+type CodexThreadForkTarget = AgentRuntimeForkCandidate & {
+	previousTurnId?: string;
+};
+
+function codexThreadForkTargets(thread: CodexAppServerThread): CodexThreadForkTarget[] {
+	return thread.turns.flatMap((turn, index) => {
+		const userMessage = turn.items.find((item) => item.type === "userMessage");
+		if (!userMessage) return [];
+		return [{
+			entryId: userMessage.id,
+			text: userMessageText(userMessage) ?? `Codex turn ${turn.id}`,
+			...(index > 0 ? { previousTurnId: thread.turns[index - 1]!.id } : {}),
+		}];
 	});
+}
+
+export function codexThreadForkCandidates(thread: CodexAppServerThread): AgentRuntimeForkCandidate[] {
+	return codexThreadForkTargets(thread).map(({ entryId, text }) => ({ entryId, text }));
 }
 
 export class CodexNativeThreadController {
@@ -271,7 +281,7 @@ export class CodexNativeThreadController {
 		readonly client: CodexAppServerClient,
 		private currentThread: CodexAppServerThread,
 		private currentConfiguration: CodexNativeThreadConfiguration,
-		private readonly resourceSelection: Pick<CodexNativeThreadSelection, "config" | "developerInstructions">,
+		private readonly resourceSelection: Pick<CodexNativeThreadSelection, "config" | "developerInstructions" | "personality">,
 	) {
 		this.knownThreads.set(currentThread.id, structuredClone(currentThread));
 	}
@@ -294,6 +304,7 @@ export class CodexNativeThreadController {
 		return new CodexNativeThreadController(client, selected.thread, selected.configuration, {
 			...(selection.config ? { config: structuredClone(selection.config) } : {}),
 			...(selection.developerInstructions ? { developerInstructions: selection.developerInstructions } : {}),
+			...(selection.personality !== undefined ? { personality: selection.personality } : {}),
 		});
 	}
 
@@ -319,6 +330,7 @@ export class CodexNativeThreadController {
 			return new CodexNativeThreadController(client, thread, selected.configuration, {
 				...(selection.config ? { config: structuredClone(selection.config) } : {}),
 				...(selection.developerInstructions ? { developerInstructions: selection.developerInstructions } : {}),
+				...(selection.personality !== undefined ? { personality: selection.personality } : {}),
 			});
 		} catch (error) {
 			return normalizeThreadError(error, threadId);
@@ -409,11 +421,24 @@ export class CodexNativeThreadController {
 	async fork(
 		runtimeInstanceId: string,
 		workspace: string,
-		lastTurnId: string,
+		entryId: string,
 		validateThread?: (threadId: string) => Promise<void>,
 	): Promise<AgentRuntimeSessionOperationResult> {
-		if (!lastTurnId.trim()) throw new Error("Codex thread fork requires a native turn id.");
-		return await this.forkAt(runtimeInstanceId, workspace, lastTurnId, validateThread);
+		if (!entryId.trim()) throw new Error("Codex thread fork requires a native user-message id.");
+		const target = codexThreadForkTargets(this.currentThread).find((candidate) => candidate.entryId === entryId);
+		if (target) {
+			if (!target.previousTurnId) {
+				return await this.startBeforeFirstTurn(runtimeInstanceId, workspace, target, validateThread);
+			}
+			return await this.forkAt(runtimeInstanceId, workspace, target.previousTurnId, validateThread, target);
+		}
+		const legacyTurn = this.currentThread.turns.find((turn) => turn.id === entryId);
+		if (!legacyTurn) throw new Error(`Codex fork target "${entryId}" was not found.`);
+		const legacyText = legacyTurn.items.map(userMessageText).find((text) => text?.trim());
+		return await this.forkAt(runtimeInstanceId, workspace, entryId, validateThread, {
+			entryId,
+			text: legacyText ?? `Codex turn ${entryId}`,
+		});
 	}
 
 	async clone(
@@ -429,6 +454,7 @@ export class CodexNativeThreadController {
 		workspace: string,
 		lastTurnId?: string,
 		validateThread?: (threadId: string) => Promise<void>,
+		selectedTarget?: AgentRuntimeForkCandidate,
 	): Promise<AgentRuntimeSessionOperationResult> {
 		const previousThread = this.currentThread;
 		const previous = codexThreadSnapshot(runtimeInstanceId, previousThread);
@@ -450,9 +476,6 @@ export class CodexNativeThreadController {
 				throw new CodexNativeThreadProtocolError("Codex thread/fork returned the source thread id.");
 			}
 			await validateThread?.(forked.id);
-			const selectedText = lastTurnId
-				? codexThreadForkCandidates(previousThread).find((candidate) => candidate.entryId === lastTurnId)?.text
-				: undefined;
 			this.knownThreads.set(previousThread.id, structuredClone(previousThread));
 			this.knownThreads.set(forked.id, structuredClone(forked));
 			this.currentThread = forked;
@@ -461,8 +484,44 @@ export class CodexNativeThreadController {
 				previous,
 				current: codexThreadSnapshot(runtimeInstanceId, forked),
 				cancelled: false,
-				...(selectedText ? { selectedText } : {}),
-				...(lastTurnId ? { summaryEntryId: lastTurnId } : {}),
+				...(selectedTarget?.text ? { selectedText: selectedTarget.text } : {}),
+				...(selectedTarget ? { summaryEntryId: selectedTarget.entryId } : {}),
+			};
+		} catch (error) {
+			return normalizeThreadError(error, previousThread.id);
+		}
+	}
+
+	private async startBeforeFirstTurn(
+		runtimeInstanceId: string,
+		workspace: string,
+		target: AgentRuntimeForkCandidate,
+		validateThread?: (threadId: string) => Promise<void>,
+	): Promise<AgentRuntimeSessionOperationResult> {
+		const previousThread = this.currentThread;
+		const previous = codexThreadSnapshot(runtimeInstanceId, previousThread);
+		try {
+			const started = await CodexNativeThreadController.start(this.client, workspace, {
+				model: this.currentConfiguration.model,
+				serviceTier: this.currentConfiguration.serviceTier,
+				...(this.resourceSelection.personality !== undefined ? { personality: this.resourceSelection.personality } : {}),
+				...(this.resourceSelection.config ? { config: structuredClone(this.resourceSelection.config) } : {}),
+				...(this.resourceSelection.developerInstructions
+					? { developerInstructions: this.resourceSelection.developerInstructions }
+					: {}),
+			});
+			const forked = started.thread;
+			await validateThread?.(forked.id);
+			this.knownThreads.set(previousThread.id, structuredClone(previousThread));
+			this.knownThreads.set(forked.id, structuredClone(forked));
+			this.currentThread = forked;
+			this.currentConfiguration = started.configuration;
+			return {
+				previous,
+				current: codexThreadSnapshot(runtimeInstanceId, forked),
+				cancelled: false,
+				selectedText: target.text,
+				summaryEntryId: target.entryId,
 			};
 		} catch (error) {
 			return normalizeThreadError(error, previousThread.id);

@@ -11,7 +11,6 @@ import {
 import type { AgentRuntimeSemanticEvent } from "../../agent-runtime/events.js";
 import type {
 	AgentRuntimeAdapter,
-	AgentRuntimeForkCandidate,
 	AgentRuntimeAuthOperationResult,
 	AgentRuntimeAuthStatus,
 	AgentRuntimeDiagnostic,
@@ -259,12 +258,11 @@ export class OmpSession implements AgentRuntimeSession {
 		this.controls = {
 			getCurrentSession: () => this.thread.getSessionSnapshot(this.runtimeInstanceId),
 			listSessions: () => this.thread.listSessions(this.runtimeInstanceId),
-			getForkCandidates: () => this.forkCandidates(),
+			getForkCandidates: () => this.thread.loadForkCandidates(this.runtimeInstanceId),
 			forkSession: async (entryId) => await this.runIdleOperation(async () => {
-				const previous = this.thread.getSessionSnapshot(this.runtimeInstanceId);
 				const result = await this.thread.forkSession(this.runtimeInstanceId, entryId);
 				this.updateBinding();
-				return { previous, current: result.current, cancelled: result.cancelled };
+				return result;
 			}),
 			getReasoning: () => parseOmpReasoning(undefined),
 			setReasoning: (value) => {
@@ -307,10 +305,6 @@ export class OmpSession implements AgentRuntimeSession {
 			runtimeInstanceId: this.runtimeInstanceId,
 			adapterId: OMP_ADAPTER_ID,
 		};
-	}
-
-	private forkCandidates(): AgentRuntimeForkCandidate[] {
-		return this.thread.cachedForkCandidates();
 	}
 
 	private async setOmpModel(provider: string, modelId: string): Promise<AgentRuntimeModelInfo> {
@@ -614,9 +608,6 @@ export class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 					// (bindNativeSessionId below still sets the binding.)
 				}
 			}
-
-			// Prime fork candidates (get_branch_messages) for the sync SPI.
-			void threads.loadForkCandidates(this.instanceId);
 		} catch (error) {
 			await client.dispose();
 			await disposeOmpSessionPaths(paths);

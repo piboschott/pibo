@@ -13,7 +13,10 @@ async function runSessionTraceViewPropsScenario() {
 			createSessionTraceViewProps,
 			resolveSessionTraceModelBadge,
 			resolveSessionTraceTitle,
+			sessionSupportsFork,
 			sessionSupportsToolIntent,
+			traceUserMessageRevision,
+			withSessionForkCandidates,
 		} = await import("./src/apps/chat-ui/src/session-trace-view-props.ts");
 
 		function session(overrides) {
@@ -126,11 +129,16 @@ async function runSessionTraceViewPropsScenario() {
 			],
 			modelDefaults: { thinking: "off", fast: false },
 			agentCatalog: {
-				agentRuntimes: [{ id: "pi", adapterId: "pi", capabilities: { tools: { intentTracing: { supported: true, configurable: true, enabledByDefault: false } } } }],
+				agentRuntimes: [{ id: "pi", adapterId: "pi", capabilities: { lifecycle: { fork: true }, tools: { intentTracing: { supported: true, configurable: true, enabledByDefault: false } } } }],
 			},
 			capabilities: { actions: [] },
 		};
 
+		assert.equal(sessionSupportsFork(bootstrap, "ps-child", "worker-profile"), true);
+		assert.equal(sessionSupportsFork({
+			...bootstrap,
+			agentCatalog: { agentRuntimes: [{ ...bootstrap.agentCatalog.agentRuntimes[0], capabilities: { lifecycle: { fork: false } } }] },
+		}, "ps-child", "worker-profile"), false);
 		assert.equal(sessionSupportsToolIntent(bootstrap, "ps-child", "worker-profile"), true);
 		assert.equal(sessionSupportsToolIntent({ ...bootstrap, customAgents: [{ ...bootstrap.customAgents[0], runtimeOptions: {} }] }, "ps-child", "worker-profile"), false);
 		assert.equal(sessionSupportsToolIntent({
@@ -191,6 +199,24 @@ async function runSessionTraceViewPropsScenario() {
 			selectedSessionActiveModel: undefined,
 			currentTraceView: null,
 		}), undefined);
+
+		const productTrace = {
+			...traceView,
+			nodes: [
+				traceNode({ id: "user-1", type: "user.message", title: "User", output: "repeat" }),
+				traceNode({ id: "assistant-1", type: "assistant.message", title: "Assistant", output: "answer" }),
+				traceNode({ id: "user-2", type: "user.message", title: "User", output: "repeat" }),
+			],
+		};
+		assert.equal(traceUserMessageRevision(productTrace), "2:user-2");
+		const forkableTrace = withSessionForkCandidates(productTrace, [
+			{ entryId: "native-user-a", text: "repeat" },
+			{ entryId: "native-user-b", text: "repeat" },
+		]);
+		assert.equal(productTrace.nodes[0].entryId, undefined);
+		assert.equal(forkableTrace.nodes[0].entryId, "native-user-a");
+		assert.equal(forkableTrace.nodes[2].entryId, "native-user-b");
+		assert.equal(forkableTrace.nodes[1].entryId, undefined);
 
 		const calls = [];
 		const props = createSessionTraceViewProps({

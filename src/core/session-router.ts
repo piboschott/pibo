@@ -17,6 +17,7 @@ import type {
 	PiboAssistantMessageEvent,
 	PiboEventListener,
 	PiboExecutionEvent,
+	PiboForkCandidate,
 	PiboJsonObject,
 	PiboInputEvent,
 	PiboMessageEvent,
@@ -954,6 +955,15 @@ export class PiboSessionRouter {
 		const session = await this.getOrCreateSession(piboSessionId);
 		try {
 			return this.withPersistedRuntimeBinding(await session.getStatusSnapshot());
+		} finally {
+			this.scheduleIdleSessionEvictionIfIdle(piboSessionId);
+		}
+	}
+
+	async getSessionForkCandidates(piboSessionId: string): Promise<PiboForkCandidate[]> {
+		const session = await this.getOrCreateSession(piboSessionId);
+		try {
+			return await session.getForkCandidates();
 		} finally {
 			this.scheduleIdleSessionEvictionIfIdle(piboSessionId);
 		}
