@@ -412,7 +412,10 @@ export function getDefaultConfigPaths(): string[] {
   // Current directory
   paths.push(resolve(DEFAULT_MCP_CONFIG_FILE));
 
-  // Home directory variants
+  // Home directory variants. Include the non-dot filename because `pibo mcp
+  // config` creates it when invoked from the home directory, and services can
+  // later run with a different working directory.
+  paths.push(join(home, DEFAULT_MCP_CONFIG_FILE));
   paths.push(join(home, '.mcp_servers.json'));
   paths.push(join(home, '.config', 'mcp', 'mcp_servers.json'));
 
