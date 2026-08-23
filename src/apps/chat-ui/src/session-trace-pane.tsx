@@ -20,7 +20,7 @@ import type {
   WorkflowLifecycleEventRecord,
 } from "./types";
 import type { SlashCommand } from "./chat-commands";
-import type { ChatSessionViewId } from "./session-views/types";
+import type { ChatSessionViewId, ToolDisplayMode } from "./session-views/types";
 import type { ChatMessageDelivery } from "./api-chat-sessions";
 import { uploadChatFiles } from "./api-chat-files";
 import { getLoopSessionGoal } from "./api-loops";
@@ -44,6 +44,7 @@ import {
   createSessionTraceViewProps,
   resolveSessionTraceModelBadge,
   resolveSessionTraceTitle,
+  sessionSupportsToolIntent,
 } from "./session-trace-view-props";
 import {
   appendComposerOptimisticEvent,
@@ -99,6 +100,7 @@ export function SessionTracePane({
   showRawEvents,
   showThinking,
   expandThinking,
+  toolDisplayMode,
   commands,
   skills,
   composerText,
@@ -107,6 +109,7 @@ export function SessionTracePane({
   onToggleRawEvents,
   onToggleThinking,
   onToggleExpandThinking,
+  onToolDisplayModeChange,
   onSessionAgentProfileChange,
   onFork,
   onOpenSession,
@@ -147,6 +150,7 @@ export function SessionTracePane({
   showRawEvents: boolean;
   showThinking: boolean;
   expandThinking: boolean;
+  toolDisplayMode: ToolDisplayMode;
   commands: SlashCommand[];
   skills: Array<{ name: string; description?: string; path?: string }>;
   composerText: string;
@@ -155,6 +159,7 @@ export function SessionTracePane({
   onToggleRawEvents: () => void;
   onToggleThinking: () => void;
   onToggleExpandThinking: () => void;
+  onToolDisplayModeChange: (mode: ToolDisplayMode) => void;
   onSessionAgentProfileChange: (profile: string) => void;
   onFork: (entryId: string) => void;
   onOpenSession: (piboSessionId: string) => void;
@@ -480,11 +485,14 @@ export function SessionTracePane({
     }
   };
 
+  const toolIntentSupported = sessionSupportsToolIntent(bootstrap, selectedPiboSessionId, selectedSessionProfile);
+  const effectiveToolDisplayMode = toolDisplayMode === "intent" && !toolIntentSupported ? "slim" : toolDisplayMode;
   const sessionViewProps = createSessionTraceViewProps({
     currentTraceView,
     isLoading: loadingTrace,
     showThinking,
     expandThinking,
+    toolDisplayMode: effectiveToolDisplayMode,
     selectedSessionProfile,
     sessionActiveModelBadge,
     sessionRuntimeBinding: bootstrap.session?.id === selectedBackendPiboSessionId ? bootstrap.session.runtimeBinding : undefined,
@@ -663,6 +671,9 @@ export function SessionTracePane({
         showRawEvents,
         showThinking,
         expandThinking,
+        toolDisplayMode: effectiveToolDisplayMode,
+        toolIntentSupported,
+        onToolDisplayModeChange,
         onShowWebAnnotationsPanel: () => setWebAnnotationsPanelVisible(true),
         onHideWebAnnotationsPanel: () => setWebAnnotationsPanelVisible(false),
         onSelectSessionView: (viewId) => {

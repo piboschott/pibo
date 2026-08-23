@@ -78,6 +78,14 @@ const emitTurn = (message) => {
 		assistantMessageEvent: { type: "text_end", contentIndex: 0, content: "Hello there", partial: { role: "assistant", content: "Hello there" } },
 	});
 	write({ type: "message_end", message: { role: "assistant", content: "Hello there" } });
+	write({
+		type: "tool_execution_start",
+		toolCallId: "tool-intent-1",
+		toolName: "read",
+		args: { path: "README.md" },
+		intent: "  Reviewing project documentation  ",
+	});
+	write({ type: "tool_execution_end", toolCallId: "tool-intent-1", toolName: "read", result: "ok", isError: false });
 	write({ type: "turn_end", message: { role: "assistant", content: "Hello there" }, toolResults: [] });
 	write({ type: "agent_end", messages: [], isTerminal: true });
 	streaming = false;
@@ -227,9 +235,27 @@ rl.on("line", (line) => {
 		case "get_messages_page":
 			write({ id, type: "response", command: "get_messages_page", success: true, data: { messages: [{ role: "user", content: "hi" }], totalMessages: 1 } });
 			break;
-		case "set_host_tools":
-			write({ id, type: "response", command: "set_host_tools", success: true, data: { toolNames: [] } });
+		case "set_host_tools": {
+			const invalid = cmd.tools.find((tool) => !tool.parameters || typeof tool.parameters !== "object" || Array.isArray(tool.parameters));
+			if (invalid) {
+				write({
+					id,
+					type: "response",
+					command: "set_host_tools",
+					success: false,
+					error: `Host tool "${invalid.name}" must provide a JSON Schema object`,
+				});
+				break;
+			}
+			write({
+				id,
+				type: "response",
+				command: "set_host_tools",
+				success: true,
+				data: { toolNames: cmd.tools.map((tool) => tool.name) },
+			});
 			break;
+		}
 		default:
 			write({ id, type: "response", command: cmd.type, success: true });
 			break;
