@@ -250,15 +250,20 @@ test("shared agent tool definitions delegate execution and management to the con
 	const controller = new AbortController();
 	const result = await send.execute("tool-call-1", {
 		name: "helper",
+		sessionName: "Find relevant files",
 		message: "Find the relevant files.",
 		threadKey: "files",
 	}, controller.signal);
 
 	assert.equal(observed.subagent.name, "helper");
+	assert.equal(observed.sessionName, "Find relevant files");
 	assert.equal(observed.message, "Find the relevant files.");
 	assert.equal(observed.threadKey, "files");
 	assert.equal(observed.toolCallId, "tool-call-1");
 	assert.equal(observed.signal, controller.signal);
+	assert.equal(send.inputSchema.required.includes("sessionName"), true);
+	assert.equal(send.inputSchema.properties.sessionName.minLength, 1);
+	assert.equal(send.inputSchema.properties.sessionName.maxLength, 40);
 	assert.equal(send.inputSchema.properties.threadKey.maxLength, 256);
 	assert.equal(result.details.agentId, "ps_child");
 	assert.match(result.content[0].text, /Agent helper \(ps_child, thread files\) replied:/);
@@ -418,6 +423,7 @@ test("router omits subagent tools that have reached their max depth", async () =
 		await assert.rejects(
 			router.createAgentsController("ps_child").sendMessage({
 				subagent: { name: "defaulted", targetProfile: "recursive-profile" },
+				sessionName: "Exceed depth",
 				message: "must not create another child",
 			}),
 			/Subagent "defaulted" exceeded max depth 1/,
@@ -452,6 +458,7 @@ test("agents controller emits a parent link event before waiting for the child r
 		const controller = router.createAgentsController("ps_parent");
 		const result = await controller.sendMessage({
 			subagent: { name: "explorer", targetProfile: "base" },
+			sessionName: "Inspect delegation",
 			message: "check this",
 			threadKey: "inspect",
 			toolCallId: "tool-1",
@@ -465,6 +472,7 @@ test("agents controller emits a parent link event before waiting for the child r
 		assert.equal(linkEvent.childPiboSessionId, result.agentId);
 		assert.equal(linkEvent.threadKey, "inspect");
 		assert.equal(store.get(result.agentId).parentId, "ps_parent");
+		assert.equal(store.get(result.agentId).title, "Inspect delegation");
 		assert.equal(Object.hasOwn(store.get(result.agentId), retiredPartitionField), false);
 		assert.equal(store.get(result.agentId).metadata.chatRoomId, "room_parent");
 		assert.equal(store.get(result.agentId).metadata.workflowSessionKind, "subagent");
@@ -504,12 +512,14 @@ test("subagent runner freezes per-subagent model and thinking settings on new ch
 				model: { provider: "openai", id: "gpt-5.6-mini" },
 				thinkingLevel: "high",
 			},
+			sessionName: "Research implementation",
 			message: "research this",
 			threadKey: "research-thread",
 		});
 		const child = store.get(first.agentId);
 		assert.deepEqual(child.activeModel, { provider: "openai", id: "gpt-5.6-mini" });
 		assert.equal(child.metadata.initialThinkingLevel, "high");
+		assert.equal(child.title, "Research implementation");
 
 		const reused = await controller.sendMessage({
 			subagent: {
@@ -518,15 +528,18 @@ test("subagent runner freezes per-subagent model and thinking settings on new ch
 				model: { provider: "other", id: "changed-model" },
 				thinkingLevel: "low",
 			},
+			sessionName: "Review research findings",
 			message: "continue",
 			threadKey: "research-thread",
 		});
 		assert.equal(reused.agentId, first.agentId);
 		assert.deepEqual(store.get(reused.agentId).activeModel, { provider: "openai", id: "gpt-5.6-mini" });
 		assert.equal(store.get(reused.agentId).metadata.initialThinkingLevel, "high");
+		assert.equal(store.get(reused.agentId).title, "Review research findings");
 
 		const fallback = await controller.sendMessage({
 			subagent: { name: "worker", targetProfile: "base" },
+			sessionName: "Use default model",
 			message: "use defaults",
 			threadKey: "default-thread",
 		});
@@ -550,9 +563,42 @@ test("subagent runner rejects oversized thread keys before creating a child sess
 	try {
 		await assert.rejects(router.createAgentsController("ps_parent").sendMessage({
 			subagent: { name: "explorer", targetProfile: "base" },
+			sessionName: "Inspect oversized thread key",
 			message: "must not create a child",
 			threadKey: "é".repeat(257),
 		}), /Subagent thread key exceeds 512 bytes/);
+		assert.equal(store.list().length, 1);
+	} finally {
+		await router.disposeAll();
+	}
+});
+
+test("agents controller rejects missing, blank, and oversized session names before creating a child", async () => {
+	const store = new InMemoryPiboSessionStore();
+	store.create({
+		id: "ps_parent",
+		piSessionId: "parent-session",
+		channel: "pibo.test",
+		kind: "chat",
+		profile: "base",
+	});
+	const router = new PiboSessionRouter({ persistSession: false, sessionStore: store });
+	const controller = router.createAgentsController("ps_parent");
+	try {
+		await assert.rejects(controller.sendMessage({
+			subagent: { name: "explorer", targetProfile: "base" },
+			message: "missing name",
+		}), /Agent session name is required/);
+		await assert.rejects(controller.sendMessage({
+			subagent: { name: "explorer", targetProfile: "base" },
+			sessionName: "   ",
+			message: "blank name",
+		}), /Agent session name must not be empty/);
+		await assert.rejects(controller.sendMessage({
+			subagent: { name: "explorer", targetProfile: "base" },
+			sessionName: "x".repeat(41),
+			message: "oversized name",
+		}), /Agent session name must be at most 40 characters/);
 		assert.equal(store.list().length, 1);
 	} finally {
 		await router.disposeAll();
@@ -580,11 +626,13 @@ test("agents controller lists, filters observations, kills owned children, and d
 		const controller = router.createAgentsController("ps_parent");
 		const explorer = await controller.sendMessage({
 			subagent: { name: "explorer", targetProfile: "base" },
+			sessionName: "Explore implementation",
 			message: "explore",
 			threadKey: "alpha",
 		});
 		const worker = await controller.sendMessage({
 			subagent: { name: "worker", targetProfile: "base" },
+			sessionName: "Implement changes",
 			message: "work",
 			threadKey: "beta",
 		});
@@ -635,6 +683,7 @@ test("agents controller lists, filters observations, kills owned children, and d
 		assert.equal(controller.listAgents().find((agent) => agent.agentId === worker.agentId).status, "killed");
 		const replacement = await controller.sendMessage({
 			subagent: { name: "worker", targetProfile: "base" },
+			sessionName: "Retry implementation",
 			message: "retry",
 			threadKey: "beta",
 		});
@@ -801,7 +850,7 @@ test("aborting a parent turn interrupts its active subagent child", async () => 
 		await router.emit({ type: "execution", piboSessionId: "ps_abort_parent", action: "status" });
 		const runtime = router.sessions.get("ps_abort_parent").runtime;
 		const tool = runtime.session.getToolDefinition("pibo_agents_send_message");
-		const execution = tool.execute("subagent-abort-tool", { name: "worker", message: "hold until parent abort", threadKey: "hold" });
+		const execution = tool.execute("subagent-abort-tool", { name: "worker", sessionName: "Wait for parent abort", message: "hold until parent abort", threadKey: "hold" });
 		const childAdapter = registry.requireAgentRuntimeAdapter("subagent-abort-child");
 		const deadline = Date.now() + 2_000;
 		while (!childAdapter.sessions.some((session) => session.getStatus().streaming)) {

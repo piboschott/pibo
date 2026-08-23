@@ -18,6 +18,8 @@ export const PIBO_AGENT_TOOL_NAMES = [
 export type PiboAgentToolName = (typeof PIBO_AGENT_TOOL_NAMES)[number];
 export type PiboAgentStatus = "running" | "idle" | "killed";
 
+export const PIBO_AGENT_SESSION_NAME_MAX_LENGTH = 40;
+
 export type PiboAvailableAgent = {
 	name: string;
 	description: string;
@@ -39,6 +41,7 @@ export type PiboManagedAgent = {
 
 export type PiboAgentSendMessageInput = {
 	subagent: SubagentProfile;
+	sessionName: string;
 	message: string;
 	threadKey?: string;
 	toolCallId?: string;
@@ -152,6 +155,16 @@ function resultText(prefix: string, value: unknown): string {
 	return `${prefix}\n${JSON.stringify(value, null, 2)}`;
 }
 
+export function normalizePiboAgentSessionName(value: unknown): string {
+	if (typeof value !== "string") throw new Error("Agent session name is required.");
+	if (value.length > PIBO_AGENT_SESSION_NAME_MAX_LENGTH) {
+		throw new Error(`Agent session name must be at most ${PIBO_AGENT_SESSION_NAME_MAX_LENGTH} characters.`);
+	}
+	const normalized = value.trim();
+	if (!normalized) throw new Error("Agent session name must not be empty.");
+	return normalized;
+}
+
 export function createAgentToolDefinitions(
 	subagents: readonly SubagentProfile[],
 	controller: PiboAgentsController,
@@ -172,14 +185,19 @@ export function createAgentToolDefinitions(
 			name: "pibo_agents_send_message",
 			title: "Pibo Agents Send Message",
 			description: [
-				"Send a message to an available delegated agent. Foreground execution waits for the reply; use pibo_run_start for asynchronous delegation.",
+				"Send a message to an available delegated agent with a required concise sessionName. Foreground execution waits for the reply; use pibo_run_start for asynchronous delegation.",
 				"Available agents:",
 				catalog,
 			].join("\n"),
-			promptSnippet: "Send work to an available delegated agent by name. Reuse threadKey to continue its child session. Use pibo_run_start with this tool for asynchronous work. The tool definition lists the available names and parent-visible descriptions.",
+			promptSnippet: "Send work to an available delegated agent by name. Provide a concise sessionName for the child session on every call; follow-up calls update the reused session title. Reuse threadKey to continue its child session. Use pibo_run_start with this tool for asynchronous work. The tool definition lists the available names and parent-visible descriptions.",
 			executionMode: "parallel",
 			inputSchema: Type.Object({
 				name: piboStringEnum(names, { description: "Available delegated agent name" }),
+				sessionName: Type.String({
+					description: "Required child session title for this task. Follow-up calls update the reused session title.",
+					minLength: 1,
+					maxLength: PIBO_AGENT_SESSION_NAME_MAX_LENGTH,
+				}),
 				message: Type.String({ description: "Message to send to the delegated agent" }),
 				threadKey: Type.Optional(
 					Type.String({
@@ -193,6 +211,7 @@ export function createAgentToolDefinitions(
 				if (!subagent) throw new Error(`Unknown delegated agent "${params.name}"`);
 				const result = await controller.sendMessage({
 					subagent,
+					sessionName: params.sessionName,
 					message: params.message,
 					threadKey: params.threadKey,
 					toolCallId,

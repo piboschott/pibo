@@ -25,6 +25,7 @@ import type {
 	PiboSessionStatus,
 } from "./events.js";
 import {
+	normalizePiboAgentSessionName,
 	type PiboAgentObservation,
 	type PiboAgentObserveInput,
 	type PiboAgentsController,
@@ -1808,9 +1809,10 @@ export class PiboSessionRouter {
 
 	private createAgentsController(parentPiboSessionId: string): PiboAgentsController {
 		return {
-			sendMessage: async ({ subagent, message, threadKey, toolCallId, signal }) => {
+			sendMessage: async ({ subagent, sessionName, message, threadKey, toolCallId, signal }) => {
 				this.assertSubagentDepth(parentPiboSessionId, subagent);
-				const child = this.resolveSubagentSession(parentPiboSessionId, subagent, threadKey);
+				const normalizedSessionName = normalizePiboAgentSessionName(sessionName);
+				const child = this.resolveSubagentSession(parentPiboSessionId, subagent, normalizedSessionName, threadKey);
 				const resolvedThreadKey = typeof child.metadata?.threadKey === "string" ? child.metadata.threadKey : "";
 				const event: PiboMessageEvent = {
 					type: "message",
@@ -2086,6 +2088,7 @@ export class PiboSessionRouter {
 	private resolveSubagentSession(
 		parentPiboSessionId: string,
 		subagent: SubagentProfile,
+		sessionName: string,
 		threadKey?: string,
 	): PiboSession {
 		const targetProfile = resolvePiboProfileNameFromRegistryOrDefault(this.pluginRegistry, subagent.targetProfile);
@@ -2122,8 +2125,8 @@ export class PiboSessionRouter {
 				},
 				"subagent",
 			);
-			if (JSON.stringify(updatedMetadata) !== JSON.stringify(existing.metadata ?? {})) {
-				return this.sessionStore.update(existing.id, { metadata: updatedMetadata }) ?? existing;
+			if (existing.title !== sessionName || JSON.stringify(updatedMetadata) !== JSON.stringify(existing.metadata ?? {})) {
+				return this.sessionStore.update(existing.id, { title: sessionName, metadata: updatedMetadata }) ?? existing;
 			}
 			return existing;
 		}
@@ -2136,6 +2139,7 @@ export class PiboSessionRouter {
 			parentId: parent.id,
 			runtimeBinding: this.createRuntimeBindingInput(childProfile),
 			workspace: parent.workspace,
+			title: sessionName,
 			metadata: newSessionMetadata,
 			activeModel: subagent.model,
 		});

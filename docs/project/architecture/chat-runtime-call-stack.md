@@ -133,10 +133,10 @@ The adapter preserves Codex's native system prompt and standard tools. Pibo cont
 ## Subagent branch
 
 ```text
-model calls pibo_agents_send_message(name, message, threadKey?)
+model calls pibo_agents_send_message(name, sessionName, message, threadKey?)
   -> shared Pibo agent tool (direct in Pi or Pibo MCP in Codex)
   -> Pibo delegated-agent router
-  -> create/reuse child Pibo Session by bounded thread key
+  -> create/reuse child Pibo Session by bounded thread key and set its title from sessionName
   -> child freezes target profile runtime binding
   -> normal router/runtime flow
   -> child result returned to parent tool call
