@@ -128,6 +128,14 @@ test("OMP turn controller streams a real prompt and resolves on terminal agent_e
 		args: { path: "README.md" },
 		intent: "Reviewing project documentation",
 	});
+	assert.deepEqual(events.find((event) => event.type === "usage")?.usage, {
+		inputTokens: 12,
+		outputTokens: 8,
+		cacheReadTokens: 3,
+		cacheWriteTokens: 2,
+		reasoningTokens: 1,
+		totalTokens: 20,
+	});
 	turn.dispose();
 });
 

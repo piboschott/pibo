@@ -1,10 +1,15 @@
 import type { PiboAssistantUsageEvent } from '../core/events.js';
 import type { PiboLoopJob } from './types.js';
 
+function normalizedTokenCount(value: number | undefined): number {
+	return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
 export function goalBudgetTokens(usage: PiboAssistantUsageEvent): number {
-	const cacheReadTokens = Math.max(0, Math.floor(usage.cacheReadTokens ?? 0));
-	const cacheWriteTokens = Math.max(0, Math.floor(usage.cacheWriteTokens ?? 0));
-	return Math.max(0, Math.floor(usage.totalTokens) - cacheReadTokens - cacheWriteTokens);
+	const totalTokens = normalizedTokenCount(usage.totalTokens);
+	const cacheReadTokens = normalizedTokenCount(usage.cacheReadTokens);
+	const cacheWriteTokens = normalizedTokenCount(usage.cacheWriteTokens);
+	return Math.max(0, totalTokens - cacheReadTokens - cacheWriteTokens);
 }
 
 export function goalActiveTimeSeconds(job: PiboLoopJob): number {

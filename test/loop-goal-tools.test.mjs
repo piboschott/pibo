@@ -40,6 +40,7 @@ test("Goal budget token accounting excludes cache reads and writes", () => {
 	assert.equal(goalBudgetTokens({ type: "assistant_usage", piboSessionId: "ps_usage", totalTokens: 20, inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 2 }), 15);
 	assert.equal(goalBudgetTokens({ type: "assistant_usage", piboSessionId: "ps_usage", totalTokens: 10 }), 10);
 	assert.equal(goalBudgetTokens({ type: "assistant_usage", piboSessionId: "ps_usage", totalTokens: 4, cacheReadTokens: 5 }), 0);
+	assert.equal(goalBudgetTokens({ type: "assistant_usage", piboSessionId: "ps_usage", totalTokens: Number.NaN, cacheReadTokens: 2 }), 0);
 });
 
 test("goal tool package is enabled by default or disabled as one profile capability", async () => {

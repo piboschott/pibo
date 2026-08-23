@@ -32,9 +32,10 @@ test("new loops default to goal while legacy rows load as ralph", async () => {
 	}
 });
 
-test("Goal accounting excludes cached usage reported after update_goal completes the active run", async () => {
+test("Goal accounting sums and persists uncached usage reported after update_goal completes the active run", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "pibo-loop-completion-usage-"));
-	const store = new PiboLoopStore({ path: ":memory:" });
+	const path = join(dir, "loops.sqlite");
+	const store = new PiboLoopStore({ path });
 	const listeners = new Set();
 	const sessions = new Map();
 	let jobId;
@@ -45,6 +46,7 @@ test("Goal accounting excludes cached usage reported after update_goal completes
 					store.updateGoalStatus(jobId, "complete");
 					for (const listener of listeners) {
 						listener({ type: "assistant_usage", piboSessionId: event.piboSessionId, eventId: event.id, inputTokens: 4, outputTokens: 3, cacheReadTokens: 5, cacheWriteTokens: 2, totalTokens: 14 });
+						listener({ type: "assistant_usage", piboSessionId: event.piboSessionId, eventId: event.id, inputTokens: 2, outputTokens: 1, cacheReadTokens: 4, cacheWriteTokens: 1, totalTokens: 8 });
 						listener({ type: "assistant_message", piboSessionId: event.piboSessionId, eventId: event.id, text: "done" });
 						listener({ type: "message_finished", piboSessionId: event.piboSessionId, eventId: event.id });
 					}
@@ -69,8 +71,15 @@ test("Goal accounting excludes cached usage reported after update_goal completes
 		await waitFor(() => store.getJob(job.id)?.state.completedIterations === 1);
 		const saved = store.getJob(job.id);
 		assert.equal(saved?.state.goalStatus, "complete");
-		assert.equal(saved?.state.tokensUsed, 7);
-		assert.equal(store.listRuns({ jobId: job.id })[0]?.accounting?.tokensUsed, 7);
+		assert.equal(saved?.state.tokensUsed, 10);
+		assert.equal(store.listRuns({ jobId: job.id })[0]?.accounting?.tokensUsed, 10);
+		const reloaded = new PiboLoopStore({ path });
+		try {
+			assert.equal(reloaded.getJob(job.id)?.state.tokensUsed, 10);
+			assert.equal(reloaded.listRuns({ jobId: job.id })[0]?.accounting?.tokensUsed, 10);
+		} finally {
+			reloaded.close();
+		}
 	} finally {
 		service.stop();
 		await rm(dir, { recursive: true, force: true });
@@ -89,7 +98,7 @@ test("Goal records a final turn that exceeds remaining soft budget", async () =>
 				prompt = event.text;
 				queueMicrotask(() => {
 					for (const listener of listeners) {
-						listener({ type: "assistant_usage", piboSessionId: event.piboSessionId, eventId: event.id, totalTokens: 50 });
+						listener({ type: "assistant_usage", piboSessionId: event.piboSessionId, eventId: event.id, inputTokens: 40, outputTokens: 10, cacheReadTokens: 5, cacheWriteTokens: 4, totalTokens: 59 });
 						listener({ type: "assistant_message", piboSessionId: event.piboSessionId, eventId: event.id, text: "final progress" });
 						listener({ type: "message_finished", piboSessionId: event.piboSessionId, eventId: event.id });
 					}

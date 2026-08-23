@@ -77,7 +77,14 @@ const emitTurn = (message) => {
 		message: { role: "assistant", content: "Hello there" },
 		assistantMessageEvent: { type: "text_end", contentIndex: 0, content: "Hello there", partial: { role: "assistant", content: "Hello there" } },
 	});
-	write({ type: "message_end", message: { role: "assistant", content: "Hello there" } });
+	write({
+		type: "message_end",
+		message: {
+			role: "assistant",
+			content: "Hello there",
+			usage: { inputTokens: 12, outputTokens: 8, cachedInputTokens: 3, cacheCreationInputTokens: 2, reasoningTokens: 1, totalTokens: 20 },
+		},
+	});
 	write({
 		type: "tool_execution_start",
 		toolCallId: "tool-intent-1",
