@@ -18,6 +18,8 @@ export const PIBO_AGENT_TOOL_NAMES = [
 export type PiboAgentToolName = (typeof PIBO_AGENT_TOOL_NAMES)[number];
 export type PiboAgentStatus = "running" | "idle" | "killed";
 
+export const PIBO_AGENT_SESSION_NAME_MAX_LENGTH = 40;
+
 export type PiboAvailableAgent = {
 	name: string;
 	description: string;
@@ -30,6 +32,7 @@ export type PiboManagedAgent = {
 	agentId: string;
 	name: string;
 	profile: string;
+	sessionName?: string;
 	threadKey?: string;
 	status: PiboAgentStatus;
 	createdAt: string;
@@ -39,6 +42,7 @@ export type PiboManagedAgent = {
 
 export type PiboAgentSendMessageInput = {
 	subagent: SubagentProfile;
+	sessionName: string;
 	message: string;
 	threadKey?: string;
 	toolCallId?: string;
@@ -152,6 +156,16 @@ function resultText(prefix: string, value: unknown): string {
 	return `${prefix}\n${JSON.stringify(value, null, 2)}`;
 }
 
+export function normalizePiboAgentSessionName(value: unknown): string {
+	if (typeof value !== "string") throw new Error("Agent session name is required.");
+	if ([...value].length > PIBO_AGENT_SESSION_NAME_MAX_LENGTH) {
+		throw new Error(`Agent session name must be at most ${PIBO_AGENT_SESSION_NAME_MAX_LENGTH} characters.`);
+	}
+	const normalized = value.trim();
+	if (!normalized) throw new Error("Agent session name must not be empty.");
+	return normalized;
+}
+
 export function createAgentToolDefinitions(
 	subagents: readonly SubagentProfile[],
 	controller: PiboAgentsController,
@@ -172,18 +186,24 @@ export function createAgentToolDefinitions(
 			name: "pibo_agents_send_message",
 			title: "Pibo Agents Send Message",
 			description: [
-				"Send a message to an available delegated agent. Foreground execution waits for the reply; use pibo_run_start for asynchronous delegation.",
+				"Send a message to an available delegated agent with a required concise sessionName. name selects the configured agent, sessionName is the human-readable child-session title, and threadKey controls conversation reuse. Foreground execution waits for the reply; use pibo_run_start for asynchronous delegation.",
 				"Available agents:",
 				catalog,
 			].join("\n"),
-			promptSnippet: "Send work to an available delegated agent by name. Reuse threadKey to continue its child session. Use pibo_run_start with this tool for asynchronous work. The tool definition lists the available names and parent-visible descriptions.",
+			promptSnippet: "Send work to an available delegated agent by name. Provide a concise sessionName for the child session on every call; follow-up calls update the reused session title without changing its identity. Reuse the same threadKey with the same agent to continue that child session, or omit threadKey to create a new child. Use pibo_run_start with this tool for asynchronous work. The tool definition lists the available names and parent-visible descriptions.",
 			executionMode: "parallel",
 			inputSchema: Type.Object({
-				name: piboStringEnum(names, { description: "Available delegated agent name" }),
+				name: piboStringEnum(names, { description: "Configured delegated-agent selector; this is not the child session title or reuse key." }),
+				sessionName: Type.String({
+					description: "Required human-readable child Pibo Session title for this task. Follow-up calls update the title without changing thread identity.",
+					minLength: 1,
+					maxLength: PIBO_AGENT_SESSION_NAME_MAX_LENGTH,
+					pattern: "\\S",
+				}),
 				message: Type.String({ description: "Message to send to the delegated agent" }),
 				threadKey: Type.Optional(
 					Type.String({
-						description: "Stable key for continuing one delegated-agent conversation. Omit it to create a new child session.",
+						description: "Stable reuse key for one delegated-agent conversation; independent of sessionName. Omit it to create a new child session.",
 						maxLength: 256,
 					}),
 				),
@@ -193,6 +213,7 @@ export function createAgentToolDefinitions(
 				if (!subagent) throw new Error(`Unknown delegated agent "${params.name}"`);
 				const result = await controller.sendMessage({
 					subagent,
+					sessionName: params.sessionName,
 					message: params.message,
 					threadKey: params.threadKey,
 					toolCallId,
@@ -210,8 +231,8 @@ export function createAgentToolDefinitions(
 		definePiboTool({
 			name: "pibo_agents_list_agents",
 			title: "Pibo Agents List Agents",
-			description: "List available delegated-agent profiles and child agent instances owned by this session.",
-			promptSnippet: "List available delegated agents and existing child instances with their agentId, thread, profile, and running, idle, or killed status.",
+			description: "List available delegated-agent profiles and child agent instances owned by this session, including each current child sessionName when available.",
+			promptSnippet: "List available delegated agents and existing child instances with their agentId, current sessionName, threadKey, profile, and running, idle, or killed status.",
 			executionMode: "parallel",
 			annotations: { readOnly: true },
 			inputSchema: Type.Object({}),

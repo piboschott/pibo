@@ -67,12 +67,14 @@ The shared send tool MUST contribute a model-visible catalog containing each ena
 
 ### Requirement: Send selects by name and returns stable identity
 
-`pibo_agents_send_message` MUST accept `name`, `message`, and optional `threadKey`. It MUST resolve `name` only against the current profile's enabled, depth-eligible agents, route the message with source `actor`, wait for the bounded child reply, and return an `agentId` equal to the child Pibo Session ID.
+`pibo_agents_send_message` MUST accept `name`, required `sessionName`, `message`, and optional `threadKey`. `name` selects one configured, depth-eligible delegated agent; it is not a child-session title or reuse identifier. `threadKey` is the stable child-conversation reuse key scoped by parent, selected agent, and target profile. `sessionName` is human-readable presentation state, does not participate in child identity, MUST contain non-whitespace text, MUST be at most 40 Unicode characters, MUST be trimmed before persistence, and MUST become the child Pibo Session title for every send. The tool MUST route the message with source `actor`, wait for the bounded child reply, and return an `agentId` equal to the child Pibo Session ID.
 
 #### Acceptance
 
 - Unknown names fail schema validation or execution without creating a child.
-- The first explicit thread creates a child; the same parent, name, target profile, and thread reuses it.
+- Missing, blank, or longer-than-40-Unicode-character session names fail without creating a child.
+- The first explicit thread creates a child with `sessionName` as its title; the same parent, name, target profile, and thread reuses it regardless of later title changes.
+- A follow-up send on a reused thread updates the existing child title to that call's trimmed `sessionName`.
 - Omitting or blanking `threadKey` creates a new generated thread.
 - The result identifies `agentId`, name, profile, resolved thread key, input event ID, and reply.
 - `pibo_run_start` can execute the same send asynchronously and `pibo_run_read` returns its final reply.
@@ -86,6 +88,7 @@ Each instance MUST expose:
 - `agentId`
 - `name`
 - `profile`
+- current `sessionName` when the child already has a title
 - `threadKey`
 - `status`: `running`, `idle`, or `killed`
 - timestamps and active model when available
@@ -172,7 +175,8 @@ The observe command MUST use the same ownership and filter vocabulary where pers
 ## Edge Cases
 
 - Two configured agent names may target the same profile and remain separate identities.
-- Existing legacy child sessions with `subagentToolName: pibo_subagent_*` remain discoverable by metadata but all new link events use the shared send tool name.
+- Session names are trimmed before persistence; exactly 40 Unicode characters are accepted.
+- Existing legacy child sessions with `subagentToolName: pibo_subagent_*` remain discoverable and reusable by identity metadata; their first shared-tool follow-up assigns the required title and upgrades the stored tool metadata.
 - Deprecated public legacy factories remain callable for external migration code but are never selected by Pibo runtime assembly.
 - A killed legacy child is excluded from thread reuse.
 - Parent-link cycles do not cause unbounded depth or ownership traversal.
@@ -191,8 +195,8 @@ The observe command MUST use the same ownership and filter vocabulary where pers
 
 - [x] SC-001: Two configured agents produce four shared tools and zero `pibo_subagent_*` tools.
 - [x] SC-002: Prompt inspection shows each available name and description.
-- [x] SC-003: Foreground send returns a child reply and reusable `agentId`; yielded send completes through `pibo_run_*`.
-- [x] SC-004: List reports available definitions and running/idle/killed instances accurately.
+- [x] SC-003: Foreground send returns a child reply and reusable `agentId`; the required bounded `sessionName` creates and updates the child title; yielded send completes through `pibo_run_*`.
+- [x] SC-004: List reports available definitions and running/idle/killed instances accurately, including current child session names when available.
 - [x] SC-005: Observe combines all documented filters and cursor pagination without cross-parent leakage.
 - [x] SC-006: Kill interrupts active work, marks the instance killed, and prevents thread reuse.
 - [x] SC-007: Existing trace/UI delegation cards still link to child sessions under the shared send tool.
