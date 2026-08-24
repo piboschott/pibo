@@ -60,18 +60,24 @@ export function isGatewayRequestFrame(value: unknown): value is GatewayRequestFr
 	if (!value || typeof value !== "object") return false;
 
 	const frame = value as { type?: unknown; id?: unknown; event?: unknown };
-	if (frame.type !== "req" || typeof frame.id !== "string") return false;
+	if (frame.type !== "req" || typeof frame.id !== "string" || frame.id.trim().length === 0) return false;
 	if (!frame.event || typeof frame.event !== "object") return false;
 
 	const event = frame.event as {
 		type?: unknown;
+		id?: unknown;
 		piboSessionId?: unknown;
 		text?: unknown;
+		delivery?: unknown;
 		action?: unknown;
 		params?: unknown;
 	};
-	if (typeof event.piboSessionId !== "string" || event.piboSessionId.length === 0) return false;
-	if (event.type === "message") return typeof event.text === "string";
+	if (event.id !== undefined && (typeof event.id !== "string" || event.id.trim().length === 0)) return false;
+	if (typeof event.piboSessionId !== "string" || event.piboSessionId.trim().length === 0) return false;
+	if (event.type === "message") {
+		return typeof event.text === "string" && event.text.trim().length > 0 &&
+			(event.delivery === undefined || event.delivery === "queue" || event.delivery === "steer");
+	}
 	if (event.type === "execution") {
 		return typeof event.action === "string" && (event.params === undefined || isJsonValue(event.params));
 	}

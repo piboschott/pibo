@@ -7,9 +7,13 @@ import {
 	DEFAULT_GATEWAY_PORT,
 	encodeFrame,
 	type GatewayFrame,
+	type GatewayRequestFrame,
 	type GatewayResponseFrame,
+	type GatewaySubscribeFrame,
 } from "./protocol.js";
 import type {
+	PiboInputEvent,
+	PiboMessageDelivery,
 	PiboMessageQueuedEvent,
 	PiboMessageStartedEvent,
 	PiboOutputEvent,
@@ -23,12 +27,41 @@ export type GatewayClientOptions = {
 	piboSessionId?: string;
 };
 
+export type GatewayClientMessageParseResult =
+	| { ok: true; text: string; delivery?: PiboMessageDelivery }
+	| { ok: false; error: string };
+
 type GatewayClientRenderState = {
 	visibleIncomingEventIds: Set<string>;
 	sawAssistantDelta: boolean;
 	showThinking: boolean;
 	sawThinkingDelta: boolean;
 };
+
+export function parseGatewayClientMessage(value: string): GatewayClientMessageParseResult {
+	const text = value.trim();
+	if (!text) return { ok: false, error: "Message text is required" };
+	const command = /^\/(queue|steer)(?:\s+|$)/.exec(text);
+	if (!command) return { ok: true, text };
+	const delivery = command[1] as PiboMessageDelivery;
+	const message = text.slice(command[0].length).trim();
+	return message
+		? { ok: true, text: message, delivery }
+		: { ok: false, error: `Usage: /${delivery} <message>` };
+}
+
+export function createGatewayClientRequestFrame(event: PiboInputEvent): GatewayRequestFrame {
+	const id = randomUUID();
+	return { type: "req", id, event: { ...event, id: event.id ?? id } };
+}
+
+export function createGatewayClientSubscriptionFrame(piboSessionId: string): GatewaySubscribeFrame {
+	return {
+		type: "subscribe",
+		id: randomUUID(),
+		subscription: { type: "session", piboSessionId },
+	};
+}
 
 function parseJsonLine(line: string): GatewayFrame | undefined {
 	try {
@@ -43,8 +76,22 @@ function writeFrame(socket: Socket, frame: GatewayFrame): void {
 }
 
 function printResponse(frame: GatewayResponseFrame): void {
-	if (frame.ok) return;
-	console.error(`\nerror: ${frame.error?.message ?? "request failed"}`);
+	if (!frame.ok) {
+		console.error(`\nerror: ${frame.error?.message ?? "request failed"}`);
+		return;
+	}
+	if (!frame.payload || typeof frame.payload !== "object") return;
+	const payload = frame.payload as { type?: unknown; activeEventId?: unknown };
+	if (payload.type !== "message_steered") return;
+	const target = typeof payload.activeEventId === "string" && payload.activeEventId.length > 0
+		? ` active turn ${payload.activeEventId}`
+		: " the active turn";
+	console.error(`steer: delivered to${target}`);
+}
+
+function printGatewayClientHelp(): void {
+	console.error("messages queue by default; /queue <message> queues explicitly; /steer <message> steers the active turn");
+	console.error("commands: /status, /clear, /abort, /thinking [level], /thinking-show, /goal [command], /help, /quit");
 }
 
 function isSessionStatus(value: unknown): value is PiboSessionStatus {
@@ -142,30 +189,164 @@ function printEvent(frame: GatewayFrame, piboSessionId: string, state: GatewayCl
 	}
 }
 
+function isExpectedSubscriptionResponse(frame: GatewayResponseFrame, piboSessionId: string): boolean {
+	if (!frame.payload || typeof frame.payload !== "object") return false;
+	const payload = frame.payload as { subscription?: { type?: unknown; piboSessionId?: unknown } };
+	return payload.subscription?.type === "session" && payload.subscription.piboSessionId === piboSessionId;
+}
+
+function handleGatewayClientLine(
+	value: string,
+	sendRequest: (event: PiboInputEvent) => void,
+	piboSessionId: string,
+	renderState: GatewayClientRenderState,
+): "continue" | "quit" | "error" {
+	const text = value.trim();
+	if (!text) return "continue";
+	if (text === "/quit" || text === "/exit") return "quit";
+	if (text === "/help") {
+		printGatewayClientHelp();
+		return "continue";
+	}
+	if (text === "/thinking-show") {
+		renderState.showThinking = !renderState.showThinking;
+		console.error(`thinking display: ${renderState.showThinking ? "on" : "off"}`);
+		return "continue";
+	}
+
+	if (text === "/thinking" || text.startsWith("/thinking ")) {
+		const level = text.slice("/thinking".length).trim();
+		let params: { level: ReturnType<typeof parsePiboThinkingLevel> } | undefined;
+		try {
+			params = level ? { level: parsePiboThinkingLevel(level) } : undefined;
+		} catch (error) {
+			console.error(error instanceof Error ? error.message : String(error));
+			return "error";
+		}
+		sendRequest(
+			params === undefined
+				? { type: "execution", piboSessionId, action: "thinking" }
+				: { type: "execution", piboSessionId, action: "thinking", params },
+		);
+		return "continue";
+	}
+
+	if (text === "/status" || text === "/clear" || text === "/abort") {
+		const action = text === "/status" ? "status" : text === "/clear" ? "clear_queue" : "abort";
+		sendRequest({ type: "execution", piboSessionId, action });
+		return "continue";
+	}
+
+	if (text === "/goal" || text.startsWith("/goal ")) {
+		sendRequest({
+			type: "execution",
+			piboSessionId,
+			action: "goal",
+			params: { command: text.slice("/goal".length).trim() },
+		});
+		return "continue";
+	}
+
+	const message = parseGatewayClientMessage(text);
+	if (!message.ok) {
+		console.error(message.error);
+		return "error";
+	}
+	sendRequest({
+		type: "message",
+		piboSessionId,
+		text: message.text,
+		source: "user",
+		...(message.delivery ? { delivery: message.delivery } : {}),
+	});
+	return "continue";
+}
+
 export async function runGatewayClient(options: GatewayClientOptions = {}): Promise<void> {
+	const interactive = input.isTTY === true && output.isTTY === true;
 	const host = options.host ?? DEFAULT_GATEWAY_HOST;
 	const port = options.port ?? DEFAULT_GATEWAY_PORT;
-	const piboSessionId = options.piboSessionId ?? "default";
-
+	const piboSessionId = (options.piboSessionId ?? "default").trim();
+	if (!piboSessionId) throw new Error("Pibo Session ID must not be empty");
 	const socket = connect({ host, port });
 	socket.setEncoding("utf-8");
 
 	await new Promise<void>((resolve, reject) => {
-		socket.once("connect", resolve);
-		socket.once("error", reject);
+		const onError = (error: Error) => reject(error);
+		socket.once("error", onError);
+		socket.once("connect", () => {
+			socket.off("error", onError);
+			resolve();
+		});
 	});
 
-	console.error(`connected to pibo gateway at ${host}:${port}`);
-	console.error(`session: ${piboSessionId}`);
-	console.error("type a message, /status, /clear, /abort, /thinking [level], /thinking-show, or /quit");
-
 	let buffer = "";
+	let closing = false;
+	let connectionFailure: Error | undefined;
+	let rl: ReturnType<typeof readline.createInterface> | undefined;
 	const renderState: GatewayClientRenderState = {
 		visibleIncomingEventIds: new Set<string>(),
 		sawAssistantDelta: false,
 		showThinking: false,
 		sawThinkingDelta: false,
 	};
+	const pendingRequestIds = new Set<string>();
+	let pipedInputFailed = false;
+	let settlePendingResponses: ((error?: Error) => void) | undefined;
+	let pendingResponseTimeout: ReturnType<typeof setTimeout> | undefined;
+	const finishPendingResponses = (error?: Error): void => {
+		const settle = settlePendingResponses;
+		if (!settle) return;
+		settlePendingResponses = undefined;
+		if (pendingResponseTimeout) clearTimeout(pendingResponseTimeout);
+		settle(error);
+	};
+	const waitForPendingResponses = async (): Promise<void> => {
+		if (connectionFailure) throw connectionFailure;
+		if (pendingRequestIds.size === 0) return;
+		await new Promise<void>((resolve, reject) => {
+			settlePendingResponses = (error) => error ? reject(error) : resolve();
+			pendingResponseTimeout = setTimeout(() => {
+				finishPendingResponses(new Error(`Timed out waiting for ${pendingRequestIds.size} gateway response(s)`));
+			}, 5_000);
+		});
+	};
+	const sendRequest = (event: PiboInputEvent): void => {
+		const frame = createGatewayClientRequestFrame(event);
+		pendingRequestIds.add(frame.id);
+		writeFrame(socket, frame);
+	};
+	const subscriptionFrame = createGatewayClientSubscriptionFrame(piboSessionId);
+	let subscribed = false;
+	let settleSubscription: ((error?: Error) => void) | undefined;
+	let subscriptionTimeout: ReturnType<typeof setTimeout> | undefined;
+	const subscription = new Promise<void>((resolve, reject) => {
+		settleSubscription = (error) => error ? reject(error) : resolve();
+	});
+	const finishSubscription = (error?: Error): void => {
+		const settle = settleSubscription;
+		if (!settle) return;
+		settleSubscription = undefined;
+		if (subscriptionTimeout) clearTimeout(subscriptionTimeout);
+		settle(error);
+	};
+	subscriptionTimeout = setTimeout(() => {
+		finishSubscription(new Error(`Timed out subscribing to Pibo Session "${piboSessionId}"`));
+	}, 5_000);
+
+	const failConnection = (error: Error): void => {
+		if (!subscribed) {
+			finishSubscription(error);
+			return;
+		}
+		if (closing || connectionFailure) return;
+		connectionFailure = error;
+		finishPendingResponses(error);
+		rl?.close();
+	};
+
+	socket.on("error", (error) => failConnection(error));
+	socket.on("close", () => failConnection(new Error("Gateway connection closed")));
 	socket.on("data", (chunk) => {
 		buffer += chunk;
 		let newlineIndex = buffer.indexOf("\n");
@@ -173,75 +354,64 @@ export async function runGatewayClient(options: GatewayClientOptions = {}): Prom
 			const line = buffer.slice(0, newlineIndex).trim();
 			buffer = buffer.slice(newlineIndex + 1);
 			const frame = line ? parseJsonLine(line) : undefined;
-			if (frame?.type === "res") {
+			if (frame?.type === "res" && frame.id === subscriptionFrame.id) {
+				if (!frame.ok) {
+					finishSubscription(new Error(frame.error?.message ?? "Gateway rejected the session subscription"));
+				} else if (!isExpectedSubscriptionResponse(frame, piboSessionId)) {
+					finishSubscription(new Error("Gateway returned a mismatched session subscription"));
+				} else {
+					subscribed = true;
+					finishSubscription();
+				}
+			} else if (subscribed && frame?.type === "res") {
 				printResponse(frame);
-			} else if (frame?.type === "event") {
+				if (pendingRequestIds.delete(frame.id)) {
+					if (!frame.ok && !interactive) pipedInputFailed = true;
+					if (pendingRequestIds.size === 0) finishPendingResponses();
+				}
+			} else if (subscribed && frame?.type === "event") {
 				printEvent(frame, piboSessionId, renderState);
 			}
 			newlineIndex = buffer.indexOf("\n");
 		}
 	});
 
-	const rl = readline.createInterface({ input, output });
-
+	writeFrame(socket, subscriptionFrame);
 	try {
-		while (!socket.destroyed) {
-			const text = (await rl.question("you> ")).trim();
-			if (!text) continue;
-			if (text === "/quit" || text === "/exit") break;
-			if (text === "/thinking-show") {
-				renderState.showThinking = !renderState.showThinking;
-				console.error(`thinking display: ${renderState.showThinking ? "on" : "off"}`);
-				continue;
-			}
+		await subscription;
+	} catch (error) {
+		closing = true;
+		socket.destroy();
+		throw error;
+	}
+	if (connectionFailure || socket.destroyed) {
+		closing = true;
+		socket.destroy();
+		throw connectionFailure ?? new Error("Gateway connection closed");
+	}
 
-			if (text === "/thinking" || text.startsWith("/thinking ")) {
-				const level = text.slice("/thinking".length).trim();
-				let params: { level: ReturnType<typeof parsePiboThinkingLevel> } | undefined;
-				try {
-					params = level ? { level: parsePiboThinkingLevel(level) } : undefined;
-				} catch (error) {
-					console.error(error instanceof Error ? error.message : String(error));
-					continue;
-				}
-				writeFrame(socket, {
-					type: "req",
-					id: randomUUID(),
-					event:
-						params === undefined
-							? { type: "execution", piboSessionId, action: "thinking" }
-							: { type: "execution", piboSessionId, action: "thinking", params },
-				});
-				continue;
-			}
+	console.error(`connected to pibo gateway at ${host}:${port}`);
+	console.error(`session: ${piboSessionId}`);
+	printGatewayClientHelp();
 
-			if (text === "/status" || text === "/clear" || text === "/abort") {
-				const action = text === "/status" ? "status" : text === "/clear" ? "clear_queue" : "abort";
-				writeFrame(socket, {
-					type: "req",
-					id: randomUUID(),
-					event: { type: "execution", piboSessionId, action },
-				});
-				continue;
-			}
-
-			if (text === "/goal" || text.startsWith("/goal ")) {
-				writeFrame(socket, {
-					type: "req",
-					id: randomUUID(),
-					event: { type: "execution", piboSessionId, action: "goal", params: { command: text.slice("/goal".length).trim() } },
-				});
-				continue;
-			}
-
-			writeFrame(socket, {
-				type: "req",
-				id: randomUUID(),
-				event: { type: "message", piboSessionId, text, source: "user" },
-			});
+	rl = readline.createInterface({ input, output, terminal: interactive });
+	if (interactive) {
+		rl.setPrompt("you> ");
+		rl.prompt();
+	}
+	try {
+		for await (const line of rl) {
+			const result = handleGatewayClientLine(line, sendRequest, piboSessionId, renderState);
+			if (result === "error" && !interactive) pipedInputFailed = true;
+			if (result === "quit") break;
+			if (interactive && !socket.destroyed) rl.prompt();
 		}
+		if (!interactive) await waitForPendingResponses();
 	} finally {
+		closing = true;
 		rl.close();
 		socket.end();
 	}
+	if (connectionFailure) throw connectionFailure;
+	if (!interactive && pipedInputFailed) process.exitCode = 1;
 }

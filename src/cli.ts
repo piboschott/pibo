@@ -68,6 +68,18 @@ function parsePort(value: string): number {
 	return port;
 }
 
+function parsePiboSessionId(value: string): string {
+	const piboSessionId = value.trim();
+	if (!piboSessionId) throw new Error("Pibo Session ID must not be empty");
+	return piboSessionId;
+}
+
+function parseGatewayClientHost(value: string): string {
+	const host = value.trim();
+	if (!host) throw new Error("Gateway host must not be empty");
+	return host;
+}
+
 function parsePositiveInteger(value: string): number {
 	const parsed = Number(value);
 	if (!Number.isInteger(parsed) || parsed < 1) {
@@ -508,11 +520,15 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		});
 	program
 		.command("client")
-		.argument("[piboSessionId]", "Pibo session id", "default")
-		.description("Start a console gateway client")
-		.action(async (piboSessionId: string) => {
+		.argument("[piboSessionId]", "Pibo Session ID", parsePiboSessionId, "default")
+		.description("Start a console client for one Pibo Session")
+		.helpOption("-h, --help", "Display help for command")
+		.option("--host <host>", "Gateway host", parseGatewayClientHost)
+		.option("--port <port>", "Gateway port", parsePort)
+		.addHelpText("after", "\nMessages queue by default. Use /steer <message> for the active turn or /queue <message> explicitly. Prompts are shown only in a TTY.\n")
+		.action(async (piboSessionId: string, options: { host?: string; port?: number }) => {
 			const { runGatewayClient } = await import("./gateway/client.js");
-			await runGatewayClient({ piboSessionId });
+			await runGatewayClient({ piboSessionId, host: options.host, port: options.port });
 		});
 
 	if (argv.length <= 2) {
@@ -553,6 +569,7 @@ Commands:
   tui          Start the direct Pi TUI
   tui:routed   Start the local routed Pibo TUI
   tui:sessions  Start the reduced Web Chat-derived session UI
+  client       Send queued or steering messages to one Pibo Session
   gateway      Inspect and restart host gateways through safe CLI commands
   gateway:web  Start a web gateway runtime (use --auth=local for loopback-only local auth)
 
