@@ -491,6 +491,10 @@ export class PiboPluginRegistry {
 		return this.authService;
 	}
 
+	getWebApp(name: string): PiboWebApp | undefined {
+		return this.webApps.get(name);
+	}
+
 	getWebApps(): PiboWebApp[] {
 		return [...this.webApps.values()];
 	}

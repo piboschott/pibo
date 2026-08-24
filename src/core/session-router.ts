@@ -1126,7 +1126,7 @@ export class PiboSessionRouter {
 				? [this.pluginRegistry]
 				: this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry] : [];
 			const webAppDisposals = await Promise.allSettled(
-				ownedPluginRegistries.flatMap((registry) => registry.getWebApps().map((app) => app.dispose?.())),
+				ownedPluginRegistries.flatMap((registry) => registry.getWebApps().map((app) => Promise.resolve().then(() => app.dispose?.()))),
 			);
 			await this.portableToolService.dispose();
 			await this.runtimeResourceService.dispose();

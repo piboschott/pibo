@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 async function runAppRoutesScenario() {
 	const script = `
 		import assert from "node:assert/strict";
-		const { chatNavigationRequest, chatRouteFromLocation } = await import("./src/apps/chat-ui/src/app-routes.ts");
+		const { chatNavigationRequest, chatRouteFromLocation, navigateToChatRoute } = await import("./src/apps/chat-ui/src/app-routes.ts");
 
 		assert.deepEqual(
 			chatRouteFromLocation("/apps/chat/rooms/room%201/sessions/ps_1", { view: "workflow" }),
@@ -89,6 +89,22 @@ async function runAppRoutesScenario() {
 			chatNavigationRequest({ area: "sessions" }, false, "terminal"),
 			{ to: "/", search: { view: "terminal" }, replace: false },
 		);
+
+		const navigationCalls = [];
+		navigateToChatRoute(
+			async (options) => { navigationCalls.push(options); },
+			{ area: "sessions", roomId: "room-1", piboSessionId: "ps_1" },
+			true,
+			"terminal",
+			true,
+		);
+		assert.deepEqual(navigationCalls, [{
+			to: "/rooms/$roomId/sessions/$piboSessionId",
+			params: { roomId: "room-1", piboSessionId: "ps_1" },
+			search: { view: "terminal" },
+			replace: true,
+			hash: true,
+		}]);
 	`;
 	await execFileAsync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", script], { cwd: process.cwd() });
 }

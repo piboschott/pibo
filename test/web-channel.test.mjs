@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request as nodeHttpRequest } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { createChatWebApp } from "../dist/apps/chat/web-app.js";
+import { CHAT_WEB_APP_NAME, createChatWebApp } from "../dist/apps/chat/web-app.js";
 import { PiboAuthError } from "../dist/auth/types.js";
 import { createWebHostChannel } from "../dist/web/channel.js";
 import { InMemoryPiboSessionStore } from "../dist/sessions/store.js";
@@ -105,6 +105,25 @@ async function withHome(home, run) {
 	}
 }
 
+function openSqliteFileDescriptors(storageDir) {
+	if (process.platform !== "linux") return [];
+	let descriptors;
+	try {
+		descriptors = readdirSync("/proc/self/fd");
+	} catch {
+		return [];
+	}
+	return descriptors.flatMap((descriptor) => {
+		try {
+			const target = readlinkSync(`/proc/self/fd/${descriptor}`);
+			const path = target.replace(/ \(deleted\)$/, "");
+			return path.startsWith(`${storageDir}/`) && /\.sqlite(?:-(?:journal|shm|wal))?$/.test(path) ? [target] : [];
+		} catch {
+			return [];
+		}
+	});
+}
+
 function assertStructuredMissingRefDiagnostic(diagnostics, expected) {
 	const diagnostic = diagnostics.find((candidate) => {
 		return candidate.code === expected.code &&
@@ -132,14 +151,19 @@ async function startWebHostChannel(options = {}) {
 	const dataStorePath = join(storageDir, "pibo-chat-v2.sqlite");
 	const dataPayloadRootDir = join(storageDir, "payloads");
 	const projectStorePath = join(storageDir, "projects.sqlite");
-	const webApps = [createChatWebApp({
+	const chatWebApp = createChatWebApp({
 		agentStorePath,
 		dataStorePath,
 		dataPayloadRootDir,
 		projectStorePath,
 		...options.chat,
-	})];
-	const channel = createWebHostChannel({ port: 0, announce: false, ...options.web });
+	});
+	const webApps = [
+		...(options.webAppsBeforeChat ?? []),
+		chatWebApp,
+		...(options.webAppsAfterChat ?? []),
+	];
+	const channel = createWebHostChannel({ port: 0, announce: false, landingAppName: CHAT_WEB_APP_NAME, ...options.web });
 
 	await channel.start({
 		auth: options.auth,
@@ -270,6 +294,9 @@ async function startWebHostChannel(options = {}) {
 				registeredUserSkillCatalog.delete(name);
 			},
 		} : {}),
+		getWebApp(name) {
+			return webApps.find((app) => app.name === name);
+		},
 		getWebApps() {
 			return webApps;
 		},
@@ -277,6 +304,42 @@ async function startWebHostChannel(options = {}) {
 
 	const address = channel.getAddress();
 	assert.ok(address);
+	const stopChannel = channel.stop?.bind(channel);
+	const pendingAppDisposals = new Set(webApps.filter((app) => app.dispose).map((app) => app.name));
+	let cleanupPromise;
+	channel.stop = async () => {
+		cleanupPromise ??= (async () => {
+			const failures = [];
+			try {
+				await stopChannel?.();
+			} catch (error) {
+				failures.push(error);
+			}
+			const disposalResults = await Promise.allSettled(webApps.map(async (app) => {
+				if (!app.dispose) return;
+				try {
+					await app.dispose();
+				} finally {
+					pendingAppDisposals.delete(app.name);
+				}
+			}));
+			failures.push(...disposalResults.flatMap((result) => result.status === "rejected" ? [result.reason] : []));
+			try {
+				assert.equal(pendingAppDisposals.size, 0, "expected every web app disposer to be attempted");
+			} catch (error) {
+				failures.push(error);
+			}
+			const openSqliteFds = openSqliteFileDescriptors(storageDir);
+			if (openSqliteFds.length > 0) failures.push(new Error(`Open SQLite file descriptors remain: ${openSqliteFds.join(", ")}`));
+			try {
+				rmSync(storageDir, { recursive: true });
+			} catch (error) {
+				failures.push(error);
+			}
+			if (failures.length > 0) throw new AggregateError(failures, "Failed to clean up the web channel test fixture");
+		})();
+		return await cleanupPromise;
+	};
 	return {
 		channel,
 		emitted,
@@ -378,6 +441,129 @@ test("chat web app serves the React shell for deep app links", async () => {
 		assert.match(await response.text(), /<div id="root"><\/div>/);
 	} finally {
 		await channel.stop?.();
+	}
+});
+
+test("web host redirects the root URL to its configured app regardless of registry order and preserves its query", async () => {
+	const auxiliaryApp = {
+		name: "test.auxiliary-web-app",
+		mountPath: "/apps/auxiliary",
+		apiPrefix: "/api/auxiliary",
+		handleRequest() {
+			return new Response("auxiliary");
+		},
+	};
+	const { channel, baseURL, storageDir } = await startWebHostChannel({ webAppsBeforeChat: [auxiliaryApp] });
+
+	try {
+		assert.equal(statSync(storageDir).isDirectory(), true);
+		const response = await fetch(`${baseURL}/?view=terminal&profileRef=codex-native`, { redirect: "manual" });
+		assert.equal(response.status, 302);
+		assert.equal(response.headers.get("location"), "/apps/chat?view=terminal&profileRef=codex-native");
+	} finally {
+		await channel.stop?.();
+		assert.throws(() => statSync(storageDir), { code: "ENOENT" });
+		assert.deepEqual(openSqliteFileDescriptors(storageDir), []);
+	}
+});
+
+test("web channel fixture cleanup attempts every app disposer and removes storage after a disposal failure", async () => {
+	const injectedFailure = new Error("injected web app disposal failure");
+	const disposalCalls = [];
+	const failingApp = {
+		name: "test.failing-web-app",
+		mountPath: "/apps/failing",
+		apiPrefix: "/api/failing",
+		dispose() {
+			disposalCalls.push(this.name);
+			throw injectedFailure;
+		},
+		handleRequest() {
+			return new Response("failing");
+		},
+	};
+	const laterApp = {
+		name: "test.later-web-app",
+		mountPath: "/apps/later",
+		apiPrefix: "/api/later",
+		dispose() {
+			disposalCalls.push(this.name);
+		},
+		handleRequest() {
+			return new Response("later");
+		},
+	};
+	const { channel, storageDir } = await startWebHostChannel({ webAppsAfterChat: [failingApp, laterApp] });
+
+	await assert.rejects(
+		() => channel.stop?.(),
+		(error) => {
+			assert.ok(error instanceof AggregateError);
+			assert.ok(error.errors.includes(injectedFailure));
+			return true;
+		},
+	);
+	assert.deepEqual(disposalCalls, ["test.failing-web-app", "test.later-web-app"]);
+	assert.throws(() => statSync(storageDir), { code: "ENOENT" });
+	assert.deepEqual(openSqliteFileDescriptors(storageDir), []);
+});
+
+test("chat web app disposal attempts every store close and retries only failed resources", { concurrency: false }, async () => {
+	const storageDir = mkdtempSync(join(tmpdir(), "pibo-chat-dispose-"));
+	const app = createChatWebApp({
+		agentStorePath: join(storageDir, "agents.sqlite"),
+		reliabilityStorePath: join(storageDir, "reliability.sqlite"),
+		cronStorePath: join(storageDir, "cron.sqlite"),
+		ralphStorePath: join(storageDir, "loops.sqlite"),
+		dataStorePath: join(storageDir, "pibo.sqlite"),
+		dataPayloadRootDir: join(storageDir, "payloads"),
+		projectStorePath: join(storageDir, "projects.sqlite"),
+	});
+	const originalClose = DatabaseSync.prototype.close;
+	const injectedFailure = new Error("injected first SQLite close failure");
+	let closeCalls = 0;
+	let failNextClose = true;
+	DatabaseSync.prototype.close = function () {
+		closeCalls += 1;
+		if (failNextClose) {
+			failNextClose = false;
+			throw injectedFailure;
+		}
+		return originalClose.call(this);
+	};
+
+	try {
+		assert.throws(
+			() => app.dispose(),
+			(error) => {
+				assert.ok(error instanceof AggregateError);
+				assert.ok(error.errors.some((failure) => failure.cause === injectedFailure));
+				return true;
+			},
+		);
+		assert.equal(closeCalls, 6, "expected every SQLite-backed store close to be attempted");
+		const remainingDescriptors = openSqliteFileDescriptors(storageDir);
+		assert.ok(remainingDescriptors.length > 0, "expected the injected failed resource to remain open");
+		assert.ok(
+			remainingDescriptors.every((target) => /\/projects\.sqlite(?:-(?:journal|shm|wal))?(?: \(deleted\))?$/.test(target)),
+			`expected only SQLite descriptors for the failed project store, got ${remainingDescriptors.join(", ")}`,
+		);
+
+		app.dispose();
+		assert.equal(closeCalls, 7, "expected retry to close only the resource that previously failed");
+		app.dispose();
+		assert.equal(closeCalls, 7, "expected successful disposal to be idempotent");
+		assert.deepEqual(openSqliteFileDescriptors(storageDir), []);
+		rmSync(storageDir, { recursive: true });
+		assert.throws(() => statSync(storageDir), { code: "ENOENT" });
+	} finally {
+		DatabaseSync.prototype.close = originalClose;
+		try {
+			app.dispose();
+		} catch {
+			// The primary assertion above reports disposal failures; this is only best-effort test cleanup.
+		}
+		rmSync(storageDir, { recursive: true, force: true });
 	}
 });
 

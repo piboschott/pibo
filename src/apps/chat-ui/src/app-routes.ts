@@ -15,6 +15,7 @@ export type ChatAppRoute =
 
 export type NavigationOptions = {
 	closeMobileSidebar?: boolean;
+	preserveHash?: boolean;
 };
 
 type SessionViewSearch = { view: ChatSessionViewId };
@@ -126,8 +127,15 @@ export function chatNavigationRequest(target: ChatAppRoute, replace: boolean, ne
 	return { to: "/", search: sessionViewSearch, replace };
 }
 
-export function navigateToChatRoute(navigate: (options: NavigateOptions) => Promise<void>, target: ChatAppRoute, replace: boolean, nextSessionViewId: ChatSessionViewId): void {
-	void navigate(chatNavigationRequest(target, replace, nextSessionViewId) as NavigateOptions);
+export function navigateToChatRoute(
+	navigate: (options: NavigateOptions) => Promise<void>,
+	target: ChatAppRoute,
+	replace: boolean,
+	nextSessionViewId: ChatSessionViewId,
+	preserveHash = false,
+): void {
+	const request = chatNavigationRequest(target, replace, nextSessionViewId);
+	void navigate((preserveHash ? { ...request, hash: true } : request) as NavigateOptions);
 }
 
 function settingsPanelFromPathPart(part: string | undefined): SettingsPanel {

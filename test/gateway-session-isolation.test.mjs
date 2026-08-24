@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readlink, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -53,6 +53,25 @@ async function withPiboHome(root, action) {
 	}
 }
 
+async function openSqliteFileDescriptors(root) {
+	if (process.platform !== "linux") return [];
+	let descriptors;
+	try {
+		descriptors = await readdir("/proc/self/fd");
+	} catch {
+		return [];
+	}
+	return (await Promise.all(descriptors.map(async (descriptor) => {
+		try {
+			const target = await readlink(`/proc/self/fd/${descriptor}`);
+			const path = target.replace(/ \(deleted\)$/, "");
+			return path.startsWith(`${root}/`) && /\.sqlite(?:-(?:journal|shm|wal))?$/.test(path) ? target : undefined;
+		} catch {
+			return undefined;
+		}
+	}))).filter(Boolean);
+}
+
 test("persistSession false uses an in-memory store and leaves the external Pibo home unchanged", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pibo-gateway-nonpersistent-"));
 	const seeded = seedRunningTurn(root);
@@ -96,6 +115,82 @@ test("persistSession false uses an in-memory store and leaves the external Pibo 
 			verification.close();
 		}
 	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("gateway stop attempts every owned web app disposer, preserves causes, and permits retry", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pibo-gateway-dispose-fault-"));
+	const injectedFailure = new Error("injected gateway web app disposal failure");
+	const disposalCalls = [];
+	let failFirstDispose = true;
+	let server;
+	try {
+		await withPiboHome(root, async () => {
+			server = new PiboGatewayServer({
+				host: "127.0.0.1",
+				port: 0,
+				startChannels: false,
+				persistSession: false,
+				pluginRegistry: createRegistry(),
+				loopStorePath: join(root, "isolated-loops.sqlite"),
+				resourceReaper: false,
+			});
+			const ownedRegistry = server.compatibilityRuntimeRegistry;
+			assert.ok(ownedRegistry);
+			ownedRegistry.registerWebApp({
+				name: "test.gateway-failing-app",
+				mountPath: "/apps/gateway-failing",
+				apiPrefix: "/api/gateway-failing",
+				dispose() {
+					disposalCalls.push(this.name);
+					if (failFirstDispose) {
+						failFirstDispose = false;
+						throw injectedFailure;
+					}
+				},
+				handleRequest() {
+					return new Response("failing");
+				},
+			});
+			ownedRegistry.registerWebApp({
+				name: "test.gateway-later-app",
+				mountPath: "/apps/gateway-later",
+				apiPrefix: "/api/gateway-later",
+				dispose() {
+					disposalCalls.push(this.name);
+				},
+				handleRequest() {
+					return new Response("later");
+				},
+			});
+
+			await server.start();
+			await assert.rejects(
+				() => server.stop(),
+				(error) => {
+					assert.ok(error instanceof AggregateError);
+					assert.ok(error.errors.includes(injectedFailure));
+					return true;
+				},
+			);
+			assert.deepEqual(disposalCalls, ["test.gateway-failing-app", "test.gateway-later-app"]);
+			assert.deepEqual(await openSqliteFileDescriptors(root), []);
+
+			await server.stop();
+			assert.deepEqual(disposalCalls, [
+				"test.gateway-failing-app",
+				"test.gateway-later-app",
+				"test.gateway-failing-app",
+				"test.gateway-later-app",
+			]);
+			assert.deepEqual(await openSqliteFileDescriptors(root), []);
+			server = undefined;
+		});
+		await rm(root, { recursive: true });
+		await assert.rejects(() => stat(root), { code: "ENOENT" });
+	} finally {
+		await server?.stop().catch(() => undefined);
 		await rm(root, { recursive: true, force: true });
 	}
 });
