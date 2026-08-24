@@ -137,6 +137,60 @@ test("gateway stops plugin channels in reverse start order", async () => {
 	assert.deepEqual(events, ["start:a", "start:b", "stop:b", "stop:a"]);
 });
 
+test("gateway attempts every channel stop, aggregates causes, and retries failed channels", async () => {
+	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
+	const events = [];
+	const failureB = new Error("injected channel b stop failure");
+	const failureC = new Error("injected channel c stop failure");
+	let failB = true;
+	let failC = true;
+
+	registry.registerPlugin(
+		definePiboPlugin({
+			id: "test.channel-stop-faults",
+			register(api) {
+				for (const name of ["a", "b", "c"]) {
+					api.registerChannel({
+						name: `fault-channel-${name}`,
+						kind: "local",
+						auth: { mode: "trusted-local" },
+						start() {},
+						async stop() {
+							events.push(`stop:${name}`);
+							if (name === "b" && failB) throw failureB;
+							if (name === "c" && failC) throw failureC;
+						},
+					});
+				}
+			},
+		}),
+	);
+
+	const server = new PiboGatewayServer({
+		port: 0,
+		persistSession: false,
+		pluginRegistry: registry,
+		sessionStore: new InMemoryPiboSessionStore(),
+	});
+
+	await server.start();
+	await assert.rejects(
+		() => server.stopChannels(),
+		(error) => {
+			assert.ok(error instanceof AggregateError);
+			assert.ok(error.errors.includes(failureB));
+			assert.ok(error.errors.includes(failureC));
+			return true;
+		},
+	);
+	assert.deepEqual(events, ["stop:c", "stop:b", "stop:a"]);
+
+	failB = false;
+	failC = false;
+	await server.stop();
+	assert.deepEqual(events, ["stop:c", "stop:b", "stop:a", "stop:c", "stop:b"]);
+});
+
 test("gateway rejects required-auth channels without an auth service", async () => {
 	const registry = PiboPluginRegistry.create({ plugins: [piboCorePlugin] });
 

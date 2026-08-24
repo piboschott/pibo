@@ -423,6 +423,8 @@ export class PiboSessionRouter {
 	private readonly telemetryStore?: TelemetryStore;
 	private readonly telemetryWriter?: AsyncTelemetryWriter;
 	private readonly telemetryRecorder?: PiboRuntimeTelemetryRecorder;
+	private readonly completedDisposeSteps = new Set<string>();
+	private pendingDisposeCancelledRuns?: PiboRunSnapshot[];
 	private disposePromise?: Promise<void>;
 	private closing = false;
 
@@ -1090,57 +1092,109 @@ export class PiboSessionRouter {
 	async disposeAll(): Promise<void> {
 		if (this.disposePromise) return this.disposePromise;
 		this.closing = true;
-		this.disposePromise = this.disposeAllUnsafe();
-		return this.disposePromise;
+		const disposal = this.disposeAllUnsafe();
+		this.disposePromise = disposal;
+		try {
+			await disposal;
+		} catch (error) {
+			if (this.disposePromise === disposal) this.disposePromise = undefined;
+			throw error;
+		}
 	}
 
 	private async disposeAllUnsafe(): Promise<void> {
-		try {
-			const initialIds = [...new Set([...this.sessions.keys(), ...this.pendingSessions.keys()])];
-			this.beginSessionQuiescence(initialIds);
-			await Promise.allSettled([...this.pendingSessions.values()]);
-			const sessions = [...this.sessions.entries()];
-			for (const timer of this.idleSessionTimers.values()) clearTimeout(timer);
-			this.idleSessionTimers.clear();
-			const cancelledRuns = this.runRegistry.cancelAll("Pibo session router was disposed.");
-			const runCancellationResult = await Promise.allSettled([this.invokeRunCancellationHandlers(cancelledRuns)]);
-			this.scheduledRunReminders.clear();
-			const closeResult = await Promise.allSettled([this.runtimeRegistry.closeAll({ force: true })]);
-			const disposeResults = await Promise.allSettled(sessions.map(([id, session]) => this.disposeRoutedSession(id, session, "router disposed")));
-			for (const [id, session] of sessions) {
-				if (this.sessions.get(id) === session) this.sessions.delete(id);
-				this.signalRegistry.project({ type: "session_disposed", piboSessionId: id, reason: "router disposed" });
+		const failures: unknown[] = [];
+		const runSteps = async (steps: Array<{
+			key: string;
+			cleanup: () => Promise<void> | void;
+			onSuccess?: () => void;
+		}>): Promise<void> => {
+			for (const step of steps) {
+				if (this.completedDisposeSteps.has(step.key)) continue;
+				try {
+					await Promise.resolve().then(step.cleanup);
+					step.onSuccess?.();
+					this.completedDisposeSteps.add(step.key);
+				} catch (error) {
+					failures.push(error);
+				}
 			}
-			const failures = [
-				...runCancellationResult.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason),
-				...closeResult.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason),
-				...disposeResults.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason),
-			];
-			if (failures.length > 0) throw new AggregateError(failures, "Failed to dispose all Pibo sessions");
-		} finally {
-			const authDisposals = await Promise.allSettled([
-				this.pluginRegistry.disposeAgentRuntimeAuth(),
-				...(this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry.disposeAgentRuntimeAuth()] : []),
-			]);
-			const ownedPluginRegistries = this.options.pluginRegistry === undefined
-				? [this.pluginRegistry]
-				: this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry] : [];
-			const webAppDisposals = await Promise.allSettled(
-				ownedPluginRegistries.flatMap((registry) => registry.getWebApps().map((app) => app.dispose?.())),
-			);
-			await this.portableToolService.dispose();
-			await this.runtimeResourceService.dispose();
-			this.runtimeResourceSessions.clear();
-			this.activeSubagentChildren.clear();
-			this.agentObservations.length = 0;
-			this.agentObservationEvictedThroughByParent.clear();
-			await this.telemetryWriter?.dispose();
-			const lifecycleFailures = [...authDisposals, ...webAppDisposals]
-				.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
-			if (lifecycleFailures.length > 0) {
-				throw new AggregateError(lifecycleFailures, "Failed to dispose runtime authentication controllers or web apps.");
+		};
+
+		const initialIds = [...new Set([...this.sessions.keys(), ...this.pendingSessions.keys()])];
+		this.beginSessionQuiescence(initialIds);
+		await Promise.allSettled([...this.pendingSessions.values()]);
+		for (const timer of this.idleSessionTimers.values()) clearTimeout(timer);
+		this.idleSessionTimers.clear();
+		this.scheduledRunReminders.clear();
+
+		await runSteps([{
+			key: "run-cancellation-handlers",
+			cleanup: async () => {
+				this.pendingDisposeCancelledRuns ??= this.runRegistry.cancelAll("Pibo session router was disposed.");
+				await this.invokeRunCancellationHandlers(this.pendingDisposeCancelledRuns);
+			},
+			onSuccess: () => {
+				this.pendingDisposeCancelledRuns = undefined;
+			},
+		}]);
+		await runSteps([{
+			key: "runtime-registry",
+			cleanup: () => this.runtimeRegistry.closeAll({ force: true }),
+		}]);
+
+		const sessions = [...this.sessions.entries()];
+		const sessionDisposals = await Promise.allSettled(
+			sessions.map(([id, session]) => this.disposeRoutedSession(id, session, "router disposed")),
+		);
+		for (let index = 0; index < sessionDisposals.length; index += 1) {
+			const result = sessionDisposals[index]!;
+			const [id, session] = sessions[index]!;
+			if (result.status === "rejected") {
+				failures.push(result.reason);
+				continue;
 			}
+			if (this.sessions.get(id) === session) this.sessions.delete(id);
+			this.signalRegistry.project({ type: "session_disposed", piboSessionId: id, reason: "router disposed" });
 		}
+
+		const ownedPluginRegistries = this.options.pluginRegistry === undefined
+			? [this.pluginRegistry]
+			: this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry] : [];
+		await runSteps([
+			{
+				key: "agent-runtime-auth:primary",
+				cleanup: () => this.pluginRegistry.disposeAgentRuntimeAuth(),
+			},
+			...(this.compatibilityRuntimeRegistry ? [{
+				key: "agent-runtime-auth:compatibility",
+				cleanup: () => this.compatibilityRuntimeRegistry!.disposeAgentRuntimeAuth(),
+			}] : []),
+			...ownedPluginRegistries.flatMap((registry, registryIndex) => registry.getWebApps().map((app) => ({
+				key: `web-app:${registryIndex}:${app.name}`,
+				cleanup: () => app.dispose?.(),
+			}))),
+			{
+				key: "portable-tool-service",
+				cleanup: () => this.portableToolService.dispose(),
+				onSuccess: () => this.portableToolSessions.clear(),
+			},
+			{
+				key: "runtime-resource-service",
+				cleanup: () => this.runtimeResourceService.dispose(),
+				onSuccess: () => this.runtimeResourceSessions.clear(),
+			},
+			...(this.telemetryWriter ? [{
+				key: "telemetry-writer",
+				cleanup: () => this.telemetryWriter!.dispose(),
+			}] : []),
+		]);
+
+		this.activeSubagentChildren.clear();
+		this.agentObservations.length = 0;
+		this.agentObservationEvictedThroughByParent.clear();
+
+		if (failures.length > 0) throw new AggregateError(failures, "Failed to dispose the Pibo session router cleanly");
 	}
 
 	private clearIdleSessionTimer(piboSessionId: string): void {

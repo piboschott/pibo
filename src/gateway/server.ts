@@ -267,41 +267,62 @@ export class PiboGatewayServer {
 	}
 
 	async stop(): Promise<void> {
-		await this.resourceReaper?.stop();
-		this.resourceReaper = undefined;
-		await this.stopChannels();
-		await this.pluginRegistry.getAuthService()?.stop?.();
+		const failures: unknown[] = [];
+		const attempt = async (cleanup: () => Promise<void> | void): Promise<void> => {
+			try {
+				await cleanup();
+			} catch (error) {
+				failures.push(error);
+			}
+		};
 
-		this.unsubscribe?.();
-		this.unsubscribe = undefined;
+		await attempt(async () => {
+			await this.resourceReaper?.stop();
+			this.resourceReaper = undefined;
+		});
+		await attempt(() => this.stopChannels());
+		await attempt(async () => {
+			await this.pluginRegistry.getAuthService()?.stop?.();
+		});
+
+		await attempt(() => {
+			this.unsubscribe?.();
+			this.unsubscribe = undefined;
+		});
 
 		for (const connection of this.connections) {
 			connection.socket.destroy();
 		}
 		this.connections.clear();
 
-		if (this.server) {
+		await attempt(async () => {
+			if (!this.server) return;
 			await new Promise<void>((resolve, reject) => {
 				this.server!.close((error) => (error ? reject(error) : resolve()));
 			});
 			this.server = undefined;
-		}
+		});
 
-		await this.router?.disposeAll();
-		this.router = undefined;
+		await attempt(async () => {
+			await this.router?.disposeAll();
+			this.router = undefined;
+		});
 
 		const ownedPluginRegistries = this.ownsPluginRegistry
 			? [this.pluginRegistry]
 			: this.compatibilityRuntimeRegistry ? [this.compatibilityRuntimeRegistry] : [];
-		for (const registry of ownedPluginRegistries) {
-			for (const app of registry.getWebApps()) await app.dispose?.();
-		}
+		const webAppDisposals = await Promise.allSettled(
+			ownedPluginRegistries.flatMap((registry) => registry.getWebApps().map((app) => Promise.resolve().then(() => app.dispose?.()))),
+		);
+		failures.push(...webAppDisposals.flatMap((result) => result.status === "rejected" ? [result.reason] : []));
 
-		if (this.ownsSessionStore) {
-			this.sessionStore?.close?.();
-		}
-		this.sessionStore = undefined;
-		this.ownsSessionStore = false;
+		await attempt(() => {
+			if (this.ownsSessionStore) this.sessionStore?.close?.();
+			this.sessionStore = undefined;
+			this.ownsSessionStore = false;
+		});
+
+		if (failures.length > 0) throw new AggregateError(failures, "Failed to stop the Pibo gateway cleanly");
 	}
 
 	private handleSocket(socket: Socket): void {
@@ -416,10 +437,19 @@ export class PiboGatewayServer {
 	}
 
 	private async stopChannels(): Promise<void> {
+		const failures: unknown[] = [];
+		const failedChannels: PiboChannel[] = [];
 		while (this.startedChannels.length > 0) {
 			const channel = this.startedChannels.pop()!;
-			await channel.stop?.();
+			try {
+				await channel.stop?.();
+			} catch (error) {
+				failures.push(error);
+				failedChannels.push(channel);
+			}
 		}
+		this.startedChannels.push(...failedChannels.reverse());
+		if (failures.length > 0) throw new AggregateError(failures, "Failed to stop one or more Pibo channels");
 	}
 
 	private createChannelContext(): PiboChannelContext {
@@ -545,6 +575,7 @@ export class PiboGatewayServer {
 			emitProductEvent: (event) => this.pluginRegistry.emitProductEvent(event),
 			subscribeProductEvents: (listener) => this.pluginRegistry.onProductEvent(listener),
 			auth: this.pluginRegistry.getAuthService(),
+			getWebApp: (name) => this.pluginRegistry.getWebApp(name),
 			getWebApps: () => this.pluginRegistry.getWebApps(),
 		};
 	}

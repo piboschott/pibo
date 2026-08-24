@@ -4460,7 +4460,33 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		integrations,
 	};
 
-	let disposed = false;
+	const pendingDisposals = new Map<string, () => void>([
+		["subscription", () => {
+			state.unsubscribe?.();
+			state.unsubscribe = undefined;
+			state.subscribedContext = undefined;
+		}],
+		["event-loop-delay-monitor", () => state.eventLoopDelay.disable()],
+		["project-store", () => state.projectService.close()],
+		["agent-store", () => state.agentStore.close()],
+		["reliability-store", () => state.reliabilityStore.close()],
+		["cron-store", () => state.cronStore.close()],
+		["loop-store", () => state.loopStore.close()],
+		["data-store", () => state.dataStore.close()],
+	]);
+	const dispose = (): void => {
+		if (pendingDisposals.size === 0) return;
+		const failures: Error[] = [];
+		for (const [name, cleanup] of [...pendingDisposals]) {
+			try {
+				cleanup();
+				pendingDisposals.delete(name);
+			} catch (error) {
+				failures.push(new Error(`Failed to dispose chat web app resource "${name}"`, { cause: error }));
+			}
+		}
+		if (failures.length > 0) throw new AggregateError(failures, "Failed to dispose the chat web app cleanly");
+	};
 	const requireSession = (request: Request, context: PiboWebAppContext): Promise<PiboWebSession> =>
 		context.requireSession({
 			request,
@@ -4470,20 +4496,7 @@ export function createChatWebApp(options: ChatWebAppOptions = {}): PiboWebApp {
 		name: CHAT_WEB_APP_NAME,
 		mountPath: CHAT_WEB_MOUNT_PATH,
 		apiPrefix: CHAT_WEB_API_PREFIX,
-		dispose() {
-			if (disposed) return;
-			disposed = true;
-			state.unsubscribe?.();
-			state.unsubscribe = undefined;
-			state.subscribedContext = undefined;
-			state.eventLoopDelay.disable();
-			state.projectService.close();
-			state.agentStore.close();
-			state.reliabilityStore.close();
-			state.cronStore.close();
-			state.loopStore.close();
-			state.dataStore.close();
-		},
+		dispose,
 		async handleRequest(request, context) {
 			const url = new URL(request.url);
 			if (url.pathname === `${CHAT_WEB_API_PREFIX}/auth-check` && request.method === "GET") {

@@ -99,6 +99,7 @@ export type PiboChannelContext = {
 	emitProductEvent?(event: PiboProductEventInput): PiboProductEvent;
 	subscribeProductEvents?(listener: PiboProductEventListener): () => void;
 	auth?: PiboAuthService;
+	getWebApp(name: string): PiboWebApp | undefined;
 	getWebApps(): PiboWebApp[];
 };
 
