@@ -120,6 +120,194 @@ test("a run that completes after abort cannot re-arm its stale reminder generati
 	}
 });
 
+test("interrupted run-reminder delivery releases the reserved state for a fresh retry", async () => {
+	const router = createStoredRouter();
+	const session = createRouterSessionFake();
+	router.sessions.set("ps_quiescence", session);
+	try {
+		const run = router.runRegistry.startToolRun({ controllerPiboSessionId: "ps_quiescence", toolName: "bash" });
+		router.runRegistry.complete(run.runId, { text: "done" });
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 1);
+		const interrupted = session.enqueued[0];
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), false);
+
+		router.handleInterruptedRunReminders([interrupted]);
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), true);
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 2);
+		assert.notEqual(session.enqueued[1].id, interrupted.id);
+		assert.match(session.enqueued[1].text, new RegExp(run.runId));
+	} finally {
+		await router.disposeAll();
+	}
+});
+
+test("enqueue failure releases the run notification for later delivery", async () => {
+	const router = createStoredRouter();
+	const failedSession = createRouterSessionFake({
+		enqueueMessage() { throw new Error("queue unavailable"); },
+	});
+	router.sessions.set("ps_quiescence", failedSession);
+	try {
+		const run = router.runRegistry.startToolRun({ controllerPiboSessionId: "ps_quiescence", toolName: "bash" });
+		router.runRegistry.complete(run.runId, { text: "done" });
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), true);
+		const recoveredSession = createRouterSessionFake();
+		router.sessions.set("ps_quiescence", recoveredSession);
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(recoveredSession.enqueued.length, 1);
+		assert.match(recoveredSession.enqueued[0].text, new RegExp(run.runId));
+	} finally {
+		await router.disposeAll();
+	}
+});
+
+test("context-pressured run reminders are released, compacted, and delivered again", async () => {
+	const router = createStoredRouter();
+	const compactActions = [];
+	const session = createRouterSessionFake({
+		removeQueuedMessages() { return 0; },
+		async executeAction(event) {
+			compactActions.push(event);
+			return { type: "execution_result", piboSessionId: event.piboSessionId, eventId: event.id, action: event.action, result: { queued: true } };
+		},
+	});
+	router.sessions.set("ps_quiescence", session);
+	try {
+		const run = router.runRegistry.startToolRun({ controllerPiboSessionId: "ps_quiescence", toolName: "bash" });
+		router.runRegistry.complete(run.runId, { text: "done" });
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 1);
+		const first = session.enqueued[0];
+		assert.match(first.text, new RegExp(run.runId));
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), false);
+
+		router.emitOutput({
+			type: "session_error",
+			piboSessionId: "ps_quiescence",
+			eventId: first.id,
+			error: "The model context window was exceeded.",
+			errorDetails: {
+				category: "context_overflow",
+				errorClass: "provider_context",
+				code: "context_length_exceeded",
+				origin: "provider",
+				retryable: false,
+			},
+		});
+		await nextTurn();
+
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), true);
+		assert.equal(compactActions.length, 1);
+		assert.equal(compactActions[0].action, "compact");
+		assert.match(compactActions[0].params.customInstructions, /pending yielded-run lifecycle/);
+
+		router.scheduleRunReminder("ps_quiescence", true);
+		await nextTurn();
+		assert.equal(session.enqueued.length, 1, "delivery must remain deferred before compaction succeeds");
+
+		router.emitOutput({
+			type: "compaction_end",
+			piboSessionId: "ps_quiescence",
+			eventId: compactActions[0].id,
+			reason: "context_pressure",
+			aborted: true,
+		});
+		await nextTurn();
+		assert.equal(session.enqueued.length, 1, "aborted compaction must not release the reminder");
+
+		router.emitOutput({
+			type: "compaction_end",
+			piboSessionId: "ps_quiescence",
+			eventId: compactActions[0].id,
+			reason: "context_pressure",
+			result: { summary: "compacted" },
+			aborted: false,
+		});
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 2);
+		const retried = session.enqueued[1];
+		assert.notEqual(retried.id, first.id);
+		assert.match(retried.text, new RegExp(run.runId));
+		router.emitOutput({
+			type: "message_finished",
+			piboSessionId: "ps_quiescence",
+			eventId: retried.id,
+			source: "service",
+		});
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), false);
+	} finally {
+		await router.disposeAll();
+	}
+});
+
+test("successful run reminders continue delivering other pending origin groups", async () => {
+	const router = createStoredRouter();
+	const session = createRouterSessionFake();
+	router.sessions.set("ps_quiescence", session);
+	try {
+		const first = router.runRegistry.startToolRun({
+			controllerPiboSessionId: "ps_quiescence",
+			toolName: "first",
+			origin: { eventId: "origin-first", provenance: { kind: "loop-run", jobId: "job-first", runId: "loop-first" } },
+		});
+		const second = router.runRegistry.startToolRun({
+			controllerPiboSessionId: "ps_quiescence",
+			toolName: "second",
+			origin: { eventId: "origin-second", provenance: { kind: "loop-run", jobId: "job-second", runId: "loop-second" } },
+		});
+		router.runRegistry.complete(first.runId, { text: "first done" });
+		router.runRegistry.complete(second.runId, { text: "second done" });
+		router.scheduleRunReminder("ps_quiescence", false);
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 1);
+		assert.match(session.enqueued[0].text, new RegExp(first.runId));
+		assert.doesNotMatch(session.enqueued[0].text, new RegExp(second.runId));
+
+		router.emitOutput({
+			type: "message_finished",
+			piboSessionId: "ps_quiescence",
+			eventId: session.enqueued[0].id,
+			source: "service",
+		});
+		await nextTurn();
+		await nextTurn();
+
+		assert.equal(session.enqueued.length, 2);
+		assert.match(session.enqueued[1].text, new RegExp(second.runId));
+		router.emitOutput({
+			type: "message_finished",
+			piboSessionId: "ps_quiescence",
+			eventId: session.enqueued[1].id,
+			source: "service",
+		});
+		assert.equal(router.runRegistry.hasPendingNotification("ps_quiescence"), false);
+	} finally {
+		await router.disposeAll();
+	}
+});
+
 test("subtree disposal keeps the routed object owned until disposal settles and blocks recreation", async () => {
 	const router = createStoredRouter();
 	const disposeGate = deferred();
