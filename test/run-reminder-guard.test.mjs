@@ -60,3 +60,52 @@ test("run-reminder turns keep the normal toolset and stop repeated identical too
 	assert.equal(events.some((event) => event.type === "session_error" && /capabil/i.test(String(event.error))), false);
 	await routed.dispose();
 });
+
+test("run reminders enqueued while the previous drain settles are not stranded", async () => {
+	const events = [];
+	const prompts = [];
+	const reminderText = "<pibo_run_notification>{}</pibo_run_notification>";
+	let routed;
+	const runtimeSession = {
+		getNativeCompatibilityHandle() { return this; },
+		subscribe() { return () => {}; },
+		getStatus() { return { streaming: false }; },
+		async prompt(input) { prompts.push(input.text); },
+		async abort() {},
+		async dispose() {},
+	};
+	const emit = (event) => {
+		events.push(event);
+		if (event.type !== "message_finished" || event.eventId !== "initial-message") return;
+		queueMicrotask(() => {
+			void Promise.resolve().then(() => {
+				routed.enqueueMessage({
+					type: "message",
+					piboSessionId: "ps_reminder_race",
+					id: "run-reminder",
+					text: reminderText,
+					source: "service",
+				});
+			});
+		});
+	};
+	routed = new RuntimeRoutedSession(
+		"ps_reminder_race",
+		runtimeSession,
+		emit,
+		PiboPluginRegistry.create({ plugins: [piboCorePlugin] }),
+	);
+
+	routed.enqueueMessage({
+		type: "message",
+		piboSessionId: "ps_reminder_race",
+		id: "initial-message",
+		text: "start work",
+		source: "actor",
+	});
+
+	await waitFor(() => events.some((event) => event.type === "message_queued" && event.eventId === "run-reminder"));
+	await waitFor(() => events.some((event) => event.type === "message_started" && event.eventId === "run-reminder"));
+	assert.deepEqual(prompts, ["start work", reminderText]);
+	await routed.dispose();
+});
