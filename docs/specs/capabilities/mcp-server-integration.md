@@ -215,15 +215,19 @@ MCP server connections MUST use bounded timeout/retry behavior and MAY use daemo
 
 #### Current
 
-`getConnection` uses daemon mode unless `MCP_NO_DAEMON=1`. Retry settings come from `MCP_MAX_RETRIES`, `MCP_RETRY_DELAY`, and `MCP_TIMEOUT`. Daemons use Unix domain sockets on POSIX and per-user named pipes on Windows. PID metadata is stored in the platform temporary directory, and the daemon validates a deterministic hash of the full nested server configuration before reuse.
+`getConnection` uses daemon mode unless `MCP_NO_DAEMON=1`. Retry settings come from `MCP_MAX_RETRIES`, `MCP_RETRY_DELAY`, and `MCP_TIMEOUT`. Daemons use Unix domain sockets on POSIX and per-user named pipes on Windows. PID metadata is stored in the platform temporary directory. An exclusive per-server claim elects one startup owner across processes; generation-bound PID metadata, requests, and client leases prevent losing or stale processes from clobbering or replacing a daemon still in use. The daemon validates a deterministic hash of the full nested server configuration before reuse.
 
 #### Acceptance
 
 - Transient connection errors can be retried within the total timeout budget.
 - Direct mode is used when daemon mode is disabled.
 - Daemon mode reuses a valid matching daemon when possible.
+- Simultaneous first calls from independent processes converge on one daemon and one MCP server process.
+- A caller that loses startup election waits for the elected generation or safely retries after a dead owner; it does not spawn a competing daemon.
+- PID, endpoint, claim, and lease cleanup removes only state owned by the matching generation.
 - Repeated CLI calls preserve state owned by the reused MCP server process.
 - Windows daemon IPC uses named pipes and does not treat the endpoint as a filesystem entry.
+- Detached daemon creation hides a Windows console window.
 - A daemon with a stale nested config hash or dead process is cleaned up before use.
 - A reachable stale daemon is asked to close gracefully before forced termination.
 - Daemon startup uses the configured request timeout so an authorization prompt does not trigger a duplicate direct connection after five seconds.
@@ -235,6 +239,14 @@ MCP server connections MUST use bounded timeout/retry behavior and MAY use daemo
 - AND a top-level or nested value in the `docs` server config changes
 - WHEN the next CLI command uses `docs`
 - THEN Pibo detects the config hash mismatch, stops the stale daemon, and starts a connection for the new config.
+
+#### Scenario: Simultaneous first calls
+
+- GIVEN no daemon is running for server `docs`
+- WHEN independent CLI processes call `docs` at the same time
+- THEN one process atomically owns startup
+- AND all callers use that daemon generation and one MCP server process
+- AND a crashed winner or loser leaves recoverable ownership state without removing another generation's PID metadata or endpoint.
 
 #### Scenario: Stateful calls on Windows
 

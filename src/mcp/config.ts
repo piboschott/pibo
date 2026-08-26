@@ -309,16 +309,42 @@ function getDaemonUserKey(platform: NodeJS.Platform): string {
 }
 
 function getDaemonServerKey(serverName: string): string {
-  return createHash('sha256').update(serverName).digest('hex').slice(0, 16);
+  // Node replaces unpaired UTF-16 surrogates when encoding a string as UTF-8.
+  // Hash those names as explicit code units so distinct JavaScript strings do
+  // not collapse onto the same daemon endpoint.
+  const hasUnpairedSurrogate = Array.from(
+    { length: serverName.length },
+    (_, index) => serverName.charCodeAt(index),
+  ).some((codeUnit, index, codeUnits) => {
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = codeUnits[index + 1];
+      return next === undefined || next < 0xdc00 || next > 0xdfff;
+    }
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      const previous = codeUnits[index - 1];
+      return previous === undefined || previous < 0xd800 || previous > 0xdbff;
+    }
+    return false;
+  });
+
+  const hash = createHash('sha256');
+  if (hasUnpairedSurrogate) {
+    hash.update('pibo-mcp-utf16\0');
+    const codeUnits = Buffer.allocUnsafe(serverName.length * 2);
+    for (let index = 0; index < serverName.length; index += 1) {
+      codeUnits.writeUInt16LE(serverName.charCodeAt(index), index * 2);
+    }
+    hash.update(codeUnits);
+  } else {
+    hash.update(serverName);
+  }
+  return hash.digest('hex').slice(0, 16);
 }
 
-function getDaemonFileName(
-  serverName: string,
-  platform: NodeJS.Platform,
-): string {
-  return platform === 'win32'
-    ? getDaemonServerKey(serverName)
-    : encodeURIComponent(serverName);
+function getDaemonFileName(serverName: string): string {
+  // Keep every filesystem path bounded. Unix-domain socket limits are much
+  // shorter than ordinary filesystem path limits, and server names are input.
+  return getDaemonServerKey(serverName);
 }
 
 /**
@@ -352,10 +378,7 @@ export function getSocketPath(
     return `\\\\.\\pipe\\pibo-mcp-${userKey}-${getDaemonServerKey(serverName)}`;
   }
 
-  return join(
-    getSocketDir(platform),
-    `${getDaemonFileName(serverName, platform)}.sock`,
-  );
+  return join(getSocketDir(platform), `${getDaemonFileName(serverName)}.sock`);
 }
 
 /**
@@ -365,9 +388,29 @@ export function getPidPath(
   serverName: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  return join(getSocketDir(platform), `${getDaemonFileName(serverName)}.pid`);
+}
+
+/**
+ * Get the atomic startup-election claim path for a server daemon.
+ */
+export function getDaemonClaimPath(
+  serverName: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(getSocketDir(platform), `${getDaemonFileName(serverName)}.lock`);
+}
+
+/**
+ * Get the prefix shared by active client lease files for a server daemon.
+ */
+export function getDaemonLeasePrefix(
+  serverName: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   return join(
     getSocketDir(platform),
-    `${getDaemonFileName(serverName, platform)}.pid`,
+    `${getDaemonFileName(serverName)}.lease-`,
   );
 }
 
@@ -378,9 +421,7 @@ function normalizeForHash(value: unknown): unknown {
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value)
-        .sort(([left], [right]) =>
-          left < right ? -1 : left > right ? 1 : 0,
-        )
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
         .map(([key, nestedValue]) => [key, normalizeForHash(nestedValue)]),
     );
   }
@@ -539,7 +580,10 @@ export async function ensureConfigExists(
 
   const configPath = getPreferredConfigPath(explicitPath);
   await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`);
+  await writeFile(
+    configPath,
+    `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`,
+  );
   return configPath;
 }
 
@@ -562,7 +606,10 @@ async function readRawConfig(configPath: string): Promise<McpServersConfig> {
   return config;
 }
 
-function validateServerConfig(serverName: string, serverConfig: ServerConfig): void {
+function validateServerConfig(
+  serverName: string,
+  serverConfig: ServerConfig,
+): void {
   if (!serverConfig || typeof serverConfig !== 'object') {
     throw new Error(
       formatCliError({
@@ -631,7 +678,9 @@ export async function loadConfigUnresolved(
   const merged: McpServersConfig = { mcpServers: {} };
   for (const configPath of existingPaths) {
     const config = await readRawConfig(configPath);
-    for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
+    for (const [serverName, serverConfig] of Object.entries(
+      config.mcpServers,
+    )) {
       if (!(serverName in merged.mcpServers)) {
         merged.mcpServers[serverName] = serverConfig;
       }
