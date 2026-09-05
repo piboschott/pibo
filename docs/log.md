@@ -15,6 +15,7 @@
 - **Validation evidence**: Recorded the passing clean build, all typechecks, 144 Workflow package tests, 56 focused migration/storage/router/header tests, 62 focused UI source tests, complete isolated root suite at `14cbaf0f` (2,744 total; 2,739 passed; 0 failed; 5 skipped), and completed headed Room, Workflow Session, desktop/mobile, and normal provider-backed Session checks.
 - **Final manual Workflow acceptance**: Rebound changed contracts to `7ec71c2cca2108423002be0e7330d2a20c4c5b67` after upstream #911/#912 integration; documented the defaulted Run Room selector, optional API Room/workspace, write-permission and workspace-inheritance behavior, persistent pending explanation, actual `openai-codex` manual execution, canonical completed inspection, viewport fit, and clean `npm install --omit=dev` smoke. The final-code whole-root rerun remains underway and unclaimed.
 - **Shared observation ownership**: Clarified that live agent observation and persisted debug inspection are adapters over one normalized observation/query core, so source-independent improvements apply to both unless a documented lifetime or durability constraint prevents parity.
+- **Unread delegated-agent observation**: Made `cursorMode="auto"` the live Observe default with durable per-parent, per-query cursors, explicit non-mutating `history` replay, bounded cursor-scope persistence, hidden tools by default, and stateless operator debug observation; updated the delegated-agent, Session persistence, and product-store schema contracts.
 
 ## 2026-09-04
 
