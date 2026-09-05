@@ -9,7 +9,7 @@ status: "stable"
 authority: "normative"
 generated:
   by: "openai/codex"
-  at: "2026-09-05T18:01:00Z"
+  at: "2026-09-05T18:02:56Z"
 sources:
   - id: "foundation-source-and-tests"
     resource: "scope:Foundation 38bb6e57f118c1543e7263c68d27e5103d3b1262"
@@ -25,13 +25,13 @@ sources:
     title: "Compute worker Preview dev-auth bridge implementation and focused validation"
 implementation:
   state: "current"
-  baseline_commit: "0f2f0b107759592e360ad5ab8724cf56eca21560"
+  baseline_commit: "af47292937cacdb294e71939ebf87701d22e383c"
   package: "WP-05+09-COMPUTE-OPERATOR"
   source_evidence: "performed"
   focused_test_execution: "performed in owned Docker after authoring; see implementation report"
   build_and_typecheck_execution: "performed in owned Docker after authoring; see implementation report"
 traceability:
-  commit: "0f2f0b107759592e360ad5ab8724cf56eca21560"
+  commit: "af47292937cacdb294e71939ebf87701d22e383c"
   requirements:
     - id: "CMP-PREVIEW-001"
       status: "implemented"
@@ -415,7 +415,7 @@ Related concepts:
 
 ## Verification and traceability
 
-The source and named-test references are bound to traceability commit `0f2f0b107759592e360ad5ab8724cf56eca21560`. The earlier Foundation evidence remains identified in `sources`. Focused implementation tests, a real compute-worker CLI resolution, an HTTP ticket/session exchange against a local-auth Pibo gateway, and headed browser/CDP validation were performed in the owned Docker worker. The traceability commit does not imply production deployment, gateway restart, real public-host TLS, external-provider, Windows, or Pibo2 validation.
+The source and named-test references are bound to integrated traceability commit `af47292937cacdb294e71939ebf87701d22e383c`. The earlier Foundation, production-setup, Desktop auto-open, and compute-worker evidence remains identified in `sources`. Focused implementation tests, a real compute-worker CLI resolution, an HTTP ticket/session exchange against a local-auth Pibo gateway, and headed Desktop auto-open browser/CDP validation were performed in owned Docker workers. The traceability commit does not imply production deployment, gateway restart, real public-host TLS, external-provider, Windows, or Pibo2 validation.
 
 Validation performed for Desktop auto-open in the isolated Docker worker:
 
