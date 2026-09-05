@@ -44,6 +44,7 @@ import {
 	piboAgentObservationText,
 } from "../subagents/observations.js";
 import {
+	piboAgentObservationCursorScopeKey,
 	preparePiboAgentObservationQuery,
 	selectPiboAgentObservationPage,
 } from "../subagents/observation-query.js";
@@ -55,6 +56,7 @@ import type { PiboSignalPatch, PiboSignalRegistry, PiboSignalSnapshot, PiboSigna
 import type { PiboRunToolController } from "../runs/tools.js";
 import { createDefaultPiboReliabilityStore, type PiboReliabilityStore } from "../reliability/store.js";
 import {
+	PIBO_AGENT_OBSERVATION_AUTO_CURSOR_MAX_SCOPES,
 	InMemoryPiboSessionStore,
 	createPiboSessionId,
 	type CreatePiboSessionInput,
@@ -558,7 +560,9 @@ export class PiboSessionRouter {
 	private readonly activeSubagentRequests = new Map<string, Set<ActiveSubagentRequest>>();
 	private readonly subagentRequestIdsByEvent = new Map<string, string>();
 	private readonly agentObservations: StoredAgentObservation[] = [];
+	private readonly agentObservationHighWaterByParent = new Map<string, number>();
 	private readonly agentObservationEvictedThroughByParent = new Map<string, number>();
+	private readonly agentObservationAutoCursorFallback = new Map<string, number>();
 	private nextAgentObservationSequence = 1;
 	private readonly scheduledRunReminders = new Map<string, ScheduledRunReminder>();
 	private readonly runReminderDeliveries = new Map<string, RunReminderDelivery>();
@@ -1384,7 +1388,9 @@ export class PiboSessionRouter {
 			this.subagentRequestIdsByEvent.clear();
 			this.outputRenderSequencer.disposeAll();
 			this.agentObservations.length = 0;
+			this.agentObservationHighWaterByParent.clear();
 			this.agentObservationEvictedThroughByParent.clear();
+			this.agentObservationAutoCursorFallback.clear();
 			await this.telemetryWriter?.dispose();
 			const lifecycleFailures = [...authDisposals, ...webAppDisposals]
 				.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
@@ -2370,8 +2376,21 @@ export class PiboSessionRouter {
 
 	private observeManagedAgents(parentPiboSessionId: string, input: PiboAgentObserveInput) {
 		for (const agentId of input.agentIds ?? []) this.requireManagedAgent(parentPiboSessionId, agentId);
-		const query = preparePiboAgentObservationQuery(input);
+		const baseQuery = preparePiboAgentObservationQuery(input);
+		const cursorScope = piboAgentObservationCursorScopeKey(baseQuery.filters);
+		const explicitAfterSequence = input.afterSequence !== undefined;
+		const savedAfterSequence = baseQuery.cursorMode === "auto" && !explicitAfterSequence
+			? this.getAgentObservationAutoCursor(parentPiboSessionId, cursorScope)
+			: undefined;
+		const query = savedAfterSequence === undefined
+			? baseQuery
+			: preparePiboAgentObservationQuery({ ...input, afterSequence: savedAfterSequence });
 		const observations = this.agentObservations;
+		const evictedThrough = this.agentObservationEvictedThroughByParent.get(parentPiboSessionId) ?? 0;
+		const sourceHighWater = Math.max(
+			evictedThrough,
+			this.agentObservationHighWaterByParent.get(parentPiboSessionId) ?? 0,
+		);
 		function* ordered(): IterableIterator<PiboAgentObservation> {
 			const start = query.scanOrder === "asc" ? 0 : observations.length - 1;
 			const end = query.scanOrder === "asc" ? observations.length : -1;
@@ -2381,11 +2400,51 @@ export class PiboSessionRouter {
 				if (managingParentId === parentPiboSessionId) yield observation;
 			}
 		}
-		return selectPiboAgentObservationPage(
-			ordered(),
-			query,
-			{ evictedThrough: this.agentObservationEvictedThroughByParent.get(parentPiboSessionId) ?? 0 },
+		const page = selectPiboAgentObservationPage(ordered(), query, { evictedThrough });
+		if (query.cursorMode === "history") return page;
+
+		const initialSnapshot = !explicitAfterSequence && savedAfterSequence === undefined;
+		const nextAfterSequence = initialSnapshot || !page.truncated
+			? Math.max(page.nextAfterSequence, sourceHighWater)
+			: page.nextAfterSequence;
+		const advancedAfterSequence = this.advanceAgentObservationAutoCursor(
+			parentPiboSessionId,
+			cursorScope,
+			nextAfterSequence,
 		);
+		return {
+			...page,
+			autoCursorSequence: advancedAfterSequence,
+		};
+	}
+
+	private getAgentObservationAutoCursor(parentPiboSessionId: string, cursorScope: string): number | undefined {
+		if (this.sessionStore.getAgentObservationAutoCursor) {
+			return this.sessionStore.getAgentObservationAutoCursor(parentPiboSessionId, cursorScope);
+		}
+		return this.agentObservationAutoCursorFallback.get(JSON.stringify([parentPiboSessionId, cursorScope]));
+	}
+
+	private advanceAgentObservationAutoCursor(parentPiboSessionId: string, cursorScope: string, sequence: number): number {
+		if (this.sessionStore.advanceAgentObservationAutoCursor) {
+			return this.sessionStore.advanceAgentObservationAutoCursor(parentPiboSessionId, cursorScope, sequence);
+		}
+		const key = JSON.stringify([parentPiboSessionId, cursorScope]);
+		const advanced = Math.max(this.agentObservationAutoCursorFallback.get(key) ?? 0, sequence);
+		this.agentObservationAutoCursorFallback.delete(key);
+		this.agentObservationAutoCursorFallback.set(key, advanced);
+		const prefix = `${JSON.stringify([parentPiboSessionId]).slice(0, -1)},`;
+		let scopeCount = 0;
+		for (const existingKey of this.agentObservationAutoCursorFallback.keys()) {
+			if (existingKey.startsWith(prefix)) scopeCount += 1;
+		}
+		for (const existingKey of this.agentObservationAutoCursorFallback.keys()) {
+			if (scopeCount <= PIBO_AGENT_OBSERVATION_AUTO_CURSOR_MAX_SCOPES) break;
+			if (!existingKey.startsWith(prefix)) continue;
+			this.agentObservationAutoCursorFallback.delete(existingKey);
+			scopeCount -= 1;
+		}
+		return advanced;
 	}
 
 	private async killManagedAgent(parentPiboSessionId: string, agentId: string) {
@@ -2699,6 +2758,10 @@ export class PiboSessionRouter {
 			details: piboAgentObservationDetails(event),
 		};
 		this.agentObservations.push(observation);
+		this.agentObservationHighWaterByParent.set(
+			session.parentId,
+			Math.max(this.agentObservationHighWaterByParent.get(session.parentId) ?? 0, sequence),
+		);
 		if (this.agentObservations.length > MAX_AGENT_OBSERVATIONS) {
 			const evicted = this.agentObservations.splice(0, this.agentObservations.length - MAX_AGENT_OBSERVATIONS);
 			for (const item of evicted) {
