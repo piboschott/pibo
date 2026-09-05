@@ -117,6 +117,7 @@ export type RuntimeRoutedSessionOptions = {
 	completeRuntimeAuth?: (input: CompleteAgentRuntimeAuthInput) => Promise<AgentRuntimeAuthOperationResult>;
 	cancelRuntimeAuth?: (input: CancelAgentRuntimeAuthInput) => Promise<AgentRuntimeAuthOperationResult>;
 	logoutRuntimeAuth?: (input: LogoutAgentRuntimeAuthInput) => Promise<AgentRuntimeAuthOperationResult>;
+	statusResources?: Pick<PiboSessionStatus, "enabledSkills" | "contextFiles">;
 };
 
 function errorMessage(error: unknown): string {
@@ -196,6 +197,7 @@ function nativeOperationToPiCompatibility(
 		selectedText: result.selectedText,
 		editorText: result.editorText,
 		summaryEntryId: result.summaryEntryId,
+		sourceSessionUnchanged: result.sourceSessionUnchanged,
 	};
 }
 
@@ -245,6 +247,7 @@ export class RuntimeRoutedSession {
 	private activeThinkingIndex?: number;
 	private nextThinkingIndex = 0;
 	private sessionIdentityOperationInFlight = false;
+	private forkWhileRunningOperationInFlight = false;
 	private forkCandidatesRequest?: Promise<PiboForkCandidate[]>;
 	private primaryModel?: ModelProfile;
 	private readonly modelFallbacks: readonly ModelProfile[];
@@ -329,10 +332,22 @@ export class RuntimeRoutedSession {
 				: event.action === "session.switch"
 					? "switch"
 					: undefined;
+		const status = this.getStatus();
+		const sourceHasWork = status.processing || status.streaming || status.queuedMessages > 0;
+		const forkWhileRunning = event.action === "session.fork"
+			&& sourceHasWork
+			&& Boolean(this.runtimeSession.controls?.forkSessionWhileRunning);
 		if (sessionIdentityOperation) {
-			this.assertSessionIdentityOperationIdle(sessionIdentityOperation);
-			this.sessionIdentityOperationInFlight = true;
-			this.notifyState();
+			if (forkWhileRunning) {
+				if (this.forkWhileRunningOperationInFlight) {
+					throw new Error("Pibo session already has a running-safe fork in progress.");
+				}
+				this.forkWhileRunningOperationInFlight = true;
+			} else {
+				this.assertSessionIdentityOperationIdle(sessionIdentityOperation);
+				this.sessionIdentityOperationInFlight = true;
+				this.notifyState();
+			}
 		}
 		try {
 			if (sessionIdentityOperation) await this.options.onBeforeSessionIdentityOperation?.(event);
@@ -348,7 +363,9 @@ export class RuntimeRoutedSession {
 			this.emit(output);
 			return output;
 		} finally {
-			if (sessionIdentityOperation) {
+			if (forkWhileRunning) {
+				this.forkWhileRunningOperationInFlight = false;
+			} else if (sessionIdentityOperation) {
 				this.sessionIdentityOperationInFlight = false;
 				this.notifyState();
 				this.startDrain();
@@ -392,6 +409,8 @@ export class RuntimeRoutedSession {
 			streaming: this.disposed ? false : status.streaming,
 			activeTools: [...status.enabledTools],
 			enabledTools: [...status.enabledTools],
+			enabledSkills: [...(this.options.statusResources?.enabledSkills ?? [])],
+			contextFiles: [...(this.options.statusResources?.contextFiles ?? [])],
 			cwd: status.cwd,
 			disposed: this.disposed,
 			thinkingLevel,
@@ -485,7 +504,23 @@ export class RuntimeRoutedSession {
 
 	async getForkCandidates(): Promise<PiboForkCandidate[]> {
 		if (this.forkCandidatesRequest) return await this.forkCandidatesRequest;
-		this.assertSessionIdentityOperationIdle("inspect fork candidates");
+		if (this.sessionIdentityOperationInFlight) {
+			throw new Error("Pibo session already has a session identity operation in progress; cannot inspect fork candidates.");
+		}
+		const status = this.getStatus();
+		const sourceHasWork = status.processing || status.streaming || status.queuedMessages > 0;
+		if (sourceHasWork) {
+			const getForkCandidatesWhileRunning = this.runtimeSession.controls?.getForkCandidatesWhileRunning;
+			if (!getForkCandidatesWhileRunning) this.assertSessionWorkIdle("inspect fork candidates");
+			const request = Promise.resolve().then(async () => await getForkCandidatesWhileRunning!());
+			this.forkCandidatesRequest = request;
+			try {
+				return await request;
+			} finally {
+				if (this.forkCandidatesRequest === request) this.forkCandidatesRequest = undefined;
+			}
+		}
+
 		const getForkCandidates = this.runtimeSession.controls?.getForkCandidates;
 		if (!getForkCandidates) throw runtimeCapabilityError(this.runtimeSession, "native session fork candidates");
 		this.sessionIdentityOperationInFlight = true;
@@ -503,6 +538,15 @@ export class RuntimeRoutedSession {
 	}
 
 	async forkSession(entryId: string): Promise<PiboSessionOperationResult> {
+		if (this.forkWhileRunningOperationInFlight) {
+			const forkSessionWhileRunning = this.runtimeSession.controls?.forkSessionWhileRunning;
+			if (!forkSessionWhileRunning) throw runtimeCapabilityError(this.runtimeSession, "forking completed history while running");
+			return nativeOperationToPiCompatibility(
+				this.runtimeSession,
+				this.piboSessionId,
+				await forkSessionWhileRunning(entryId),
+			);
+		}
 		this.assertSessionWorkIdle("fork");
 		const forkSession = this.runtimeSession.controls?.forkSession;
 		if (!forkSession) throw runtimeCapabilityError(this.runtimeSession, "native session fork");

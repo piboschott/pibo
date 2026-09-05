@@ -21,7 +21,7 @@ import type {
 } from "./types";
 import type { SlashCommand } from "./chat-commands";
 import type { ChatSessionViewId, ToolDisplayMode } from "./session-views/types";
-import { getSessionForkCandidates, type ChatMessageDelivery } from "./api-chat-sessions";
+import { getSessionForkCandidates, getSessionStatus, type ChatMessageDelivery } from "./api-chat-sessions";
 import { adjacentMessageDeliveryChoice } from "./message-delivery-keyboard";
 import { uploadChatFiles } from "./api-chat-files";
 import { getLoopSessionGoal } from "./api-loops";
@@ -47,6 +47,7 @@ import {
   resolveSessionTraceTitle,
   sessionCanSteer,
   sessionSupportsFork,
+  sessionSupportsForkWhileRunning,
   sessionSupportsToolIntent,
   traceUserMessageRevision,
   withSessionForkCandidates,
@@ -315,6 +316,23 @@ export function SessionTracePane({
     onExitDesktopPreviewFullscreen,
   );
   const livePreviewSelected = Boolean(selectedBackendPiboSessionId && livePreviewViewSessionId === selectedBackendPiboSessionId);
+  const terminalUsageEnabled = Boolean(
+    selectedBackendPiboSessionId
+    && !terminalFullscreen
+    && !livePreviewSelected
+    && currentSessionView.id === "terminal"
+    && (activeViewId ?? sessionViewId) === "terminal",
+  );
+  const terminalUsageQuery = useQuery({
+    queryKey: selectedBackendPiboSessionId
+      ? ["chat", "terminal-header-usage", selectedBackendPiboSessionId]
+      : ["chat", "terminal-header-usage", "idle"],
+    queryFn: () => getSessionStatus(selectedBackendPiboSessionId!),
+    enabled: terminalUsageEnabled,
+    refetchInterval: terminalUsageEnabled ? 30_000 : false,
+    staleTime: 15_000,
+    retry: false,
+  });
   const livePreviewReloadKey = livePreviewReload?.piboSessionId === selectedBackendPiboSessionId ? livePreviewReload.value : 0;
 
   useEffect(() => {
@@ -422,15 +440,17 @@ export function SessionTracePane({
     selectedSessionStatus,
   });
   const forkSupported = sessionSupportsFork(bootstrap, selectedPiboSessionId, selectedSessionProfile);
+  const forkWhileRunningSupported = sessionSupportsForkWhileRunning(bootstrap, selectedPiboSessionId, selectedSessionProfile);
   const forkCandidateRevision = traceUserMessageRevision(currentTraceView);
+  const forkCandidateStatusRevision = selectedSessionStatus ?? "unknown";
   const forkCandidatesEnabled = Boolean(selectedBackendPiboSessionId)
     && forkSupported
     && !selectedRoomArchived
-    && selectedSessionStatus !== "running";
+    && (selectedSessionStatus !== "running" || forkWhileRunningSupported);
   const forkCandidatesQuery = useQuery({
     queryKey: selectedBackendPiboSessionId
-      ? ["chat", "fork-candidates", selectedBackendPiboSessionId, forkCandidateRevision]
-      : ["chat", "fork-candidates", "idle", "none"],
+      ? ["chat", "fork-candidates", selectedBackendPiboSessionId, forkCandidateRevision, forkCandidateStatusRevision]
+      : ["chat", "fork-candidates", "idle", "none", forkCandidateStatusRevision],
     queryFn: ({ signal }) => getSessionForkCandidates(selectedBackendPiboSessionId!, { signal }),
     enabled: forkCandidatesEnabled,
     staleTime: 0,
@@ -950,6 +970,7 @@ export function SessionTracePane({
         headerPiboSessionId,
         piboSessionId: selectedPiboSessionId,
         piboRoomId: selectedRoomId ?? bootstrap.selectedRoomId ?? undefined,
+        terminalUsageStatus: terminalUsageQuery.data,
         webAnnotationsDisabled: !selectedPiboSessionId || selectedRoomArchived,
         webAnnotationsPanelRendered,
         workflowHeader,
