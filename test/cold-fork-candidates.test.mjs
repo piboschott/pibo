@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -117,6 +117,13 @@ test("Pi persisted fork candidates preserve all user entries and text without re
 		assert.equal(typeof adapter.readForkCandidates, "function");
 		assert.deepEqual(await adapter.readForkCandidates(input), [{ entryId: "a", text: "repeat" }, { entryId: "b", text: "onetwo" }, { entryId: "c", text: "repeat" }]);
 		assert.equal(await readFile(path, "utf8"), original);
+		const cached = await adapter.readForkCandidates(input);
+		cached[0].text = "caller mutation";
+		assert.equal((await adapter.readForkCandidates(input))[0].text, "repeat", "cache does not expose mutable shared candidates");
+		const before = await stat(path);
+		await writeFile(path, original.replace("repeat", "update"));
+		await utimes(path, before.atime, before.mtime);
+		assert.equal((await adapter.readForkCandidates(input))[0].text, "update", "same-size rewrites invalidate even when mtime is restored");
 		await writeFile(path, [header, user("fresh", "new user")].map(JSON.stringify).join("\n"));
 		assert.deepEqual(await adapter.readForkCandidates(input), [{ entryId: "fresh", text: "new user" }]);
 		await writeFile(path, [{ ...header, version: 1 }, user("a", "old")].map(JSON.stringify).join("\n"));

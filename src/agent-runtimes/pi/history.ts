@@ -47,6 +47,9 @@ const PI_SESSION_LIST_CACHE_TTL_MS = 5_000;
 const PI_SESSION_DIRECT_CACHE_TTL_MS = 5_000;
 const PI_SESSION_FAST_HEAD_BYTES = 64 * 1024;
 const PI_HISTORY_CURSOR_PREFIX = "pi-history:";
+// One bounded entry: repeated sidebar/trace refreshes must not repeatedly scan a large transcript.
+let piForkCandidatesCache: { key: string; candidates: AgentRuntimeForkCandidate[] } | undefined;
+const PI_FORK_CANDIDATE_CACHE_MAX_BYTES = 2 * 1024 * 1024;
 const piSessionListCache = new Map<string, { expiresAt: number; promise: Promise<PiboSessionListItem[]> }>();
 const piSessionDirectCache = new Map<string, {
 	expiresAt: number;
@@ -80,6 +83,12 @@ export async function readPiAgentRuntimeForkCandidates(
 	const item = await findPiSessionForHistory(nativeSessionId, input.workspace,
 		input.binding.locator?.kind === "local-file" ? input.binding.locator.value : undefined, { fast: true });
 	if (!item?.path) return undefined;
+	const fileKey = () => {
+		const stats = statSync(item.path);
+		return `${nativeSessionId}:${item.path}:${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+	};
+	const key = fileKey();
+	if (piForkCandidatesCache?.key === key) return piForkCandidatesCache.candidates.map((candidate) => ({ ...candidate }));
 	const stream = createReadStream(item.path, { encoding: "utf8" });
 	const lines = createInterface({ input: stream, crlfDelay: Infinity });
 	const candidates: AgentRuntimeForkCandidate[] = [];
@@ -99,7 +108,12 @@ export async function readPiAgentRuntimeForkCandidates(
 				if (text) candidates.push({ entryId: entry.id, text });
 			}
 		}
-		return headerSeen ? candidates : undefined;
+		if (!headerSeen) return undefined;
+		const candidateBytes = candidates.reduce((bytes, candidate) => bytes + Buffer.byteLength(candidate.text) + Buffer.byteLength(candidate.entryId), 0);
+		if (candidateBytes <= PI_FORK_CANDIDATE_CACHE_MAX_BYTES && key === fileKey()) {
+			piForkCandidatesCache = { key, candidates: candidates.map((candidate) => ({ ...candidate })) };
+		}
+		return candidates;
 	} finally {
 		lines.close();
 		stream.destroy();
