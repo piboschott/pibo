@@ -2,6 +2,8 @@
 
 ## 2026-09-05
 
+- **Session status latency**: Published [Docker and headful Pibo2 validation](/reports/session-status-latency-validation-2026-09-05.md) for credential-scoped, bounded provider quota caching; warm status median fell from 490.8 to 28.3 ms in sampled public requests, while the broader large-session and intermittent queue-lag investigation remains open.
+
 - **Session Preview auto-open**: Extended [Session Live Previews](/specs/compute/session-live-previews.md#requirement-cmp-preview-006) with an authenticated Session-scoped creation stream so a newly created Preview opens the deduplicated Desktop Preview tab only for the still-selected Pibo Session; background Sessions, mobile layouts, and pre-existing Previews remain non-opening.
 - **Compute worker Preview authentication**: Added `pibo preview expose-worker` and an internal proxy mode that preserves Preview credential isolation while allowing a validated local-auth Pibo compute worker to accept HTTP and WebSocket traffic without a second Google login; updated the [Session Live Previews and Safe Proxy specification](/specs/compute/session-live-previews.md).
 - **Running-session forks**: Added capability-gated snapshot forks for completed user messages while Pi or Codex Native continues an active turn; the active message remains excluded, the source binding stays attached, and OMP retains idle-only fork semantics. Updated the [routing contract](/specs/gateway/routing-events-and-actions.md), [Pi adapter](/specs/runtime/pi-adapter.md), [Codex Native adapter](/specs/runtime/codex-native-adapter.md), and [OMP adapter](/specs/runtime/omp-adapter.md).
