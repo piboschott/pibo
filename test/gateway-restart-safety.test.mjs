@@ -207,6 +207,7 @@ test('gateway doctor reports degraded run-job reliability without presenting it 
       runtimeStatuses: [],
       activeRuns: [],
       reliability: { status: 'degraded', expiredOrphanRunJobs: 0, orphanRunDeadLetters: 2 },
+      durableMessageQueue: { status: 'healthy', storage: { available: true } },
     }));
   });
   await new Promise((resolve, reject) => {

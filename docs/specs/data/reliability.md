@@ -11,7 +11,7 @@ generated:
 sources:
   - resource: "scope:Current implementation and tests at traceability.commit"
 traceability:
-  commit: "e5dada192a650482d7783540854090943fc5454c"
+  commit: "2b7b2a7c31be0de7b326e5ef6b82f01ea2b51a3d"
   requirements:
     - id: "WP02-DATA-REL-001"
       status: "implemented"
@@ -315,7 +315,7 @@ Related ownership boundaries:
 
 # Verification and traceability
 
-Source symbols and named tests are bound to commit `aacf12b17e8ba92249a901b3e1d44d57a35f9bf8`. Requirement confidence measures trace quality; it does not claim that an external, browser, real-provider, or Pibo2 check ran.
+Source symbols and named tests are bound to commit `2b7b2a7c31be0de7b326e5ef6b82f01ea2b51a3d`. Requirement confidence measures trace quality; it does not claim that an external, browser, real-provider, or Pibo2 check ran.
 
 Package verification commands:
 

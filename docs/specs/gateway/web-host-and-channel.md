@@ -11,7 +11,7 @@ generated:
 sources:
   - resource: "scope:Current implementation and tests at traceability.commit"
 traceability:
-  commit: "800bb6ec5dd0b13b64c6333719ac1a88239d1462"
+  commit: "2b7b2a7c31be0de7b326e5ef6b82f01ea2b51a3d"
   requirements:
     - id: "WP02-GW-WEB-001"
       status: "implemented"
@@ -351,7 +351,7 @@ Related ownership boundaries:
 
 # Verification and traceability
 
-Source symbols and named tests are bound to commit `806e1d2f0cb369c1d378b0c2e667e5ee5a229470`. Requirement confidence measures trace quality. WP02-GW-STATUS-006 additionally has 109 focused Docker passes, a full build and all typechecks, plus exact-candidate authenticated/headful Pibo2 acceptance. Its scoped evidence does not expand the older requirements into unrelated platform or authentication acceptance.
+Source symbols and named tests are bound to commit `2b7b2a7c31be0de7b326e5ef6b82f01ea2b51a3d`. Requirement confidence measures trace quality. WP02-GW-STATUS-006 additionally has 109 focused Docker passes, a full build and all typechecks, plus exact-candidate authenticated/headful Pibo2 acceptance. Its scoped evidence does not expand the older requirements into unrelated platform or authentication acceptance.
 
 Package verification commands:
 

@@ -9,7 +9,7 @@ generated: { by: "openai/gpt-5.6-sol", at: "2026-09-08T19:46:13Z" }
 sources:
   - resource: "scope:Current implementation and tests at traceability.commit"
 traceability:
-  commit: "75fccac5617c51ae936ccc8cb95c86be71dcbcee"
+  commit: "2b7b2a7c31be0de7b326e5ef6b82f01ea2b51a3d"
   requirements:
     - id: "RUN-CAP-001"
       status: "implemented"
