@@ -16,12 +16,13 @@ for (const adapter of ['pi','codex-native','orp']) for (const pending of [false,
  const source=join(home,'sessions.sqlite'),native=join(home,'native-session'),capsules=new PrefixCapsuleStore(join(home,'session-prefixes'));
  const capsule=await capsules.put(adapter,'fixture/v1','original model prefix');
  const resources=await new PrefixResourceBundleStore(capsules).put(adapter,{format:1,context:[{id:'context',label:'Context',required:true,order:0,content:'original selected context'}],skills:[],files:[]});
+ const historical=await new PrefixResourceBundleStore(capsules).put(adapter,{format:1,context:[{id:'older',label:'Earlier context',required:true,order:0,content:'context referenced by old messages'}],skills:[],files:[]});
  let nativeDb;
  if(adapter==='orp'){nativeDb=new DatabaseSync(native);nativeDb.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE history(value TEXT); INSERT INTO history VALUES('original native history');");}
  else await writeFile(native,'{"native":"original history"}\n');
  const db=new DatabaseSync(source);
  db.exec('CREATE TABLE session_runtime_bindings(pibo_session_id TEXT,runtime_adapter_id TEXT,native_session_id TEXT,locator_json TEXT,metadata_json TEXT,revision INTEGER)');
- const metadata={piboSessionPrefix:{format:1,epoch:1,status:'sealed',capsule,reason:'initial',nativeSessionId:'native-1',evidence:'adapter-inputs'},piboSessionPrefixResources:resources.reference,nativeSessionFile:native};
+ const metadata={piboSessionPrefix:{format:1,epoch:1,status:'sealed',capsule,reason:'initial',nativeSessionId:'native-1',evidence:'adapter-inputs'},piboSessionPrefixResources:resources.reference,piboSessionPrefixResourceDependencies:[historical.reference],nativeSessionFile:native};
  const originalBinding={piboSessionId:'ps_fixture',runtimeInstanceId:adapter,adapterId:adapter,nativeSessionId:'native-1',state:'bound',revision:1,metadata};
  const binding=pending?preparePrefixRuntimeTransition(originalBinding,{piboSessionId:'ps_fixture',runtimeInstanceId:'target',adapterId:'pi',state:'unbound',revision:2,metadata:{}}):originalBinding;
  db.prepare('INSERT INTO session_runtime_bindings VALUES(?,?,?,?,?,?)').run('ps_fixture',binding.adapterId,binding.nativeSessionId??null,null,JSON.stringify(binding.metadata),binding.revision);
@@ -37,6 +38,7 @@ for (const adapter of ['pi','codex-native','orp']) for (const pending of [false,
  assert.equal(restored.database,source);
  assert.equal(await capsules.read(capsule,capsule),'original model prefix');
  assert.equal((await new PrefixResourceBundleStore(capsules).restore(resources.reference)).context[0].content,'original selected context');
+ assert.equal((await new PrefixResourceBundleStore(capsules).restore(historical.reference)).context[0].content,'context referenced by old messages');
  if(adapter==='orp'){const reopened=new DatabaseSync(native);try{assert.equal(reopened.prepare('SELECT value FROM history').get().value,'original native history');}finally{reopened.close();}}
  else assert.equal(await readFile(native,'utf8'),'{"native":"original history"}\n');
  await writeFile(join(destination,'runtime','native-session'),'corrupt');

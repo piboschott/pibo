@@ -1195,7 +1195,8 @@ export class PiboSessionRouter {
 				? withPortableHistoryHandoffMetadata({}, handoffMetadata)
 				: readSessionPrefixBinding(current.metadata) && !startsNewNativeSession ? current.metadata : {},
 		};
-		if (startsNewNativeSession) next = preparePrefixRuntimeTransition(current, next, session.activeModel ?? undefined);
+		if (startsNewNativeSession) next = preparePrefixRuntimeTransition(current, next, session.activeModel ?? undefined,
+			"runtime-change", switchingRuntime && input.startFresh !== true);
 		if (next.state === "bound" && adapter.resolveBinding) {
 			next = await adapter.resolveBinding({ binding: next, workspace });
 		}

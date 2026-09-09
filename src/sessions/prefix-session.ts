@@ -1,4 +1,5 @@
 import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
+import { readPrefixResourceDependencies, PREFIX_RESOURCE_DEPENDENCIES_KEY } from "./prefix-dependencies.js";
 import type { AgentRuntimeBindingPersistence } from "../agent-runtime/types.js";
 import { randomUUID } from "node:crypto";
 import type { CacheInferenceEvidence } from "../shared/cache-diagnostics.js";
@@ -34,6 +35,7 @@ export class SessionPrefixController {
 	private preparing?: Promise<SessionPrefixBinding>;
 	private resources?: { digest: string; value: RestoredPrefixResources };
 	private preparingResources?: Promise<RestoredPrefixResources>;
+	private historicalResourcesRestored = false;
 	private readonly runtimeGeneration: string;
 	private inferenceSequence = 0;
 	private inferenceEvidence?: CacheInferenceEvidence;
@@ -63,6 +65,7 @@ export class SessionPrefixController {
 			throw new PrefixRecoveryRequiredError("durable audited binding persistence is unavailable");
 		}
 		const metadata = options.getBinding().metadata;
+		readPrefixResourceDependencies(metadata);
 		const rebaseline = readPrefixRebaseline(metadata);
 		if (rebaseline && (rebaseline.sourceBinding.piboSessionId !== options.getBinding().piboSessionId || rebaseline.targetAdapterId !== options.getBinding().adapterId)) {
 			throw new PrefixRecoveryRequiredError("explicit transition belongs to another session or adapter");
@@ -88,7 +91,7 @@ export class SessionPrefixController {
 	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
 		const persisted = this.options.getBinding();
 		const metadata = { ...binding.metadata };
-		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY]) {
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY]) {
 			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
 			else delete metadata[key];
 		}
@@ -102,7 +105,7 @@ export class SessionPrefixController {
 		const current = this.options.readCurrentBinding?.() ?? expected;
 		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
 			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
-			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY].some(key =>
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY].some(key =>
 				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
 			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
 		}
@@ -249,6 +252,10 @@ export class SessionPrefixController {
 
 	async restoreResources(): Promise<RestoredPrefixResources | undefined> {
 		const runtime = this.options.getBinding();
+		if (!this.historicalResourcesRestored) {
+			for (const reference of readPrefixResourceDependencies(runtime.metadata)) await new PrefixResourceBundleStore(this.store).restore(reference);
+			this.historicalResourcesRestored = true;
+		}
 		const reference = runtime.metadata?.[SESSION_PREFIX_RESOURCES_KEY];
 		if (reference === undefined) return undefined;
 		validatePrefixReference(reference);

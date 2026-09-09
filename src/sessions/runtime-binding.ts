@@ -1,3 +1,4 @@
+import { readPrefixResourceDependencies } from "./prefix-dependencies.js";
 import { isDeepStrictEqual } from "node:util";
 import { readPrefixRebaseline } from "./prefix-rebaseline.js";
 import type { PiboJsonObject } from "../core/events.js";
@@ -182,6 +183,8 @@ export function assertRuntimeSessionBindingTransition(
 	const nextPrefix = readSessionPrefixBinding(next.metadata);
 	const previousResources = readSessionPrefixResourceReference(current.metadata);
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
+	const previousDependencies = readPrefixResourceDependencies(current.metadata);
+	const nextDependencies = readPrefixResourceDependencies(next.metadata);
 	const previousRebaseline = readPrefixRebaseline(current.metadata);
 	const nextRebaseline = readPrefixRebaseline(next.metadata);
 	const operationalBinding = (binding: RuntimeSessionBinding) => Object.fromEntries(Object.entries(binding)
@@ -211,6 +214,14 @@ export function assertRuntimeSessionBindingTransition(
 		if (!nextPrefix || nextPrefix.epoch !== sourcePrefix.epoch + 1 || nextPrefix.reason !== previousRebaseline.reason) {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix completion must publish its next epoch");
 		}
+	}
+	if (!startsRuntimeTransition && !restoresRuntimeTransition && !isDeepStrictEqual(previousDependencies, nextDependencies)) {
+		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "historical resource references require an explicit runtime transition");
+	}
+	if (startsRuntimeTransition && nextRebaseline.reason === "explicit-refresh"
+		&& [...previousDependencies, ...(previousResources ? [previousResources] : [])].some(reference =>
+			!nextDependencies.some(nextReference => isDeepStrictEqual(reference, nextReference)))) {
+		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "prefix refresh must retain historical resources");
 	}
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);

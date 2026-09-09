@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ensureDurableDirectory, PrefixCapsuleStore, readSessionPrefixBinding, readSessionPrefixResourceReference } from "../sessions/prefix-capsule.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
 import { readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
+import { readPrefixResourceDependencies } from "../sessions/prefix-dependencies.js";
 import { PrefixSessionOwnership } from "../sessions/prefix-ownership.js";
 import type { PiboJsonObject } from "../core/events.js";
 
@@ -23,7 +24,7 @@ function bindings(database: string): Binding[] {
 			if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
 			for (const row of db.prepare(`SELECT pibo_session_id,runtime_adapter_id,native_session_id,locator_json,metadata_json,revision FROM ${table} ORDER BY pibo_session_id`).iterate() as Iterable<Binding>) {
 				const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
-				if (readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
+				if (readPrefixResourceDependencies(metadata).length || readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
 				if (rows.length > MAX_FILES) throw Error("Protected session backup exceeds count quota");
 			}
 		}
@@ -90,7 +91,7 @@ export async function capturePrefixBackup(input: { root: string; database: strin
 		const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
 		const prefix = readSessionPrefixBinding(metadata);
 		const resources = readSessionPrefixResourceReference(metadata);
-		for (const reference of [prefix?.capsule, resources]) if (reference) {
+		for (const reference of [prefix?.capsule, resources, ...readPrefixResourceDependencies(metadata)]) if (reference) {
 			await capsules.read(reference, reference);
 			paths.set(join(capsules.root, `${reference.digest}.capsule`), false);
 		}
@@ -159,7 +160,7 @@ export async function verifyPrefixBackup(root: string, database: string, maximum
 	for (const row of referencedBindings(rows)) {
 		const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
 		const prefix = readSessionPrefixBinding(metadata), resources = readSessionPrefixResourceReference(metadata);
-		for (const ref of [prefix?.capsule, resources]) if (ref) {
+		for (const ref of [prefix?.capsule, resources, ...readPrefixResourceDependencies(metadata)]) if (ref) {
 			if (!paths.has(`session-prefixes/${ref.digest}.capsule`)) throw Error("Protected capsule missing from archive catalog");
 			await store.read(ref, ref);
 		}

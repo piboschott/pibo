@@ -17,6 +17,7 @@ for (const Store of [SqlitePiboSessionStore,PiboDataSessionStore]) test(`${Store
  sessions.updateRuntimeBinding(session.id,{...session.runtimeBinding,state:'bound'},{expectedRevision:1});
  const make=()=>{let binding=sessions.get(session.id).runtimeBinding;return new SessionPrefixController({store:new PrefixCapsuleStore(join(root,'prefixes')),getBinding:()=>binding,persistence:createAgentRuntimeBindingPersistence(sessions,{piboSessionId:session.id,onPersisted:next=>{binding=next;}})});};
  const controller=make(),oldModel={provider:'fixture',id:'old'},nextModel={provider:'fixture',id:'new'};
+ await controller.sealResources(async()=>({format:1,context:[{id:'old',label:'Old context',required:true,order:0,content:'older resource'}],skills:[],files:[]}));
  const prefix=await controller.seal({codec:'fixture/v1',payload:'original prefix',nativeSessionId:session.piSessionId,evidence:'adapter-inputs',hasHistoricalModelInput:false});
  assert.equal(await controller.beginModelChange(oldModel,oldModel),undefined);
  const pending=await controller.beginModelChange(oldModel,nextModel);
@@ -51,20 +52,29 @@ for (const Store of [SqlitePiboSessionStore,PiboDataSessionStore]) test(`${Store
  const another=beginRuntime();
  sessions.updateRuntimeBinding(session.id,{...another,state:'bound',nativeSessionId:'target-native'},{expectedRevision:another.revision});
  const native=make();
+ await native.sealResources(async()=>({format:1,context:[{id:'imported',label:'Context',required:true,order:0,content:'resource before refresh'}],skills:[],files:[]}));
  const completed=await native.seal({codec:'omp-fixture/v1',payload:'new runtime prefix',nativeSessionId:'target-native',evidence:'adapter-inputs',hasHistoricalModelInput:true,rebaselineId:native.rebaseline.id});
  assert.equal(completed.epoch,replaced.epoch+1);assert.equal(completed.reason,'runtime-change');
  assert.equal(make().rebaseline,undefined);
- assert.throws(()=>sessions.updateRuntimeBinding(session.id,source,{expectedRevision:sessions.get(session.id).runtimeBinding.revision,mode:'rebind'}),/epoch/);
+ assert.throws(()=>sessions.updateRuntimeBinding(session.id,source,{expectedRevision:sessions.get(session.id).runtimeBinding.revision,mode:'rebind'}),/epoch|frozen resources/);
 
  const refreshSource=sessions.get(session.id).runtimeBinding;
  const refreshTarget={...refreshSource,nativeSessionId:'full-history-copy',metadata:{}};
  let refreshing=sessions.updateRuntimeBinding(session.id,preparePrefixRuntimeTransition(refreshSource,refreshTarget,nextModel,'explicit-refresh'),{expectedRevision:refreshSource.revision,mode:'rebind'});
  assert.equal(make().rebaseline.reason,'explicit-refresh');
+ assert.deepEqual(refreshing.metadata.piboSessionPrefixResourceDependencies,[refreshSource.metadata.piboSessionPrefixResources]);
+ const tampered={...refreshing,metadata:{...refreshing.metadata,piboSessionPrefixResourceDependencies:[]}};
+ assert.throws(()=>sessions.updateRuntimeBinding(session.id,tampered,{expectedRevision:refreshing.revision}),/historical resource/);
  const cancelledRefresh=sessions.updateRuntimeBinding(session.id,refreshSource,{expectedRevision:refreshing.revision,mode:'rebind'});
  assert.deepEqual(cancelledRefresh.metadata,refreshSource.metadata);
  refreshing=sessions.updateRuntimeBinding(session.id,preparePrefixRuntimeTransition(cancelledRefresh,refreshTarget,nextModel,'explicit-refresh'),{expectedRevision:cancelledRefresh.revision,mode:'rebind'});
  const refreshController=make();
  const newBase=await refreshController.seal({codec:'omp-fixture/v1',payload:'refreshed current base',nativeSessionId:'full-history-copy',evidence:'adapter-inputs',hasHistoricalModelInput:true,rebaselineId:refreshController.rebaseline.id});
+ await rm(join(root,'prefixes','resources'),{recursive:true,force:true});
+ await make().restoreResources();
+ const dependency=sessions.get(session.id).runtimeBinding.metadata.piboSessionPrefixResourceDependencies[0];
+ await rm(join(root,'prefixes',dependency.digest+'.capsule'));
+ await assert.rejects(make().restoreResources(),/recovery required/);
  assert.equal(newBase.reason,'explicit-refresh');assert.equal(newBase.epoch,completed.epoch+1);
 
 });
