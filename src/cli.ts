@@ -467,6 +467,7 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 	program
 		.command("tui:routed")
 		.helpOption("-h, --help", "Display help for command")
+		.option("--session-prefix-protection", "Protect the model prefix of new eligible sessions")
 		.option("--show-thinking", "Show routed thinking deltas in the local TUI")
 		.option("--thinking <level>", "Set routed thinking level: off, minimal, low, medium, high, xhigh, max", parsePiboThinkingLevel)
 		.argument("[profile]")
@@ -474,28 +475,31 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 		.action(
 			async (
 				profile: string | undefined,
-				options: { showThinking?: boolean; thinking?: PiboRuntimeOptions["thinkingLevel"] },
+				options: { showThinking?: boolean; thinking?: PiboRuntimeOptions["thinkingLevel"]; sessionPrefixProtection?: boolean },
 			) => {
 				const { runLocalRoutedTui } = await import("./local/tui.js");
 				await runLocalRoutedTui({
 					profile,
 					showThinking: options.showThinking === true,
 					thinkingLevel: options.thinking,
+					sessionPrefixProtection: options.sessionPrefixProtection,
 				});
 			},
 		);
 	program
 		.command("tui:sessions")
 		.description("Start the reduced Web Chat-derived session UI")
+		.option("--session-prefix-protection", "Protect the model prefix of new eligible sessions")
 		.option("--session <id>", "Open a specific Pibo session id")
 		.option("--max-rows <count>", "Limit rendered transcript rows", parsePositiveInteger)
 		.option("--demo", "Use deterministic fake session data for smoke testing")
-		.action(async (options: { session?: string; maxRows?: number; demo?: boolean }) => {
+		.action(async (options: { session?: string; maxRows?: number; demo?: boolean; sessionPrefixProtection?: boolean }) => {
 			const { runCliSessionsUi } = await import("./apps/cli-ui/index.js");
 			await runCliSessionsUi({
 				initialSessionId: options.session,
 				maxRows: options.maxRows,
 				useFakeSource: options.demo === true,
+				sessionPrefixProtection: options.sessionPrefixProtection,
 			});
 		});
 	program
@@ -516,11 +520,12 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 	program
 		.command("gateway:web")
 		.description("Start the authenticated web gateway")
+		.option("--session-prefix-protection", "Protect the model prefix of new eligible sessions")
 		.option("--auth <mode>", "Auth service mode: 'better-auth' (default) or 'local' (loopback-only, no Google OAuth)")
 		.option("--web-host <host>", "Bind the HTTP web host, for example 0.0.0.0 for LAN access")
 		.option("--web-port <port>", "Bind the HTTP web host port", parsePort)
 		.option("--gateway-port <port>", "Bind the agent-runtime gateway port", parsePort)
-		.action(async (options: { auth?: string; webHost?: string; webPort?: number; gatewayPort?: number }) => {
+		.action(async (options: { auth?: string; webHost?: string; webPort?: number; gatewayPort?: number; sessionPrefixProtection?: boolean }) => {
 			warnIfUnsupportedGatewayNodeVersion();
 			const { runWebGatewayServer } = await import("./gateway/web.js");
 			const authMode = options.auth;
@@ -534,6 +539,7 @@ export async function runPiboCli(argv = process.argv): Promise<void> {
 				);
 			}
 			await runWebGatewayServer({
+				sessionPrefixProtection: options.sessionPrefixProtection,
 				authMode: authMode as "better-auth" | "local" | undefined,
 				port: options.gatewayPort ?? defaultGatewayPortForWebPort(options.webPort),
 				web: {

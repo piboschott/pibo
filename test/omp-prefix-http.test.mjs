@@ -22,7 +22,7 @@ import { createAgentRuntimeBindingPersistence } from "../dist/sessions/runtime-b
 
 const bun = process.env.PIBO_OMP_PREFIX_BUN;
 const entry = process.env.PIBO_OMP_PREFIX_ENTRY;
-for (const scenario of ["unchanged", "native-switch-resume", "changed-context", "system-override-is-incomplete", "restored-provider-envelope", "hook-error-does-not-block", "changed-calendar-date", "durable-guard-date-restore", "durable-guard-late-handler", "durable-guard-storage-failure", "durable-guard-binding-conflict", "durable-guard-stalled-seal", "durable-guard-tool-roundtrip", "durable-guard-compaction", "durable-guard-compaction-recovery", "durable-guard-compaction-kill-before-native"]) test(`OMP 18.1.10 actual HTTP resume boundary: ${scenario}`, { skip: !bun || !entry, timeout: 60000 }, async t => {
+for (const scenario of ["unchanged", "native-switch-resume", "changed-context", "system-override-is-incomplete", "restored-provider-envelope", "hook-error-does-not-block", "changed-calendar-date", "durable-guard-date-restore", "durable-guard-late-handler", "durable-guard-storage-failure", "durable-guard-binding-conflict", "durable-guard-stalled-seal", "durable-guard-tool-roundtrip", "durable-guard-live-tool-change", "durable-guard-compaction", "durable-guard-compaction-recovery", "durable-guard-compaction-kill-before-native"]) test(`OMP 18.1.10 actual HTTP resume boundary: ${scenario}`, { skip: !bun || !entry, timeout: 60000 }, async t => {
 	assert.equal(execFileSync(bun, [entry, "--version"], { encoding: "utf8" }).trim(), "omp/18.1.10");
 	const root = await mkdtemp(join(tmpdir(), "pibo-omp-prefix-http-"));
 	const home = join(root, "agent"); await mkdir(home);
@@ -40,6 +40,8 @@ for (const scenario of ["unchanged", "native-switch-resume", "changed-context", 
 	if (toolRoundtrip) await writeFile(toolFile, "original native tool result");
 	const lateHandlerPath = scenario === "durable-guard-late-handler" ? join(root, "late-handler.mjs") : undefined;
 	if (lateHandlerPath) await writeFile(lateHandlerPath, 'export default pi => pi.on("before_provider_request", event => ({ ...event.payload, instructions: "changed after durable capture" }));');
+	const liveChangePath = scenario === "durable-guard-live-tool-change" ? join(root, "live-tool-change.mjs") : undefined;
+	if (liveChangePath) await writeFile(liveChangePath, 'export default pi => { let calls = 0; pi.on("before_provider_request", event => ++calls === 1 ? event.payload : ({ ...event.payload, tools: [{ type: "function", name: "changed_live_tool", description: "Changed", parameters: { type: "object", properties: {} } }] })); };');
 	const readyFile = join(root, "guard-ready.json");
 	let readyNonce = 0;
 	const requests = [];
@@ -123,6 +125,7 @@ for (const scenario of ["unchanged", "native-switch-resume", "changed-context", 
 				...(nativePath ? ["--resume", nativePath] : []),
 				...(frozenInstructions === undefined ? [] : ["--system-prompt", frozenInstructions]),
 				...(extensionPath ? ["--extension", extensionPath] : []),
+				...(liveChangePath ? ["--extension", liveChangePath] : []),
 				...(guardPath ? ["--extension", guardPath] : []),
 				...(lateHandlerPath ? ["--extension", lateHandlerPath] : []),
 			];
@@ -185,6 +188,13 @@ for (const scenario of ["unchanged", "native-switch-resume", "changed-context", 
 	const firstTurn = await turn("historic ".repeat(20000));
 	if (toolRoundtrip) assert.ok(requests[1]?.input.some(item => item.type === "function_call_output" && JSON.stringify(item.output).includes("original native tool result")), JSON.stringify({ requests: requests.length,
 		assistant: firstTurn.messages?.filter(message => message.role === "assistant").map(message => ({ stopReason: message.stopReason, errorMessage: message.errorMessage, contentTypes: message.content?.map(part => part.type) })) }));
+	if (liveChangePath) {
+		const exited = once(client.process, "exit");
+		await assert.rejects(turn("must reject the changed live Tool envelope"), /child exited/);
+		assert.equal((await exited)[0], 78);
+		assert.equal(requests.length, 1);
+		return;
+	}
 	const state = (await client.request({ type: "get_state" }, "get_state")).data;
 	if (compaction) {
 		await turn("second turn before compaction ".repeat(4000));

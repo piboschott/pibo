@@ -37,6 +37,7 @@ export class OmpThreadController {
 		private readonly client: OmpRpcClient,
 		private readonly cwd: string,
 		initial: Pick<OmpSessionSnapshot, "sessionId">,
+		private readonly derivationProtocol: "fork" | "branch" = "fork",
 	) {
 		this.snapshot = { sessionId: initial.sessionId, messageCount: 0, cwd };
 	}
@@ -76,7 +77,7 @@ export class OmpThreadController {
 			runtimeInstanceId,
 			nativeSessionId: this.snapshot.sessionId,
 			locator: {
-				kind: "adapter-resolved",
+				kind: this.snapshot.sessionFile ? "local-file" : "adapter-resolved",
 				value: this.snapshot.sessionFile ?? this.snapshot.sessionId,
 			},
 			cwd: this.cwd,
@@ -113,7 +114,8 @@ export class OmpThreadController {
 	async loadForkCandidates(_runtimeInstanceId: string): Promise<AgentRuntimeForkCandidate[]> {
 		let result;
 		try {
-			result = await this.client.request({ type: "get_fork_messages" }, "get_fork_messages");
+			const command = this.derivationProtocol === "branch" ? "get_branch_messages" : "get_fork_messages";
+			result = await this.client.request({ type: command }, command);
 		} catch (error) {
 			if (!isUnsupportedForkCommand(error)) throw error;
 			try {
@@ -151,7 +153,7 @@ export class OmpThreadController {
 		const previous = structuredClone(this.getSessionSnapshot(runtimeInstanceId));
 		let result;
 		try {
-			result = await this.client.request({ type: "fork", entryId }, "fork");
+			result = await this.client.request({ type: this.derivationProtocol, entryId }, this.derivationProtocol);
 		} catch (error) {
 			if (!isUnsupportedForkCommand(error)) throw error;
 			result = await this.client.request({ type: "branch", entryId }, "branch");

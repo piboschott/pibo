@@ -8,7 +8,7 @@ import type {
 	OmpRpcFrame,
 } from "./protocol-types.js";
 
-/** Hard cap on how long a streaming turn may run before we resolve it. */
+/** Hard cap before an unfinished native stream is reported as a failure. */
 const DEFAULT_TURN_STREAM_TIMEOUT_MS = 10 * 60 * 1_000;
 // Test hook: allows the deadline to be set tiny (e.g. 250ms) so unit tests can
 // exercise the timeout path without waiting ten minutes.
@@ -42,6 +42,7 @@ type PendingPrompt = {
 	/** Fulfilled when the turn is terminal (agent_end isTerminal). */
 	turnSettled: Deferred<void>;
 	interrupted: boolean;
+	usageIds: Set<string>;
 };
 
 export class OmpRpcClientProtocolError extends Error {
@@ -155,13 +156,21 @@ export class OmpRpcTurnController {
 			responseSettled: deferred(),
 			turnSettled: deferred(),
 			interrupted: false,
+			usageIds: new Set(),
 		};
 		this.pending = turn;
+		// Native exit can precede the RPC prompt response.
+		void turn.turnSettled.promise.catch(() => {});
+		const child = this.client.process;
+		const nativeExit = () => turn.turnSettled.reject(new OmpRpcClientProtocolError("OMP native process exited before completing the turn."));
+		child?.once("exit", nativeExit);
 		try {
 			await this.executePrompt(turn, text);
 		} catch (error) {
 			if (this.pending === turn) this.pending = undefined;
 			throw error;
+		} finally {
+			child?.off("exit", nativeExit);
 		}
 	}
 
@@ -182,11 +191,11 @@ export class OmpRpcTurnController {
 			return;
 		}
 		// A running agent turn normally ends with a terminal agent_end. Guard
-		// against OMP never emitting it: resolve after a hard deadline so
+		// against OMP never emitting it: fail after a hard deadline so
 		// prompt() cannot hang forever.
 		const deadline = setTimeout(() => {
 			if (this.pending === turn) this.pending = undefined;
-			turn.turnSettled.resolve();
+			turn.turnSettled.reject(new OmpRpcClientProtocolError("OMP native turn exceeded its completion deadline."));
 		}, turnStreamTimeoutMs());
 		try {
 			await turn.turnSettled.promise;
@@ -239,9 +248,11 @@ export class OmpRpcTurnController {
 			const event = frame.assistantMessageEvent;
 			if (!event) return;
 			if (event.type === "text_delta" || event.type === "text_end") {
-				this.emit({ type: "assistant_delta", text: event.type === "text_end" ? event.content : event.delta, contentIndex: event.contentIndex });
+				this.emit({ type: event.type === "text_end" ? "assistant_message" : "assistant_delta",
+					text: event.type === "text_end" ? event.content : event.delta, contentIndex: event.contentIndex });
 			} else if (event.type === "thinking_delta" || event.type === "thinking_end") {
-				this.emit({ type: "reasoning_delta", text: event.type === "thinking_end" ? event.content : event.delta, contentIndex: event.contentIndex });
+				this.emit({ type: event.type === "thinking_end" ? "reasoning_finished" : "reasoning_delta",
+					text: event.type === "thinking_end" ? event.content : event.delta, contentIndex: event.contentIndex });
 			} else if (event.type === "thinking_start") {
 				this.emit({ type: "reasoning_started", contentIndex: event.contentIndex });
 			} else if (event.type === "toolcall_end") {
@@ -302,7 +313,13 @@ export class OmpRpcTurnController {
 				break;
 			case "message_end": {
 				const usage = OmpRpcTurnController.usageFromMessage(frame.message);
-				if (usage) this.emit({ type: "usage", usage });
+				if (usage) {
+					const responseId = isRecord(frame.message) ? frame.message.responseId : undefined;
+					const inferenceId = typeof responseId === "string" && responseId.length > 0 && responseId.length <= 256 ? responseId : undefined;
+					if (inferenceId && this.pending?.usageIds.has(inferenceId)) break;
+					if (inferenceId && this.pending && this.pending.usageIds.size < 4096) this.pending.usageIds.add(inferenceId);
+					this.emit({ type: "usage", usage, ...(inferenceId ? { inferenceId } : {}) });
+				}
 				break;
 			}
 			case "auto_compaction_start":

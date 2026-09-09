@@ -19,6 +19,8 @@ import {
 export type SessionPrefixControllerOptions = {
 	store?: PrefixCapsuleStore;
 	getBinding: () => RuntimeSessionBinding;
+	/** Cold transition reads reconcile ordinary router binding publications. */
+	readCurrentBinding?: () => RuntimeSessionBinding;
 	persistence: AgentRuntimeBindingPersistence;
 	onPersisted?: (binding: RuntimeSessionBinding) => void;
 	runtimeGeneration?: string;
@@ -36,6 +38,8 @@ export class SessionPrefixController {
 	private inferenceEvidence?: CacheInferenceEvidence;
 	private inferenceEvidenceFailed = false;
 	private ownership?: PrefixSessionOwnership;
+	private readonly transitionWaiters = new Set<() => void>();
+	private transitionFailureId?: string;
 
 	async acquireOwnership(): Promise<() => void> {
 		if (!this.ownership) {
@@ -73,10 +77,57 @@ export class SessionPrefixController {
 		return structuredClone(this.options.getBinding());
 	}
 
+	get ownershipRoot(): string { return this.store.root; }
+
+	/** Preserve native settings while incorporating prefix-only CAS updates. */
+	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
+		const persisted = this.options.getBinding();
+		const metadata = { ...binding.metadata };
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY]) {
+			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
+			else delete metadata[key];
+		}
+		return { ...structuredClone(binding), revision: persisted.revision, metadata };
+	}
+
 	get transition(): PrefixTransition | undefined { return readPrefixTransition(this.options.getBinding().metadata); }
 
+	private transitionBinding(): RuntimeSessionBinding {
+		const expected = this.options.getBinding();
+		const current = this.options.readCurrentBinding?.() ?? expected;
+		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
+			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY].some(key =>
+				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
+			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
+		}
+		return structuredClone(current);
+	}
+
+	/** Native completion events may precede the durable IPC acknowledgement. */
+	async waitForCompactionCompletion(timeoutMs = 30000): Promise<void> {
+		const pending = this.transition;
+		if (pending?.state !== "pending") return;
+		if (this.transitionFailureId === pending.id) throw new PrefixRecoveryRequiredError("native compaction completion could not be persisted");
+		await new Promise<void>((resolve, reject) => {
+			const cleanup = () => { clearTimeout(timer); this.transitionWaiters.delete(check); };
+			const check = () => {
+				try {
+					if (this.transitionFailureId === pending.id) throw new PrefixRecoveryRequiredError("native compaction completion could not be persisted");
+					const current = this.transition;
+					if (current?.id !== pending.id) throw new PrefixRecoveryRequiredError("native compaction receipt changed while awaiting completion");
+					if (current.state === "pending") return;
+					cleanup(); resolve();
+				} catch (error) { cleanup(); reject(error); }
+			};
+			const timer = setTimeout(() => { cleanup(); reject(new PrefixRecoveryRequiredError("native compaction completion was not persisted")); }, timeoutMs);
+			this.transitionWaiters.add(check);
+			check();
+		});
+	}
+
 	async beginCompaction(sourceHead: string | null): Promise<PrefixTransition | undefined> {
-		const runtime = structuredClone(this.options.getBinding());
+		const runtime = this.transitionBinding();
 		const prefix = readSessionPrefixBinding(runtime.metadata);
 		if (!prefix) return undefined;
 		if (this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("a native prefix transition is already pending");
@@ -91,19 +142,27 @@ export class SessionPrefixController {
 
 	/** Native state must be synced and inspected before completing this audited CAS. */
 	async finishCompaction(id: string, changed: boolean): Promise<void> {
-		const runtime = structuredClone(this.options.getBinding());
-		const transition = readPrefixTransition(runtime.metadata);
-		const prefix = readSessionPrefixBinding(runtime.metadata);
-		if (!transition || transition.id !== id) throw new PrefixRecoveryRequiredError("native prefix transition receipt changed concurrently");
-		if (transition.state !== "pending") throw new PrefixRecoveryRequiredError("native prefix transition is already resolved");
-		if (!prefix || prefix.epoch !== transition.fromEpoch) throw new PrefixRecoveryRequiredError("native prefix transition epoch changed concurrently");
-		if (prefix.nativeSessionId !== transition.nativeSessionId) throw new PrefixRecoveryRequiredError("native prefix transition identity changed concurrently");
-		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata: {
-			...runtime.metadata,
-			[SESSION_PREFIX_TRANSITION_KEY]: { ...transition, state: changed ? "completed" : "aborted" },
-			[SESSION_PREFIX_METADATA_KEY]: { ...prefix, epoch: prefix.epoch + Number(changed), reason: changed ? "compaction" : prefix.reason } as unknown as PiboJsonObject,
-		} }, runtime.revision!);
-		this.options.onPersisted?.(structuredClone(persisted));
+		try {
+			const runtime = this.transitionBinding();
+			const transition = readPrefixTransition(runtime.metadata);
+			const prefix = readSessionPrefixBinding(runtime.metadata);
+			if (!transition || transition.id !== id) throw new PrefixRecoveryRequiredError("native prefix transition receipt changed concurrently");
+			if (transition.state !== "pending") throw new PrefixRecoveryRequiredError("native prefix transition is already resolved");
+			if (!prefix || prefix.epoch !== transition.fromEpoch) throw new PrefixRecoveryRequiredError("native prefix transition epoch changed concurrently");
+			if (prefix.nativeSessionId !== transition.nativeSessionId) throw new PrefixRecoveryRequiredError("native prefix transition identity changed concurrently");
+			const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata: {
+				...runtime.metadata,
+				[SESSION_PREFIX_TRANSITION_KEY]: { ...transition, state: changed ? "completed" : "aborted" },
+				[SESSION_PREFIX_METADATA_KEY]: { ...prefix, epoch: prefix.epoch + Number(changed), reason: changed ? "compaction" : prefix.reason } as unknown as PiboJsonObject,
+			} }, runtime.revision!);
+			this.options.onPersisted?.(structuredClone(persisted));
+			this.transitionFailureId = undefined;
+			for (const notify of this.transitionWaiters) notify();
+		} catch (error) {
+			this.transitionFailureId = id;
+			for (const notify of this.transitionWaiters) notify();
+			throw error;
+		}
 	}
 
 	/** Only compact, already computed facts. No prompt serialization on the telemetry path. */

@@ -232,7 +232,7 @@ export function codexThreadSnapshot(
 		adapterId: CODEX_NATIVE_ADAPTER_ID,
 		runtimeInstanceId,
 		nativeSessionId: thread.id,
-		locator: { kind: "adapter-resolved" },
+		locator: thread.path ? { kind: "local-file", value: thread.path } : { kind: "adapter-resolved" },
 		leafId: threadLeafId(thread),
 		cwd: thread.cwd,
 		name: thread.name ? redactCodexNativeSensitiveText(thread.name) : undefined,
@@ -250,6 +250,8 @@ export function codexThreadInfo(
 ): AgentRuntimeNativeSessionInfo {
 	return {
 		...codexThreadSnapshot(runtimeInstanceId, thread),
+		// Session listing does not publish native filesystem paths.
+		locator: { kind: "adapter-resolved" },
 		createdAt: secondsToIso(thread.createdAt),
 		updatedAt: secondsToIso(thread.updatedAt),
 		firstMessage: thread.preview ? redactCodexNativeSensitiveText(thread.preview) : undefined,
@@ -257,7 +259,7 @@ export function codexThreadInfo(
 }
 
 type CodexThreadForkTarget = AgentRuntimeForkCandidate & {
-	previousTurnId?: string;
+	previousTurnId?: string; turnId: string;
 };
 
 function codexThreadForkTargets(thread: CodexAppServerThread): CodexThreadForkTarget[] {
@@ -266,6 +268,7 @@ function codexThreadForkTargets(thread: CodexAppServerThread): CodexThreadForkTa
 		if (!userMessage) return [];
 		return [{
 			entryId: userMessage.id,
+			turnId: turn.id,
 			text: userMessageText(userMessage) ?? `Codex turn ${turn.id}`,
 			...(index > 0 ? { previousTurnId: thread.turns[index - 1]!.id } : {}),
 		}];
@@ -443,12 +446,15 @@ export class CodexNativeThreadController {
 		workspace: string,
 		entryId: string,
 		validateThread?: (threadId: string) => Promise<void>,
+		nativeBeforeFirst = false,
 	): Promise<AgentRuntimeSessionOperationResult> {
 		if (!entryId.trim()) throw new Error("Codex thread fork requires a native user-message id.");
 		const target = codexThreadForkTargets(this.currentThread).find((candidate) => candidate.entryId === entryId);
 		if (target) {
 			if (!target.previousTurnId) {
-				return this.branchBeforeFirstTurn(runtimeInstanceId, workspace, target);
+				return nativeBeforeFirst
+					? await this.forkAt(runtimeInstanceId, workspace, undefined, validateThread, target, true, target.turnId)
+					: this.branchBeforeFirstTurn(runtimeInstanceId, workspace, target);
 			}
 			return await this.forkAt(runtimeInstanceId, workspace, target.previousTurnId, validateThread, target);
 		}
@@ -466,6 +472,7 @@ export class CodexNativeThreadController {
 		workspace: string,
 		entryId: string,
 		validateThread?: (threadId: string) => Promise<void>,
+		nativeBeforeFirst = false,
 	): Promise<AgentRuntimeSessionOperationResult> {
 		if (!entryId.trim()) throw new Error("Codex thread fork requires a native user-message id.");
 		const target = codexThreadForkTargets({
@@ -474,7 +481,9 @@ export class CodexNativeThreadController {
 		}).find((candidate) => candidate.entryId === entryId);
 		if (!target) throw new Error("Fork target is not a completed user message.");
 		const result = !target.previousTurnId
-			? this.branchBeforeFirstTurn(runtimeInstanceId, workspace, target)
+			? nativeBeforeFirst
+				? await this.forkAt(runtimeInstanceId, workspace, undefined, validateThread, target, false, target.turnId)
+				: this.branchBeforeFirstTurn(runtimeInstanceId, workspace, target)
 			: await this.forkAt(runtimeInstanceId, workspace, target.previousTurnId, validateThread, target, false);
 		return { ...result, sourceSessionUnchanged: true };
 	}
@@ -494,12 +503,14 @@ export class CodexNativeThreadController {
 		validateThread?: (threadId: string) => Promise<void>,
 		selectedTarget?: AgentRuntimeForkCandidate,
 		adoptFork = true,
+		beforeTurnId?: string,
 	): Promise<AgentRuntimeSessionOperationResult> {
 		const previousThread = this.currentThread;
 		const previous = codexThreadSnapshot(runtimeInstanceId, previousThread);
 		const params: CodexAppServerThreadForkParams = {
 			threadId: previousThread.id,
 			...(lastTurnId ? { lastTurnId } : {}),
+			...(beforeTurnId ? { beforeTurnId } : {}),
 			cwd: workspace,
 			ephemeral: false,
 			...(this.inheritedSelection.approvalPolicy ? { approvalPolicy: this.inheritedSelection.approvalPolicy } : {}),

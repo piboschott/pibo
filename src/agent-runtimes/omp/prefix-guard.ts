@@ -1,11 +1,12 @@
-export const OMP_PREFIX_CODEC = "omp-18.1.10/openai-responses/v1";
+export const OMP_PREFIX_CODEC = "omp-18.1.10/responses/v2";
+export const OMP_LEGACY_PREFIX_CODEC = "omp-18.1.10/openai-responses/v1";
 
 /**
- * Native Bun extension for the pinned conformance fixture. Not a normal-adapter
- * activation: native resources, lifecycle and child ownership remain required.
+ * Native Bun extension for the pinned protected adapter and conformance fixtures.
+ * The owning bootstrap must acquire child-lifetime ownership before activation.
  * Connection credentials arrive only through the private child environment.
  */
-export function createOmpPrefixGuardSource(dateReminderModuleUrl: string): string {
+export function createOmpPrefixGuardSource(dateReminderModuleUrl: string, codec = OMP_PREFIX_CODEC): string {
 	return String.raw`
 import { open, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -38,7 +39,7 @@ export default async function(pi) {
     let snapshot;
     if (response.status === 200) snapshot = JSON.parse(await response.text());
     else if (response.status !== 404) return fatal();
-    if (snapshot && (snapshot.format !== 1 || !snapshot.providerStatic || !snapshot.calendar
+    if (snapshot && (![1, 2].includes(snapshot.format) || !snapshot.providerStatic || !snapshot.calendar
       || typeof snapshot.calendar.date !== "string" || typeof snapshot.calendar.cwd !== "string"
       || typeof snapshot.nativeSessionId !== "string")) return fatal();
     if (snapshot) freeze(snapshot);
@@ -113,6 +114,7 @@ export default async function(pi) {
       "max_output_tokens", "temperature", "top_p", "reasoning", "text", "include", "prompt_cache_key",
       "prompt_cache_retention", "store", "stream", "stream_options", "service_tier", "truncation"]);
     const configFields = [...providerFields].filter(key => key !== "instructions" && key !== "tools");
+    const transportFields = new Set(["type", "client_metadata", "previous_response_id"]);
     const validateTools = tools => {
       if (tools === undefined) return;
       if (!Array.isArray(tools)) return fatal();
@@ -128,7 +130,35 @@ export default async function(pi) {
     };
     if (snapshot && Object.keys(snapshot.providerStatic).some(key => !providerFields.has(key))) return fatal();
     if (snapshot) validateTools(snapshot.providerStatic.tools);
-    let validated = false;
+    const validateInputPrefix = prefix => {
+      if (!Array.isArray(prefix) || prefix.length > 257) return fatal();
+      for (let index = 0; index < prefix.length; index++) {
+        const item = prefix[index];
+        if (item?.type === "additional_tools" && index === 0) {
+          if (item.role !== "developer" || Object.keys(item).some(key => !["type", "role", "tools"].includes(key))) return fatal();
+          validateTools(item.tools);
+        } else if (item?.type !== "message" || item?.role !== "developer"
+          || Object.keys(item).some(key => !["type", "role", "content"].includes(key))
+          || !Array.isArray(item.content) || item.content.length !== 1
+          || item.content[0]?.type !== "input_text" || typeof item.content[0]?.text !== "string") return fatal();
+      }
+    };
+    if (snapshot?.inputPrefix !== undefined) validateInputPrefix(snapshot.inputPrefix);
+    if (snapshot?.format === 2 && !["openai-responses", "openai-codex-responses"].includes(snapshot.api)) return fatal();
+    if (snapshot?.api === "openai-codex-responses" && (!Array.isArray(snapshot.inputPrefix)
+      || typeof snapshot.responsesLite !== "boolean")) return fatal();
+    let frozenPrompts;
+    pi.on("before_agent_start", () => {
+      if (snapshot?.api !== "openai-codex-responses") return;
+      // Restore before the native append builder compares its previous request.
+      // These are already provider-normalized strings, never raw credential state.
+      frozenPrompts ??= [
+        ...(typeof snapshot.providerStatic.instructions === "string" && snapshot.providerStatic.instructions.length > 0
+          ? [snapshot.providerStatic.instructions] : []),
+        ...snapshot.inputPrefix.filter(item => item.type === "message").map(item => item.content[0].text),
+      ];
+      return { systemPrompt: frozenPrompts.slice() };
+    });
     const providerGuard = async (event, ctx) => {
       // The pinned runner swallows errors and has a 30s handler deadline. Its
       // scoped context does not expose that deadline's signal, so our shorter
@@ -138,9 +168,33 @@ export default async function(pi) {
       const timeout = setTimeout(fatal, 5000);
       try {
         phase = "request-codec";
-        if (signal?.aborted || ctx.model?.api !== "openai-responses" || !calendar
+        const api = ctx.model?.api;
+        const codex = api === "openai-codex-responses";
+        if (signal?.aborted || !["openai-responses", "openai-codex-responses"].includes(api) || !calendar
           || !event.payload || !Array.isArray(event.payload.input)) return fatal();
-        if (Object.entries(event.payload).some(([key, value]) => value !== undefined && key !== "input" && !providerFields.has(key))) return fatal();
+        if (snapshot && (snapshot.api ?? "openai-responses") !== api) return fatal();
+        if (Object.entries(event.payload).some(([key, value]) => value !== undefined && key !== "input"
+          && !providerFields.has(key) && !(codex && transportFields.has(key)))) return fatal();
+        if (event.payload.type !== undefined && event.payload.type !== "response.create") return fatal();
+        const chained = event.payload.previous_response_id !== undefined;
+        if (chained && (!snapshot || event.payload.type !== "response.create"
+          || typeof event.payload.previous_response_id !== "string" || event.payload.previous_response_id.length > 1024)) return fatal();
+        let inputPrefix;
+        const responsesLite = !chained && event.payload.input[0]?.type === "additional_tools";
+        if (!chained && codex) {
+          const prompts = ctx.getSystemPrompt();
+          if (!Array.isArray(prompts) || prompts.length > 256 || prompts.some(value => typeof value !== "string")) return fatal();
+          // The pinned transformer prepends systemPrompt[1..] as developer
+          // messages. Lite also prepends additional_tools and systemPrompt[0].
+          // Count native inputs explicitly; never search conversation history.
+          const promptCount = prompts.reduce((count, value) => count + Number(/\S/.test(value)), 0);
+          const length = responsesLite ? 1 + promptCount : Math.max(0, promptCount - 1);
+          inputPrefix = event.payload.input.slice(0, length);
+          if (inputPrefix.length !== length) return fatal();
+          validateInputPrefix(inputPrefix);
+        }
+        if (snapshot && !chained && Boolean(snapshot.inputPrefix) !== Boolean(inputPrefix)) return fatal();
+        if (snapshot && !chained && codex && snapshot.responsesLite !== responsesLite) return fatal();
         validateTools(event.payload.tools);
         const manager = ctx.sessionManager;
         const nativeSessionId = manager.getSessionId();
@@ -154,8 +208,9 @@ export default async function(pi) {
           await syncNative(manager);
           // Clone once at capture. Native providers reuse mutable Tool-schema
           // objects internally; freezing those would break the next inference.
-          const providerStatic = structuredClone(Object.fromEntries(Object.entries(event.payload).filter(([key, value]) => key !== "input" && value !== undefined)));
-          snapshot = { format: 1, nativeSessionId, calendar, providerStatic };
+          const providerStatic = structuredClone(Object.fromEntries(Object.entries(event.payload).filter(([key, value]) => providerFields.has(key) && value !== undefined)));
+          snapshot = { format: 2, api, nativeSessionId, calendar, providerStatic,
+            ...(inputPrefix ? { inputPrefix: structuredClone(inputPrefix), responsesLite } : {}) };
           const payload = JSON.stringify(snapshot);
           phase = "durable-seal";
           const ack = await fetch(endpoint + "/seal", { method: "POST", headers: {
@@ -171,14 +226,19 @@ export default async function(pi) {
         for (const field of configFields) {
           if (JSON.stringify(event.payload[field]) !== JSON.stringify(snapshot.providerStatic[field])) return fatal();
         }
-        if (!validated) {
-          phase = "tool-compatibility";
-          // This initial codec requires an unchanged executable Tool envelope.
-          // Later revisions can admit explicitly verified compatible changes.
-          if (JSON.stringify(event.payload.tools) !== JSON.stringify(snapshot.providerStatic.tools)) return fatal();
-          validated = true;
+        phase = "tool-compatibility";
+        // Check every dispatch, including native tool-loop iterations.
+        if (JSON.stringify(event.payload.tools) !== JSON.stringify(snapshot.providerStatic.tools)) return fatal();
+        if (inputPrefix) {
+          if (inputPrefix.length !== snapshot.inputPrefix.length
+            || JSON.stringify(inputPrefix[0]?.tools) !== JSON.stringify(snapshot.inputPrefix[0]?.tools)) return fatal();
+          // Replace only the reserved native prefix items, never copy history.
+          for (let index = 0; index < inputPrefix.length; index++) event.payload.input[index] = snapshot.inputPrefix[index];
         }
-        return { ...snapshot.providerStatic, input: event.payload.input };
+        // The pinned native append builder checks the complete prior prefix
+        // before emitting delta-only input. Transport metadata is never sealed.
+        const transport = codex ? Object.fromEntries(Object.entries(event.payload).filter(([key]) => transportFields.has(key))) : {};
+        return { ...snapshot.providerStatic, ...transport, input: event.payload.input };
       } catch { return fatal(); }
       finally { clearTimeout(timeout); signal?.removeEventListener("abort", fatal); }
     };
@@ -229,9 +289,21 @@ export default async function(pi) {
       if (!transition || transition.state !== "pending") return fatal();
       await resolveTransition(ctx.sessionManager);
     }));
-    pi.on("session_before_switch", () => ({ cancel: true }));
-    pi.on("session_before_branch", () => ({ cancel: true }));
-    await writeFile(ready, JSON.stringify({ nonce, codec: ${JSON.stringify(OMP_PREFIX_CODEC)} }), { mode: 0o600 });
+    const prepareDerivation = lifecycle(async (_event, ctx) => {
+      if (!snapshot) return { cancel: true };
+      await resolveTransition(ctx.sessionManager);
+      await syncNative(ctx.sessionManager);
+    });
+    pi.on("session_before_switch", (event, ctx) => event.reason === "fork" ? prepareDerivation(event, ctx) : ({ cancel: true }));
+    pi.on("session_before_branch", prepareDerivation);
+    const finishDerivation = lifecycle(async (_event, ctx) => {
+      phase = "derivation-ownership";
+      await claimNativeIdentity(ctx.sessionManager.getSessionId(), snapshot.nativeSessionId);
+      await syncNative(ctx.sessionManager);
+    });
+    pi.on("session_branch", finishDerivation);
+    pi.on("session_switch", (event, ctx) => event.reason === "fork" ? finishDerivation(event, ctx) : undefined);
+    await writeFile(ready, JSON.stringify({ nonce, codec: ${JSON.stringify(codec)} }), { mode: 0o600 });
   } catch { return fatal(); }
 }
 `;

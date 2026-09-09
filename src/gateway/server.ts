@@ -26,6 +26,8 @@ export type GatewayServerOptions = {
 	host?: string;
 	port?: number;
 	persistSession?: boolean;
+	/** Opt in fresh sessions; persisted protected sessions always restore. */
+	sessionPrefixProtection?: boolean;
 	/** Whether this process owns persistent gateway runtime state and may reconcile interrupted work. */
 	authoritativeRuntime?: boolean;
 	/** Stable identifier included in recovery diagnostics. */
@@ -240,6 +242,7 @@ export class PiboGatewayServer {
 			&& (this.options.persistSession !== false || hasExplicitPersistentStore);
 		this.router = new PiboSessionRouter({
 			persistSession: this.options.persistSession,
+			sessionPrefixProtection: this.options.sessionPrefixProtection,
 			piPackageStoreCwd: this.options.piPackageStoreCwd ?? process.cwd(),
 			pluginRegistry: this.pluginRegistry,
 			sessionStore: this.sessionStore,

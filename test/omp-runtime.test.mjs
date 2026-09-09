@@ -198,6 +198,10 @@ test("OMP turn controller streams a real prompt and resolves on terminal agent_e
 	const deltas = events.filter((e) => e.type === "assistant_delta");
 	assert.ok(deltas.length > 0, "expected assistant_delta events");
 	assert.equal(deltas[0].text, "Hello there");
+	assert.equal(deltas.length, 1, "native text_end must not duplicate the streamed text");
+	assert.deepEqual(events.filter(event => event.type === "assistant_message"), [
+		{ type: "assistant_message", text: "Hello there", contentIndex: 0 },
+	]);
 	assert.ok(events.some((e) => e.type === "turn_started"));
 	assert.deepEqual(events.find((event) => event.type === "tool_execution_started"), {
 		type: "tool_execution_started",
@@ -215,6 +219,17 @@ test("OMP turn controller streams a real prompt and resolves on terminal agent_e
 		totalTokens: 22,
 	});
 	turn.dispose();
+});
+
+test("OMP duplicate inference receipts count once while distinct equal usage counts twice", async t => {
+	const client = await startClient(t, "repeated-usage", { OMP_FAKE_REPEAT_USAGE: "1" });
+	const events = [];
+	const turn = new OmpRpcTurnController(client, event => events.push(event));
+	t.after(() => turn.dispose());
+	await turn.prompt("first");
+	const usage = events.filter(event => event.type === "usage");
+	assert.deepEqual(usage.map(event => event.inferenceId), ["response-one", "response-two"]);
+	assert.deepEqual(usage[0].usage, usage[1].usage);
 });
 
 test("OMP usage aggregates canonical orchestration buckets and reconstructs a missing total", () => {
@@ -460,7 +475,23 @@ test("OMP diagnostics require the exact validated CLI version", async (t) => {
 	assert.equal(unreadable.find((diagnostic) => diagnostic.code === "omp_version_unreadable")?.severity, "error");
 });
 
-test("OMP turn controller resolves a stalled stream via the deadline", async (t) => {
+test("OMP turn controller rejects native death without waiting for its stream deadline", async t => {
+	const client = await startClient(t, "native-death", { OMP_FAKE_HANG_AFTER_PROMPT: "1" });
+	const turn = new OmpRpcTurnController(client, () => {});
+	t.after(() => turn.dispose());
+	const started = Date.now();
+	const unsubscribe = client.subscribeFrames(frame => {
+		if (frame.type === "message_update") client.process.kill("SIGKILL");
+	});
+	t.after(unsubscribe);
+	const result = turn.prompt("terminate during stream");
+	const failed = assert.rejects(result, /native process exited/);
+	await failed;
+	assert.equal(turn.streaming, false);
+	assert.ok(Date.now() - started < 3000);
+});
+
+test("OMP turn controller rejects a stalled stream at the deadline", async (t) => {
 	const root = await testRoot(t, "deadline");
 	// Spawn a fixture that never emits agent_end and set an aggressive deadline.
 	const client = new OmpRpcClient({ startupTimeoutMs: 10_000, requestTimeoutMs: 5_000 });
@@ -476,7 +507,7 @@ test("OMP turn controller resolves a stalled stream via the deadline", async (t)
 	process.env.PIBO_OMP_TURN_TIMEOUT_MS = "300";
 	const started = Date.now();
 	try {
-		await turn.prompt("stall forever");
+		await assert.rejects(turn.prompt("stall forever"), /completion deadline/);
 	} finally {
 		if (had === undefined) delete process.env.PIBO_OMP_TURN_TIMEOUT_MS;
 		else process.env.PIBO_OMP_TURN_TIMEOUT_MS = had;

@@ -26,6 +26,8 @@ export type SessionPrefixBinding = {
 	capsule: PrefixCapsuleReference;
 	reason: "initial" | "compaction" | "model-change" | "runtime-change" | "explicit-refresh" | "fork";
 	nativeSessionId: string;
+	/** Identity recorded inside the shared original capsule of a derived session. */
+	capsuleNativeSessionId?: string;
 	/** A claim about captured inputs, never about a provider cache hit. */
 	evidence: "adapter-inputs" | "provider-request";
 };
@@ -58,6 +60,7 @@ export function readSessionPrefixBinding(metadata: PiboJsonObject | undefined): 
 	if (!record(value) || value.format !== 1 || value.status !== "sealed"
 		|| !Number.isSafeInteger(value.epoch) || Number(value.epoch) < 1
 		|| typeof value.nativeSessionId !== "string" || !value.nativeSessionId || value.nativeSessionId.length > 1024
+		|| (value.capsuleNativeSessionId !== undefined && (typeof value.capsuleNativeSessionId !== "string" || !value.capsuleNativeSessionId || value.capsuleNativeSessionId.length > 1024))
 		|| !["adapter-inputs", "provider-request"].includes(String(value.evidence))
 		|| !["initial", "compaction", "model-change", "runtime-change", "explicit-refresh", "fork"].includes(String(value.reason))) {
 		throw new PrefixRecoveryRequiredError("invalid or unsupported session prefix binding");
@@ -69,6 +72,7 @@ export function readSessionPrefixBinding(metadata: PiboJsonObject | undefined): 
 		format: 1, epoch: Number(value.epoch), status: "sealed",
 		capsule: { format: 1, digest: capsule.digest, bytes: capsule.bytes, adapterId: capsule.adapterId, codec: capsule.codec },
 		reason: value.reason as SessionPrefixBinding["reason"], nativeSessionId: value.nativeSessionId,
+		...(typeof value.capsuleNativeSessionId === "string" ? { capsuleNativeSessionId: value.capsuleNativeSessionId } : {}),
 		evidence: value.evidence as SessionPrefixBinding["evidence"],
 	};
 }

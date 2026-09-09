@@ -855,6 +855,7 @@ export class RoutedSession {
 		private readonly onMessagesInterrupted?: PiboMessageInterruptionListener,
 		private readonly messagePreflight?: PiboMessagePreflight,
 		private readonly providerFallbacksEnabled = false,
+		private readonly protectedPrefix = false,
 	) {
 		this.fastMode = initialFastMode && this.fastModeSupported();
 		this.bindRuntimeSession();
@@ -1522,6 +1523,7 @@ export class RoutedSession {
 	async forkSession(entryId: string): Promise<PiboSessionOperationResult> {
 		this.assertActive();
 		this.assertSessionWorkIdle("fork");
+		if (this.protectedPrefix) return await this.forkSessionWhileRunning(entryId);
 		const previous = this.createSessionSnapshot();
 		const result = await this.runtime.fork(entryId);
 		if (!result.cancelled) {
@@ -1546,6 +1548,15 @@ export class RoutedSession {
 			throw new Error("Cannot clone session: no current entry selected");
 		}
 		const previous = this.createSessionSnapshot();
+		if (this.protectedPrefix) {
+			const source = this.runtime.session.sessionManager;
+			const sourceFile = source.getSessionFile();
+			if (!sourceFile || !source.isPersisted()) throw new Error("A protected clone requires persisted native history.");
+			const cloned = SessionManager.open(sourceFile, source.getSessionDir(), this.runtime.cwd);
+			if (!cloned.getEntry(leafId) || !cloned.createBranchedSession(leafId)) throw new Error("Failed to clone protected native history.");
+			materializeForkedSession(cloned);
+			return { piboSessionId: this.piboSessionId, previous, current: this.createSessionManagerSnapshot(cloned), cancelled: false, sourceSessionUnchanged: true };
+		}
 		const result = await this.runtime.fork(leafId, { position: "at" });
 		return {
 			piboSessionId: this.piboSessionId,

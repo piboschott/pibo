@@ -230,6 +230,8 @@ export interface AgentRuntimeAdapter {
 	resolveBinding?(input: ResolveAgentRuntimeBindingInput): Promise<RuntimeSessionBinding>;
 	/** Cold, native-owned eligibility check. Existing unproven history must return false. */
 	canInitializePrefix?(input: ResolveAgentRuntimeBindingInput): Promise<boolean>;
+	/** Hold native-process ownership before generation resources are materialized. */
+	preparePrefixOwnership?(input: ResolveAgentRuntimeBindingInput & { controller: SessionPrefixController; profile?: InitialSessionContext }): Promise<() => Promise<void>>;
 }
 
 export type AgentRuntimeDriverCreateInput<TConfig> = {

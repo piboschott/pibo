@@ -1,3 +1,4 @@
+import { deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/prefix-derivation.js";
 import { SessionPrefixController } from "../sessions/prefix-session.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
 import { readSessionPrefixBinding, readSessionPrefixResourceReference, PrefixRecoveryRequiredError } from "../sessions/prefix-capsule.js";
@@ -1668,7 +1669,13 @@ export class PiboSessionRouter {
 		let prefixController: SessionPrefixController | undefined;
 		if (protectedPrefix || initializePrefix) {
 			if (!runtimeBindingPersistence) throw new PrefixRecoveryRequiredError("protected sessions require durable binding persistence");
-			prefixController = new SessionPrefixController({ getBinding: () => binding, persistence: runtimeBindingPersistence, runtimeGeneration: sessionGeneration });
+			prefixController = new SessionPrefixController({ getBinding: () => binding, persistence: runtimeBindingPersistence, runtimeGeneration: sessionGeneration,
+				readCurrentBinding: () => {
+					const current = this.sessionStore.get(piboSession.id)?.runtimeBinding;
+					if (!current) throw new PrefixRecoveryRequiredError("protected session binding disappeared");
+					return current;
+				},
+			});
 		}
 		const previousResources = this.runtimeResourceSessions.get(piboSession.id);
 		if (previousResources) await previousResources.dispose();
@@ -1688,9 +1695,11 @@ export class PiboSessionRouter {
 		});
 		this.portableToolSessions.set(piboSession.id, portableTools);
 		let resources: PiboRuntimeResourceSession;
-		let releasePrefixOwnership: (() => void) | undefined;
+		let releasePrefixOwnership: (() => void | Promise<void>) | undefined;
 		try {
-			releasePrefixOwnership = await prefixController?.acquireOwnership();
+			releasePrefixOwnership = prefixController && runtimeAdapter.preparePrefixOwnership
+				? await runtimeAdapter.preparePrefixOwnership({ binding, workspace, controller: prefixController, profile: sessionProfile })
+				: await prefixController?.acquireOwnership();
 			if (prefixController && this.sessionStore.get(piboSession.id)?.runtimeBinding?.revision !== binding.revision) {
 				throw new PrefixRecoveryRequiredError("binding changed while acquiring ownership; reopen against current state");
 			}
@@ -1708,7 +1717,7 @@ export class PiboSessionRouter {
 			});
 			this.runtimeResourceSessions.set(piboSession.id, resources);
 		} catch (error) {
-			releasePrefixOwnership?.();
+			await releasePrefixOwnership?.();
 			portableTools.dispose();
 			if (this.portableToolSessions.get(piboSession.id) === portableTools) this.portableToolSessions.delete(piboSession.id);
 			throw error;
@@ -1760,7 +1769,7 @@ export class PiboSessionRouter {
 				},
 			});
 		} catch (error) {
-			releasePrefixOwnership?.();
+			await releasePrefixOwnership?.();
 			portableTools.dispose();
 			if (this.portableToolSessions.get(piboSession.id) === portableTools) this.portableToolSessions.delete(piboSession.id);
 			await resources.dispose();
@@ -1784,7 +1793,7 @@ export class PiboSessionRouter {
 			const disposeNative = runtimeSession.dispose.bind(runtimeSession);
 			runtimeSession.dispose = async () => {
 				await disposeNative();
-				releasePrefixOwnership?.();
+				await releasePrefixOwnership?.();
 			};
 		}
 		try {
@@ -2099,7 +2108,7 @@ export class PiboSessionRouter {
 			const action = event.action as "session.fork" | "session.clone";
 			let transitionError: unknown;
 			try {
-				const created = this.createDerivedSession(result, action, currentBinding);
+				const created = await this.createDerivedSession(result, action, currentBinding);
 				result.piboSessionId = created.id;
 			} catch (error) {
 				transitionError = error;
@@ -2129,12 +2138,16 @@ export class PiboSessionRouter {
 		this.sessionStore.update(event.piboSessionId, { workspace: result.current.cwd });
 	}
 
-	private createDerivedSession(
+	private async createDerivedSession(
 		result: PiboSessionOperationResult,
 		action: "session.fork" | "session.clone",
 		currentBinding: RuntimeSessionBinding,
-	): PiboSession {
+	): Promise<PiboSession> {
 		const source = this.resolvePiboSession(result.piboSessionId);
+		const prefixMetadata = deriveSessionPrefixMetadata(currentBinding.metadata, result.previous.piSessionId ?? "", currentBinding.nativeSessionId ?? "");
+		if (readSessionPrefixBinding(prefixMetadata)) await syncDerivedNativeFile(result.current.sessionFile);
+		const derivedMetadata = prefixMetadata && currentBinding.adapterId !== "pi" && result.current.sessionFile
+			? { ...prefixMetadata, nativeSessionFile: result.current.sessionFile } : prefixMetadata;
 		const input: CreatePiboSessionInput = {
 			id: createPiboSessionId(),
 			channel: source.channel,
@@ -2151,7 +2164,7 @@ export class PiboSessionRouter {
 				protocolVersion: currentBinding.protocolVersion,
 				adapterVersion: currentBinding.adapterVersion,
 				locator: currentBinding.locator,
-				metadata: currentBinding.metadata,
+				metadata: derivedMetadata,
 			},
 			workspace: result.current.cwd,
 			title: source.title,

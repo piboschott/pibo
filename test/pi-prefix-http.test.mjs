@@ -1,3 +1,4 @@
+import { piboCorePlugin } from "../dist/plugins/builtin.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import fs from "node:fs";
@@ -290,6 +291,7 @@ test("normal Pi router preserves protected resources and binding when rollout is
 			.withBuiltinTools("disabled").withAutoContextFiles(false).withToolPackages({ goalControl: false })
 			.withModel({ provider: "openai-codex", id: "gpt-5.5" }).addContextFile({ path: contextPath }).createSession() });
 	} })] });
+	registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction("session.clone"));
 	const session = sessions.create({ channel: "test", kind: "chat", profile: profileName, workspace: root });
 	const open = enabled => new PiboSessionRouter({ cwd: root, sessionStore: sessions, reliabilityStore: reliability, pluginRegistry: registry,
 		persistSession: true, sessionPrefixProtection: enabled, modelRuntime, thinkingLevel: "high", modelDefaults: {},
@@ -334,9 +336,27 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	assert.equal(usage[2].cacheEvidence.historyContinuity, "unknown");
 	assert.ok(Buffer.byteLength(JSON.stringify(usage[2].cacheEvidence)) <= 2048);
 	assert.ok(!JSON.stringify(usage.map(event => event.cacheEvidence)).includes("Original router"));
+	const cloned = await new Promise((resolve, reject) => {
+		const timer = setTimeout(() => { unsubscribe(); reject(new Error("Pi clone did not complete")); }, 20000);
+		const unsubscribe = router.subscribe(event => {
+			if (event.eventId !== "clone" || !["execution_result", "session_error"].includes(event.type) || event.result?.queued) return;
+			clearTimeout(timer); unsubscribe(); resolve(event);
+		});
+		void router.emit({ type: "execution", piboSessionId: session.id, id: "clone", action: "session.clone", params: {} }).catch(error => { clearTimeout(timer); unsubscribe(); reject(error); });
+	});
+	assert.notEqual(cloned.type, "session_error", JSON.stringify(cloned));
+	const childId = cloned.result.piboSessionId;
+	const child = sessions.get(childId);
+	assert.notEqual(child.runtimeBinding.nativeSessionId, beforeBinding.nativeSessionId);
+	assert.equal(child.runtimeBinding.metadata.piboSessionPrefix.capsule.digest, beforeBinding.metadata.piboSessionPrefix.capsule.digest);
+	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "child-first", source: "user", text: "Continue the derived conversation" }, 20000);
+	assert.equal(api.requests.at(-1).instructions, before.instructions);
+	assert.deepEqual(api.requests.at(-1).tools, before.tools);
+	assert.ok(JSON.stringify(api.requests.at(-1).input).includes(childId));
+
 	await router.disposeAll(); router = undefined;
 	await rm(nativePath);
 	router = open(false);
 	await assert.rejects(router.emitMessageAndWaitForReply({ type: "message", piboSessionId: session.id, id: "missing", source: "user", text: "must not dispatch" }, 20000), /missing|not found|recovery/i);
-	assert.equal(api.requests.length, 3);
+	assert.equal(api.requests.length, 4);
 });

@@ -988,6 +988,7 @@ test("pibo tui:sessions command help and root discovery describe the new UI with
 	const commandHelp = await execFileAsync("node", [cliPath, "tui:sessions", "--help"]);
 	assert.match(commandHelp.stdout, /pibo tui:sessions/);
 	assert.match(commandHelp.stdout, /--demo/);
+	assert.match(commandHelp.stdout, /--session-prefix-protection/);
 
 	const rootHelp = await execFileAsync("node", [cliPath, "--help"]);
 	assert.match(rootHelp.stdout, /tui\s+Start the direct Pi TUI/);

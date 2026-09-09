@@ -458,6 +458,8 @@ export type CodexAppServerThreadResumeParams = Omit<CodexAppServerThreadStartPar
 };
 
 export type CodexAppServerThreadForkParams = CodexAppServerThreadStartParams & {
+	/** Pinned native experimental API: fork before the first user turn. */
+	beforeTurnId?: string;
 	threadId: string;
 	lastTurnId?: string | null;
 	ephemeral?: boolean;

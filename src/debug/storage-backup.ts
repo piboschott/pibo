@@ -9,7 +9,7 @@ Commands:
   verify   --archive <dir>                    Verify database and all payload hashes
   restore  --archive <dir> --destination <new-dir>
 Defaults: 1 GiB data, 100000 payloads, 60000 ms and 64 MiB extra source WAL per create attempt. Resume preserves the original snapshot.
-Each archive contains one database snapshot. Product and reliability snapshots are separate cuts.
+Protected sessions include their capsules and native history; active protected runtimes must be closed.\nProtected restores require the original home path because frozen prompts contain absolute paths.\nEach archive contains one database snapshot. Product and reliability snapshots are separate cuts.
 No source deletion, vacuum, or overwrite of an existing restore destination.`);return;}
  const {values}=parseArgs({args:args.slice(1),options:{source:{type:"string"},"payload-root":{type:"string"},destination:{type:"string"},archive:{type:"string"},resume:{type:"boolean"},"max-bytes":{type:"string"},"max-payloads":{type:"string"},"max-ms":{type:"string"},"max-wal-growth":{type:"string"},json:{type:"boolean"}}});
  const required=(name:keyof typeof values)=>{const value=values[name];if(typeof value!=="string"||!value)throw Error(`Missing --${name}`);return value;};

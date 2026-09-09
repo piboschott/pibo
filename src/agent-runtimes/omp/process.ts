@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, opendir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { AgentRuntimeDiagnostic } from "../../agent-runtime/types.js";
 import { protectPrivateFileSync, protectPrivatePathsSync } from "../../core/private-path.js";
@@ -98,6 +98,18 @@ export async function prepareOmpInstancePaths(
 		skills: join(root, "agent", "skills"),
 		context: join(root, "agent", "context"),
 	};
+}
+
+/** Cold eligibility: never erase an unbound native history to invent a fresh prefix. */
+export async function hasOmpNativeSessionState(config: OmpRuntimeConfig, instanceId: string, sessionId: string): Promise<boolean> {
+	const directory = join(config.homeRoot, safeSegment(instanceId) || "orp", "sessions", safeSegment(sessionId) || "session", "omp-sessions");
+	try {
+		for await (const _entry of await opendir(directory)) return true;
+		return false;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
 }
 
 export async function prepareOmpSessionPaths(

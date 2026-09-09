@@ -23,6 +23,7 @@ async function fixture(t, brokenStore = false, startup) {
 	const path = join(root, "prefixes");
 	if (brokenStore) await writeFile(path, "unavailable directory");
 	const controller = new SessionPrefixController({ store: new PrefixCapsuleStore(path), getBinding: () => binding,
+		readCurrentBinding: () => sessions.get(session.id).runtimeBinding,
 		persistence: createAgentRuntimeBindingPersistence(sessions, { piboSessionId: session.id, onPersisted: next => { binding = next; } }) });
 	const bridge = new NativePrefixBridge(controller, "native-fixture/v1", startup);
 	const connection = await bridge.start();
@@ -51,6 +52,47 @@ test("native startup preparation has a bounded deadline even without a child", a
 	const gate = new NativePrefixStartupGate(10);
 	await assert.rejects(gate.waitForOwnership(), /failed/);
 	gate.dispose();
+});
+
+test("native completion waits for the audited compaction receipt and bounds a missing acknowledgement", async t => {
+	const f = await fixture(t);
+	await f.controller.seal({ codec: "native-fixture/v1", payload: "frozen", nativeSessionId: f.session.piSessionId,
+		evidence: "adapter-inputs", hasHistoricalModelInput: false });
+	const first = await f.controller.beginCompaction("offset:100");
+	let completed = false;
+	const waiting = f.controller.waitForCompactionCompletion().then(() => { completed = true; });
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(completed, false);
+	await f.controller.finishCompaction(first.id, true);
+	await waiting;
+	assert.equal(completed, true);
+	await f.controller.beginCompaction("offset:200");
+	await assert.rejects(f.controller.waitForCompactionCompletion(10), /not persisted/);
+	assert.equal(f.controller.transition.state, "pending");
+});
+
+test("native compaction reconciles an ordinary router publication without dropping its metadata", async t => {
+	const f = await fixture(t);
+	await f.controller.seal({ codec: "native-fixture/v1", payload: "frozen", nativeSessionId: f.session.piSessionId,
+		evidence: "adapter-inputs", hasHistoricalModelInput: false });
+	const current = f.sessions.get(f.session.id).runtimeBinding;
+	f.sessions.updateRuntimeBinding(f.session.id, { ...current, metadata: { ...current.metadata, nativeSessionFile: "/native/current.jsonl" } },
+		{ expectedRevision: current.revision });
+	const begun = await f.controller.beginCompaction("offset:100");
+	assert.equal(f.controller.getRuntimeBinding().metadata.nativeSessionFile, "/native/current.jsonl");
+	await f.controller.finishCompaction(begun.id, true);
+	assert.equal(f.sessions.get(f.session.id).runtimeBinding.metadata.piboSessionPrefix.epoch, 2);
+});
+
+test("native activation delivers the prepared environment only after ownership", async t => {
+	const gate = new NativePrefixStartupGate(5000);
+	const f = await fixture(t, false, gate);
+	const pending = fetch(f.connection.endpoint + "/activate", { headers: f.headers });
+	await gate.waitForOwnership();
+	assert.throws(() => gate.activate(["app-server"], { "bad=key": "value" }), /Invalid/);
+	assert.throws(() => gate.activate(["app-server"], { GOOD_KEY: "bad\0value" }), /Invalid/);
+	gate.activate(["app-server"], { FROZEN_RESOURCE: "/private/resource" });
+	assert.deepEqual(await (await pending).json(), { args: ["app-server"], environment: { FROZEN_RESOURCE: "/private/resource" } });
 });
 
 const bun = process.env.PIBO_OMP_PREFIX_BUN;

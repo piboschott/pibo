@@ -97,9 +97,14 @@ const emitTurn = (message) => {
 		message: {
 			role: "assistant",
 			content: "Hello there",
+			...(process.env.OMP_FAKE_REPEAT_USAGE ? { responseId: "response-one" } : {}),
 			usage,
 		},
 	});
+	if (process.env.OMP_FAKE_REPEAT_USAGE) {
+		write({ type: "message_end", message: { role: "assistant", responseId: "response-one", usage } });
+		write({ type: "message_end", message: { role: "assistant", responseId: "response-two", usage } });
+	}
 	write({
 		type: "tool_execution_start",
 		toolCallId: "tool-intent-1",

@@ -29,7 +29,9 @@
     "compute-image/Dockerfile.dockerignore",
     "scripts/docker-entrypoint.sh",
     "scripts/prepare-browser-use-wrapper.sh",
-    "scripts/prepare-agent-browser-wrapper.sh"
+    "scripts/prepare-agent-browser-wrapper.sh",
+    "scripts/build-codex-prefix.mjs",
+    "native/codex-prefix/guard.rs"
   ],
   "bin": {
     "pibo": "dist/bin/pibo.js",

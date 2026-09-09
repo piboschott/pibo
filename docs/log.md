@@ -2,6 +2,8 @@
 
 ## 2026-09-08
 
+- **Prefix completion**: Restored the owner-approved [complete implementation plan](/plans/persistent-session-prefix-and-cache-diagnostics.md) from commit `e3720d03` as the scope for the remaining Pi, Codex and OMP integration and acceptance work.
+
 - **PR993 real-provider follow-up**: Recorded completed Device authentication, full Codex installation, the reproduced and corrected `max` reasoning-map rejection, exact-candidate Pibo2 tests and real protected Pi restoration in the [prefix report](/reports/prefix-persistence-implementation-2026-09-08.md). Preserved the failed Codex Tool/marker check alongside its successful fresh-session control; full acceptance remains qualified.
 
 - **PR993 review and Pibo2 validation**: Recorded three reproduced and corrected Tool/resource compatibility and durable cache-evidence defects, exact candidate installation and installed-package tests in the [prefix report](/reports/prefix-persistence-implementation-2026-09-08.md). Full acceptance remains withheld for incomplete runtime/lifecycle support and the documented public model-path environment blockers.

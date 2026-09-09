@@ -22,6 +22,7 @@ export const LOCAL_TUI_CHANNEL_NAME = "local-tui";
 export type LocalRoutedTuiOptions = {
 	cwd?: string;
 	persistSession?: boolean;
+	sessionPrefixProtection?: boolean;
 	profile?: string;
 	sessionName?: string;
 	showThinking?: boolean;
@@ -114,6 +115,7 @@ export function createLocalRoutedTuiClient(options: LocalRoutedTuiOptions = {}):
 	const router = new PiboSessionRouter({
 		cwd: workspace,
 		persistSession: options.persistSession,
+		sessionPrefixProtection: options.sessionPrefixProtection,
 		thinkingLevel: options.thinkingLevel,
 		pluginRegistry: registry,
 		profile,

@@ -409,6 +409,7 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 			undefined,
 			undefined,
 			providerFallbacksEnabled,
+			Boolean(prefixController),
 		);
 		if (providerWebSearchEnabled) this.routed.enableProviderWebSearchObservation();
 		this.controls = this.createControls();

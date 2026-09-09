@@ -12,7 +12,7 @@ export class NativePrefixBridge {
 	private active = false;
 
 	constructor(private readonly controller: SessionPrefixController, private readonly codec: string,
-		private readonly startup?: NativePrefixStartupGate) {}
+		private readonly startup?: NativePrefixStartupGate, private readonly restoreSnapshot?: (payload: string) => string) {}
 
 	async start(): Promise<{ endpoint: string; token: string }> {
 		if (this.server) throw new Error("Native prefix bridge is already started");
@@ -59,7 +59,7 @@ export class NativePrefixBridge {
 			if (request.method === "GET" && request.url === "/snapshot") {
 				const snapshot = await this.controller.restore(this.codec);
 				response.setHeader("content-type", "application/octet-stream");
-				response.writeHead(snapshot === undefined ? 404 : 200).end(snapshot);
+				response.writeHead(snapshot === undefined ? 404 : 200).end(snapshot === undefined ? undefined : this.restoreSnapshot?.(snapshot) ?? snapshot);
 				return;
 			}
 			const transitionOperation = request.url === "/compaction/begin" || request.url === "/compaction/finish";

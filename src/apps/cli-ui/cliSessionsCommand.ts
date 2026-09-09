@@ -12,6 +12,7 @@ import { PiboDataSessionStore } from "../../sessions/pibo-data-store.js";
 import { cliCommandSummaryText, InkSessionApp } from "./InkSessionApp.js";
 
 export type RunCliSessionsUiOptions = {
+	sessionPrefixProtection?: boolean;
 	source?: CliSessionSource;
 	useFakeSource?: boolean;
 	initialSessionId?: string;
@@ -37,7 +38,7 @@ export async function runCliSessionsUi(options: RunCliSessionsUiOptions = {}): P
 		? createDefaultFakeCliSessionSource()
 		: debugPtyMockedSource
 			? createDebugMockedLocalCliSessionSource({ assistantReply: process.env.PIBO_DEBUG_PTY_ASSISTANT_REPLY ?? "Mocked PTY assistant response" })
-			: createDefaultLocalCliSessionSource());
+			: createDefaultLocalCliSessionSource({ sessionPrefixProtection: options.sessionPrefixProtection }));
 	const instance = render(React.createElement(InkSessionApp, {
 		initialSessionId: options.initialSessionId,
 		maxLineChars: options.maxLineChars ?? terminalLineLimitFromColumns(stdout.columns),
@@ -51,9 +52,10 @@ export async function runCliSessionsUi(options: RunCliSessionsUiOptions = {}): P
 	await instance.waitUntilExit();
 }
 
-export function createDefaultLocalCliSessionSource(): LocalCliSessionSource {
+export function createDefaultLocalCliSessionSource(options: { sessionPrefixProtection?: boolean } = {}): LocalCliSessionSource {
 	const context = createLocalCliSessionSourceContext();
-	const router = new PiboSessionRouter({ sessionStore: context.sessionStore, pluginRegistry: context.pluginRegistry });
+	const router = new PiboSessionRouter({ sessionStore: context.sessionStore, pluginRegistry: context.pluginRegistry,
+		sessionPrefixProtection: options.sessionPrefixProtection });
 	return createLocalCliSessionSourceFromContext({ ...context, router, ownsRouter: true });
 }
 
@@ -251,6 +253,7 @@ Options:
   --session <id>       Open a specific Pibo session id
   --max-rows <count>   Limit rendered transcript rows (default: 20)
   --demo               Use deterministic fake session data for smoke testing
+  --session-prefix-protection  Protect the model prefix of new eligible sessions
   -h, --help           Show this help
 
 V2 commands inside the app:

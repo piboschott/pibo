@@ -1,3 +1,4 @@
+import {ownPrefixBackup,capturePrefixBackup,verifyPrefixBackup,prefixBackupCatalogHash,restorePrefixBackup} from "./prefix-backup.js";
 import {DatabaseSync,backup} from "node:sqlite";
 import {createHash} from "node:crypto";
 import {createReadStream,createWriteStream,statSync} from "node:fs";
@@ -6,7 +7,7 @@ import {basename,dirname,resolve,relative,join,isAbsolute} from "node:path";
 import {createGunzip} from "node:zlib";
 import {pipeline} from "node:stream/promises";
 
-type Manifest={format:"pibo-storage-backup-v1";status:"snapshot"|"payloads"|"complete";source:string;payloadRoot:string;createdAt:string;databaseSha256?:string;databaseBytes?:number;payloadCount:number;payloadBytes:number;cursor:string;maxBytes:number;maxPayloads:number;catalogSha256?:string};
+type Manifest={format:"pibo-storage-backup-v1";status:"snapshot"|"payloads"|"complete";source:string;payloadRoot:string;createdAt:string;databaseSha256?:string;databaseBytes?:number;payloadCount:number;payloadBytes:number;cursor:string;maxBytes:number;maxPayloads:number;catalogSha256?:string;runtimeCatalogSha256?:string;runtimeBytes?:number};
 type PayloadRow={id:string;storage_path:string|null;sha256:string;encoding:string;byte_size:number;status:string};
 type CatalogRow={id:string;path:string;sha256:string;storedSha256:string;bytes:number;encoding:string;contentBytes:number};
 const MANIFEST="manifest.json",CATALOG="payloads.jsonl",DATABASE="snapshot.sqlite";
@@ -16,8 +17,15 @@ async function publishManifest(root:string,manifest:Manifest){const temp=join(ro
 export async function readStorageBackupManifest(root:string):Promise<Manifest>{const path=join(root,MANIFEST);if((await stat(path)).size>16384)throw Error("Backup manifest exceeds budget");const m=JSON.parse(await readFile(path,"utf8")) as Manifest;if(m.format!=="pibo-storage-backup-v1"||!["snapshot","payloads","complete"].includes(m.status)||!Number.isSafeInteger(m.maxBytes)||!Number.isSafeInteger(m.maxPayloads))throw Error("Unsupported backup manifest");return m;}
 async function digest(path:string,maximum:number,encoding?:string,signal?:AbortSignal):Promise<{sha256:string;bytes:number}>{const input=createReadStream(path,{highWaterMark:65536,signal});const stream=encoding==="gzip"?input.pipe(createGunzip()):input;let bytes=0;const hash=createHash("sha256");try{for await(const chunk of stream){signal?.throwIfAborted();bytes+=chunk.length;if(bytes>maximum)throw Error("Backup byte quota exceeded");hash.update(chunk);}return {sha256:hash.digest("hex"),bytes};}finally{input.destroy();stream.destroy();}}
 
+export async function createStorageBackup(input:Parameters<typeof createStorageBackupOwned>[0]):Promise<Manifest>{
+ input.signal?.throwIfAborted();
+ if(input.resume){const manifest=await readStorageBackupManifest(resolve(input.destination));if(manifest.source!==resolve(input.source)||manifest.payloadRoot!==resolve(input.payloadRoot))throw Error("Backup resume source does not match manifest");if(manifest.status==="complete"){await verifyStorageBackup(resolve(input.destination),input.signal);return manifest;}}
+ const owned=await ownPrefixBackup(resolve(input.source),dirname(resolve(input.source)));
+ try{return await createStorageBackupOwned(input,owned);}finally{owned.release();}
+}
+
 /** Explicit offline operator operation. The SQLite online-backup API includes committed WAL data. */
-export async function createStorageBackup(input:{source:string;payloadRoot:string;destination:string;resume?:boolean;maxBytes?:number;maxPayloads?:number;maxMilliseconds?:number;maxWalGrowthBytes?:number;signal?:AbortSignal;onProgress?:(value:{stage:string;copied:number})=>void}):Promise<Manifest>{
+async function createStorageBackupOwned(input:{source:string;payloadRoot:string;destination:string;resume?:boolean;maxBytes?:number;maxPayloads?:number;maxMilliseconds?:number;maxWalGrowthBytes?:number;signal?:AbortSignal;onProgress?:(value:{stage:string;copied:number})=>void},owned:Awaited<ReturnType<typeof ownPrefixBackup>>):Promise<Manifest>{
  const milliseconds=input.maxMilliseconds??60000;if(!Number.isSafeInteger(milliseconds)||milliseconds<1||milliseconds>3600000)throw Error("Invalid backup time quota");const timeout=AbortSignal.timeout(milliseconds);input={...input,signal:input.signal?AbortSignal.any([input.signal,timeout]):timeout};
  const root=resolve(input.destination),source=resolve(input.source),payloadRoot=resolve(input.payloadRoot),deadline=Date.now()+(input.maxMilliseconds??60000);
  const check=()=>{input.signal?.throwIfAborted();if(Date.now()>deadline)throw Error("Backup time budget exhausted; resume explicitly");};
@@ -34,6 +42,10 @@ export async function createStorageBackup(input:{source:string;payloadRoot:strin
   await syncFile(temporary);await rename(temporary,join(root,DATABASE));const hash=await digest(join(root,DATABASE),manifest.maxBytes,undefined,input.signal);snapshotVerified=true;manifest.databaseSha256=hash.sha256;manifest.databaseBytes=hash.bytes;manifest.status="payloads";await publishManifest(root,manifest);
  }
  const database=join(root,DATABASE);if(!snapshotVerified&&(await digest(database,manifest.maxBytes,undefined,input.signal)).sha256!==manifest.databaseSha256)throw Error("Backup snapshot hash changed");
+ if(!manifest.runtimeCatalogSha256){
+  const runtime=await capturePrefixBackup({root,database,home:dirname(source),rows:owned.rows,maximum:manifest.maxBytes-(manifest.databaseBytes??0),signal:input.signal});
+  if(runtime){manifest.runtimeCatalogSha256=await prefixBackupCatalogHash(root);manifest.runtimeBytes=runtime.bytes;await publishManifest(root,manifest);}
+ }else await verifyPrefixBackup(root,database,manifest.maxBytes-(manifest.databaseBytes??0),manifest.runtimeCatalogSha256,input.signal);
  const db=new DatabaseSync(database,{readOnly:true});
  try{
   if(db.prepare("PRAGMA quick_check").get()!.quick_check!=="ok")throw Error("Backup SQLite integrity check failed");
@@ -46,7 +58,7 @@ export async function createStorageBackup(input:{source:string;payloadRoot:strin
   while(hasPayloads){check();const rows=db.prepare("SELECT id,storage_path,sha256,encoding,byte_size,status FROM payloads WHERE id>? ORDER BY id LIMIT 128").all(manifest.cursor) as PayloadRow[];if(!rows.length)break;
    for(const row of rows){check();if(!row.storage_path||row.status!=="committed")throw Error("Snapshot contains unavailable payload metadata");if(manifest.payloadCount>=manifest.maxPayloads)throw Error("Backup payload count quota exceeded");
     const sourcePath=ownedPath(payloadRoot,row.storage_path),target=ownedPath(join(root,"payloads"),row.storage_path),size=(await stat(sourcePath)).size;
-    if((manifest.databaseBytes??0)+manifest.payloadBytes+size>manifest.maxBytes)throw Error("Backup byte quota exceeded");
+    if((manifest.databaseBytes??0)+(manifest.runtimeBytes??0)+manifest.payloadBytes+size>manifest.maxBytes)throw Error("Backup byte quota exceeded");
     await mkdir(dirname(target),{recursive:true,mode:0o700});const temporary=target+".partial";await pipeline(createReadStream(sourcePath,{highWaterMark:65536}),createWriteStream(temporary,{mode:0o600}),{signal:input.signal});
     const raw=await digest(temporary,manifest.maxBytes,undefined,input.signal),content=await digest(temporary,row.byte_size,row.encoding,input.signal);if(content.sha256!==row.sha256||content.bytes!==row.byte_size)throw Error("Source payload failed content verification");
     await syncFile(temporary);await rename(temporary,target);await syncFile(dirname(target));
@@ -68,7 +80,8 @@ async function* catalogRows(path:string,maximum:number):AsyncGenerator<CatalogRo
 export async function verifyStorageBackup(root:string,signal?:AbortSignal):Promise<{payloads:number;bytes:number}>{
  const m=await readStorageBackupManifest(root);if(m.status!=="complete")throw Error("Backup is incomplete");
  if((await digest(join(root,DATABASE),m.maxBytes,undefined,signal)).sha256!==m.databaseSha256||(await digest(join(root,CATALOG),Math.max(1024,m.maxPayloads*4096),undefined,signal)).sha256!==m.catalogSha256)throw Error("Backup manifest hash mismatch");
- const db=new DatabaseSync(join(root,DATABASE),{readOnly:true});let payloads=0,bytes=m.databaseBytes??0,previousId="";
+ const runtime=await verifyPrefixBackup(root,join(root,DATABASE),m.maxBytes-(m.databaseBytes??0),m.runtimeCatalogSha256,signal);
+ const db=new DatabaseSync(join(root,DATABASE),{readOnly:true});let payloads=0,bytes=(m.databaseBytes??0)+(runtime?.bytes??0),previousId="";
  try{if(db.prepare("PRAGMA quick_check").get()!.quick_check!=="ok")throw Error("Backup database failed verification");
   const hasPayloads=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='payloads'").get());
   for await(const row of catalogRows(join(root,CATALOG),m.maxPayloads)){signal?.throwIfAborted();if(row.id<=previousId)throw Error("Backup catalog order is invalid");previousId=row.id;const metadata=hasPayloads?db.prepare("SELECT sha256,storage_path,byte_size FROM payloads WHERE id=?").get(row.id):undefined;if(!metadata||metadata.sha256!==row.sha256||metadata.storage_path!==row.path||metadata.byte_size!==row.contentBytes)throw Error("Catalog does not match snapshot");const path=ownedPath(join(root,"payloads"),row.path);const raw=await digest(path,m.maxBytes,undefined,signal),content=await digest(path,row.contentBytes,row.encoding,signal);if(raw.sha256!==row.storedSha256||raw.bytes!==row.bytes||content.sha256!==row.sha256||content.bytes!==row.contentBytes)throw Error("Backup payload hash mismatch");payloads++;bytes+=raw.bytes;if(bytes>m.maxBytes)throw Error("Backup exceeds byte quota");}
@@ -76,7 +89,7 @@ export async function verifyStorageBackup(root:string,signal?:AbortSignal):Promi
  }finally{db.close();}
 }
 export async function restoreStorageBackup(root:string,destination:string,signal?:AbortSignal):Promise<{database:string;payloadRoot:string}>{
- await verifyStorageBackup(root,signal);const m=await readStorageBackupManifest(root),name=basename(m.source);if(!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name))throw Error("Unsafe restored database name");await mkdir(destination,{mode:0o700});const payloadRoot=join(destination,"payloads"),database=join(destination,name);
+ await verifyStorageBackup(root,signal);const m=await readStorageBackupManifest(root),name=basename(m.source);if(!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name))throw Error("Unsafe restored database name");const runtime=await verifyPrefixBackup(root,join(root,DATABASE),m.maxBytes-(m.databaseBytes??0),m.runtimeCatalogSha256,signal);if(runtime&&resolve(destination)!==runtime.home)throw Error("Protected runtime restore requires its original home path; use the same filesystem layout");await mkdir(destination,{mode:0o700});if(runtime)await restorePrefixBackup(root,destination,runtime,signal);const payloadRoot=join(destination,"payloads"),database=join(destination,name);
  for await(const row of catalogRows(join(root,CATALOG),m.maxPayloads)){signal?.throwIfAborted();const target=ownedPath(payloadRoot,row.path);await mkdir(dirname(target),{recursive:true,mode:0o700});await copyFile(ownedPath(join(root,"payloads"),row.path),target);await syncFile(target);}
  await copyFile(join(root,DATABASE),database);await syncFile(database);await syncFile(destination);return {database,payloadRoot};
 }

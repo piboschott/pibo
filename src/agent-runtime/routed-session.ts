@@ -1,3 +1,5 @@
+import { derivedSessionIdentityText } from "../sessions/prefix-derivation.js";
+import { readSessionPrefixBinding } from "../sessions/prefix-capsule.js";
 import { previouslyClearedMessages } from "../core/events.js";
 import { boundedCacheEvidence } from "../shared/cache-diagnostics.js";
 import type { CapacityLease } from "../core/runtime-capacity.js";
@@ -238,6 +240,7 @@ function isSessionOperationResult(value: unknown): value is PiboSessionOperation
 }
 
 export class RuntimeRoutedSession {
+	private readonly derivedIdentitySuffix: string;
 	private readonly toolMetrics: ToolCallMetricsCollector;
 	/** @deprecated Pi compatibility handle for existing direct test/TUI consumers. */
 	readonly runtime: unknown;
@@ -285,6 +288,8 @@ export class RuntimeRoutedSession {
 		private readonly pluginRegistry: PiboPluginRegistry,
 		private readonly options: RuntimeRoutedSessionOptions = {},
 	) {
+		this.derivedIdentitySuffix = readSessionPrefixBinding(runtimeSession.getBinding().metadata)?.capsuleNativeSessionId
+			? derivedSessionIdentityText(piboSessionId) : "";
 		this.toolMetrics = new ToolCallMetricsCollector(options.getToolMetricTokenCalculation);
 		this.runtime = runtimeSession.getNativeCompatibilityHandle?.() ?? runtimeSession;
 		this.primaryModel = runtimeSession.getStatus().activeModel
@@ -986,7 +991,7 @@ export class RuntimeRoutedSession {
 				this.emit({ type:"message_started", piboSessionId:this.piboSessionId, eventId:event.id, text:event.text, source:event.source, provenance:event.provenance });
 			}
 			if (this.disposed || inFlight.cancelled) return;
-			await this.runtimeSession.prompt(input);
+			await this.runtimeSession.prompt(this.derivedIdentitySuffix ? { ...input, text: input.text + this.derivedIdentitySuffix } : input);
 		} finally { lease?.release(); }
 	}
 

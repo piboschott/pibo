@@ -1,5 +1,8 @@
 import { rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
 import { randomUUID } from "node:crypto";
+import { PrefixRecoveryRequiredError } from "../../sessions/prefix-capsule.js";
+import type { SessionPrefixController } from "../../sessions/prefix-session.js";
+import { CodexPrefixOpen } from "./prefix-open.js";
 import {
 	unsupportedAgentRuntimeCapability,
 	type AgentRuntimeCapabilities,
@@ -29,6 +32,7 @@ import type {
 	LogoutAgentRuntimeAuthInput,
 	OpenAgentRuntimeSessionInput,
 	ReadAgentRuntimeHistoryInput,
+	ResolveAgentRuntimeBindingInput,
 	RuntimeSessionBinding,
 	StartAgentRuntimeAuthInput,
 	ValidateAgentRuntimeProfileInput,
@@ -445,6 +449,7 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 		private readonly productContext?: AgentRuntimeProductContext,
 		private readonly bindingPersistence?: AgentRuntimeBindingPersistence,
 		private readonly firstUseTestFailpoints?: CodexNativeFirstUseTestFailpoints,
+		private readonly prefixController?: SessionPrefixController,
 	) {
 		this.process = process;
 		this.threads = threads;
@@ -466,6 +471,7 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 					this.cwd,
 					entryId,
 					async (threadId) => await this.resourceDelivery.verifyThread(this.process.client, threadId),
+				Boolean(this.prefixController),
 				);
 				if (result.current.nativeSessionId) {
 					this.settings.attachThread(this.threads.thread.id, this.threads.configuration);
@@ -478,6 +484,7 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 				this.cwd,
 				entryId,
 				async (threadId) => await this.resourceDelivery.verifyThread(this.process.client, threadId),
+				Boolean(this.prefixController),
 			),
 			cloneSession: async () => await this.runIdleOperation(async () => {
 				const result = await this.threads.clone(
@@ -515,7 +522,12 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 						message: "Native Codex compaction owns its summary and cannot apply custom Pibo compaction instructions; the native compaction is continuing without them.",
 					});
 				}
+				const prefixEpoch = this.prefixController?.binding?.epoch;
 				await this.turns.compact();
+				await this.prefixController?.waitForCompactionCompletion();
+				if (prefixEpoch !== undefined && this.prefixController?.binding?.epoch !== prefixEpoch + 1) {
+					throw new PrefixRecoveryRequiredError("Codex compaction did not publish its protected history checkpoint");
+				}
 				this.refreshBoundBindingFromCurrentThread();
 				return {
 					native: true,
@@ -547,7 +559,10 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 
 	getBinding(): RuntimeSessionBinding {
 		this.refreshBoundBindingFromCurrentThread();
-		return structuredClone(this.binding);
+		if (!this.prefixController) return structuredClone(this.binding);
+		const binding = this.prefixController.mergeRuntimeBinding(this.binding);
+		return { ...binding, metadata: { ...binding.metadata,
+			...(this.threads.thread.path ? { nativeSessionFile: this.threads.thread.path } : {}) } };
 	}
 
 	subscribe(listener: (event: AgentRuntimeSemanticEvent) => void): () => void {
@@ -864,6 +879,7 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 
 	private emit(event: AgentRuntimeSemanticEvent): void {
 		if (this.disposed) return;
+		if (event.type === "usage") this.prefixController?.recordInference({});
 		if (
 			event.type === "tool_call"
 			&& event.toolName.trim()
@@ -891,6 +907,7 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 		messageId: string;
 		startTurn: boolean;
 	}> {
+		if (this.prefixController) this.binding = this.prefixController.mergeRuntimeBinding(this.binding);
 		if (this.binding.state !== "unbound") {
 			const receipt = readFirstUseDeliveryReceipt(this.binding);
 			if (!receipt || !isExactCodexNativeFirstUseDeliveryReplay(receipt, messageId, prompt)) {
@@ -1028,6 +1045,24 @@ class CodexNativeAgentRuntimeAdapter implements AgentRuntimeAdapter {
 	private modelCatalogCache?: { expiresAt: number; value: Promise<CodexNativeModelCatalog> };
 	private readonly historyInspectionCache = new Map<string, { expiresAt: number; value: Promise<AgentRuntimeHistoryInspection> }>();
 	private readonly authController: CodexNativeAuthController;
+	private readonly protectedOpens = new Map<string, CodexPrefixOpen>();
+
+	async canInitializePrefix(input: ResolveAgentRuntimeBindingInput): Promise<boolean> {
+		return input.binding.state === "unbound" && !input.binding.nativeSessionId;
+	}
+
+	async preparePrefixOwnership(input: Parameters<NonNullable<AgentRuntimeAdapter["preparePrefixOwnership"]>>[0]): Promise<() => Promise<void>> {
+		const id = input.binding.piboSessionId;
+		if (this.protectedOpens.has(id)) throw new PrefixRecoveryRequiredError("Codex protected session is already opening");
+		// Protected first-turn forks use the pinned native beforeTurnId contract.
+		const opened = new CodexPrefixOpen(this.config, input.controller, input.workspace, true);
+		await opened.prepare();
+		this.protectedOpens.set(id, opened);
+		return async () => {
+			await opened.dispose();
+			if (this.protectedOpens.get(id) === opened) this.protectedOpens.delete(id);
+		};
+	}
 
 	constructor(
 		readonly instanceId: string,
@@ -1218,7 +1253,9 @@ class CodexNativeAgentRuntimeAdapter implements AgentRuntimeAdapter {
 	}
 
 	async openSession(input: OpenAgentRuntimeSessionInput): Promise<AgentRuntimeSession> {
-		rejectUnsupportedPrefixRestore(input.binding?.metadata);
+		const protectedOpen = input.services?.prefixController ? this.protectedOpens.get(input.piboSession.id) : undefined;
+		if (!protectedOpen) rejectUnsupportedPrefixRestore(input.binding?.metadata);
+		if (input.services?.prefixController && !protectedOpen) throw new PrefixRecoveryRequiredError("Codex requires native ownership before resource preparation");
 		const binding = validateOpenBinding(input, this.instanceId);
 		const activeFirstMessage = input.productContext.getActiveMessage?.();
 		const messageStartsLazyFirstUse = binding.state === "unbound"
@@ -1246,7 +1283,7 @@ class CodexNativeAgentRuntimeAdapter implements AgentRuntimeAdapter {
 			let ownedProcess: CodexNativeAppServerProcess | undefined;
 			try {
 				delivery = await CodexNativeResourceDelivery.prepare(resourceInput);
-				ownedProcess = await startCodexNativeAppServer({
+				ownedProcess = protectedOpen ? await protectedOpen.activate(delivery.environment) : await startCodexNativeAppServer({
 					config: this.config,
 					runtimeInstanceId: this.instanceId,
 					piboSessionId: input.piboSession.id,
@@ -1404,6 +1441,7 @@ class CodexNativeAgentRuntimeAdapter implements AgentRuntimeAdapter {
 				input.productContext,
 				input.services?.runtimeBindingPersistence,
 				compatibility?.testOnlyFirstUseFailpoints,
+				input.services?.prefixController,
 			);
 		} catch (error) {
 			settings?.dispose();

@@ -166,6 +166,11 @@ export async function restorePiPrefix(controller: SessionPrefixController): Prom
 	const restored = await controller.restore(codec);
 	if (restored === undefined) return undefined;
 	const snapshot = decode(restored);
+	const prefix = controller.binding;
+	if (prefix?.capsuleNativeSessionId && snapshot.providerStatic.prompt_cache_key !== undefined) {
+		if (snapshot.providerStatic.prompt_cache_key !== prefix.capsuleNativeSessionId) throw new PrefixRecoveryRequiredError("derived Pi cache affinity format is unsupported");
+		snapshot.providerStatic.prompt_cache_key = prefix.nativeSessionId;
+	}
 	if (codec === PI_RESPONSES_PREFIX_CODEC && !snapshot.inputPrefix) throw new PrefixRecoveryRequiredError("missing Pi Responses input prefix");
 	return deepFreeze(snapshot);
 }

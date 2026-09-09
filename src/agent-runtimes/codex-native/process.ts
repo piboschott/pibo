@@ -96,6 +96,11 @@ export type StartCodexNativeAppServerInput = PrepareCodexNativeSessionPathsInput
 	signal?: AbortSignal;
 	baseEnvironment?: NodeJS.ProcessEnv;
 	resourceEnvironment?: Readonly<NodeJS.ProcessEnv>;
+	/** Private native prefix bootstrap; activation precedes native config discovery. */
+	prefixBootstrap?: {
+		environment: Readonly<NodeJS.ProcessEnv>;
+		onPrepared(args: readonly string[], environment: NodeJS.ProcessEnv, paths: CodexNativeSessionPaths): void;
+	};
 	onDiagnostic?: (diagnostic: CodexAppServerDiagnostic) => void;
 };
 
@@ -573,17 +578,15 @@ export async function startCodexNativeAppServer(
 				? ["-c", `experimental_realtime_webrtc_call_base_url=${JSON.stringify(input.realtimeWebrtcCallBaseUrl)}`]
 				: []),
 		]);
+		const environment = buildCodexNativeProcessEnvironment({ config: input.config, paths,
+			baseEnvironment: input.baseEnvironment, resourceEnvironment: input.resourceEnvironment });
+		input.prefixBootstrap?.onPrepared(invocation.args, environment, paths);
 		client = await CodexAppServerClient.start({
 			command: invocation.command,
 			fileCreationMask: 0o077,
 			args: invocation.args,
 			cwd: resolve(input.workspace),
-			env: buildCodexNativeProcessEnvironment({
-				config: input.config,
-				paths,
-				baseEnvironment: input.baseEnvironment,
-				resourceEnvironment: input.resourceEnvironment,
-			}),
+			env: { ...environment, ...input.prefixBootstrap?.environment },
 			clientInfo: { name: "pibo", title: "Pibo", version: input.clientVersion.trim() },
 			capabilities,
 			startupTimeoutMs: input.config.startupTimeoutMs,

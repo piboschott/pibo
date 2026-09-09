@@ -1,5 +1,8 @@
 import { rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
 import { randomUUID } from "node:crypto";
+import type { SessionPrefixController } from "../../sessions/prefix-session.js";
+import { PrefixRecoveryRequiredError } from "../../sessions/prefix-capsule.js";
+import { OmpPrefixOpen } from "./prefix-open.js";
 import {
 	unsupportedAgentRuntimeCapability,
 	type AgentRuntimeCapabilities,
@@ -29,6 +32,7 @@ import type {
 	AgentRuntimeModelInfo,
 	OpenAgentRuntimeSessionInput,
 	ReadAgentRuntimeHistoryInput,
+	ResolveAgentRuntimeBindingInput,
 	RuntimeSessionBinding,
 	StartAgentRuntimeAuthInput,
 	ValidateAgentRuntimeProfileInput,
@@ -55,6 +59,7 @@ import {
 } from "./models.js";
 import {
 	buildOmpProcessEnvironment,
+	hasOmpNativeSessionState,
 	diagnoseOmpRuntime,
 	disposeOmpSessionPaths,
 	prepareOmpSessionPaths,
@@ -248,6 +253,8 @@ type OmpProcessBundle = {
 	paths: OmpSessionPaths;
 	threads: OmpThreadController;
 	resourceDelivery: OmpResourceDelivery;
+	binding?: RuntimeSessionBinding;
+	prefixController?: SessionPrefixController;
 };
 
 function bindingForOmp(piboSessionId: string, runtimeInstanceId: string, previous: RuntimeSessionBinding | undefined): RuntimeSessionBinding {
@@ -293,7 +300,7 @@ export class OmpSession implements AgentRuntimeSession {
 		this.thread = bundle.threads;
 		this.resourceDelivery = bundle.resourceDelivery;
 		this.cwd = bundle.threads.current.cwd;
-		this.binding = bindingForOmp("", runtimeInstanceId, undefined);
+		this.binding = bindingForOmp(bundle.binding?.piboSessionId ?? "", runtimeInstanceId, bundle.binding);
 		this.capabilities = ompCapabilities();
 		this.turn = new OmpRpcTurnController(this.client, (event) => this.emit(event));
 		this.hostTools = new OmpHostToolBridge(this.client, undefined, this.toolExecutionContext(), (m) => this.emitWarning(m));
@@ -334,10 +341,9 @@ export class OmpSession implements AgentRuntimeSession {
 				await setOmpModel(this.client, provider, modelId);
 				return { provider, id: modelId };
 			}),
-			compact: async (customInstructions) => {
-				this.assertIdle();
+			compact: async (customInstructions) => this.runIdleOperation(async () => {
 				return await this.client.request({ type: "compact", ...(customInstructions ? { customInstructions } : {}) }, "compact");
-			},
+			}),
 		};
 	}
 
@@ -410,7 +416,7 @@ export class OmpSession implements AgentRuntimeSession {
 
 	getBinding(): RuntimeSessionBinding {
 		this.updateBinding();
-		return structuredClone(this.binding);
+		return this.bundle.prefixController?.mergeRuntimeBinding(this.binding) ?? structuredClone(this.binding);
 	}
 
 	subscribe(listener: (event: AgentRuntimeSemanticEvent) => void): () => void {
@@ -420,6 +426,7 @@ export class OmpSession implements AgentRuntimeSession {
 	}
 
 	private emit(event: AgentRuntimeSemanticEvent): void {
+		if (event.type === "usage") this.bundle.prefixController?.recordInference({});
 		for (const listener of this.listeners) listener(event);
 	}
 
@@ -510,6 +517,23 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 	readonly displayName: string;
 	readonly enabled: boolean;
 	private readonly parsed: OmpRuntimeConfig;
+	private readonly protectedOpens = new Map<string, OmpPrefixOpen>();
+
+	async canInitializePrefix(input: ResolveAgentRuntimeBindingInput): Promise<boolean> {
+		return input.binding.state === "unbound" && !input.binding.nativeSessionId
+			&& !await hasOmpNativeSessionState(this.parsed, this.instanceId, input.binding.piboSessionId);
+	}
+
+	async preparePrefixOwnership(input: ResolveAgentRuntimeBindingInput & { controller: SessionPrefixController }): Promise<() => Promise<void>> {
+		const id = input.binding.piboSessionId;
+		if (this.protectedOpens.has(id)) throw new PrefixRecoveryRequiredError("OMP protected session is already opening");
+		const opened = await OmpPrefixOpen.prepare(this.parsed, input.binding, input.workspace, input.controller);
+		this.protectedOpens.set(id, opened);
+		return async () => {
+			await opened.dispose();
+			if (this.protectedOpens.get(id) === opened) this.protectedOpens.delete(id);
+		};
+	}
 	/** Handle to the currently-open session so history/auth/models route to it. */
 	private live?: OmpSession;
 
@@ -536,12 +560,14 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 	}
 
 	async openSession(input: OpenAgentRuntimeSessionInput): Promise<AgentRuntimeSession> {
-		rejectUnsupportedPrefixRestore(input.binding?.metadata);
+		const protectedOpen = input.services?.prefixController ? this.protectedOpens.get(input.piboSession.id) : undefined;
+		if (!protectedOpen) rejectUnsupportedPrefixRestore(input.binding?.metadata);
+		if (input.services?.prefixController && !protectedOpen) throw new PrefixRecoveryRequiredError("OMP requires native ownership before resource preparation");
 		const binding = validateOpenBinding(input, this.instanceId);
 		if (binding.state === "bound" && !binding.nativeSessionId) {
 			throw new AgentRuntimeUnavailableError(this.instanceId, "The persisted OMP binding has no native session id.");
 		}
-		const paths = await prepareOmpSessionPaths({
+		const paths = protectedOpen?.paths ?? await prepareOmpSessionPaths({
 			config: this.parsed,
 			runtimeInstanceId: this.instanceId,
 			piboSessionId: input.piboSession.id,
@@ -568,12 +594,13 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 			baseEnvironment: process.env,
 		});
 		const command = resolveOmpCommand(this.parsed, paths, resourceDelivery.appendSystemPromptPath);
-		const client = new OmpRpcClient({
+		const client = protectedOpen?.client ?? new OmpRpcClient({
 			startupTimeoutMs: this.parsed.startupTimeoutMs,
 			requestTimeoutMs: this.parsed.requestTimeoutMs,
 		});
 		try {
-			await client.connect(command, { cwd: input.workspace, env: environment });
+			if (protectedOpen) await protectedOpen.activate(command);
+			else await client.connect(command, { cwd: input.workspace, env: environment });
 		} catch (error) {
 			await client.close();
 			await disposeOmpSessionPaths(paths);
@@ -603,8 +630,9 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 
 		// Build the session and thread controllers with a client that supports
 		// host-tool frames.
-		const threads = new OmpThreadController(client, input.workspace, { sessionId: initial.sessionId });
-		const bundle: OmpProcessBundle = { client, paths, threads, resourceDelivery };
+		const threads = new OmpThreadController(client, input.workspace, { sessionId: initial.sessionId }, protectedOpen ? "branch" : "fork");
+		const bundle: OmpProcessBundle = { client, paths, threads, resourceDelivery,
+			binding, prefixController: input.services?.prefixController };
 		const session = new OmpSession(this.instanceId, bundle, this.parsed, (m) => {
 			// Warning surfaced via session events is delivered by the turn controller.
 		}, this);
@@ -638,11 +666,14 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 		try {
 			await hb.install();
 			await threads.refresh();
+			if (protectedOpen && binding.nativeSessionId && threads.current.sessionId !== binding.nativeSessionId) {
+				throw new PrefixRecoveryRequiredError("OMP protected native session identity changed at startup");
+			}
 
 			// Resume/F4: if this Pibo Session was previously bound to an OMP
 			// native session, switch the new child into that persisted transcript
 			// so history/context carry over instead of starting a fresh session.
-			if (binding.state === "bound" && binding.nativeSessionId) {
+			if (!protectedOpen && binding.state === "bound" && binding.nativeSessionId) {
 				await threads.resumeBinding(binding);
 				nativeSessionFile = threads.current.sessionFile;
 			}
