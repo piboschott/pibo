@@ -1,3 +1,4 @@
+import { withPrefixPublication } from "../sessions/prefix-maintenance.js";
 import { retainPrefixArtifactDependencies } from "../sessions/prefix-dependencies.js";
 import { syncDerivedOmpArtifacts, deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/prefix-derivation.js";
 import { SessionPrefixController } from "../sessions/prefix-session.js";
@@ -2188,6 +2189,16 @@ export class PiboSessionRouter {
 	}
 
 	private async createDerivedSession(
+		result: PiboSessionOperationResult,
+		action: "session.fork" | "session.clone",
+		currentBinding: RuntimeSessionBinding,
+	): Promise<PiboSession> {
+		return readSessionPrefixBinding(currentBinding.metadata)
+			? withPrefixPublication(new PrefixCapsuleStore().root, () => this.createDerivedSessionPublished(result, action, currentBinding))
+			: this.createDerivedSessionPublished(result, action, currentBinding);
+	}
+
+	private async createDerivedSessionPublished(
 		result: PiboSessionOperationResult,
 		action: "session.fork" | "session.clone",
 		currentBinding: RuntimeSessionBinding,

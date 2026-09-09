@@ -1,3 +1,4 @@
+import { PrefixMaintenanceLease } from "../sessions/prefix-maintenance.js";
 import { DatabaseSync, backup } from "node:sqlite";
 import { constants, createReadStream } from "node:fs";
 import { copyFile, open, readFile, realpath, rename, lstat, opendir } from "node:fs/promises";
@@ -70,14 +71,16 @@ async function hash(path: string, maximum: number, signal?: AbortSignal): Promis
 export async function ownPrefixBackup(source: string, home: string): Promise<{ release(): void; rows: Binding[] }> {
 	const rows = bindings(source);
 	if (!rows.length) return { rows, release() {} };
-	const owner = await PrefixSessionOwnership.acquire(join(home, "session-prefixes"), referencedBindings(rows).flatMap(row => [
+	const maintenance = await PrefixMaintenanceLease.acquire(join(home, "session-prefixes"));
+	let owner: PrefixSessionOwnership;
+	try { owner = await PrefixSessionOwnership.acquire(join(home, "session-prefixes"), referencedBindings(rows).flatMap(row => [
 		JSON.stringify(["pibo", row.pibo_session_id]),
 		...(row.native_session_id ? [JSON.stringify(["native", row.runtime_adapter_id, row.native_session_id])] : []),
-	]));
+	])); } catch (error) { maintenance.release(); throw error; }
 	try {
 		if (JSON.stringify(bindings(source)) !== JSON.stringify(rows)) throw Error("Protected bindings changed while acquiring backup ownership");
-		return { rows, release: () => owner.release() };
-	} catch (error) { owner.release(); throw error; }
+		return { rows, release: () => { owner.release(); maintenance.release(); } };
+	} catch (error) { owner.release(); maintenance.release(); throw error; }
 }
 
 /** Called before payload copying, while the source runtime ownership remains held. */

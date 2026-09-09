@@ -1,3 +1,4 @@
+import { withPrefixPublication } from "./prefix-maintenance.js";
 import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
 import { readPrefixArtifactDependencies, PREFIX_ARTIFACT_DEPENDENCIES_KEY, readPrefixResourceDependencies, PREFIX_RESOURCE_DEPENDENCIES_KEY } from "./prefix-dependencies.js";
 import type { AgentRuntimeBindingPersistence } from "../agent-runtime/types.js";
@@ -270,7 +271,7 @@ export class SessionPrefixController {
 	/** Publish resource state before any native prompt can contain its stable paths. */
 	async sealResources(capture: () => Promise<PrefixResources>): Promise<RestoredPrefixResources> {
 		if (this.preparingResources) return this.preparingResources;
-		this.preparingResources = (async () => {
+		this.preparingResources = withPrefixPublication(this.store.root, async () => {
 			const restored = await this.restoreResources();
 			if (restored) return restored;
 			const runtime = structuredClone(this.options.getBinding());
@@ -284,7 +285,7 @@ export class SessionPrefixController {
 			this.options.onPersisted?.(structuredClone(persisted));
 			this.resources = { digest: result.reference.digest, value: result.resources };
 			return result.resources;
-		})();
+		});
 		try { return await this.preparingResources; } finally { this.preparingResources = undefined; }
 	}
 
@@ -313,7 +314,7 @@ export class SessionPrefixController {
 			if (["runtime-change", "explicit-refresh"].includes(pending.reason) && runtime.adapterId === pending.sourceBinding.adapterId
 				&& runtime.nativeSessionId === pending.sourceBinding.nativeSessionId) throw new PrefixRecoveryRequiredError("runtime replacement must use a new native session");
 			const source = readSessionPrefixBinding(pending.sourceBinding.metadata)!;
-			this.preparing = (async () => {
+			this.preparing = withPrefixPublication(this.store.root, async () => {
 				const capsule = await this.store.put(runtime.adapterId, input.codec, input.payload);
 				const prefix: SessionPrefixBinding = { format: 1, epoch: source.epoch + 1, status: "sealed", capsule,
 					reason: pending.reason, nativeSessionId: input.nativeSessionId, evidence: input.evidence };
@@ -323,7 +324,7 @@ export class SessionPrefixController {
 				this.options.onPersisted?.(structuredClone(persisted));
 				this.sealedPayload = { digest: capsule.digest, payload: input.payload };
 				return prefix;
-			})();
+			});
 			try { return await this.preparing; } finally { this.preparing = undefined; }
 		}
 		if (input.rebaselineId) throw new PrefixRecoveryRequiredError("explicit prefix transition is no longer pending");
@@ -339,7 +340,7 @@ export class SessionPrefixController {
 		if (!runtime.nativeSessionId || runtime.nativeSessionId !== input.nativeSessionId || runtime.revision === undefined) {
 			throw new PrefixRecoveryRequiredError("native session must be durably bound before sealing");
 		}
-		this.preparing = (async () => {
+		this.preparing = withPrefixPublication(this.store.root, async () => {
 			const capsule = await this.store.put(runtime.adapterId, input.codec, input.payload);
 			const prefix: SessionPrefixBinding = {
 				format: 1, epoch: 1, status: "sealed", capsule, reason: "initial",
@@ -352,7 +353,7 @@ export class SessionPrefixController {
 			this.options.onPersisted?.(structuredClone(persisted));
 			this.sealedPayload = { digest: capsule.digest, payload: input.payload };
 			return prefix;
-		})();
+		});
 		try { return await this.preparing; } finally { this.preparing = undefined; }
 	}
 
