@@ -24,15 +24,15 @@ try {
 const nativeOwners = [];
 const heldIdentities = new Set(${JSON.stringify(input.identities)});
 let claimedNative = ${JSON.stringify(input.nativeSessionId) ?? "undefined"};
-globalThis[Symbol.for("pibo.omp.prefix.claimNative")] = async (nativeSessionId, derivedFrom) => {
+globalThis[Symbol.for("pibo.omp.prefix.claimNative")] = async (nativeSessionId, derivedFrom, nativeChild = false) => {
   if (typeof nativeSessionId !== "string" || !nativeSessionId || nativeSessionId.length > 1024
-    || claimedNative && claimedNative !== nativeSessionId && derivedFrom !== claimedNative) throw new Error("Native ownership identity changed");
+    || !nativeChild && claimedNative && claimedNative !== nativeSessionId && derivedFrom !== claimedNative) throw new Error("Native ownership identity changed");
   const identity = JSON.stringify(["native", "orp", nativeSessionId]);
   if (!heldIdentities.has(identity)) {
     nativeOwners.push(await PrefixSessionOwnership.acquire(${JSON.stringify(input.prefixRoot)}, [identity]));
     heldIdentities.add(identity);
   }
-  claimedNative = nativeSessionId;
+  if (!nativeChild) claimedNative = nativeSessionId;
 };
 process.once("exit", () => { for (const owner of nativeOwners.reverse()) owner.release(); ownership.release(); });
 try {

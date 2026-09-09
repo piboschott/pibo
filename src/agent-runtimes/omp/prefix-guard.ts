@@ -8,12 +8,14 @@ export const OMP_LEGACY_PREFIX_CODEC = "omp-18.1.10/openai-responses/v1";
  */
 export function createOmpPrefixGuardSource(dateReminderModuleUrl: string, codec = OMP_PREFIX_CODEC): string {
 	return String.raw`
-import { open, writeFile } from "node:fs/promises";
+import { open, writeFile, lstat } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { constants } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
-export default async function(pi) {
+export default async function installPrefixGuard(pi, childConfig) {
+  if (!childConfig && globalThis[Symbol.for("pibo.omp.prefix.installed")]) return;
   let phase = "bootstrap";
   const fatal = () => { process.stderr.write("Pibo native prefix recovery required: " + phase + "\n"); process.exit(78); };
   const freeze = value => {
@@ -24,14 +26,14 @@ export default async function(pi) {
     return value;
   };
   try {
-    const endpoint = process.env.PIBO_PREFIX_ENDPOINT;
-    const token = process.env.PIBO_PREFIX_TOKEN;
+    const endpoint = childConfig?.endpoint ?? process.env.PIBO_PREFIX_ENDPOINT;
+    const token = childConfig?.token ?? process.env.PIBO_PREFIX_TOKEN;
     const ready = process.env.PIBO_PREFIX_READY_FILE;
     const nonce = process.env.PIBO_PREFIX_READY_NONCE;
-    if (!endpoint || new URL(endpoint).hostname !== "127.0.0.1" || !token || !ready || !nonce) return fatal();
-    const claimNativeIdentity = globalThis[Symbol.for("pibo.omp.prefix.claimNative")];
+    if (!endpoint || new URL(endpoint).hostname !== "127.0.0.1" || !token || !childConfig && (!ready || !nonce)) return fatal();
+    const claimNativeIdentity = childConfig?.claim ?? globalThis[Symbol.for("pibo.omp.prefix.claimNative")];
     if (typeof claimNativeIdentity !== "function") return fatal();
-    delete globalThis[Symbol.for("pibo.omp.prefix.claimNative")];
+    if (!childConfig) delete globalThis[Symbol.for("pibo.omp.prefix.claimNative")];
     for (const key of ["PIBO_PREFIX_ENDPOINT", "PIBO_PREFIX_TOKEN", "PIBO_PREFIX_READY_FILE", "PIBO_PREFIX_READY_NONCE"]) delete process.env[key];
     const auth = { authorization: "Bearer " + token };
     phase = "restore";
@@ -123,11 +125,15 @@ export default async function(pi) {
     const { DateCwdReminderInjector } = await import(${JSON.stringify(dateReminderModuleUrl)});
     const { EXTENSION_HANDLER_TIMEOUT_MS, ExtensionRunner } = await import(${JSON.stringify(new URL('../extensibility/extensions/runner.ts', dateReminderModuleUrl).href)});
     if (EXTENSION_HANDLER_TIMEOUT_MS !== 30000) return fatal();
-    const transform = DateCwdReminderInjector.prototype.transform;
-    DateCwdReminderInjector.prototype.transform = function(context, date, cwd) {
-      calendar ??= Object.freeze({ date, cwd });
-      return transform.call(this, context, calendar.date, calendar.cwd);
-    };
+    const scope = { calendar: (date,cwd) => { calendar ??= Object.freeze({date,cwd}); return calendar; } };
+    const execution = childConfig?.execution ?? new AsyncLocalStorage();
+    if (!childConfig) {
+      const transform = DateCwdReminderInjector.prototype.transform;
+      DateCwdReminderInjector.prototype.transform = function(context,date,cwd) {
+        const selected = (execution.getStore() ?? scope).calendar(date,cwd);
+        return transform.call(this,context,selected.date,selected.cwd);
+      };
+    }
 
     const providerFields = new Set(["model", "instructions", "tools", "tool_choice", "parallel_tool_calls",
       "max_output_tokens", "temperature", "top_p", "reasoning", "text", "include", "prompt_cache_key",
@@ -207,7 +213,7 @@ export default async function(pi) {
         if (snapshot && !rebaseline && (snapshot.api ?? "openai-responses") !== api) return fatal();
         const currentModelCodec = modelCodec(ctx.model);
         if (snapshot?.modelCodec && !rebaseline
-          && JSON.stringify(snapshot.modelCodec) !== JSON.stringify(currentModelCodec)) return fatal();
+          && JSON.stringify(snapshot.modelCodec) !== JSON.stringify(currentModelCodec)) {phase="model-codec:"+(childConfig?"child":"root");return fatal();}
         if (Object.entries(event.payload).some(([key, value]) => value !== undefined && key !== "input"
           && !providerFields.has(key) && !(codex && transportFields.has(key)))) return fatal();
         if (event.payload.type !== undefined && event.payload.type !== "response.create") return fatal();
@@ -254,6 +260,7 @@ export default async function(pi) {
           const ack = await fetch(endpoint + "/seal", { method: "POST", headers: {
             ...auth, "x-native-session-id": nativeSessionId, "x-native-has-history": "false",
             ...(rebaseline ? { "x-prefix-rebaseline-id": rebaseline.id } : {}),
+            ...(childConfig ? {"x-native-session-file":Buffer.from(manager.getSessionFile()).toString("base64url")} : {}),
           }, body: payload, signal: AbortSignal.timeout(4500) });
           if (ack.status !== 200) return fatal();
           const receipt = await ack.json();
@@ -264,7 +271,7 @@ export default async function(pi) {
         }
         phase = "configuration";
         for (const field of configFields) {
-          if (JSON.stringify(event.payload[field]) !== JSON.stringify(snapshot.providerStatic[field])) return fatal();
+          if (JSON.stringify(event.payload[field]) !== JSON.stringify(snapshot.providerStatic[field])) {phase="configuration:"+field+(childConfig?":child":":root");return fatal();}
         }
         phase = "tool-compatibility";
         // Check every dispatch, including native tool-loop iterations.
@@ -286,23 +293,6 @@ export default async function(pi) {
     // Configured extensions can follow CLI extensions. Verify the pinned
     // runner's effective handler order before any capture or HTTP request.
     // This bounded extension inventory check never touches native history.
-    const emitBeforeProviderRequest = ExtensionRunner.prototype.emitBeforeProviderRequest;
-    if (typeof emitBeforeProviderRequest !== "function") return fatal();
-    const protectedRunners = new WeakSet();
-    ExtensionRunner.prototype.emitBeforeProviderRequest = async function(...args) {
-      let seen = false;
-      let count = 0;
-      if (!Array.isArray(this.extensions) || this.extensions.length > 256) { phase = "hook-order"; return fatal(); }
-      for (const extension of this.extensions) {
-        for (const handler of extension.handlers.get("before_provider_request") ?? []) {
-          if (seen || ++count > 2048) { phase = "hook-order"; return fatal(); }
-          if (handler === providerGuard) seen = true;
-        }
-      }
-      if (seen) protectedRunners.add(this);
-      else if (protectedRunners.has(this)) { phase = "hook-order"; return fatal(); }
-      return emitBeforeProviderRequest.apply(this, args);
-    };
     // Native summarization uses the side stream, separate from the main agent's
     // before_provider_request hook. Do not replace its summarization envelope.
     const recoverBeforeInput = lifecycle(async (_event, ctx) => {
@@ -347,7 +337,111 @@ export default async function(pi) {
     pi.on("session_switch", (event, ctx) => event.reason === "fork" ? finishDerivation(event, ctx) : undefined);
     // Private native lifecycle control; never a visible slash command or model
     // tool. The pinned AgentSession owns transcript and artifact copying.
+    const restoreAgent = agent=>{
+      if(snapshot?.api==="openai-codex-responses")agent.setSystemPrompt([
+        ...(typeof snapshot.providerStatic.instructions==="string" && snapshot.providerStatic.instructions.length ? [snapshot.providerStatic.instructions]:[]),
+        ...snapshot.inputPrefix.filter(item=>item.type==="message").map(item=>item.content[0].text),
+      ]);
+      const model=agent.state.model;
+      if(snapshot?.modelCodec && model?.id===snapshot.modelSelection?.id && model?.provider===snapshot.modelSelection?.provider){
+        const restored={...model};
+        for(const key of modelCodecFields)delete restored[key];
+        Object.assign(restored,structuredClone(snapshot.modelCodec));
+        agent.setModel(restored);
+      }
+      const tools=childConfig && (snapshot?.providerStatic.tools ?? snapshot?.inputPrefix?.[0]?.tools);
+      if(tools){
+        const selected=tools.map(tool=>agent.state.tools.find(native=>native.name===tool.name));
+        if(selected.some(tool=>!tool))return fatal();
+        agent.setTools(selected);
+      }
+    };
+    if (childConfig) return {scope,providerGuard,restoreAgent};
     const { AgentSession } = await import(${JSON.stringify(new URL('./agent-session.ts', dateReminderModuleUrl).href)});
+    const { SessionManager } = await import(${JSON.stringify(new URL('./session-manager.ts', dateReminderModuleUrl).href)});
+    const children = new Map(), preparations = new Map(), rootRunners = new WeakSet();
+    const rootHandlers = new Set();
+    let rootExtension;
+    const inventory = async () => {
+      const response = await fetch(endpoint + "/inventory",{headers:auth,signal:AbortSignal.timeout(4500)});
+      if (response.status !== 200) return fatal();
+      return response.json();
+    };
+    const childState = async (id, file, existing = false) => {
+      if (children.has(id)) return children.get(id);
+      if (preparations.has(id)) return preparations.get(id);
+      if (children.size + preparations.size >= 64 || typeof file !== "string") return fatal();
+      const pending = (async()=>{
+        await claimNativeIdentity(id,undefined,true);
+        const handlers = new Map();
+        const child = await installPrefixGuard({on(name,handler){const list=handlers.get(name)??[];list.push(handler);handlers.set(name,list);}},
+          {endpoint:endpoint+"/children/"+encodeURIComponent(id),token,execution,claim:(native)=>{
+            if(native!==id) return fatal(); return claimNativeIdentity(id,undefined,true);
+          }});
+        if (existing) {
+          const response=await fetch(endpoint+"/children/"+encodeURIComponent(id)+"/snapshot",{headers:auth,signal:AbortSignal.timeout(4500)});
+          if(response.status!==200)return fatal();
+        }
+        const value={...child,handlers}; children.set(id,value);return value;
+      })();
+      preparations.set(id,pending);
+      try{return await pending;}finally{preparations.delete(id);}
+    };
+    const beforeRead = async file => {
+      const path=resolve(file), known=await inventory();
+      if(path===known.root?.nativeSessionFile) return;
+      const child=known.children.find(value=>resolve(value.nativeSessionFile)===path);
+      if(child){await childState(child.nativeSessionId,path,true);return;}
+      try {await lstat(path);return fatal();} catch(error){if(error.code!=="ENOENT")return fatal();}
+    };
+    const nativeOpen=SessionManager.open;
+    SessionManager.open=async function(file,...args){
+      await beforeRead(file);
+      const manager=await nativeOpen.call(this,file,...args);
+      if(manager.getSessionId()!==snapshot?.nativeSessionId) await childState(manager.getSessionId(),manager.getSessionFile());
+      return manager;
+    };
+    const peek=SessionManager.peekSessionInit;
+    if(typeof peek!=="function")return fatal();
+    SessionManager.peekSessionInit=async function(file,...args){await beforeRead(file);return peek.call(this,file,...args);};
+    const prepareRunner=async runner=>{
+      const manager=runner.sessionManager,id=manager.getSessionId();
+      if(!rootExtension){
+        rootExtension=runner.extensions.find(extension=>(extension.handlers.get("before_provider_request")??[]).includes(providerGuard));
+        if(!rootExtension)return fatal();
+        for(const list of rootExtension.handlers.values())for(const handler of list)rootHandlers.add(handler);
+      }
+      if(rootRunners.has(runner) || !snapshot || id===snapshot.nativeSessionId){rootRunners.add(runner);return {scope,providerGuard};}
+      const child=await childState(id,manager.getSessionFile());
+      if(!runner.extensions.some(extension=>extension.handlers===child.handlers)) {
+        runner.extensions=runner.extensions.map(extension=>({...extension,handlers:new Map([...extension.handlers].map(([key,list])=>[key,list.filter(handler=>!rootHandlers.has(handler))]))}));
+        runner.extensions.push({...rootExtension,handlers:child.handlers});
+      }
+      return child;
+    };
+    for(const method of ["emit","emitInput","emitBeforeAgentStart","emitBeforeProviderRequest"]){
+      const native=ExtensionRunner.prototype[method];if(typeof native!=="function")return fatal();
+      ExtensionRunner.prototype[method]=async function(...args){
+        const selected=await prepareRunner(this);
+        if(method==="emitBeforeProviderRequest"){
+          let seen=false,count=0;
+          if(!Array.isArray(this.extensions)||this.extensions.length>256)return fatal();
+          for(const extension of this.extensions)for(const handler of extension.handlers.get("before_provider_request")??[]){
+            if(seen||++count>2048)return fatal();if(handler===selected.providerGuard)seen=true;
+          }
+          if(!seen)return fatal();
+        }
+        return execution.run(selected.scope,()=>native.apply(this,args));
+      };
+    }
+    const { Agent } = await import(${JSON.stringify(new URL('../../../pi-agent-core/src/agent.ts', dateReminderModuleUrl).href)});
+    const nativePrompt=Agent.prototype.prompt, restoredAgents=new WeakSet();
+    Agent.prototype.prompt=async function(...args){
+      const selected=!snapshot||this.sessionId===snapshot.nativeSessionId?{scope,restoreAgent}:children.get(this.sessionId);
+      if(!selected)return fatal();
+      if(!restoredAgents.has(this)){selected.restoreAgent?.(this);restoredAgents.add(this);}
+      return execution.run(selected.scope,()=>nativePrompt.apply(this,args));
+    };
     let activeSession, deriving = false;
     const nativeIdentity = Object.getOwnPropertyDescriptor(AgentSession.prototype, "sessionId");
     if (!nativeIdentity?.get) return fatal();
@@ -383,6 +477,7 @@ export default async function(pi) {
     const registered = await fetch(endpoint + "/control", { method: "POST", headers: auth,
       body: JSON.stringify({ endpoint: "http://127.0.0.1:" + control.port + "/derive" }), signal: AbortSignal.timeout(4500) });
     if (registered.status !== 200) return fatal();
+    globalThis[Symbol.for("pibo.omp.prefix.installed")] = true;
     await writeFile(ready, JSON.stringify({ nonce, codec: ${JSON.stringify(codec)} }), { mode: 0o600 });
   } catch { return fatal(); }
 }
