@@ -2,7 +2,7 @@ import type { AgentRuntimeModelCatalog, AgentRuntimeModelInfo } from "../../agen
 import { OmpRpcClient } from "./client.js";
 
 /** OMP thinking levels (from ai/types.ts ThinkingLevel). */
-export const OMP_REASONING_VALUES = ["none", "low", "medium", "high"] as const;
+export const OMP_REASONING_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export const OMP_MODEL_PROVIDER_ID = "omp";
 export const OMP_MODEL_OPTIONS_SCHEMA = {
 	type: "object",

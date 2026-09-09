@@ -394,7 +394,7 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	const previousRuntime = sessions.get(childId).runtimeBinding;
 	let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId,
 		expectedRevision: previousRuntime.revision, startFresh: true });
-	assert.equal(fresh.metadata.piboSessionPrefix, undefined);
+	assert.deepEqual(fresh.metadata.piboSessionPrefix,{format:2,status:"pending",transitionId:fresh.metadata.piboSessionPrefixRebaseline.id});
 	assert.equal(fresh.metadata.piboSessionPrefixRebaseline.reason, "runtime-change");
 	const cancelled = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: fresh.revision });
 	assert.equal(cancelled.nativeSessionId, previousRuntime.nativeSessionId);

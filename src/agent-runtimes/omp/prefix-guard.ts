@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 export default async function installPrefixGuard(pi, childConfig) {
   if (!childConfig && globalThis[Symbol.for("pibo.omp.prefix.installed")]) return;
   let phase = "bootstrap";
-  const fatal = () => { process.stderr.write("Pibo native prefix recovery required: " + phase + "\n"); process.exit(78); };
+  const fatal = () => { globalThis[Symbol.for("pibo.omp.prefix.failed")]=true; process.stderr.write("Pibo native prefix recovery required: " + phase + "\n"); process.exit(78); };
   const freeze = value => {
     if (value && typeof value === "object" && !Object.isFrozen(value)) {
       for (const child of Object.values(value)) freeze(child);
@@ -36,6 +36,7 @@ export default async function installPrefixGuard(pi, childConfig) {
     if (!childConfig) delete globalThis[Symbol.for("pibo.omp.prefix.claimNative")];
     for (const key of ["PIBO_PREFIX_ENDPOINT", "PIBO_PREFIX_TOKEN", "PIBO_PREFIX_READY_FILE", "PIBO_PREFIX_READY_NONCE"]) delete process.env[key];
     const auth = { authorization: "Bearer " + token };
+    const {resolveOpenAICompatPolicy} = await import(${JSON.stringify(new URL("../../../pi-ai/src/providers/openai-shared.ts", dateReminderModuleUrl).href)});
     phase = "restore";
     const response = await fetch(endpoint + "/snapshot", { headers: auth, signal: AbortSignal.timeout(5000) });
     let snapshot;
@@ -45,6 +46,7 @@ export default async function installPrefixGuard(pi, childConfig) {
       || typeof snapshot.calendar.date !== "string" || typeof snapshot.calendar.cwd !== "string"
       || typeof snapshot.nativeSessionId !== "string")) return fatal();
     if (snapshot) freeze(snapshot);
+    let configurationAuthorizationDirty = Boolean(snapshot);
     let initialRebaseline;
     if (!snapshot) {
       const response = await fetch(endpoint + "/rebaseline", { headers: auth, signal: AbortSignal.timeout(4500) });
@@ -69,6 +71,20 @@ export default async function installPrefixGuard(pi, childConfig) {
     if (transitionResponse.status !== 200) return fatal();
     let transition = await transitionResponse.json();
     let resolving;
+    const hashNativeFile=async path=>{
+      const hash=createHash("sha256");
+      const handle=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+      try{
+        const stat=await handle.stat();if(!stat.isFile()||stat.size>512*1024*1024)return fatal();
+        for await(const chunk of handle.createReadStream({autoClose:false}))hash.update(chunk);
+        return hash.digest("hex");
+      }finally{await handle.close();}
+    };
+    const syncNativeFile=async path=>{
+      const file=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+      try{if(!(await file.stat()).isFile())return fatal();await file.sync();}finally{await file.close();}
+      const directory=await open(dirname(path),"r");try{await directory.sync();}finally{await directory.close();}
+    };
     const syncNative = async manager => {
       const nativePath = manager.getSessionFile();
       if (!nativePath) return fatal();
@@ -96,6 +112,14 @@ export default async function installPrefixGuard(pi, childConfig) {
       resolving = (async () => {
         phase = "compaction-recovery";
         if (transition.nativeSessionId !== manager.getSessionId()) return fatal();
+        const rewrite = /^rewrite-v1:([a-f0-9]{64}):([a-f0-9]{64})$/.exec(transition.sourceHead ?? "");
+        if(rewrite){
+          const digest=await hashNativeFile(manager.getSessionFile());
+          if(digest!==rewrite[1] && digest!==rewrite[2])return fatal();
+          await syncNativeFile(manager.getSessionFile());
+          await mutateTransition("finish",{id:transition.id,changed:digest===rewrite[2]});
+          return;
+        }
         const head = manager.getLeafId();
         let cursor = head;
         let changed = false;
@@ -125,7 +149,20 @@ export default async function installPrefixGuard(pi, childConfig) {
     const { DateCwdReminderInjector } = await import(${JSON.stringify(dateReminderModuleUrl)});
     const { EXTENSION_HANDLER_TIMEOUT_MS, ExtensionRunner } = await import(${JSON.stringify(new URL('../extensibility/extensions/runner.ts', dateReminderModuleUrl).href)});
     if (EXTENSION_HANDLER_TIMEOUT_MS !== 30000) return fatal();
-    const scope = { calendar: (date,cwd) => { calendar ??= Object.freeze({date,cwd}); return calendar; } };
+    const scope = { rewrite:async(manager,content,write)=>{
+      if(!snapshot || transition?.state==="pending")return write();
+      const path=manager.getSessionFile();
+      if(snapshot.nativeSessionId!==manager.getSessionId()||typeof content!=="string"||Buffer.byteLength(content)>512*1024*1024)return fatal();
+      phase="history-rewrite";
+      const before=await hashNativeFile(path), after=createHash("sha256").update(content).digest("hex");
+      if(before===after)return write();
+      await mutateTransition("begin",{sourceHead:"rewrite-v1:"+before+":"+after});
+      await write();
+      await syncNativeFile(path);
+      const actual=await hashNativeFile(path);
+      if(actual!==before&&actual!==after)return fatal();
+      await mutateTransition("finish",{id:transition.id,changed:actual===after});
+    }, calendar: (date,cwd) => { calendar ??= Object.freeze({date,cwd}); return calendar; } };
     const execution = childConfig?.execution ?? new AsyncLocalStorage();
     if (!childConfig) {
       const transform = DateCwdReminderInjector.prototype.transform;
@@ -201,14 +238,17 @@ export default async function installPrefixGuard(pi, childConfig) {
         const modelChanged = snapshot && (snapshot.providerStatic.model !== event.payload.model
           || snapshot.modelSelection && (snapshot.modelSelection.provider !== ctx.model?.provider
             || snapshot.modelSelection.id !== ctx.model?.id));
-        if (modelChanged) {
-          phase = "explicit-model-change";
+        const configurationChanged = snapshot && configFields.some(field => JSON.stringify(snapshot.providerStatic[field]) !== JSON.stringify(event.payload[field]));
+        if (modelChanged || configurationChanged || configurationAuthorizationDirty) {
+          phase = "explicit-configuration-change";
           const authorization = await fetch(endpoint + "/rebaseline", { headers: auth, signal: AbortSignal.timeout(4500) });
-          if (authorization.status !== 200) return fatal();
-          rebaseline = await authorization.json();
-          if (rebaseline.reason !== "model-change" || rebaseline.nativeSessionId !== snapshot.nativeSessionId
+          if (authorization.status === 404 && !modelChanged && !configurationChanged) rebaseline = undefined;
+          else if (authorization.status === 200) rebaseline = await authorization.json();
+          else return fatal();
+          configurationAuthorizationDirty = false;
+          if (rebaseline && (!["model-change", "settings-change"].includes(rebaseline.reason) || rebaseline.nativeSessionId !== snapshot.nativeSessionId
             || rebaseline.targetModel?.provider !== ctx.model?.provider || rebaseline.targetModel?.id !== ctx.model?.id
-            || typeof rebaseline.id !== "string") return fatal();
+            || typeof rebaseline.id !== "string")) return fatal();
         }
         if (snapshot && !rebaseline && (snapshot.api ?? "openai-responses") !== api) return fatal();
         const currentModelCodec = modelCodec(ctx.model);
@@ -242,6 +282,37 @@ export default async function installPrefixGuard(pi, childConfig) {
         const nativeSessionId = manager.getSessionId();
         if (snapshot && snapshot.nativeSessionId !== nativeSessionId) return fatal();
         await resolveTransition(manager);
+        if (snapshot && rebaseline?.reason === "settings-change") {
+          phase = "settings-authorization";
+          const target = rebaseline.targetSettings;
+          const togglesReasoning = target?.reasoning === "off" || rebaseline.previousSettings?.reasoning === "off";
+          const withoutSettings = value => {
+            const copy = structuredClone(value);
+            delete copy.service_tier;
+            if (copy.reasoning) {
+              delete copy.reasoning.effort;
+              if(togglesReasoning && copy.reasoning.summary === "auto") delete copy.reasoning.summary;
+              if (!Object.keys(copy.reasoning).length) delete copy.reasoning;
+            }
+            if(togglesReasoning && Array.isArray(copy.include)) {
+              copy.include=copy.include.filter(item=>item!=="reasoning.encrypted_content");
+              if(!copy.include.length) delete copy.include;
+            }
+            return copy;
+          };
+          const currentStatic = Object.fromEntries(Object.entries(event.payload).filter(([key, value]) => providerFields.has(key) && value !== undefined));
+          const effort = event.payload.reasoning?.effort ?? null;
+          const policy = resolveOpenAICompatPolicy(ctx.model,{endpoint:"responses",reasoning:target?.reasoning === "off" ? undefined : target?.reasoning ?? undefined,disableReasoning:target?.reasoning === "off",toolChoice:event.payload.tool_choice});
+          const expectedEffort = policy.reasoning.omitReasoningEffort ? null : policy.reasoning.wireEffort ?? null;
+          const effortMatches = codex && target?.reasoning === "off" ? effort === null || effort === "none" : effort === expectedEffort;
+          phase = "settings-authorization:" + (!effortMatches ? "reasoning-effort" : (event.payload.service_tier === "priority") !== target?.fastMode ? "service-tier" : Object.keys({...snapshot.providerStatic,...currentStatic}).filter(key => JSON.stringify(withoutSettings(snapshot.providerStatic)[key]) !== JSON.stringify(withoutSettings(currentStatic)[key])).join(","));
+          if (!target || typeof target.fastMode !== "boolean" || !effortMatches
+            || (event.payload.service_tier === "priority") !== target.fastMode
+            || modelChanged || (snapshot.api ?? "openai-responses") !== api
+            || JSON.stringify(snapshot.modelCodec) !== JSON.stringify(currentModelCodec)
+            || JSON.stringify(withoutSettings(snapshot.providerStatic)) !== JSON.stringify(withoutSettings(currentStatic))
+            || JSON.stringify(snapshot.inputPrefix) !== JSON.stringify(inputPrefix)) return fatal();
+        }
         if (!snapshot || rebaseline) {
           phase = "native-persistence";
           const historical = !rebaseline && manager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant");
@@ -394,6 +465,28 @@ export default async function installPrefixGuard(pi, childConfig) {
       if(child){await childState(child.nativeSessionId,path,true);return;}
       try {await lstat(path);return fatal();} catch(error){if(error.code!=="ENOENT")return fatal();}
     };
+    const { FileSessionStorage } = await import(${JSON.stringify(new URL('./session-storage.ts', dateReminderModuleUrl).href)});
+    const rewriteContext=new AsyncLocalStorage();
+    const nativeRewrite=SessionManager.prototype.rewriteEntries;
+    const nativeAtomicWrite=FileSessionStorage.prototype.writeTextAtomic;
+    const nativeSyncWrite=FileSessionStorage.prototype.writeTextSync;
+    // A rejected durable begin must not be followed by native exit flushing the
+    // already-mutated in-memory branch over the original on-disk history.
+    FileSessionStorage.prototype.writeTextSync=function(...args){
+      if(globalThis[Symbol.for("pibo.omp.prefix.failed")])return;
+      return nativeSyncWrite.apply(this,args);
+    };
+    if(typeof nativeRewrite!=="function"||typeof nativeAtomicWrite!=="function")return fatal();
+    SessionManager.prototype.rewriteEntries=async function(...args){
+      const selected=this.getSessionId()===snapshot?.nativeSessionId?{scope}:children.get(this.getSessionId());
+      if(!selected || deriving)return nativeRewrite.apply(this,args);
+      return rewriteContext.run({manager:this,scope:selected.scope},()=>nativeRewrite.apply(this,args));
+    };
+    FileSessionStorage.prototype.writeTextAtomic=async function(path,content,...args){
+      const current=rewriteContext.getStore();
+      if(!current||resolve(path)!==resolve(current.manager.getSessionFile()))return nativeAtomicWrite.call(this,path,content,...args);
+      return current.scope.rewrite(current.manager,content,()=>nativeAtomicWrite.call(this,path,content,...args));
+    };
     const nativeOpen=SessionManager.open;
     SessionManager.open=async function(file,...args){
       await beforeRead(file);
@@ -452,6 +545,11 @@ export default async function installPrefixGuard(pi, childConfig) {
     } });
     const control = Bun.serve({ hostname: "127.0.0.1", port: 0, maxRequestBodySize: 1024, idleTimeout: 30,
       async fetch(request) {
+        if (request.method === "POST" && new URL(request.url).pathname === "/settings"
+          && request.headers.get("authorization") === auth.authorization && !deriving && !activeSession?.isStreaming) {
+          configurationAuthorizationDirty = true;
+          return new Response(null,{status:200});
+        }
         if (request.method !== "POST" || new URL(request.url).pathname !== "/derive"
           || request.headers.get("authorization") !== auth.authorization || deriving) return new Response(null, { status: 403 });
         deriving = true;

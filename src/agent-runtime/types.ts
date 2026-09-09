@@ -362,10 +362,10 @@ export type AgentRuntimeControls = {
 	navigateSessionTree?(params: PiboJsonObject): Promise<AgentRuntimeSessionOperationResult>;
 	switchSession?(params: PiboJsonObject): Promise<AgentRuntimeSessionOperationResult>;
 	getReasoning?(): AgentRuntimeReasoningResult;
-	setReasoning?(value: string): AgentRuntimeReasoningResult;
-	cycleReasoning?(): AgentRuntimeReasoningResult;
+	setReasoning?(value: string): AgentRuntimeReasoningResult | Promise<AgentRuntimeReasoningResult>;
+	cycleReasoning?(): AgentRuntimeReasoningResult | Promise<AgentRuntimeReasoningResult>;
 	getFastMode?(): AgentRuntimeFastModeResult;
-	setFastMode?(enabled: boolean): AgentRuntimeFastModeResult;
+	setFastMode?(enabled: boolean): AgentRuntimeFastModeResult | Promise<AgentRuntimeFastModeResult>;
 	setModel?(model: ModelProfile): Promise<ModelProfile>;
 	compact?(customInstructions?: string): Promise<unknown>;
 	respondToApproval?(requestId: string, decision: string): Promise<void>;

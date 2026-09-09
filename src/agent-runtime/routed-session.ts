@@ -679,14 +679,14 @@ export class RuntimeRoutedSession {
 		if (currentReasoning.availableValues?.length && !currentReasoning.availableValues.includes(priorReasoning.value)) {
 			return selected;
 		}
-		controls.setReasoning(priorReasoning.value);
+		await controls.setReasoning(priorReasoning.value);
 		return selected;
 	}
 
-	setThinkingLevel(level: PiboThinkingLevel): PiboThinkingResult {
+	async setThinkingLevel(level: PiboThinkingLevel): Promise<PiboThinkingResult> {
 		const setReasoning = this.runtimeSession.controls?.setReasoning;
 		if (!setReasoning) throw runtimeCapabilityError(this.runtimeSession, "reasoning-level selection");
-		const result = setReasoning(level);
+		const result = await setReasoning(level);
 		return {
 			level: typeof result.value === "string" && isPiboThinkingLevel(result.value) ? result.value : "off",
 			availableLevels: result.availableValues.filter(isPiboThinkingLevel),
@@ -694,10 +694,10 @@ export class RuntimeRoutedSession {
 		};
 	}
 
-	cycleThinkingLevel(): PiboThinkingResult {
+	async cycleThinkingLevel(): Promise<PiboThinkingResult> {
 		const cycleReasoning = this.runtimeSession.controls?.cycleReasoning;
 		if (!cycleReasoning) throw runtimeCapabilityError(this.runtimeSession, "reasoning-level cycling");
-		const result = cycleReasoning();
+		const result = await cycleReasoning();
 		return {
 			level: typeof result.value === "string" && isPiboThinkingLevel(result.value) ? result.value : "off",
 			availableLevels: result.availableValues.filter(isPiboThinkingLevel),
@@ -710,10 +710,10 @@ export class RuntimeRoutedSession {
 		return getFastMode ? getFastMode() : { mode: "normal", supported: false };
 	}
 
-	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean } {
+	async setFastMode(enabled: boolean): Promise<{ mode: "fast" | "normal"; supported: boolean; changed: boolean }> {
 		const setFastMode = this.runtimeSession.controls?.setFastMode;
 		if (!setFastMode) return { mode: "normal", supported: false, changed: false };
-		const result = setFastMode(enabled);
+		const result = await setFastMode(enabled);
 		return { ...result, changed: result.changed ?? false };
 	}
 

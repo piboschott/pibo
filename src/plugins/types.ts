@@ -223,10 +223,10 @@ export type PiboGatewayActionContext = {
 	navigateSessionTree(params: PiboSessionTreeNavigateParams): Promise<PiboSessionOperationResult>;
 	switchSession(params: PiboSessionSwitchParams): Promise<PiboSessionOperationResult>;
 	getThinkingLevel(): PiboThinkingResult;
-	setThinkingLevel(level: PiboThinkingLevel): PiboThinkingResult;
-	cycleThinkingLevel(): PiboThinkingResult;
+	setThinkingLevel(level: PiboThinkingLevel): PiboThinkingResult | Promise<PiboThinkingResult>;
+	cycleThinkingLevel(): PiboThinkingResult | Promise<PiboThinkingResult>;
 	getFastMode(): { mode: "fast" | "normal"; supported: boolean };
-	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean };
+	setFastMode(enabled: boolean): { mode: "fast" | "normal"; supported: boolean; changed: boolean } | Promise<{ mode: "fast" | "normal"; supported: boolean; changed: boolean }>;
 	setModel(model: ModelProfile): Promise<ModelProfile>;
 	compact(customInstructions?: string): Promise<CompactionResult>;
 	respondToApproval(requestId: string, decision: string): Promise<void>;

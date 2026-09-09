@@ -97,7 +97,7 @@ export type OmpRpcCommand =
 	| { id?: string; type: "cycle_model" }
 	| { id?: string; type: "get_available_models" }
 	// Thinking
-	| { id?: string; type: "set_thinking_level"; level: OmpRpcThinkingLevel }
+	| { id?: string; type: "set_thinking_level"; level?: OmpRpcThinkingLevel }
 	| { id?: string; type: "cycle_thinking_level" }
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }

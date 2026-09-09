@@ -49,6 +49,7 @@ export async function runDebugCli(argv = process.argv): Promise<void> {
 			printDebugDiscovery();
 			return;
 		}
+		if(args[0]==="prefix"){const {runDebugPrefixCli}=await import("./prefix.js");await runDebugPrefixCli(args.slice(1));return;}
 		if(args[0]==="backup"){const {runStorageBackupCli}=await import("./storage-backup.js");await runStorageBackupCli(args.slice(1));return;}
 		if (args[0] === "db") {
 			await runDebugDb(args.slice(1));
@@ -1276,6 +1277,7 @@ function printDebugDiscovery(): void {
 	console.log(`pibo debug - inspect local Pibo data
 
 Commands:
+  prefix   Inventory protected sessions and collect unreferenced capsules
   backup   Create, verify or restore an explicit SQLite and payload snapshot
   db       Inspect and query local SQLite stores
   session  Inspect one Pibo Session by id or Chat URL

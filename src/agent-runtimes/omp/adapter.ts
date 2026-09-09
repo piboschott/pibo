@@ -1,3 +1,4 @@
+import type { PrefixRuntimeSettings } from "../../sessions/prefix-settings.js";
 import { rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
 import { randomUUID } from "node:crypto";
 import type { SessionPrefixController } from "../../sessions/prefix-session.js";
@@ -256,6 +257,8 @@ type OmpProcessBundle = {
 	binding?: RuntimeSessionBinding;
 	prefixController?: SessionPrefixController;
 	prefixOpen?: OmpPrefixOpen;
+	initialSettings?: PrefixRuntimeSettings;
+	reasoningSupported?: boolean;
 };
 
 function bindingForOmp(piboSessionId: string, runtimeInstanceId: string, previous: RuntimeSessionBinding | undefined): RuntimeSessionBinding {
@@ -288,6 +291,8 @@ export class OmpSession implements AgentRuntimeSession {
 	private hostTools: OmpHostToolBridge;
 	private resourceDelivery: OmpResourceDelivery;
 	private forkCandidatesRequest?: Promise<AgentRuntimeForkCandidate[]>;
+	private nativeSettings: PrefixRuntimeSettings;
+	private reasoningSupported: boolean;
 
 	constructor(
 		readonly runtimeInstanceId: string,
@@ -297,6 +302,8 @@ export class OmpSession implements AgentRuntimeSession {
 		private readonly adapter?: { detachLiveSession(session: OmpSession): void },
 	) {
 		this.client = bundle.client;
+		this.nativeSettings = bundle.initialSettings ?? {reasoning:null,fastMode:false};
+		this.reasoningSupported = bundle.reasoningSupported ?? true;
 		this.paths = bundle.paths;
 		this.thread = bundle.threads;
 		this.resourceDelivery = bundle.resourceDelivery;
@@ -323,25 +330,20 @@ export class OmpSession implements AgentRuntimeSession {
 				this.updateBinding();
 				return result;
 			}),
-			getReasoning: () => parseOmpReasoning(undefined),
-			setReasoning: (value) => {
-				this.assertIdle();
-				const info = parseOmpReasoning(value);
-				// Send the real OMP thinking-level change (best-effort; contract is sync).
-				const level = info.value ?? "medium";
-				void this.client.request({ type: "set_thinking_level", level }, "set_thinking_level").catch((error) => {
-					this.emitWarning("OMP set_thinking_level failed: " + (error instanceof Error ? error.message : String(error)));
-				});
-				return info;
-			},
-			setFastMode: (enabled) => {
-				this.assertIdle();
-				void this.client.request({ type: "set_fast_mode", enabled }, "set_fast_mode").catch((error) => {
-					this.emitWarning("OMP set_fast_mode failed: " + (error instanceof Error ? error.message : String(error)));
-				});
-				return { mode: enabled ? "fast" : "normal", supported: true, changed: true };
-			},
-			getFastMode: () => ({ mode: "normal", supported: true }),
+			getReasoning: () => this.currentReasoning(),
+			setReasoning: async (value) => this.runIdleOperation(async () => {
+				await this.refreshNativeSettings();
+				if (!this.reasoningSupported || !parseOmpReasoning(value).availableValues.includes(value)) throw new Error("Unsupported OMP reasoning effort");
+				await this.changeProtectedSettings({...this.nativeSettings,reasoning:value});
+				return this.currentReasoning();
+			}),
+			setFastMode: async (enabled) => this.runIdleOperation(async () => {
+				await this.refreshNativeSettings();
+				const previous=this.nativeSettings.fastMode;
+				await this.changeProtectedSettings({...this.nativeSettings,fastMode:enabled});
+				return {mode:this.nativeSettings.fastMode?"fast":"normal",supported:true,changed:previous!==this.nativeSettings.fastMode};
+			}),
+			getFastMode: () => ({mode:this.nativeSettings.fastMode?"fast":"normal",supported:true}),
 			setModel: async (model) => await this.runIdleOperation(async () => {
 				const provider = model.provider ?? this.config.defaultProvider ?? "";
 				const modelId = model.id ?? this.config.defaultModel ?? "";
@@ -351,13 +353,15 @@ export class OmpSession implements AgentRuntimeSession {
 				const apply = async (next: { provider: string; id: string }) => {
 					await setOmpModel(this.client, next.provider, next.id);
 					await this.thread.refresh();
+					await this.refreshNativeSettings();
 					return next;
 				};
 				if (!this.bundle.prefixController) return await apply({ provider, id: modelId });
 				await this.thread.refresh();
 				const previous = this.thread.current.model;
 				if (!previous) throw new PrefixRecoveryRequiredError("OMP did not report its current model before an explicit change");
-				return await this.bundle.prefixController.changeModel(previous, { provider, id: modelId }, apply);
+				await this.refreshNativeSettings();
+				return await this.bundle.prefixController.changeModel(previous, { provider, id: modelId }, apply, {previous:{...this.nativeSettings},current:()=>({...this.nativeSettings}),restore:settings=>this.applyNativeSettings(settings)});
 			}),
 			compact: async (customInstructions) => this.runIdleOperation(async () => {
 				return await this.client.request({ type: "compact", ...(customInstructions ? { customInstructions } : {}) }, "compact");
@@ -518,6 +522,37 @@ export class OmpSession implements AgentRuntimeSession {
 		}
 	}
 
+	private currentReasoning() {
+		return this.reasoningSupported ? parseOmpReasoning(this.nativeSettings.reasoning) : {supported:false,availableValues:[]};
+	}
+
+	private async refreshNativeSettings(): Promise<void> {
+		const response = await this.client.request({type:"get_state"},"get_state");
+		const data = ("data" in response ? response.data : undefined) as Record<string,unknown> | undefined;
+		if (!data || typeof data.fastModeEnabled !== "boolean") throw new PrefixRecoveryRequiredError("OMP did not report its native controls");
+		this.nativeSettings = {reasoning:typeof data.thinkingLevel === "string"?data.thinkingLevel:null,fastMode:data.fastModeEnabled};
+		const model=data.model as Record<string,unknown> | undefined;
+		this.reasoningSupported = model?.reasoning === true;
+	}
+
+	private async applyNativeSettings(settings:PrefixRuntimeSettings): Promise<void> {
+		await this.client.request({type:"set_thinking_level",...(settings.reasoning!==null?{level:settings.reasoning}:{})},"set_thinking_level");
+		await this.client.request({type:"set_fast_mode",enabled:settings.fastMode},"set_fast_mode");
+		await this.refreshNativeSettings();
+		await this.bundle.prefixOpen?.notifySettingsChanged();
+		if(this.nativeSettings.reasoning!==settings.reasoning || this.nativeSettings.fastMode!==settings.fastMode) throw new PrefixRecoveryRequiredError("OMP did not apply the requested controls");
+	}
+
+	private async changeProtectedSettings(target: PrefixRuntimeSettings): Promise<void> {
+		const previous={...this.nativeSettings};
+		const apply=(settings:PrefixRuntimeSettings)=>this.applyNativeSettings(settings);
+		if (!this.bundle.prefixController) return apply(target);
+		await this.thread.refresh();
+		const model=this.thread.current.model;
+		if(!model) throw new PrefixRecoveryRequiredError("OMP did not report its model before changing controls");
+		await this.bundle.prefixController.changeSettings(model,previous,target,apply);
+	}
+
 	private async runIdleOperation<T>(operation: () => Promise<T>): Promise<T> {
 		this.assertIdle();
 		this.operationInFlight = true;
@@ -632,15 +667,26 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 		// Determine native session id (+ transcript file path for later resume).
 		let nativeSessionId: string | undefined = binding.nativeSessionId;
 		let nativeSessionFile: string | undefined;
+		let initialSettings: PrefixRuntimeSettings | undefined;
+		let reasoningSupported: boolean | undefined;
 		try {
+			const desiredSettings = input.services?.prefixController?.configuredSettings;
+			if(desiredSettings){
+				await client.request({type:"set_thinking_level",...(desiredSettings.reasoning!==null?{level:desiredSettings.reasoning}:{})},"set_thinking_level");
+				await client.request({type:"set_fast_mode",enabled:desiredSettings.fastMode},"set_fast_mode");
+			}
 			const state = await client.request({ type: "get_state" }, "get_state");
 			const data = state["data" as keyof typeof state];
 			if (data && typeof data === "object" && !Array.isArray(data)) {
 				const record = data as Record<string, unknown>;
+				if(typeof record.fastModeEnabled === "boolean") initialSettings={reasoning:typeof record.thinkingLevel==="string"?record.thinkingLevel:null,fastMode:record.fastModeEnabled};
+				if(record.model && typeof record.model==="object") reasoningSupported=(record.model as Record<string,unknown>).reasoning===true;
+				if(desiredSettings && (initialSettings?.reasoning!==desiredSettings.reasoning || initialSettings?.fastMode!==desiredSettings.fastMode)) throw new PrefixRecoveryRequiredError("OMP could not restore its protected controls");
 				if (typeof record.sessionId === "string") nativeSessionId = record.sessionId;
 				if (typeof record.sessionFile === "string") nativeSessionFile = record.sessionFile;
 			}
-		} catch {
+		} catch (error) {
+			if (input.services?.prefixController?.configuredSettings) {await protectedOpen?.dispose();throw error;}
 			// state is best-effort; binding stays as resolved
 		}
 
@@ -653,7 +699,7 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 		// host-tool frames.
 		const threads = new OmpThreadController(client, input.workspace, { sessionId: initial.sessionId }, protectedOpen ? "branch" : "fork");
 		const bundle: OmpProcessBundle = { client, paths, threads, resourceDelivery,
-			binding, prefixController: input.services?.prefixController, prefixOpen: protectedOpen };
+			binding, prefixController: input.services?.prefixController, prefixOpen: protectedOpen, initialSettings, reasoningSupported };
 		const session = new OmpSession(this.instanceId, bundle, this.parsed, (m) => {
 			// Warning surfaced via session events is delivered by the turn controller.
 		}, this);

@@ -287,19 +287,19 @@ test("Codex native model, reasoning, and Fast Mode controls are model-aware and 
 		await rm(root, { recursive: true, force: true });
 	});
 
-	assert.deepEqual(first.controls.setReasoning("low"), {
+	assert.deepEqual(await first.controls.setReasoning("low"), {
 		value: "low",
 		availableValues: ["low", "medium", "high", "xhigh", "max"],
 		supported: true,
 	});
-	assert.deepEqual(first.controls.setFastMode(true), { mode: "fast", supported: true, changed: true });
+	assert.deepEqual(await first.controls.setFastMode(true), { mode: "fast", supported: true, changed: true });
 	assert.deepEqual(await first.controls.setModel({ provider: "openai-codex", id: "gpt-5.2" }), {
 		provider: "openai-codex",
 		id: "gpt-5.2",
 	});
 	assert.deepEqual(first.getStatus().fastMode, { mode: "normal", supported: false });
-	assert.deepEqual(first.controls.setFastMode(true), { mode: "normal", supported: false, changed: false });
-	assert.throws(() => first.controls.setReasoning("max"), /does not support reasoning effort/);
+	assert.deepEqual(await first.controls.setFastMode(true), { mode: "normal", supported: false, changed: false });
+	await assert.rejects(first.controls.setReasoning("max"), /Unsupported Codex reasoning effort/);
 	await assert.rejects(first.controls.setModel({ provider: "openai", id: "gpt-5.2" }), /use provider "openai-codex"/);
 	await assert.rejects(first.controls.setModel({ provider: "openai-codex", id: "missing" }), /is not available/);
 

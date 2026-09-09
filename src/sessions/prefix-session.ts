@@ -1,3 +1,4 @@
+import { PREFIX_SETTINGS_KEY, readPrefixRuntimeSettings, type PrefixRuntimeSettings } from "./prefix-settings.js";
 import { PREFIX_NATIVE_CHILDREN_KEY, readNativePrefixChildren, withNativePrefixChild, type NativePrefixChild } from "./prefix-children.js";
 import { withPrefixPublication } from "./prefix-maintenance.js";
 import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
@@ -96,7 +97,7 @@ export class SessionPrefixController {
 	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
 		const persisted = this.options.getBinding();
 		const metadata = { ...binding.metadata };
-		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY]) {
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY, PREFIX_SETTINGS_KEY]) {
 			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
 			else delete metadata[key];
 		}
@@ -110,7 +111,7 @@ export class SessionPrefixController {
 		const current = this.options.readCurrentBinding?.() ?? expected;
 		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
 			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
-			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY].some(key =>
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY, PREFIX_SETTINGS_KEY].some(key =>
 				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
 			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
 		}
@@ -143,39 +144,103 @@ export class SessionPrefixController {
 
 	get hasPendingRebaseline(): boolean { return this.options.getBinding().metadata?.[SESSION_PREFIX_REBASELINE_KEY] !== undefined; }
 
-	async changeModel<T>(previous: PrefixModelSelection, target: PrefixModelSelection, apply: (model: PrefixModelSelection) => Promise<T>): Promise<T> {
+	get configuredSettings(): PrefixRuntimeSettings | undefined {
+		const pending = this.rebaseline;
+		if (pending?.reason === "settings-change") return pending.targetSettings;
+		if (pending?.reason === "model-change") return pending.targetSettings;
+		return readPrefixRuntimeSettings(this.options.getBinding().metadata?.[PREFIX_SETTINGS_KEY]);
+	}
+
+	async changeSettings<T>(model: PrefixModelSelection, previous: PrefixRuntimeSettings, target: PrefixRuntimeSettings,
+		apply: (settings: PrefixRuntimeSettings) => Promise<T>): Promise<T> {
+		previous = readPrefixRuntimeSettings(previous)!;
+		target = readPrefixRuntimeSettings(target)!;
+		const same = (a: PrefixRuntimeSettings | undefined, b: PrefixRuntimeSettings) => a?.reasoning === b.reasoning && a.fastMode === b.fastMode;
+		const existing = this.rebaseline;
+		if (existing) {
+			if (existing.reason !== "settings-change") throw new PrefixRecoveryRequiredError("another explicit prefix transition is pending");
+			if (same(existing.previousSettings, target)) {
+				const result = await apply(target); await this.abortConfigurationChange(existing.id, "settings-change"); return result;
+			}
+			if (same(existing.targetSettings, target)) return apply(target);
+			throw new PrefixRecoveryRequiredError("complete the pending settings change or restore the original controls");
+		}
+		if (same(previous, target)) return apply(target);
+		await this.ensureCurrentReader();
+		if (!this.binding) return apply(target);
+		if (this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("a native prefix transition is pending");
+		const runtime = this.transitionBinding();
+		const pending: PrefixRebaseline = {format:1,id:randomUUID(),reason:"settings-change",targetAdapterId:runtime.adapterId,
+			sourceBinding:runtime,previousModel:model,targetModel:model,previousSettings:previous,targetSettings:target};
+		const metadata = {...runtime.metadata,[SESSION_PREFIX_REBASELINE_KEY]:pending as unknown as PiboJsonObject};
+		readPrefixRebaseline(metadata);
+		const persisted = await this.options.persistence.compareAndSet({...runtime,metadata},runtime.revision!);
+		this.options.onPersisted?.(structuredClone(persisted));
+		try { return await apply(target); }
+		catch (error) {
+			try {await apply(previous);await this.abortConfigurationChange(pending.id,"settings-change");}
+			catch (rollback) {throw new AggregateError([error,rollback],"Runtime settings change failed and requires recovery");}
+			throw error;
+		}
+	}
+
+	async changeModel<T>(previous: PrefixModelSelection, target: PrefixModelSelection, apply: (model: PrefixModelSelection) => Promise<T>,
+		controls?: {previous:PrefixRuntimeSettings; current?:()=>PrefixRuntimeSettings; restore:(settings:PrefixRuntimeSettings)=>Promise<void>}): Promise<T> {
 		const same = (a: PrefixModelSelection | undefined, b: PrefixModelSelection) => a?.provider === b.provider && a.id === b.id;
+		const applyTarget = async () => {
+			const result=await apply(target);
+			const pending=this.rebaseline;
+			if(pending?.reason === "model-change" && controls?.current) await this.confirmModelSettings(pending.id,controls.current());
+			return result;
+		};
 		const existing = this.rebaseline;
 		if (existing) {
 			if (existing.reason !== "model-change") throw new PrefixRecoveryRequiredError("another explicit prefix transition is pending");
 			if (same(existing.previousModel, target)) {
 				const result = await apply(target);
+				if(existing.previousSettings) {
+					if(!controls) throw new PrefixRecoveryRequiredError("model rollback requires its original controls");
+					await controls.restore(existing.previousSettings);
+				}
 				await this.abortModelChange(existing.id);
 				return result;
 			}
-			if (same(existing.targetModel, target)) return await apply(target);
+			if (same(existing.targetModel, target)) return await applyTarget();
 			throw new PrefixRecoveryRequiredError("complete the pending model change or select the original model to cancel it");
 		}
-		const pending = await this.beginModelChange(previous, target);
-		try { return await apply(target); }
+		const pending = await this.beginModelChange(previous, target, controls?.previous);
+		try { return await applyTarget(); }
 		catch (error) {
 			if (pending) {
-				try { await apply(previous); await this.abortModelChange(pending.id); }
+				try { await apply(previous); if(pending.previousSettings) await controls!.restore(pending.previousSettings); await this.abortModelChange(pending.id); }
 				catch (rollback) { throw new AggregateError([error, rollback], "Model change failed and requires recovery"); }
 			}
 			throw error;
 		}
 	}
 
+	private async confirmModelSettings(id:string, target:PrefixRuntimeSettings): Promise<void> {
+		target=readPrefixRuntimeSettings(target)!;
+		const runtime=this.transitionBinding(),pending=readPrefixRebaseline(runtime.metadata);
+		if(!pending || pending.id!==id || pending.reason!=="model-change" || !pending.previousSettings) throw new PrefixRecoveryRequiredError("model control checkpoint lost its authorization");
+		if(pending.targetSettings) {
+			if(pending.targetSettings.reasoning!==target.reasoning || pending.targetSettings.fastMode!==target.fastMode) throw new PrefixRecoveryRequiredError("model controls changed after their checkpoint");
+			return;
+		}
+		const metadata={...runtime.metadata,[SESSION_PREFIX_REBASELINE_KEY]:{...pending,targetSettings:target} as unknown as PiboJsonObject};
+		const persisted=await this.options.persistence.compareAndSet({...runtime,metadata},runtime.revision!);
+		this.options.onPersisted?.(structuredClone(persisted));
+	}
+
 	/** Durable authorization precedes any explicit native configuration mutation. */
-	async beginModelChange(previousModel: PrefixModelSelection, targetModel: PrefixModelSelection): Promise<PrefixRebaseline | undefined> {
+	async beginModelChange(previousModel: PrefixModelSelection, targetModel: PrefixModelSelection, previousSettings?: PrefixRuntimeSettings): Promise<PrefixRebaseline | undefined> {
 		await this.ensureCurrentReader();
 		const runtime = this.transitionBinding();
 		if (previousModel.provider === targetModel.provider && previousModel.id === targetModel.id) return undefined;
 		if (!readSessionPrefixBinding(runtime.metadata)) return undefined;
 		if (this.rebaseline || this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("another prefix transition is pending");
 		const transition: PrefixRebaseline = { format: 1, id: randomUUID(), reason: "model-change",
-			targetAdapterId: runtime.adapterId, sourceBinding: runtime, previousModel, targetModel };
+			targetAdapterId: runtime.adapterId, sourceBinding: runtime, previousModel, targetModel, ...(previousSettings?{previousSettings:readPrefixRuntimeSettings(previousSettings)}:{}) };
 		const metadata = { ...runtime.metadata, [SESSION_PREFIX_REBASELINE_KEY]: transition as unknown as PiboJsonObject };
 		readPrefixRebaseline(metadata);
 		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
@@ -185,8 +250,12 @@ export class SessionPrefixController {
 
 	/** Caller has restored the original native configuration; no new dispatch occurred. */
 	async abortModelChange(id: string): Promise<void> {
+		return this.abortConfigurationChange(id,"model-change");
+	}
+
+	private async abortConfigurationChange(id: string, reason: "model-change" | "settings-change"): Promise<void> {
 		const runtime = this.transitionBinding(), pending = readPrefixRebaseline(runtime.metadata);
-		if (!pending || pending.id !== id || pending.reason !== "model-change") throw new PrefixRecoveryRequiredError("model transition is no longer pending");
+		if (!pending || pending.id !== id || pending.reason !== reason) throw new PrefixRecoveryRequiredError("configuration transition is no longer pending");
 		if (JSON.stringify({...readSessionPrefixBinding(runtime.metadata),format:2}) !== JSON.stringify({...readSessionPrefixBinding(pending.sourceBinding.metadata),format:2})) throw new PrefixRecoveryRequiredError("model transition already changed its prefix");
 		const metadata = { ...runtime.metadata }; delete metadata[SESSION_PREFIX_REBASELINE_KEY];
 		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
@@ -197,6 +266,7 @@ export class SessionPrefixController {
 		const runtime = this.transitionBinding();
 		if (this.rebaseline) throw new PrefixRecoveryRequiredError("an explicit prefix transition is pending");
 		const prefix = readSessionPrefixBinding(runtime.metadata);
+		readPrefixRuntimeSettings(runtime.metadata?.[PREFIX_SETTINGS_KEY]);
 		if (!prefix) return undefined;
 		if (this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("a native prefix transition is already pending");
 		const transition: PrefixTransition = { format: 1, id: randomUUID(), reason: "compaction",
@@ -317,6 +387,7 @@ export class SessionPrefixController {
 		await this.ensureCurrentReader();
 		const runtime = this.options.getBinding();
 		const prefix = readSessionPrefixBinding(runtime.metadata);
+		readPrefixRuntimeSettings(runtime.metadata?.[PREFIX_SETTINGS_KEY]);
 		if (!prefix) return undefined;
 		if (prefix.nativeSessionId !== runtime.nativeSessionId) throw new PrefixRecoveryRequiredError("native session identity changed");
 		if (prefix.capsule.adapterId !== runtime.adapterId || prefix.capsule.codec !== codec) throw new PrefixRecoveryRequiredError("unsupported runtime or codec");
@@ -345,6 +416,11 @@ export class SessionPrefixController {
 					reason: pending.reason, nativeSessionId: input.nativeSessionId, evidence: input.evidence };
 				const metadata: PiboJsonObject = { ...runtime.metadata, [SESSION_PREFIX_METADATA_KEY]: prefix as unknown as PiboJsonObject };
 				delete metadata[SESSION_PREFIX_REBASELINE_KEY];
+				if (pending.reason === "settings-change") metadata[PREFIX_SETTINGS_KEY] = pending.targetSettings!;
+				if (pending.reason === "model-change") {
+					if(pending.targetSettings) metadata[PREFIX_SETTINGS_KEY]=pending.targetSettings;
+					else delete metadata[PREFIX_SETTINGS_KEY];
+				}
 				const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
 				this.options.onPersisted?.(structuredClone(persisted));
 				this.sealedPayload = { digest: capsule.digest, payload: input.payload };

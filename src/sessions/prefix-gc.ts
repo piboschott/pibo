@@ -1,3 +1,4 @@
+import {PREFIX_SETTINGS_KEY,readPrefixRuntimeSettings} from "./prefix-settings.js";
 import { readNativePrefixChildren } from "./prefix-children.js";
 import { DatabaseSync } from "node:sqlite";
 import { lstat, opendir, realpath, unlink, open } from "node:fs/promises";
@@ -15,6 +16,8 @@ export async function collectUnreferencedPrefixes(input: { root: string; databas
  try {
   const references = new Set<string>(); let rows = 0;
   const collect = (metadata: PiboJsonObject) => {
+   if(!metadata || typeof metadata!=="object" || Array.isArray(metadata)) throw new PrefixRecoveryRequiredError("collection encountered invalid binding metadata");
+   readPrefixRuntimeSettings(metadata?.[PREFIX_SETTINGS_KEY]);
    for (const ref of [readSessionPrefixBinding(metadata)?.capsule, readSessionPrefixResourceReference(metadata), ...readPrefixResourceDependencies(metadata)]) if (ref) references.add(ref.digest);
    for (const child of readNativePrefixChildren(metadata)) references.add(child.prefix.capsule.digest);
    const pending = readPrefixRebaseline(metadata);

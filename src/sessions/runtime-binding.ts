@@ -1,3 +1,4 @@
+import { PREFIX_SETTINGS_KEY, readPrefixRuntimeSettings } from "./prefix-settings.js";
 import { readNativePrefixChildren } from "./prefix-children.js";
 import { readPrefixResourceDependencies, readPrefixArtifactDependencies, nativeArtifactDirectories } from "./prefix-dependencies.js";
 import { isDeepStrictEqual } from "node:util";
@@ -205,17 +206,21 @@ export function assertRuntimeSessionBindingTransition(
 			operationalBinding(next), operationalBinding(previousRebaseline.sourceBinding));
 	if (!previousRebaseline && nextRebaseline) {
 		if (!previousPrefix || !isDeepStrictEqual(nextRebaseline.sourceBinding, current)
-			|| nextRebaseline.reason !== "model-change" && !startsRuntimeTransition
-			|| nextRebaseline.reason === "model-change" && !isDeepStrictEqual(previousPrefix, nextPrefix) && !upgradesReader
+			|| !["model-change","settings-change"].includes(nextRebaseline.reason) && !startsRuntimeTransition
+			|| ["model-change","settings-change"].includes(nextRebaseline.reason) && !isDeepStrictEqual(previousPrefix, nextPrefix) && !upgradesReader
 			|| nextRebaseline.targetAdapterId !== next.adapterId
 			|| nextRebaseline.sourceBinding.piboSessionId !== next.piboSessionId
 			|| readPrefixTransition(current.metadata)?.state === "pending") {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix transition must start from the current durable binding");
 		}
 	} else if (previousRebaseline && nextRebaseline && !isDeepStrictEqual(previousRebaseline, nextRebaseline)) {
-		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "pending explicit prefix transition cannot be replaced");
+		const confirmsModelControls = previousRebaseline.reason === "model-change" && previousRebaseline.previousSettings
+			&& !previousRebaseline.targetSettings && nextRebaseline.targetSettings
+			&& isDeepStrictEqual({...previousRebaseline,targetSettings:nextRebaseline.targetSettings},nextRebaseline)
+			&& isDeepStrictEqual(previousPrefix,nextPrefix);
+		if(!confirmsModelControls) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "pending explicit prefix transition cannot be replaced");
 	} else if (previousRebaseline && !nextRebaseline && !restoresRuntimeTransition
-		&& (previousRebaseline.reason !== "model-change" || !isDeepStrictEqual(previousPrefix, nextPrefix))) {
+		&& (!["model-change","settings-change"].includes(previousRebaseline.reason) || !isDeepStrictEqual(previousPrefix, nextPrefix))) {
 		const sourcePrefix = readSessionPrefixBinding(previousRebaseline.sourceBinding.metadata)!;
 		if (!nextPrefix || nextPrefix.epoch !== sourcePrefix.epoch + 1 || nextPrefix.reason !== previousRebaseline.reason) {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix completion must publish its next epoch");
@@ -254,6 +259,14 @@ export function assertRuntimeSessionBindingTransition(
   if (!fence || typeof fence !== "object" || Array.isArray(fence) || fence.format !== 2 || fence.status !== "pending" || fence.transitionId !== nextRebaseline.id) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"pending prefix transition requires its reader fence");
  }
  if (nextChildren.length && nextPrefix?.format !== 2 && !nextRebaseline) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native children require the current prefix reader format");
+	const previousSettings = readPrefixRuntimeSettings(current.metadata?.[PREFIX_SETTINGS_KEY]);
+	const nextSettings = readPrefixRuntimeSettings(next.metadata?.[PREFIX_SETTINGS_KEY]);
+	if (!isDeepStrictEqual(previousSettings,nextSettings) && !startsRuntimeTransition && !restoresRuntimeTransition) {
+		const completesSettings = previousRebaseline?.reason === "settings-change" && !nextRebaseline
+			&& isDeepStrictEqual(nextSettings,previousRebaseline.targetSettings);
+		const changesModel = previousRebaseline?.reason === "model-change" && !nextRebaseline && isDeepStrictEqual(nextSettings,previousRebaseline.targetSettings);
+		if (!completesSettings && !changesModel) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"protected settings require an explicit completed transition");
+	}
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);
 	if (previousTransition && !nextTransition && !startsRuntimeTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");

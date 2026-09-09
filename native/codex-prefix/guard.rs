@@ -568,10 +568,12 @@ pub fn select_base_instructions(candidate: String, current: String, native_id: &
     if state.refresh_base { current } else { candidate }
 }
 
-pub fn needs_native_persistence(model: &ModelInfo, native_id: &str) -> bool {
+pub fn needs_native_persistence(model: &ModelInfo, native_id: &str, effort: Value, service_tier: Option<&str>) -> bool {
     state_for(native_id, false)
         .is_some_and(|state| state.lock().map_or(true, |state| state.snapshot.as_ref()
-            .is_none_or(|snapshot| snapshot.model_info.slug != model.slug)))
+            .is_none_or(|snapshot| snapshot.model_info.slug != model.slug
+                || snapshot.configuration["reasoning"]["effort"] != effort
+                || snapshot.configuration["serviceTier"] != json!(service_tier))))
 }
 
 /// First-dispatch barrier only; no extra native file scans on ordinary turns.
@@ -688,17 +690,26 @@ pub async fn validate(
     // parent's durable, explicit authorization before replacing the capsule.
     let authorization_connection = {
         let state = state.lock().map_err(|_| failure())?;
-        state.snapshot.as_ref().filter(|snapshot| snapshot.model_info.slug != model.slug)
+        state.snapshot.as_ref().filter(|snapshot| snapshot.model_info.slug != model.slug || snapshot.configuration != configuration(request_value))
             .map(|_| state.connection.clone())
     };
+    let mut settings_change = false;
     let rebaseline = if let Some(connection) = authorization_connection {
         let (status, body) = tokio::task::spawn_blocking(move ||
             request(&connection, "GET", "/rebaseline", &[], None)).await??;
         if status != 200 { return Err(failure()); }
         let value: Value = serde_json::from_slice(&body)?;
-        if value["reason"] != "model-change" || value["nativeSessionId"] != native_id
+        if (value["reason"] != "model-change" && value["reason"] != "settings-change") || value["nativeSessionId"] != native_id
             || value["targetModel"]["provider"] != "openai-codex"
             || value["targetModel"]["id"] != model.slug { return Err(failure()); }
+        if value["reason"] == "settings-change" {
+            settings_change = true;
+            let config = configuration(request_value);
+            if value["targetSettings"]["reasoning"] != config["reasoning"]["effort"]
+                || value["targetSettings"]["fastMode"].as_bool() != Some(config["serviceTier"] == "priority") {
+                return Err(failure());
+            }
+        }
         let id = value["id"].as_str().ok_or_else(failure)?;
         Uuid::parse_str(id)?;
         Some(id.to_owned())
@@ -739,6 +750,20 @@ pub async fn validate(
             .input
             .get(..prefix_length)
             .ok_or_else(failure)?;
+        if let Some(snapshot) = &state.snapshot && settings_change {
+            let without_settings = |mut config: Value| {
+                if let Some(object) = config.as_object_mut() { object.remove("serviceTier"); }
+                if let Some(reasoning) = config.get_mut("reasoning").and_then(Value::as_object_mut) { reasoning.remove("effort"); }
+                config
+            };
+            if snapshot.model_info != *model
+                || snapshot.instructions != request_value.instructions
+                || snapshot.tools.as_deref() != tools
+                || snapshot.input_prefix != prefix
+                || without_settings(snapshot.configuration.clone()) != without_settings(configuration.clone()) {
+                return Err(failure());
+            }
+        }
         if let Some(snapshot) = &state.snapshot && rebaseline.is_none() {
             if snapshot.model_info != *model
                 || snapshot.instructions != request_value.instructions

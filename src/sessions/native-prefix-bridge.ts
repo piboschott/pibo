@@ -37,6 +37,13 @@ export class NativePrefixBridge {
 		finally { clearTimeout(timer); this.derivation = undefined; }
 	}
 
+	async notifySettingsChanged(): Promise<void> {
+		if (!this.nativeControl) throw new Error("Native settings control is unavailable");
+		const url=new URL(this.nativeControl);url.pathname="/settings";
+		const response=await fetch(url,{method:"POST",headers:{authorization:`Bearer ${this.token}`},signal:AbortSignal.timeout(4500)});
+		if(response.status!==200) throw new Error("Native settings control rejected notification");
+	}
+
 	async start(): Promise<{ endpoint: string; token: string }> {
 		if (this.server) throw new Error("Native prefix bridge is already started");
 		const server = createServer((request, response) => { void this.handle(request, response); });
@@ -160,7 +167,7 @@ export class NativePrefixBridge {
 				response.setHeader("content-type", "application/json");
 				response.writeHead(pending ? 200 : 404).end(pending ? JSON.stringify({ id: pending.id, reason: pending.reason,
 					sourceAdapterId: pending.sourceBinding.adapterId, sourceNativeSessionId: pending.sourceBinding.nativeSessionId,
-					nativeSessionId: this.controller.getRuntimeBinding().nativeSessionId, targetModel: pending.targetModel }) : undefined);
+					nativeSessionId: this.controller.getRuntimeBinding().nativeSessionId, targetModel: pending.targetModel, previousSettings:pending.previousSettings, targetSettings:pending.targetSettings }) : undefined);
 				return;
 			}
 			if (request.method === "GET" && request.url === "/transition") {

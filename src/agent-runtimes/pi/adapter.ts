@@ -1,4 +1,5 @@
-import { rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
+import type { PrefixRuntimeSettings } from "../../sessions/prefix-settings.js";
+import { PrefixRecoveryRequiredError, rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
 import type { SessionPrefixController } from "../../sessions/prefix-session.js";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
@@ -378,6 +379,7 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 	private readonly compatibilityHandle: AgentSessionRuntime;
 	private pendingPrompt?: PendingPiPrompt;
 	private engineProcessing = false;
+	private settingsOperation = false;
 	private bindingNativeSessionId: string;
 	private nativePresenceExpected: boolean;
 	private disposed = false;
@@ -411,6 +413,8 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 			providerFallbacksEnabled,
 			Boolean(prefixController),
 		);
+		const restored = prefixController?.configuredSettings;
+		if (restored) this.applyPrefixSettings(restored);
 		if (providerWebSearchEnabled) this.routed.enableProviderWebSearchObservation();
 		this.controls = this.createControls();
 		this.compatibilityHandle = this.createCompatibilityHandle();
@@ -447,6 +451,7 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 
 	async prompt(input: AgentRuntimePromptInput): Promise<void> {
 		this.assertActive();
+		if (this.settingsOperation) throw new Error("Pi controls are changing");
 		if (this.pendingPrompt) throw new Error(`Pi runtime session "${this.piboSessionId}" already has an active prompt.`);
 		const id = randomUUID();
 		await new Promise<void>((resolve, reject) => {
@@ -604,24 +609,54 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 				availableValues: this.runtime.session.getAvailableThinkingLevels(),
 				supported: this.runtime.session.supportsThinking(),
 			}),
-			setReasoning: (value) => {
-				const result = this.routed.setThinkingLevel(value as Parameters<PiRoutedSession["setThinkingLevel"]>[0]);
-				return { value: result.level, availableValues: result.availableLevels, supported: result.supported };
+			setReasoning: async (value) => {
+				if (!this.runtime.session.getAvailableThinkingLevels().includes(value as Parameters<PiRoutedSession["setThinkingLevel"]>[0])) throw new Error("Unsupported Pi thinking level");
+				await this.changePrefixSettings({...this.currentPrefixSettings(),reasoning:value});
+				return this.controls.getReasoning!();
 			},
-			cycleReasoning: () => {
-				const result = this.routed.cycleThinkingLevel();
-				return { value: result.level, availableValues: result.availableLevels, supported: result.supported };
+			cycleReasoning: async () => {
+				const values = this.runtime.session.getAvailableThinkingLevels();
+				if (values.length) await this.changePrefixSettings({...this.currentPrefixSettings(),reasoning:values[(values.indexOf(this.runtime.session.thinkingLevel)+1)%values.length]});
+				return this.controls.getReasoning!();
 			},
 			getFastMode: () => this.routed.getFastMode(),
-			setFastMode: (enabled) => this.routed.setFastMode(enabled),
+			setFastMode: async (enabled) => {
+				const before=this.routed.getFastMode();
+				if (!before.supported) return {...before,changed:false};
+				await this.changePrefixSettings({...this.currentPrefixSettings(),fastMode:enabled});
+				const after=this.routed.getFastMode();
+				return {...after,changed:before.mode!==after.mode};
+			},
 			setModel: async (model: ModelProfile) => {
 				const previous = this.runtime.session.model;
 				if (!this.prefixController || !previous) return await this.routed.setModel(model);
 				if (!this.runtime.session.modelRuntime.getModel(model.provider, model.id)) throw new Error(`Unknown model ${model.provider}/${model.id}`);
-				return await this.prefixController.changeModel({ provider: previous.provider, id: previous.id }, model, next => this.routed.setModel(next));
+				return await this.prefixController.changeModel({ provider: previous.provider, id: previous.id }, model, next => this.routed.setModel(next), {previous:this.currentPrefixSettings(),current:()=>this.currentPrefixSettings(),restore:async settings=>this.applyPrefixSettings(settings)});
 			},
 			compact: async (customInstructions) => await this.routed.compact(customInstructions),
 		};
+	}
+
+	private currentPrefixSettings(): PrefixRuntimeSettings {
+		return {reasoning:this.runtime.session.thinkingLevel,fastMode:this.routed.getFastMode().mode==="fast"};
+	}
+
+	private applyPrefixSettings(settings: PrefixRuntimeSettings): void {
+		if(settings.reasoning!==null) this.routed.setThinkingLevel(settings.reasoning as Parameters<PiRoutedSession["setThinkingLevel"]>[0]);
+		this.routed.setFastMode(settings.fastMode);
+		const actual=this.currentPrefixSettings();
+		if(actual.reasoning!==settings.reasoning || actual.fastMode!==settings.fastMode) throw new PrefixRecoveryRequiredError("Pi did not apply the requested controls");
+	}
+
+	private async changePrefixSettings(target: PrefixRuntimeSettings): Promise<void> {
+		this.assertActive();
+		if(this.settingsOperation || this.pendingPrompt || this.engineProcessing) throw new Error("Pi controls can only change while idle");
+		this.settingsOperation=true;
+		try {
+			const model=this.runtime.session.model;
+			if(!this.prefixController || !model) return this.applyPrefixSettings(target);
+			await this.prefixController.changeSettings({provider:model.provider,id:model.id},this.currentPrefixSettings(),target,async value=>this.applyPrefixSettings(value));
+		} finally {this.settingsOperation=false;}
 	}
 
 	private createCompatibilityHandle(): AgentSessionRuntime {

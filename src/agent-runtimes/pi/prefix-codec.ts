@@ -233,6 +233,35 @@ export async function installPiPrefixCodec(
 				}
 				const embeddedPrefixLength = requestCodec === PI_RESPONSES_PREFIX_CODEC ? inputPrefixLength(transformed.input) : undefined;
 				if (embeddedPrefixLength !== undefined && Object.isFrozen(transformed.input)) throw new PrefixRecoveryRequiredError("provider input envelope cannot restore its prefix");
+				if (snapshot && rebaseline?.reason === "settings-change") {
+					const target = rebaseline.targetSettings!;
+					const effort = object(transformed.reasoning) ? transformed.reasoning.effort ?? null : null;
+					const mapping = model.thinkingLevelMap as Record<string,string|null|undefined> | undefined;
+					const expectedEffort = !model.reasoning || target.reasoning === null ? null
+						: target.reasoning === "off" ? (mapping?.off === null ? null : mapping?.off ?? "none") : mapping?.[target.reasoning] ?? target.reasoning;
+					const togglesReasoning = target.reasoning === "off" || rebaseline.previousSettings?.reasoning === "off";
+					const effortMatches = target.reasoning === "off" ? effort === expectedEffort || effort === null : effort === expectedEffort;
+					const withoutSettings = (value: Record<string,unknown>) => {
+						const copy = structuredClone(value); delete copy.input; delete copy.service_tier;
+						if(object(copy.reasoning)) {
+							delete copy.reasoning.effort;
+							if(togglesReasoning && copy.reasoning.summary === "auto") delete copy.reasoning.summary;
+							if(!Object.keys(copy.reasoning).length) delete copy.reasoning;
+						}
+						if(togglesReasoning && Array.isArray(copy.include)) {
+							copy.include=copy.include.filter(item=>item!=="reasoning.encrypted_content");
+							if(!(copy.include as unknown[]).length)delete copy.include;
+						}
+						return copy;
+					};
+					if (rebaseline.targetModel?.provider !== model.provider || rebaseline.targetModel?.id !== model.id
+						|| !effortMatches || (transformed.service_tier === "priority") !== target.fastMode
+						|| !isDeepStrictEqual(snapshot.modelConfiguration,modelConfiguration)
+						|| !isDeepStrictEqual(withoutSettings(snapshot.providerStatic),withoutSettings(transformed))
+						|| !isDeepStrictEqual(snapshot.inputPrefix,embeddedPrefixLength===undefined?undefined:transformed.input.slice(0,embeddedPrefixLength))) {
+						throw new PrefixRecoveryRequiredError("settings authorization does not match the native request: " + (!effortMatches ? "reasoning effort" : (transformed.service_tier === "priority") !== target.fastMode ? "service tier" : Object.keys({...snapshot.providerStatic,...transformed}).filter(key=>key!=="input" && !isDeepStrictEqual(withoutSettings(snapshot!.providerStatic)[key],withoutSettings(transformed)[key])).join(",")));
+					}
+				}
 				if (!snapshot || rebaseline) {
 					const providerStatic: Record<string, unknown> = {};
 					for (const key of Object.keys(transformed)) if (key !== "input") providerStatic[key] = structuredClone(transformed[key]);

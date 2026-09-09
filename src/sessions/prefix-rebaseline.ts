@@ -1,3 +1,4 @@
+import { PREFIX_SETTINGS_KEY, readPrefixRuntimeSettings, type PrefixRuntimeSettings } from "./prefix-settings.js";
 import { PREFIX_NATIVE_CHILDREN_KEY, readNativePrefixChildren } from "./prefix-children.js";
 import type { PiboJsonObject } from "../core/events.js";
 import { randomUUID } from "node:crypto";
@@ -10,12 +11,14 @@ export type PrefixModelSelection = { provider: string; id: string };
 export type PrefixRebaseline = {
 	format: 1;
 	id: string;
-	reason: "model-change" | "runtime-change" | "explicit-refresh";
+	reason: "model-change" | "runtime-change" | "explicit-refresh" | "settings-change";
 	targetAdapterId: string;
 	/** One pending transition only; completed transitions remain in the binding audit. */
 	sourceBinding: RuntimeSessionBinding;
 	previousModel?: PrefixModelSelection;
 	targetModel?: PrefixModelSelection;
+	previousSettings?: PrefixRuntimeSettings;
+	targetSettings?: PrefixRuntimeSettings;
 };
 
 /** Explicit runtime replacement retains the complete rollback reference. */
@@ -29,7 +32,7 @@ export function preparePrefixRuntimeTransition(source: RuntimeSessionBinding, ta
 	const sourceFile = typeof source.metadata?.nativeSessionFile === "string" ? source.metadata.nativeSessionFile : source.locator?.kind === "local-file" ? source.locator.value : undefined;
 	const retained = retainHistory ? retainPrefixArtifactDependencies(retainPrefixResourceDependencies(target.metadata, source.metadata), source.metadata, source.adapterId, sourceFile) : target.metadata;
 	const children = retainHistory ? readNativePrefixChildren(source.metadata) : [];
-	const metadata = { ...retained, ...(children.length ? {[PREFIX_NATIVE_CHILDREN_KEY]:children as unknown as PiboJsonObject[]} : {}),
+	const metadata = { ...retained, ...(reason === "explicit-refresh" && source.metadata?.[PREFIX_SETTINGS_KEY] ? {[PREFIX_SETTINGS_KEY]:source.metadata[PREFIX_SETTINGS_KEY]} : {}), ...(children.length ? {[PREFIX_NATIVE_CHILDREN_KEY]:children as unknown as PiboJsonObject[]} : {}),
 		[SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject,
 		piboSessionPrefix: {format:2,status:"pending",transitionId:policy.id} };
 	readPrefixRebaseline(metadata);
@@ -46,7 +49,7 @@ export function readPrefixRebaseline(metadata: PiboJsonObject | undefined): Pref
 	const value = metadata[SESSION_PREFIX_REBASELINE_KEY];
 	if (!value || typeof value !== "object" || Array.isArray(value) || value.format !== 1
 		|| typeof value.id !== "string" || !/^[a-f0-9-]{36}$/.test(value.id)
-		|| !["model-change", "runtime-change", "explicit-refresh"].includes(String(value.reason))
+		|| !["model-change", "runtime-change", "explicit-refresh", "settings-change"].includes(String(value.reason))
 		|| typeof value.targetAdapterId !== "string" || !value.targetAdapterId || value.targetAdapterId.length > 256
 		|| !value.sourceBinding || typeof value.sourceBinding !== "object" || Array.isArray(value.sourceBinding)
 		|| value.previousModel !== undefined && !model(value.previousModel)
@@ -62,6 +65,15 @@ export function readPrefixRebaseline(metadata: PiboJsonObject | undefined): Pref
 		throw new PrefixRecoveryRequiredError("explicit prefix transition lost its source binding");
 	}
 	if (value.reason === "model-change" && (!value.previousModel || !value.targetModel)) throw new PrefixRecoveryRequiredError("model transition lost its explicit selection");
+	if (value.reason === "settings-change" && (!value.previousModel || !value.targetModel
+		|| (value.previousModel as PiboJsonObject).provider !== (value.targetModel as PiboJsonObject).provider
+		|| (value.previousModel as PiboJsonObject).id !== (value.targetModel as PiboJsonObject).id
+		|| !readPrefixRuntimeSettings(value.previousSettings) || !readPrefixRuntimeSettings(value.targetSettings))) throw new PrefixRecoveryRequiredError("settings transition lost its explicit controls");
+	if (value.reason === "model-change") {
+		if(value.previousSettings !== undefined) readPrefixRuntimeSettings(value.previousSettings);
+		if(value.targetSettings !== undefined && (!readPrefixRuntimeSettings(value.targetSettings) || !value.previousSettings)) throw new PrefixRecoveryRequiredError("model transition lost its control checkpoint");
+	}
+	if (!["settings-change","model-change"].includes(String(value.reason)) && (value.previousSettings !== undefined || value.targetSettings !== undefined)) throw new PrefixRecoveryRequiredError("unexpected settings transition fields");
 	// This is cold operational state, never an inference observation or history copy.
 	if (Buffer.byteLength(JSON.stringify(value)) > 65536) throw new PrefixRecoveryRequiredError("explicit prefix transition exceeds its metadata budget");
 	return structuredClone(value) as unknown as PrefixRebaseline;

@@ -361,11 +361,11 @@ export const piboCorePlugin = definePiboPlugin({
 			name: "thinking",
 			description: "Show or set the active runtime reasoning level.",
 			slashCommands: ["thinking"],
-			execute(context, event) {
+			async execute(context, event) {
 				const params = getThinkingParams(event);
 				if (!params.level) return { ...context.getThinkingLevel(), action: "show_thinking_menu" };
 				const previousLevel = context.getThinkingLevel().level;
-				const result = context.setThinkingLevel(params.level);
+				const result = await context.setThinkingLevel(params.level);
 				return {
 					...result,
 					action: "set_thinking_level",

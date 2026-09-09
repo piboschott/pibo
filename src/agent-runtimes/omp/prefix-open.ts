@@ -16,6 +16,7 @@ import { buildOmpProcessEnvironment, disposeOmpSessionPaths, prepareOmpSessionPa
 
 /** Starts only the ownership bootstrap; native discovery waits for activate(). */
 export class OmpPrefixOpen {
+	async notifySettingsChanged(): Promise<void> { await this.bridge.notifySettingsChanged(); }
 	async deriveForRefresh() {
 		try { return await this.bridge.derive(); }
 		catch (error) { await this.dispose(); throw error; }

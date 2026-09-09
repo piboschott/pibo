@@ -1,3 +1,5 @@
+import {readNativePrefixChildren} from "./prefix-children.js";
+import {PREFIX_SETTINGS_KEY,readPrefixRuntimeSettings} from "./prefix-settings.js";
 import { readPrefixRebaseline } from "./prefix-rebaseline.js";
 import type { PiboJsonObject } from "../core/events.js";
 import { readSessionPrefixBinding, SESSION_PREFIX_RESOURCES_KEY, validatePrefixReference } from "./prefix-capsule.js";
@@ -28,6 +30,9 @@ export function inspectSessionPrefix(input: {
 		const prefix = readSessionPrefixBinding(metadata);
 		const transition = readPrefixTransition(metadata);
 		const rebaseline = readPrefixRebaseline(metadata);
+		readPrefixRuntimeSettings(metadata?.[PREFIX_SETTINGS_KEY]);
+		const children=readNativePrefixChildren(metadata);
+		if(children.some(child=>child.prefix.capsule.adapterId!==input.adapterId)) throw new Error("child identity");
 		const resources = metadata?.[SESSION_PREFIX_RESOURCES_KEY];
 		if (resources !== undefined) {
 			validatePrefixReference(resources);
@@ -42,7 +47,7 @@ export function inspectSessionPrefix(input: {
 		if (transition && (transition.nativeSessionId !== prefix.nativeSessionId
 			|| (transition.state === "pending" ? transition.fromEpoch !== prefix.epoch
 				: transition.fromEpoch + Number(transition.state === "completed") > prefix.epoch))) throw new Error("epoch");
-		return { status: transition?.state === "pending" || rebaseline ? "transition-pending" : "sealed", verification,
+		return { status: transition?.state === "pending" || rebaseline || children.some(child=>child.transition?.state === "pending") ? "transition-pending" : "sealed", verification,
 			epoch: prefix.epoch, digest: prefix.capsule.digest, codec: prefix.capsule.codec, evidence: prefix.evidence, reason: prefix.reason };
 	} catch {
 		// Corrupt metadata and its raw payload must not turn into an implicit legacy session.

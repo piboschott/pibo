@@ -1,3 +1,4 @@
+import type { PrefixRuntimeSettings } from "../../sessions/prefix-settings.js";
 import { rejectUnsupportedPrefixRestore } from "../../sessions/prefix-capsule.js";
 import { randomUUID } from "node:crypto";
 import { PrefixRecoveryRequiredError } from "../../sessions/prefix-capsule.js";
@@ -458,6 +459,11 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 		this.cwd = threads.thread.cwd;
 		this.binding = structuredClone(binding);
 		this.capabilities = codexNativeCapabilities(structuredUserInput);
+		const restoredSettings = prefixController?.configuredSettings;
+		if (restoredSettings) {
+			if (restoredSettings.reasoning !== null) settings.setReasoning(restoredSettings.reasoning);
+			settings.setFastMode(restoredSettings.fastMode);
+		}
 		this.turns = new CodexNativeTurnController(process.client, threads, (event) => this.emit(event));
 		this.requests = this.createRequestController(process);
 		this.controls = {
@@ -497,23 +503,32 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 				return result;
 			}),
 			getReasoning: () => this.settings.reasoning,
-			setReasoning: (value) => {
-				this.assertIdle();
-				return this.settings.setReasoning(value);
-			},
-			cycleReasoning: () => {
-				this.assertIdle();
-				return this.settings.cycleReasoning();
-			},
+			setReasoning: async (value) => this.runIdleOperation(async () => {
+				if (!this.settings.reasoning.availableValues.includes(value)) throw new Error("Unsupported Codex reasoning effort");
+				await this.changeProtectedSettings({...this.currentPrefixSettings(),reasoning:value});
+				return this.settings.reasoning;
+			}),
+			cycleReasoning: async () => this.runIdleOperation(async () => {
+				const current=this.settings.reasoning, values=current.availableValues;
+				if (!values.length) return current;
+				const next=values[(values.indexOf(current.value ?? "")+1)%values.length]!;
+				await this.changeProtectedSettings({...this.currentPrefixSettings(),reasoning:next});
+				return this.settings.reasoning;
+			}),
 			getFastMode: () => this.settings.fastMode,
-			setFastMode: (enabled) => {
-				this.assertIdle();
-				return this.settings.setFastMode(enabled);
-			},
+			setFastMode: async (enabled) => this.runIdleOperation(async () => {
+				const previous=this.settings.fastMode;
+				if (enabled && !previous.supported) return {...previous,changed:false};
+				await this.changeProtectedSettings({...this.currentPrefixSettings(),fastMode:enabled});
+				return {...this.settings.fastMode,changed:previous.mode!==this.settings.fastMode.mode};
+			}),
 			setModel: async (model) => this.runIdleOperation(async () => {
 				if (!this.prefixController) return this.settings.setModel(model);
 				return this.prefixController.changeModel(this.settings.activeModel, model,
-					async next => this.settings.setModel(next));
+					async next => this.settings.setModel(next), {previous:this.currentPrefixSettings(),current:()=>this.currentPrefixSettings(),restore:async settings=>{
+						if(settings.reasoning!==null)this.settings.setReasoning(settings.reasoning);
+						this.settings.setFastMode(settings.fastMode);
+					}});
 			}),
 			compact: async (customInstructions) => await this.runIdleOperation(async () => {
 				const customInstructionsRequested = Boolean(customInstructions?.trim());
@@ -697,6 +712,21 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 			this.structuredUserInput,
 			(event) => this.emit(event),
 		);
+	}
+
+	private currentPrefixSettings(): PrefixRuntimeSettings {
+		return {reasoning:this.settings.reasoning.value ?? null,fastMode:this.settings.fastMode.mode === "fast"};
+	}
+
+	private async changeProtectedSettings(target: PrefixRuntimeSettings): Promise<void> {
+		const apply = async (settings: PrefixRuntimeSettings) => {
+			if (settings.reasoning !== null) this.settings.setReasoning(settings.reasoning);
+			if ((this.settings.fastMode.mode === "fast") !== settings.fastMode) this.settings.setFastMode(settings.fastMode);
+			const actual = this.currentPrefixSettings();
+			if (actual.reasoning !== settings.reasoning || actual.fastMode !== settings.fastMode) throw new PrefixRecoveryRequiredError("Codex did not apply the requested controls");
+		};
+		if (!this.prefixController) return apply(target);
+		await this.prefixController.changeSettings(this.settings.activeModel,this.currentPrefixSettings(),target,apply);
 	}
 
 	private async runIdleOperation<T>(operation: () => Promise<T>): Promise<T> {

@@ -136,6 +136,7 @@ cli = replace(cli, "fn main() -> anyhow::Result<()> {", `fn main() -> anyhow::Re
     if std::env::args().any(|arg| arg == "--pibo-prefix-contract") {
         println!("{}", codex_core::pibo_prefix::CODEC);
         println!("native-children-v1");
+        println!("native-settings-v1");
         return Ok(());
     }
     let prefix_args = codex_core::pibo_prefix::startup()
@@ -168,7 +169,7 @@ const prewarmHeader = `    pub async fn prewarm_websocket(
     ) -> Result<()> {`;
 client = replace(client, prewarmHeader, prewarmHeader + "\n        if crate::pibo_prefix::is_active() { return Ok(()); }");
 updated["core/src/client.rs"] = client;
-updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence(&step_context.settings.model_info, &sess.thread_id.to_string()) {
+updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence(&step_context.settings.model_info, &sess.thread_id.to_string(), serde_json::to_value(step_context.settings.effective_reasoning_effort()).unwrap_or(serde_json::Value::Null), step_context.settings.service_tier.as_deref()) {
         sess.try_ensure_rollout_materialized(PersistContext::Standard).await
             .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: native persistence".to_string()))?;
         sess.flush_rollout().await
@@ -210,7 +211,7 @@ for (const [path, contents] of Object.entries(updated)) {
 const nativeGuard = join(root, "core/src/pibo_prefix.rs");
 const existingGuard = await readFile(nativeGuard).catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
 if (!existingGuard?.equals(guardSource)) await writeFile(nativeGuard, guardSource);
-const manifest = { capabilities: ["native-children-v1"], upstreamCommit: "657a993cbee87acf52d14b758ce49dbd46d1b8eb", codec: "codex-0.153.2/responses/pibo-v1",
+const manifest = { capabilities: ["native-children-v1", "native-settings-v1"], upstreamCommit: "657a993cbee87acf52d14b758ce49dbd46d1b8eb", codec: "codex-0.153.2/responses/pibo-v1",
 	guardSha256: sha(guardSource), files: Object.fromEntries(Object.entries(updated).map(([path, contents]) => [path, sha(contents)])) };
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 if (!values["prepare-only"]) {

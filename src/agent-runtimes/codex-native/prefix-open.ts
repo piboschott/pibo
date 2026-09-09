@@ -11,7 +11,7 @@ import { buildCodexNativeProcessEnvironment, startCodexNativeAppServer,
 	type CodexNativeAppServerProcess, type CodexNativeSessionPaths } from "./process.js";
 
 export const CODEX_PREFIX_CODEC = "codex-0.153.2/responses/pibo-v1";
-export const CODEX_PREFIX_NATIVE_CONTRACT = CODEX_PREFIX_CODEC + "\nnative-children-v1";
+export const CODEX_PREFIX_NATIVE_CONTRACT = CODEX_PREFIX_CODEC + "\nnative-children-v1\nnative-settings-v1";
 const execute = promisify(execFile);
 type Stage = {
 	gate: NativePrefixStartupGate;
