@@ -48,7 +48,7 @@ export default async function(pi) {
       const response = await fetch(endpoint + "/rebaseline", { headers: auth, signal: AbortSignal.timeout(4500) });
       if (response.status === 200) {
         initialRebaseline = await response.json();
-        if (initialRebaseline.reason !== "runtime-change" || typeof initialRebaseline.id !== "string") return fatal();
+        if (!["runtime-change", "explicit-refresh"].includes(initialRebaseline.reason) || typeof initialRebaseline.id !== "string") return fatal();
       } else if (response.status !== 404) return fatal();
     }
     // Bounded model capabilities affect native history conversion too. Do not
@@ -345,6 +345,44 @@ export default async function(pi) {
     });
     pi.on("session_branch", finishDerivation);
     pi.on("session_switch", (event, ctx) => event.reason === "fork" ? finishDerivation(event, ctx) : undefined);
+    // Private native lifecycle control; never a visible slash command or model
+    // tool. The pinned AgentSession owns transcript and artifact copying.
+    const { AgentSession } = await import(${JSON.stringify(new URL('./agent-session.ts', dateReminderModuleUrl).href)});
+    let activeSession, deriving = false;
+    const nativeIdentity = Object.getOwnPropertyDescriptor(AgentSession.prototype, "sessionId");
+    if (!nativeIdentity?.get) return fatal();
+    Object.defineProperty(AgentSession.prototype, "sessionId", { ...nativeIdentity, get() {
+      const id = nativeIdentity.get.call(this);
+      if (!snapshot || snapshot.nativeSessionId === id) activeSession = this;
+      return id;
+    } });
+    const control = Bun.serve({ hostname: "127.0.0.1", port: 0, maxRequestBodySize: 1024, idleTimeout: 30,
+      async fetch(request) {
+        if (request.method !== "POST" || new URL(request.url).pathname !== "/derive"
+          || request.headers.get("authorization") !== auth.authorization || deriving) return new Response(null, { status: 403 });
+        deriving = true;
+        try {
+          const { nonce } = await request.json();
+          const response = await fetch(endpoint + "/derive", { headers: auth, signal: AbortSignal.timeout(4500) });
+          if (response.status !== 200) return new Response(null, { status: 409 });
+          const authorization = await response.json(), native = activeSession;
+          if (nonce !== authorization.nonce || !snapshot || !native
+            || native.sessionId !== snapshot.nativeSessionId || native.sessionId !== authorization.sourceNativeSessionId
+            || native.isStreaming) return new Response(null, { status: 409 });
+          if (!await native.fork()) return new Response(null, { status: 409 });
+          await syncNative(native.sessionManager);
+          const receipt = await fetch(endpoint + "/derive", { method: "POST", headers: auth,
+            body: JSON.stringify({ nonce, sourceNativeSessionId: authorization.sourceNativeSessionId,
+              nativeSessionId: native.sessionId, nativeSessionFile: native.sessionFile }), signal: AbortSignal.timeout(4500) });
+          if (receipt.status !== 200) return fatal();
+          return new Response(null, { status: 200 });
+        } catch { return new Response(null, { status: 409 }); }
+        finally { deriving = false; }
+      },
+    });
+    const registered = await fetch(endpoint + "/control", { method: "POST", headers: auth,
+      body: JSON.stringify({ endpoint: "http://127.0.0.1:" + control.port + "/derive" }), signal: AbortSignal.timeout(4500) });
+    if (registered.status !== 200) return fatal();
     await writeFile(ready, JSON.stringify({ nonce, codec: ${JSON.stringify(codec)} }), { mode: 0o600 });
   } catch { return fatal(); }
 }

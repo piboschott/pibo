@@ -255,6 +255,7 @@ type OmpProcessBundle = {
 	resourceDelivery: OmpResourceDelivery;
 	binding?: RuntimeSessionBinding;
 	prefixController?: SessionPrefixController;
+	prefixOpen?: OmpPrefixOpen;
 };
 
 function bindingForOmp(piboSessionId: string, runtimeInstanceId: string, previous: RuntimeSessionBinding | undefined): RuntimeSessionBinding {
@@ -305,6 +306,15 @@ export class OmpSession implements AgentRuntimeSession {
 		this.turn = new OmpRpcTurnController(this.client, (event) => this.emit(event));
 		this.hostTools = new OmpHostToolBridge(this.client, undefined, this.toolExecutionContext(), (m) => this.emitWarning(m));
 		this.controls = {
+			...(bundle.prefixOpen ? { preparePrefixRefresh: async () => this.runIdleOperation(async () => {
+				const previous = this.thread.getSessionSnapshot(this.runtimeInstanceId);
+				const receipt = await bundle.prefixOpen!.deriveForRefresh();
+				await this.thread.refresh();
+				const current = this.thread.getSessionSnapshot(this.runtimeInstanceId);
+				if (current.nativeSessionId !== receipt.nativeSessionId || current.locator?.value !== receipt.nativeSessionFile) throw new PrefixRecoveryRequiredError("OMP native refresh copy identity changed");
+				this.updateBinding();
+				return { previous, current, cancelled: false };
+			}) } : {}),
 			getCurrentSession: () => this.thread.getSessionSnapshot(this.runtimeInstanceId),
 			listSessions: () => this.thread.listSessions(this.runtimeInstanceId),
 			getForkCandidates: () => this.getForkCandidates(),
@@ -643,7 +653,7 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 		// host-tool frames.
 		const threads = new OmpThreadController(client, input.workspace, { sessionId: initial.sessionId }, protectedOpen ? "branch" : "fork");
 		const bundle: OmpProcessBundle = { client, paths, threads, resourceDelivery,
-			binding, prefixController: input.services?.prefixController };
+			binding, prefixController: input.services?.prefixController, prefixOpen: protectedOpen };
 		const session = new OmpSession(this.instanceId, bundle, this.parsed, (m) => {
 			// Warning surfaced via session events is delivered by the turn controller.
 		}, this);

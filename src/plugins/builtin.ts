@@ -425,6 +425,15 @@ export const piboCorePlugin = definePiboPlugin({
 			},
 		});
 		api.registerGatewayAction({
+			name: "session.prefix.refresh",
+			description: "Refresh the session's frozen context and tools while retaining its conversation. Starts a new cache epoch on the next model call.",
+			slashCommands: ["prefix-refresh"],
+			execute(context) {
+				if (!context.preparePrefixRefresh) throw new Error("This runtime cannot refresh a protected session prefix.");
+				return context.preparePrefixRefresh();
+			},
+		});
+		api.registerGatewayAction({
 			name: "session.tree",
 			description: "Return the current Pi session tree and active leaf.",
 			slashCommands: ["tree"],

@@ -356,6 +356,8 @@ export type AgentRuntimeControls = {
 	forkSession?(entryId: string): Promise<AgentRuntimeSessionOperationResult>;
 	forkSessionWhileRunning?(entryId: string): Promise<AgentRuntimeSessionOperationResult>;
 	cloneSession?(): Promise<AgentRuntimeSessionOperationResult>;
+	/** Native full-history copy for an explicit protected base refresh. */
+	preparePrefixRefresh?(): Promise<AgentRuntimeSessionOperationResult>;
 	getSessionTree?(): AgentRuntimeSessionTree;
 	navigateSessionTree?(params: PiboJsonObject): Promise<AgentRuntimeSessionOperationResult>;
 	switchSession?(params: PiboJsonObject): Promise<AgentRuntimeSessionOperationResult>;

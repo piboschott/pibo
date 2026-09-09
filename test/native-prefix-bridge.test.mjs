@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { createServer } from "node:http";
 import { NativePrefixBridge } from "../dist/sessions/native-prefix-bridge.js";
 import { SessionPrefixController } from "../dist/sessions/prefix-session.js";
 import { PrefixCapsuleStore } from "../dist/sessions/prefix-capsule.js";
@@ -31,6 +32,37 @@ async function fixture(t, brokenStore = false, startup) {
 	const headers = { authorization: `Bearer ${connection.token}`, "x-native-session-id": session.piSessionId, "x-native-has-history": "false" };
 	return { root, sessions, session, connection, headers, controller, bridge };
 }
+
+test("private native derivation requires an authenticated endpoint and exact pending receipt", async t => {
+	const f = await fixture(t);
+	await f.controller.seal({ codec: "native-fixture/v1", payload: "frozen", nativeSessionId: f.session.piSessionId,
+		evidence: "adapter-inputs", hasHistoricalModelInput: false });
+	await assert.rejects(f.bridge.derive(), /unavailable/);
+	assert.equal((await fetch(f.connection.endpoint + "/control", { method: "POST", body: '{}' })).status, 403);
+	assert.equal((await fetch(f.connection.endpoint + "/control", { method: "POST", headers: f.headers,
+		body: JSON.stringify({ endpoint: "https://example.invalid/derive" }) })).status, 409);
+	let rejectedReceipt;
+	const control = createServer(async (request, response) => {
+		try {
+			assert.equal(request.headers.authorization, f.headers.authorization);
+			const chunks = []; for await (const chunk of request) chunks.push(chunk);
+			const { nonce } = JSON.parse(Buffer.concat(chunks).toString());
+			const pending = await (await fetch(f.connection.endpoint + "/derive", { headers: f.headers })).json();
+			assert.equal(pending.nonce, nonce);
+			const receipt = { nonce, sourceNativeSessionId: f.session.piSessionId, nativeSessionId: 'derived-native', nativeSessionFile: join(f.root, 'derived.jsonl') };
+			rejectedReceipt = (await fetch(f.connection.endpoint + "/derive", { method: 'POST', headers: f.headers, body: JSON.stringify({ ...receipt, nonce: 'wrong' }) })).status;
+			assert.equal((await fetch(f.connection.endpoint + "/derive", { method: 'POST', headers: f.headers, body: JSON.stringify(receipt) })).status, 200);
+			response.writeHead(200).end();
+		} catch { response.writeHead(500).end(); }
+	});
+	await new Promise(resolve => control.listen(0, '127.0.0.1', resolve));
+	t.after(async () => { control.closeAllConnections(); await new Promise(resolve => control.close(resolve)); });
+	assert.equal((await fetch(f.connection.endpoint + "/control", { method: 'POST', headers: f.headers,
+		body: JSON.stringify({ endpoint: `http://127.0.0.1:${control.address().port}/derive` }) })).status, 200);
+	assert.equal((await f.bridge.derive()).nativeSessionId, 'derived-native');
+	assert.equal(rejectedReceipt, 409);
+	assert.equal(f.controller.binding.nativeSessionId, f.session.piSessionId, 'native copying alone must not publish a new binding');
+});
 
 test("native startup gate authenticates, bounds activation and releases a cancelled preparation", { timeout: 10000 }, async t => {
 	const gate = new NativePrefixStartupGate(5000);

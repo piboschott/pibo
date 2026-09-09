@@ -302,7 +302,7 @@ export class SessionPrefixController {
 			if (input.rebaselineId !== pending.id) throw new PrefixRecoveryRequiredError("explicit prefix transition requires its dispatch authorization");
 			const runtime = this.transitionBinding();
 			if (!runtime.nativeSessionId || runtime.nativeSessionId !== input.nativeSessionId || runtime.revision === undefined) throw new PrefixRecoveryRequiredError("explicit transition requires a durably bound native session");
-			if (pending.reason === "runtime-change" && runtime.adapterId === pending.sourceBinding.adapterId
+			if (["runtime-change", "explicit-refresh"].includes(pending.reason) && runtime.adapterId === pending.sourceBinding.adapterId
 				&& runtime.nativeSessionId === pending.sourceBinding.nativeSessionId) throw new PrefixRecoveryRequiredError("runtime replacement must use a new native session");
 			const source = readSessionPrefixBinding(pending.sourceBinding.metadata)!;
 			this.preparing = (async () => {

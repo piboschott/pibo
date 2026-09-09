@@ -68,6 +68,13 @@ updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session
             .await`, `        crate::pibo_prefix::restore_model_info(models_manager
             .get_model_info(self.collaboration_mode.model(), &config)
             .await)`);
+updated["core/src/session/mod.rs"] = replace(updated["core/src/session/mod.rs"],
+	"            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));",
+	`            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+        let base_instructions = if crate::pibo_prefix::is_active() {
+            crate::pibo_prefix::select_base_instructions(base_instructions,
+                config.base_instructions.clone().unwrap_or_else(|| model_info.get_model_instructions(config.personality)))
+        } else { base_instructions };`);
 updated["core/src/lib.rs"] += "\n// Pinned Pibo native prefix contract.\npub mod pibo_prefix;\n";
 updated["core/Cargo.toml"] = replace(updated["core/Cargo.toml"], "[dependencies]\n",
 	"[dependencies]\nlibsqlite3-sys = { workspace = true }\nsha2 = { workspace = true }\n");

@@ -18,10 +18,10 @@ export type PrefixRebaseline = {
 
 /** Explicit runtime replacement retains the complete rollback reference. */
 export function preparePrefixRuntimeTransition(source: RuntimeSessionBinding, target: RuntimeSessionBinding,
-	previousModel?: PrefixModelSelection): RuntimeSessionBinding {
+	previousModel?: PrefixModelSelection, reason: "runtime-change" | "explicit-refresh" = "runtime-change"): RuntimeSessionBinding {
 	if (!readSessionPrefixBinding(source.metadata)) return target;
 	if (readPrefixRebaseline(source.metadata)) throw new PrefixRecoveryRequiredError("another explicit prefix transition is pending");
-	const policy: PrefixRebaseline = { format: 1, id: randomUUID(), reason: "runtime-change",
+	const policy: PrefixRebaseline = { format: 1, id: randomUUID(), reason,
 		targetAdapterId: target.adapterId, sourceBinding: structuredClone(source), ...(previousModel ? { previousModel } : {}) };
 	const metadata = { ...target.metadata, [SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject };
 	readPrefixRebaseline(metadata);

@@ -44,6 +44,7 @@ struct State {
     native_id: Option<String>,
     snapshot: Option<Snapshot>,
     initial_rebaseline: Option<String>,
+    refresh_base: bool,
     sealing: bool,
     failed: bool,
 }
@@ -316,20 +317,20 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
         200 => Some(serde_json::from_slice(&body)?),
         _ => return Err(failure()),
     };
-    let initial_rebaseline = if snapshot.is_none() {
+    let (initial_rebaseline, refresh_base) = if snapshot.is_none() {
         let (status, body) = request(&connection, "GET", "/rebaseline", &[], None)?;
         match status {
-            404 => None,
+            404 => (None, false),
             200 => {
                 let value: Value = serde_json::from_slice(&body)?;
-                if value["reason"] != "runtime-change" { return Err(failure()); }
+                if value["reason"] != "runtime-change" && value["reason"] != "explicit-refresh" { return Err(failure()); }
                 let id = value["id"].as_str().ok_or_else(failure)?;
                 Uuid::parse_str(id)?;
-                Some(id.to_owned())
+                (Some(id.to_owned()), value["reason"] == "explicit-refresh")
             },
             _ => return Err(failure()),
         }
-    } else { None };
+    } else { (None, false) };
     if let Ok(source) = std::env::var("PIBO_PREFIX_DERIVED_FROM") {
         derive_snapshot(
             snapshot.as_mut().ok_or_else(failure)?,
@@ -388,6 +389,7 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
             native_id,
             snapshot,
             initial_rebaseline,
+            refresh_base,
             sealing: false,
             failed: false,
         }))
@@ -434,6 +436,24 @@ pub fn restore_model_info(candidate: ModelInfo) -> ModelInfo {
         Some(snapshot) if snapshot.model_info.slug == candidate.slug => snapshot.model_info.clone(),
         _ => candidate,
     }
+}
+
+/// Cold thread construction restores the sealed native base even if config or
+/// the catalog has changed. An explicit refresh chooses today's native base.
+pub fn select_base_instructions(candidate: String, current: String) -> String {
+    let Some(state) = STATE.get() else { return candidate; };
+    let state = state.lock().expect("Pibo prefix ownership poisoned");
+    if let Some(snapshot) = &state.snapshot {
+        if !snapshot.model_info.use_responses_lite { return snapshot.instructions.clone(); }
+        return snapshot.input_prefix.iter().find_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "developer" => match content.as_slice() {
+                [ContentItem::InputText { text }] => Some(text.clone()),
+                _ => None,
+            },
+            _ => None,
+        }).unwrap_or_default();
+    }
+    if state.refresh_base { current } else { candidate }
 }
 
 pub fn needs_native_persistence(model: &ModelInfo) -> bool {
@@ -660,5 +680,6 @@ pub async fn validate(
     }
     state.snapshot = Some(snapshot);
     state.initial_rebaseline = None;
+    state.refresh_base = false;
     Ok(())
 }

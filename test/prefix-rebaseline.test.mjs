@@ -56,4 +56,15 @@ for (const Store of [SqlitePiboSessionStore,PiboDataSessionStore]) test(`${Store
  assert.equal(make().rebaseline,undefined);
  assert.throws(()=>sessions.updateRuntimeBinding(session.id,source,{expectedRevision:sessions.get(session.id).runtimeBinding.revision,mode:'rebind'}),/epoch/);
 
+ const refreshSource=sessions.get(session.id).runtimeBinding;
+ const refreshTarget={...refreshSource,nativeSessionId:'full-history-copy',metadata:{}};
+ let refreshing=sessions.updateRuntimeBinding(session.id,preparePrefixRuntimeTransition(refreshSource,refreshTarget,nextModel,'explicit-refresh'),{expectedRevision:refreshSource.revision,mode:'rebind'});
+ assert.equal(make().rebaseline.reason,'explicit-refresh');
+ const cancelledRefresh=sessions.updateRuntimeBinding(session.id,refreshSource,{expectedRevision:refreshing.revision,mode:'rebind'});
+ assert.deepEqual(cancelledRefresh.metadata,refreshSource.metadata);
+ refreshing=sessions.updateRuntimeBinding(session.id,preparePrefixRuntimeTransition(cancelledRefresh,refreshTarget,nextModel,'explicit-refresh'),{expectedRevision:cancelledRefresh.revision,mode:'rebind'});
+ const refreshController=make();
+ const newBase=await refreshController.seal({codec:'omp-fixture/v1',payload:'refreshed current base',nativeSessionId:'full-history-copy',evidence:'adapter-inputs',hasHistoricalModelInput:true,rebaselineId:refreshController.rebaseline.id});
+ assert.equal(newBase.reason,'explicit-refresh');assert.equal(newBase.epoch,completed.epoch+1);
+
 });

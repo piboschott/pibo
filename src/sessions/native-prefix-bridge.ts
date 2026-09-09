@@ -3,6 +3,9 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { MAX_PREFIX_CAPSULE_BYTES } from "./prefix-capsule.js";
 import type { SessionPrefixController } from "./prefix-session.js";
 import type { NativePrefixStartupGate } from "./native-prefix-startup.js";
+import { isAbsolute } from "node:path";
+
+export type NativePrefixDerivation = { sourceNativeSessionId: string; nativeSessionId: string; nativeSessionFile: string };
 
 /** Private startup/first-dispatch IPC. It never observes ordinary conversation input. */
 export class NativePrefixBridge {
@@ -10,9 +13,26 @@ export class NativePrefixBridge {
 	private server?: Server;
 	private endpoint?: string;
 	private active = false;
+	private nativeControl?: string;
+	private derivation?: { nonce: string; source: string; resolve(value: NativePrefixDerivation): void; reject(error: Error): void };
 
 	constructor(private readonly controller: SessionPrefixController, private readonly codec: string,
 		private readonly startup?: NativePrefixStartupGate, private readonly restoreSnapshot?: (payload: string) => string) {}
+
+	async derive(): Promise<NativePrefixDerivation> {
+		const source = this.controller.binding?.nativeSessionId;
+		if (!source || !this.nativeControl || this.derivation || this.controller.hasPendingRebaseline || this.controller.transition?.state === "pending") throw new Error("Native prefix derivation is unavailable");
+		const nonce = randomBytes(32).toString("hex");
+		const receipt = new Promise<NativePrefixDerivation>((resolve, reject) => { this.derivation = { nonce, source, resolve, reject }; });
+		const timer = setTimeout(() => this.derivation?.reject(new Error("Native prefix derivation timed out")), 20000);
+		const dispatch = async () => {
+			const response = await fetch(this.nativeControl!, { method: "POST", headers: { authorization: `Bearer ${this.token}` },
+				body: JSON.stringify({ nonce }), signal: AbortSignal.timeout(20000) });
+			if (response.status !== 200) throw new Error("Native derivation failed");
+		};
+		try { return (await Promise.all([dispatch(), receipt]))[1]; }
+		finally { clearTimeout(timer); this.derivation = undefined; }
+	}
 
 	async start(): Promise<{ endpoint: string; token: string }> {
 		if (this.server) throw new Error("Native prefix bridge is already started");
@@ -50,6 +70,34 @@ export class NativePrefixBridge {
 		if (this.active) { response.writeHead(409).end(); request.resume(); return; }
 		this.active = true;
 		try {
+			if (request.method === "POST" && request.url === "/control" && !this.nativeControl) {
+				const chunks: Buffer[] = []; let bytes = 0;
+				for await (const chunk of request) { bytes += chunk.length; if (bytes > 1024) throw new Error("Native control address exceeds limit"); chunks.push(chunk); }
+				const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+				const url = new URL(value.endpoint);
+				if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port || url.username || url.password || url.pathname !== "/derive" || url.search || url.hash) throw new Error("Invalid native control address");
+				this.nativeControl = url.href;
+				response.writeHead(200).end(); return;
+			}
+			if (request.url === "/derive" && this.derivation) {
+				const pending = this.derivation;
+				if (request.method === "GET") {
+					response.setHeader("content-type", "application/json");
+					response.writeHead(200).end(JSON.stringify({ nonce: pending.nonce, sourceNativeSessionId: pending.source }));
+					return;
+				}
+				if (request.method === "POST") {
+					const chunks: Buffer[] = []; let bytes = 0;
+					for await (const chunk of request) { bytes += chunk.length; if (bytes > 16384) throw new Error("Native derivation receipt exceeds limit"); chunks.push(chunk); }
+					const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+					if (value.nonce !== pending.nonce || value.sourceNativeSessionId !== pending.source
+						|| typeof value.nativeSessionId !== "string" || !value.nativeSessionId || value.nativeSessionId.length > 1024
+						|| value.nativeSessionId === pending.source || typeof value.nativeSessionFile !== "string" || !isAbsolute(value.nativeSessionFile)) throw new Error("Invalid native derivation receipt");
+					response.writeHead(200).end();
+					pending.resolve({ sourceNativeSessionId: value.sourceNativeSessionId, nativeSessionId: value.nativeSessionId, nativeSessionFile: value.nativeSessionFile });
+					return;
+				}
+			}
 			if (request.method === "GET" && request.url === "/rebaseline") {
 				const pending = this.controller.rebaseline;
 				response.setHeader("content-type", "application/json");
@@ -121,10 +169,12 @@ export class NativePrefixBridge {
 	}
 
 	async dispose(): Promise<void> {
+		this.derivation?.reject(new Error("Native prefix bridge closed during derivation"));
 		this.startup?.dispose();
 		const server = this.server;
 		this.server = undefined;
 		this.endpoint = undefined;
+		this.nativeControl = undefined;
 		if (!server) return;
 		await new Promise<void>((resolve, reject) => {
 			server.close(error => { if (error) reject(error); else resolve(); });

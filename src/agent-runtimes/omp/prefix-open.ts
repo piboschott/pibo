@@ -16,6 +16,10 @@ import { buildOmpProcessEnvironment, disposeOmpSessionPaths, prepareOmpSessionPa
 
 /** Starts only the ownership bootstrap; native discovery waits for activate(). */
 export class OmpPrefixOpen {
+	async deriveForRefresh() {
+		try { return await this.bridge.derive(); }
+		catch (error) { await this.dispose(); throw error; }
+	}
 	private readonly startup = new NativePrefixStartupGate();
 	private readonly bridge: NativePrefixBridge;
 	readonly client: OmpRpcClient;

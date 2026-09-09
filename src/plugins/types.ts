@@ -218,6 +218,7 @@ export type PiboGatewayActionContext = {
 	getForkCandidates(): PiboForkCandidate[] | Promise<PiboForkCandidate[]>;
 	forkSession(entryId: string): Promise<PiboSessionOperationResult>;
 	cloneSession(): Promise<PiboSessionOperationResult>;
+	preparePrefixRefresh?(): Promise<PiboSessionOperationResult>;
 	getSessionTree(): PiboSessionTreeResult;
 	navigateSessionTree(params: PiboSessionTreeNavigateParams): Promise<PiboSessionOperationResult>;
 	switchSession(params: PiboSessionSwitchParams): Promise<PiboSessionOperationResult>;

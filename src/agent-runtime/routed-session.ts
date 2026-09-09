@@ -1,5 +1,7 @@
 import { derivedSessionIdentityText } from "../sessions/prefix-derivation.js";
 import { readSessionPrefixBinding } from "../sessions/prefix-capsule.js";
+import { readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
+import { readPrefixTransition } from "../sessions/prefix-transition.js";
 import { previouslyClearedMessages } from "../core/events.js";
 import { boundedCacheEvidence } from "../shared/cache-diagnostics.js";
 import type { CapacityLease } from "../core/runtime-capacity.js";
@@ -114,6 +116,7 @@ export type RuntimeRoutedSessionOptions = {
 	) => void;
 	onSessionOperation?: PiboSessionOperationListener;
 	onBeforeSessionIdentityOperation?: (event: PiboExecutionEvent) => void | Promise<void>;
+	onPrefixRefreshFailed?: (piboSessionId: string) => Promise<void>;
 	onKillChildren?: (
 		piboSessionId: string,
 		options?: { includeRuns?: boolean },
@@ -363,7 +366,7 @@ export class RuntimeRoutedSession {
 		if (event.action === "compact") return this.enqueueCompactAction(event);
 		const sessionIdentityOperation = event.action === "session.fork"
 			? "fork"
-			: event.action === "session.clone"
+			: event.action === "session.clone" || event.action === "session.prefix.refresh"
 				? "clone"
 				: event.action === "session.switch"
 					? "switch"
@@ -597,6 +600,20 @@ export class RuntimeRoutedSession {
 		const cloneSession = this.runtimeSession.controls?.cloneSession;
 		if (!cloneSession) throw runtimeCapabilityError(this.runtimeSession, "native session clone");
 		return nativeOperationToPiCompatibility(this.runtimeSession, this.piboSessionId, await cloneSession());
+	}
+
+	async preparePrefixRefresh(): Promise<PiboSessionOperationResult> {
+		this.assertSessionWorkIdle("prefix refresh");
+		const metadata = this.runtimeSession.getBinding().metadata;
+		if (!readSessionPrefixBinding(metadata) || readPrefixRebaseline(metadata) || readPrefixTransition(metadata)?.state === "pending") throw new Error("Prefix refresh requires a sealed session without another pending transition");
+		const prepare = this.runtimeSession.controls?.preparePrefixRefresh ?? this.runtimeSession.controls?.cloneSession;
+		if (!prepare) throw runtimeCapabilityError(this.runtimeSession, "protected prefix refresh");
+		try { return nativeOperationToPiCompatibility(this.runtimeSession, this.piboSessionId, await prepare()); }
+		catch (error) {
+			try { await this.options.onPrefixRefreshFailed?.(this.piboSessionId); }
+			catch (cleanup) { throw new AggregateError([error, cleanup], "Prefix refresh failed and its runtime could not be closed"); }
+			throw error;
+		}
 	}
 
 	private assertSessionIdentityOperationIdle(operation: string): void {
@@ -1310,6 +1327,7 @@ export class RuntimeRoutedSession {
 				getForkCandidates: () => this.getForkCandidates(),
 				forkSession: (entryId) => this.forkSession(entryId),
 				cloneSession: () => this.cloneSession(),
+				preparePrefixRefresh: () => this.preparePrefixRefresh(),
 				getSessionTree: () => this.getSessionTree(),
 				navigateSessionTree: (params) => this.navigateSessionTree(params),
 				switchSession: (params) => this.switchSession(params),

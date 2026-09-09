@@ -2,7 +2,8 @@ import { deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/
 import { SessionPrefixController } from "../sessions/prefix-session.js";
 import { preparePrefixRuntimeTransition, readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
-import { readSessionPrefixBinding, readSessionPrefixResourceReference, PrefixRecoveryRequiredError } from "../sessions/prefix-capsule.js";
+import { readSessionPrefixBinding, readSessionPrefixResourceReference, PrefixRecoveryRequiredError, PrefixCapsuleStore } from "../sessions/prefix-capsule.js";
+import { PrefixSessionOwnership } from "../sessions/prefix-ownership.js";
 import { previouslyClearedMessages } from "./events.js";
 import { createProviderCapacityExtension } from "./provider-capacity.js";
 import { RuntimeCapacity, type RuntimeCapacityOptions, type RuntimeCapacityStatus, type RuntimeInitializationTiming } from "./runtime-capacity.js";
@@ -1069,9 +1070,17 @@ export class PiboSessionRouter {
 		}
 		this.quiescingSessions.add(piboSessionId);
 		this.clearIdleSessionTimer(piboSessionId);
+		let ownership: PrefixSessionOwnership | undefined;
 		try {
+			if (this.pendingSessions.has(piboSessionId)) throw new Error("Runtime binding cannot change while its session is opening");
+			const binding = this.sessionStore.get(piboSessionId)?.runtimeBinding;
+			if (binding && !this.sessions.has(piboSessionId) && (readSessionPrefixBinding(binding.metadata) || readPrefixRebaseline(binding.metadata))) {
+				ownership = await PrefixSessionOwnership.acquire(new PrefixCapsuleStore().root, [JSON.stringify(["pibo", piboSessionId]),
+					...(binding.nativeSessionId ? [JSON.stringify(["native", binding.adapterId, binding.nativeSessionId])] : [])]);
+			}
 			return await this.rebindSessionRuntimeQuiesced(piboSessionId, input);
 		} finally {
+			ownership?.release();
 			this.quiescingSessions.delete(piboSessionId);
 			this.scheduleIdleSessionEvictionIfIdle(piboSessionId);
 		}
@@ -1094,13 +1103,13 @@ export class PiboSessionRouter {
 		}
 		const pendingPrefix = readPrefixRebaseline(current.metadata);
 		if (pendingPrefix) {
-			if (pendingPrefix.reason !== "runtime-change" || input.runtimeInstanceId !== pendingPrefix.sourceBinding.runtimeInstanceId
+			if (!["runtime-change", "explicit-refresh"].includes(pendingPrefix.reason) || input.runtimeInstanceId !== pendingPrefix.sourceBinding.runtimeInstanceId
 				|| input.startFresh === true || input.nativeSessionId || input.locator || readSessionPrefixBinding(current.metadata)) {
 				throw new PrefixRecoveryRequiredError("complete the pending runtime change or select the original runtime to cancel it");
 			}
-			await this.resetCachedSession(piboSessionId, "cancel pending runtime prefix transition");
 			const restored = this.persistSessionRuntimeBinding(session, pendingPrefix.sourceBinding,
 				{ expectedRevision: input.expectedRevision, mode: "rebind" });
+			await this.resetCachedSession(piboSessionId, "cancel pending runtime prefix transition");
 			this.sessionStore.update(piboSessionId, { activeModel: pendingPrefix.previousModel ?? null });
 			return structuredClone(restored);
 		}
@@ -1166,7 +1175,8 @@ export class PiboSessionRouter {
 				},
 			});
 		}
-		if (this.sessions.has(piboSessionId) || this.pendingSessions.has(piboSessionId)) {
+		const protectedReplacement = startsNewNativeSession && Boolean(readSessionPrefixBinding(current.metadata));
+		if (!protectedReplacement && (this.sessions.has(piboSessionId) || this.pendingSessions.has(piboSessionId))) {
 			await this.resetCachedSession(piboSessionId, "runtime binding rebind");
 		}
 		const requestedState = startsNewNativeSession
@@ -1199,6 +1209,7 @@ export class PiboSessionRouter {
 			expectedRevision: input.expectedRevision,
 			mode,
 		});
+		if (protectedReplacement) await this.resetCachedSession(piboSessionId, "protected runtime replacement published");
 		if (switchingRuntime) {
 			this.sessionStore.update(piboSessionId, {
 				activeModel: null,
@@ -1881,6 +1892,7 @@ export class PiboSessionRouter {
 					: undefined,
 				onSessionOperation: (result, event) => this.handleSessionOperation(result, event),
 				onBeforeSessionIdentityOperation: (event) => this.retryUnresolvedDerivedSessionCompensation(event.piboSessionId),
+				onPrefixRefreshFailed: (id) => this.resetCachedSession(id, "failed prefix refresh"),
 				onKillChildren: (id, opts) => this.killChildSessions(id, opts),
 				onStateChange: (state) => {
 					this.signalRegistry.project({
@@ -2123,6 +2135,21 @@ export class PiboSessionRouter {
 			metadata: currentNativeSessionId ? liveBinding?.metadata ?? previousBinding.metadata : undefined,
 		};
 
+		if (event.action === "session.prefix.refresh") {
+			try {
+				if (!readSessionPrefixBinding(previousBinding.metadata) || readPrefixRebaseline(previousBinding.metadata)) throw new PrefixRecoveryRequiredError("prefix refresh requires an unchanged sealed source");
+				const sourceFile = typeof previousBinding.metadata?.nativeSessionFile === "string" ? previousBinding.metadata.nativeSessionFile
+					: previousBinding.locator?.kind === "local-file" ? previousBinding.locator.value : undefined;
+				await syncDerivedNativeFile(sourceFile);
+				await syncDerivedNativeFile(result.current.sessionFile);
+				const metadata = { ...currentBinding.metadata, nativeSessionFile: result.current.sessionFile } as PiboJsonObject;
+				for (const key of ["piboSessionPrefix", "piboSessionPrefixResources", "piboSessionPrefixTransition", "piboSessionPrefixRebaseline"]) delete metadata[key];
+				const next = preparePrefixRuntimeTransition(previousBinding, { ...currentBinding, metadata }, source.activeModel, "explicit-refresh");
+				this.persistSessionRuntimeBinding(source, next, { expectedRevision: previousBinding.revision, mode: "rebind" });
+				result.piboSessionId = source.id;
+			} finally { await this.resetCachedSession(event.piboSessionId, "prefix refresh prepared"); }
+			return;
+		}
 		if (event.action === "session.fork" || event.action === "session.clone") {
 			const action = event.action as "session.fork" | "session.clone";
 			let transitionError: unknown;

@@ -1,4 +1,5 @@
 import { piboCorePlugin } from "../dist/plugins/builtin.js";
+import { runPrefixAction } from "./helpers/prefix-action.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -90,6 +91,7 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 			.withModel({ provider: "fixture", id: "prefix-fixture" }).createSession() });
 	} })] });
 	registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction("session.fork"));
+	registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction("session.prefix.refresh"));
 	registry.registerAgentRuntimeDriver(OMP_AGENT_RUNTIME_DRIVER);
 	registry.registerAgentRuntimeInstance({ id: "omp-native", adapterId: "orp", enabled: true, config });
 	sessions.update(session.id, { profile: "prefix-omp-fixture", workspace: root });
@@ -194,6 +196,18 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 		await select("prefix-second");
 		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
 		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
+		const beforeRefresh = sessions.get(childId).runtimeBinding;
+		assert.equal((await runPrefixAction(router, childId, "prepare-refresh-cancel")).piboSessionId, childId);
+		const pendingRefresh = sessions.get(childId).runtimeBinding;
+		assert.equal(pendingRefresh.metadata.piboSessionPrefixRebaseline.reason, "explicit-refresh");
+		await router.rebindSessionRuntime(childId, { runtimeInstanceId: beforeRefresh.runtimeInstanceId, expectedRevision: pendingRefresh.revision });
+		assert.equal(sessions.get(childId).runtimeBinding.nativeSessionId, beforeRefresh.nativeSessionId);
+		await runPrefixAction(router, childId, "prepare-refresh");
+		await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "refreshed-base", source: "user", text: "Continue after refreshing the base" }, 20000);
+		const refreshed = sessions.get(childId).runtimeBinding;
+		assert.equal(refreshed.metadata.piboSessionPrefix.reason, "explicit-refresh");
+		assert.equal(refreshed.metadata.piboSessionPrefix.epoch, beforeRefresh.metadata.piboSessionPrefix.epoch + 1);
+		assert.ok(JSON.stringify(requests.at(-1).input).includes("Continue the derived conversation"));
 		const previousRuntime = sessions.get(childId).runtimeBinding;
 		let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: previousRuntime.revision, startFresh: true });
 		const originalHistory = await readFile(previousRuntime.metadata.nativeSessionFile);
@@ -204,7 +218,7 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 		await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "fresh-runtime", source: "user", text: "Start the explicitly selected fresh session" }, 20000);
 		const replacement = sessions.get(childId).runtimeBinding;
 		assert.notEqual(replacement.nativeSessionId, previousRuntime.nativeSessionId);
-		assert.equal(replacement.metadata.piboSessionPrefix.epoch, changedPrefix.epoch + 1);
+		assert.equal(replacement.metadata.piboSessionPrefix.epoch, refreshed.metadata.piboSessionPrefix.epoch + 1);
 		assert.equal(replacement.metadata.piboSessionPrefix.reason, "runtime-change");
 		assert.equal(replacement.metadata.piboSessionPrefixRebaseline, undefined);
 		assert.deepEqual(await readFile(previousRuntime.metadata.nativeSessionFile), originalHistory);

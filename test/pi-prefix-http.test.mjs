@@ -1,4 +1,5 @@
 import { piboCorePlugin } from "../dist/plugins/builtin.js";
+import { runPrefixAction } from "./helpers/prefix-action.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import fs from "node:fs";
@@ -292,6 +293,7 @@ test("normal Pi router preserves protected resources and binding when rollout is
 			.withModel({ provider: "openai-codex", id: "gpt-5.5" }).addContextFile({ path: contextPath }).createSession() });
 	} })] });
 	registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction("session.clone"));
+	registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction("session.prefix.refresh"));
 	const session = sessions.create({ channel: "test", kind: "chat", profile: profileName, workspace: root });
 	const open = enabled => new PiboSessionRouter({ cwd: root, sessionStore: sessions, reliabilityStore: reliability, pluginRegistry: registry,
 		persistSession: true, sessionPrefixProtection: enabled, modelRuntime, thinkingLevel: "high", modelDefaults: {},
@@ -375,6 +377,20 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "model-aborted", source: "user", text: "Continue after cancelling the pending model change" }, 20000);
 	assert.equal(api.requests.at(-1).model, "gpt-5.4");
 
+	const beforeRefresh = sessions.get(childId).runtimeBinding;
+	assert.equal((await runPrefixAction(router, childId, "prepare-refresh-cancel")).piboSessionId, childId);
+	let pendingRefresh = sessions.get(childId).runtimeBinding;
+	assert.equal(pendingRefresh.metadata.piboSessionPrefixRebaseline.reason, "explicit-refresh");
+	await router.rebindSessionRuntime(childId, { runtimeInstanceId: beforeRefresh.runtimeInstanceId, expectedRevision: pendingRefresh.revision });
+	assert.equal(sessions.get(childId).runtimeBinding.nativeSessionId, beforeRefresh.nativeSessionId);
+	await runPrefixAction(router, childId, "prepare-refresh");
+	await writeFile(contextPath, "Current deliberately refreshed context");
+	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "refreshed-base", source: "user", text: "Continue after refreshing the base" }, 20000);
+	const refreshed = sessions.get(childId).runtimeBinding;
+	assert.equal(refreshed.metadata.piboSessionPrefix.reason, "explicit-refresh");
+	assert.equal(refreshed.metadata.piboSessionPrefix.epoch, beforeRefresh.metadata.piboSessionPrefix.epoch + 1);
+	assert.ok(JSON.stringify(api.requests.at(-1).input).includes("first routed input"));
+	await rm(contextPath);
 	const previousRuntime = sessions.get(childId).runtimeBinding;
 	let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId,
 		expectedRevision: previousRuntime.revision, startFresh: true });
@@ -399,5 +415,5 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	await rm(nativePath);
 	router = open(false);
 	await assert.rejects(router.emitMessageAndWaitForReply({ type: "message", piboSessionId: session.id, id: "missing", source: "user", text: "must not dispatch" }, 20000), /missing|not found|recovery/i);
-	assert.equal(api.requests.length, 7);
+	assert.equal(api.requests.length, 8);
 });

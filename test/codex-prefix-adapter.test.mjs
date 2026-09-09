@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runPrefixAction } from "./helpers/prefix-action.mjs";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -99,7 +100,7 @@ enabled = false
 			.withModel({ provider: "openai-codex", id: "gpt-5.5" }).addContextFile({ path: context }).createSession() });
 	} })] });
 	registry.registerAgentRuntimeDriver(CODEX_NATIVE_AGENT_RUNTIME_DRIVER);
-	for (const action of ["compact", "session.clone", "session.fork"]) registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction(action));
+	for (const action of ["compact", "session.clone", "session.fork", "session.prefix.refresh"]) registry.registerGatewayAction(PiboPluginRegistry.create({ plugins: [piboCorePlugin] }).getGatewayAction(action));
 	registry.registerAgentRuntimeInstance({ id: "codex-native", adapterId: "codex-native", enabled: true, config });
 	const session = sessions.create({ channel: "test", kind: "chat", profile: "prefix-codex-fixture", workspace: root,
 		runtimeBinding: { runtimeInstanceId: "codex-native", adapterId: "codex-native", state: "unbound" } });
@@ -194,6 +195,23 @@ enabled = false
 		await select("gpt-5.4");
 		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
 		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
+		const beforeRefresh = sessions.get(childId).runtimeBinding;
+		assert.equal((await runPrefixAction(router, childId, "prepare-refresh-cancel")).piboSessionId, childId);
+		const pendingRefresh = sessions.get(childId).runtimeBinding;
+		assert.equal(pendingRefresh.metadata.piboSessionPrefixRebaseline.reason, "explicit-refresh");
+		await router.rebindSessionRuntime(childId, { runtimeInstanceId: beforeRefresh.runtimeInstanceId, expectedRevision: pendingRefresh.revision });
+		assert.equal(sessions.get(childId).runtimeBinding.nativeSessionId, beforeRefresh.nativeSessionId);
+		await runPrefixAction(router, childId, "prepare-refresh");
+		await writeFile(context, "Current deliberately refreshed context");
+		catalog.models[1].base_instructions = "Explicitly refreshed native base.";
+		await writeFile(catalogPath, JSON.stringify(catalog));
+		await prompt("Continue after refreshing the base", "refreshed-base", childId);
+		const refreshed = sessions.get(childId).runtimeBinding;
+		assert.equal(refreshed.metadata.piboSessionPrefix.reason, "explicit-refresh");
+		assert.equal(refreshed.metadata.piboSessionPrefix.epoch, beforeRefresh.metadata.piboSessionPrefix.epoch + 1);
+		assert.ok(JSON.stringify(requests.at(-1).input).includes("Continue the derived conversation"));
+		assert.ok(JSON.stringify(requests.at(-1)).includes("Explicitly refreshed native base."));
+		await rm(context);
 		const previousRuntime = sessions.get(childId).runtimeBinding;
 		let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: previousRuntime.revision, startFresh: true });
 		const cancelled = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: fresh.revision });
@@ -206,7 +224,7 @@ enabled = false
 		await prompt("Start the explicitly selected fresh session", "fresh-runtime", childId);
 		const replacement = sessions.get(childId).runtimeBinding;
 		assert.notEqual(replacement.nativeSessionId, previousRuntime.nativeSessionId);
-		assert.equal(replacement.metadata.piboSessionPrefix.epoch, changedPrefix.epoch + 1);
+		assert.equal(replacement.metadata.piboSessionPrefix.epoch, refreshed.metadata.piboSessionPrefix.epoch + 1);
 		assert.equal(replacement.metadata.piboSessionPrefix.reason, "runtime-change");
 		assert.equal(replacement.metadata.piboSessionPrefixRebaseline, undefined);
 	}

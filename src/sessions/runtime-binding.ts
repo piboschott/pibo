@@ -186,13 +186,18 @@ export function assertRuntimeSessionBindingTransition(
 	const nextRebaseline = readPrefixRebaseline(next.metadata);
 	const operationalBinding = (binding: RuntimeSessionBinding) => Object.fromEntries(Object.entries(binding)
 		.filter(([key, value]) => value !== undefined && !["revision", "createdAt", "updatedAt"].includes(key)));
-	const startsRuntimeTransition = !previousRebaseline && nextRebaseline?.reason === "runtime-change"
-		&& mode === "rebind" && next.state === "unbound" && !nextPrefix && !nextResources;
-	const restoresRuntimeTransition = previousRebaseline?.reason === "runtime-change" && !nextRebaseline
+	const startsRuntimeTransition = !previousRebaseline && nextRebaseline
+		&& (nextRebaseline.reason === "runtime-change" && next.state === "unbound"
+			|| nextRebaseline.reason === "explicit-refresh" && next.state === "bound" && current.adapterId === next.adapterId
+			&& current.runtimeInstanceId === next.runtimeInstanceId && current.nativeSessionId !== next.nativeSessionId)
+		&& mode === "rebind" && !nextPrefix && !nextResources;
+	const restoresRuntimeTransition = previousRebaseline && ["runtime-change", "explicit-refresh"].includes(previousRebaseline.reason) && !nextRebaseline
 		&& !previousPrefix && mode === "rebind" && isDeepStrictEqual(
 			operationalBinding(next), operationalBinding(previousRebaseline.sourceBinding));
 	if (!previousRebaseline && nextRebaseline) {
 		if (!previousPrefix || !isDeepStrictEqual(nextRebaseline.sourceBinding, current)
+			|| nextRebaseline.reason !== "model-change" && !startsRuntimeTransition
+			|| nextRebaseline.reason === "model-change" && !isDeepStrictEqual(previousPrefix, nextPrefix)
 			|| nextRebaseline.targetAdapterId !== next.adapterId
 			|| nextRebaseline.sourceBinding.piboSessionId !== next.piboSessionId
 			|| readPrefixTransition(current.metadata)?.state === "pending") {
