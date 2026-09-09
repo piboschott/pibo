@@ -1,3 +1,4 @@
+import { PREFIX_NATIVE_CHILDREN_KEY, readNativePrefixChildren, withNativePrefixChild, type NativePrefixChild } from "./prefix-children.js";
 import { withPrefixPublication } from "./prefix-maintenance.js";
 import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
 import { readPrefixArtifactDependencies, PREFIX_ARTIFACT_DEPENDENCIES_KEY, readPrefixResourceDependencies, PREFIX_RESOURCE_DEPENDENCIES_KEY } from "./prefix-dependencies.js";
@@ -68,6 +69,7 @@ export class SessionPrefixController {
 		const metadata = options.getBinding().metadata;
 		readPrefixResourceDependencies(metadata);
 		readPrefixArtifactDependencies(metadata);
+		readNativePrefixChildren(metadata);
 		const rebaseline = readPrefixRebaseline(metadata);
 		if (rebaseline && (rebaseline.sourceBinding.piboSessionId !== options.getBinding().piboSessionId || rebaseline.targetAdapterId !== options.getBinding().adapterId)) {
 			throw new PrefixRecoveryRequiredError("explicit transition belongs to another session or adapter");
@@ -93,7 +95,7 @@ export class SessionPrefixController {
 	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
 		const persisted = this.options.getBinding();
 		const metadata = { ...binding.metadata };
-		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY]) {
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY]) {
 			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
 			else delete metadata[key];
 		}
@@ -107,7 +109,7 @@ export class SessionPrefixController {
 		const current = this.options.readCurrentBinding?.() ?? expected;
 		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
 			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
-			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY].some(key =>
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY, PREFIX_NATIVE_CHILDREN_KEY].some(key =>
 				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
 			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
 		}
@@ -356,6 +358,56 @@ export class SessionPrefixController {
 		});
 		try { return await this.preparing; } finally { this.preparing = undefined; }
 	}
+
+
+ /** Cold native-child open, before its native history is interpreted. */
+ async restoreNativeChild(nativeSessionId: string, codec: string): Promise<{child: NativePrefixChild; payload: string} | undefined> {
+  const runtime = this.options.getBinding();
+  const child = readNativePrefixChildren(runtime.metadata).find(item => item.nativeSessionId === nativeSessionId);
+  if (!child) return undefined;
+  if (child.prefix.capsule.adapterId !== runtime.adapterId || child.prefix.capsule.codec !== codec) throw new PrefixRecoveryRequiredError("native child codec changed");
+  return {child,payload:await this.store.read(child.prefix.capsule,{adapterId:runtime.adapterId,codec})};
+ }
+
+ async sealNativeChild(input: { nativeSessionId: string; nativeSessionFile: string; codec: string; payload: string; hasHistoricalModelInput: boolean }): Promise<NativePrefixChild> {
+  return withPrefixPublication(this.store.root, async () => {
+   const runtime = this.transitionBinding();
+   if (!this.binding || runtime.nativeSessionId === input.nativeSessionId) throw new PrefixRecoveryRequiredError("native child requires a stable sealed parent");
+   const existing = await this.restoreNativeChild(input.nativeSessionId,input.codec);
+   if (existing) {
+    if (existing.child.nativeSessionFile !== input.nativeSessionFile || existing.payload !== input.payload) throw new PrefixRecoveryRequiredError("native child prefix cannot be replaced implicitly");
+    return existing.child;
+   }
+   if (input.hasHistoricalModelInput) throw new PrefixRecoveryRequiredError("native child history has no original prefix");
+   const capsule = await this.store.put(runtime.adapterId,input.codec,input.payload);
+   const child: NativePrefixChild = {nativeSessionId:input.nativeSessionId,nativeSessionFile:input.nativeSessionFile,
+    prefix:{format:1,epoch:1,status:"sealed",capsule,reason:"initial",nativeSessionId:input.nativeSessionId,evidence:"provider-request"}};
+   const metadata = withNativePrefixChild(runtime.metadata,child);
+   const persisted = await this.options.persistence.compareAndSet({...runtime,metadata},runtime.revision!);
+   this.options.onPersisted?.(structuredClone(persisted));
+   return child;
+  });
+ }
+
+
+ async mutateNativeChildCompaction(nativeSessionId: string, operation: {sourceHead: string | null} | {id: string; changed: boolean}): Promise<NativePrefixChild> {
+  return withPrefixPublication(this.store.root, async () => {
+   const runtime = this.transitionBinding();
+   const child = readNativePrefixChildren(runtime.metadata).find(item => item.nativeSessionId === nativeSessionId);
+   if (!this.binding || !child) throw new PrefixRecoveryRequiredError("native child compaction has no sealed state");
+   let next: NativePrefixChild;
+   if ("sourceHead" in operation) {
+    if (child.transition?.state === "pending") throw new PrefixRecoveryRequiredError("native child compaction is already pending");
+    next = {...child,transition:{format:1,id:randomUUID(),reason:"compaction",fromEpoch:child.prefix.epoch,nativeSessionId,sourceHead:operation.sourceHead,state:"pending"}};
+   } else {
+    if (child.transition?.state !== "pending" || child.transition.id !== operation.id) throw new PrefixRecoveryRequiredError("native child compaction receipt changed");
+    next = {...child,prefix:operation.changed ? {...child.prefix,epoch:child.prefix.epoch+1,reason:"compaction"} : child.prefix,
+     transition:{...child.transition,state:operation.changed?"completed":"aborted"}};
+   }
+   const persisted = await this.options.persistence.compareAndSet({...runtime,metadata:withNativePrefixChild(runtime.metadata,next)},runtime.revision!);
+   this.options.onPersisted?.(structuredClone(persisted));return next;
+  });
+ }
 
 	/** Call after a proven native transition. The immutable base artifact is reused. */
 	async advanceEpoch(reason: "compaction" | "model-change"): Promise<SessionPrefixBinding | undefined> {

@@ -1,3 +1,4 @@
+import { PREFIX_NATIVE_CHILDREN_KEY, readNativePrefixChildren } from "./prefix-children.js";
 import type { PiboJsonObject } from "../core/events.js";
 import { randomUUID } from "node:crypto";
 import type { RuntimeSessionBinding } from "./runtime-binding.js";
@@ -27,7 +28,8 @@ export function preparePrefixRuntimeTransition(source: RuntimeSessionBinding, ta
 		targetAdapterId: target.adapterId, sourceBinding: structuredClone(source), ...(previousModel ? { previousModel } : {}) };
 	const sourceFile = typeof source.metadata?.nativeSessionFile === "string" ? source.metadata.nativeSessionFile : source.locator?.kind === "local-file" ? source.locator.value : undefined;
 	const retained = retainHistory ? retainPrefixArtifactDependencies(retainPrefixResourceDependencies(target.metadata, source.metadata), source.metadata, source.adapterId, sourceFile) : target.metadata;
-	const metadata = { ...retained,
+	const children = retainHistory ? readNativePrefixChildren(source.metadata) : [];
+	const metadata = { ...retained, ...(children.length ? {[PREFIX_NATIVE_CHILDREN_KEY]:children as unknown as PiboJsonObject[]} : {}),
 		[SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject };
 	readPrefixRebaseline(metadata);
 	return { ...target, metadata };

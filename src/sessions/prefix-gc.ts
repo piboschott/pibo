@@ -1,3 +1,4 @@
+import { readNativePrefixChildren } from "./prefix-children.js";
 import { DatabaseSync } from "node:sqlite";
 import { lstat, opendir, realpath, unlink, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -15,6 +16,7 @@ export async function collectUnreferencedPrefixes(input: { root: string; databas
   const references = new Set<string>(); let rows = 0;
   const collect = (metadata: PiboJsonObject) => {
    for (const ref of [readSessionPrefixBinding(metadata)?.capsule, readSessionPrefixResourceReference(metadata), ...readPrefixResourceDependencies(metadata)]) if (ref) references.add(ref.digest);
+   for (const child of readNativePrefixChildren(metadata)) references.add(child.prefix.capsule.digest);
    const pending = readPrefixRebaseline(metadata);
    if (pending) collect(pending.sourceBinding.metadata!);
   };

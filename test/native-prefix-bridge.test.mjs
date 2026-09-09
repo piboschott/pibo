@@ -229,3 +229,31 @@ test("native capture IPC refuses dispatch when publication succeeds but the bind
 	assert.equal(response.status, 409);
 	assert.equal(f.sessions.get(f.session.id).runtimeBinding.metadata.piboSessionPrefix, undefined);
 });
+
+test("native child dispatches seal independently and concurrent cold requests retain both references", async t => {
+ const f = await fixture(t);
+ await f.controller.seal({codec:"native-fixture/v1",payload:"root",nativeSessionId:f.session.piSessionId,evidence:"adapter-inputs",hasHistoricalModelInput:false});
+ const send=(id,body,historical="false")=>fetch(f.connection.endpoint+"/children/"+id+"/seal",{method:"POST",headers:{...f.headers,"x-native-has-history":historical,"x-native-session-file":Buffer.from(join(f.root,id+".jsonl")).toString("base64url")},body});
+ const responses = await Promise.all([send("child-a","first child"),send("child-b","second child")]);
+ assert.deepEqual(responses.map(response=>response.status),[200,200]);
+ const metadata = f.sessions.get(f.session.id).runtimeBinding.metadata;
+ assert.equal(metadata.piboSessionPrefixNativeChildren.length,2);
+ assert.equal(metadata.piboSessionPrefix.epoch,1);
+ const restored=await fetch(f.connection.endpoint+"/children/child-a/snapshot",{headers:f.headers});
+ assert.equal(restored.status,200);assert.equal(await restored.text(),"first child");
+ assert.equal((await send("child-a","changed child")).status,409);
+ assert.equal((await send("unknown-old","unproven history","true")).status,409);
+ const binding=f.sessions.get(f.session.id).runtimeBinding;
+ assert.throws(()=>f.sessions.updateRuntimeBinding(f.session.id,{...binding,metadata:{...binding.metadata,piboSessionPrefixNativeChildren:[]}},{expectedRevision:binding.revision}),/cannot be discarded/);
+ const fresh = new SessionPrefixController({store:new PrefixCapsuleStore(join(f.root,"prefixes")),getBinding:()=>f.sessions.get(f.session.id).runtimeBinding,persistence:createAgentRuntimeBindingPersistence(f.sessions,{piboSessionId:f.session.id})});
+ assert.equal((await fresh.restoreNativeChild("child-b","native-fixture/v1")).payload,"second child");
+ const compact=(action,body)=>fetch(f.connection.endpoint+"/children/child-a/compaction-"+action,{method:"POST",headers:f.headers,body:JSON.stringify(body)});
+ const begun=await compact("begin",{sourceHead:"before"});assert.equal(begun.status,200);const transition=await begun.json();
+ assert.equal((await fresh.restoreNativeChild("child-a","native-fixture/v1")).child.transition.state,"pending");
+ assert.equal((await compact("finish",{id:"wrong",changed:true})).status,409);
+ assert.equal((await compact("finish",{id:transition.id,changed:true})).status,200);
+ assert.equal((await fresh.restoreNativeChild("child-a","native-fixture/v1")).child.prefix.epoch,2);
+ assert.equal((await fresh.restoreNativeChild("child-b","native-fixture/v1")).child.prefix.epoch,1);
+ assert.equal(f.controller.binding.epoch,1);
+
+});

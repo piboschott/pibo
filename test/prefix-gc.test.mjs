@@ -19,13 +19,14 @@ const prefix=ref=>({format:1,epoch:1,status:'sealed',capsule:ref,reason:'initial
 test('collection preserves live and historical references across stores and never removes ownership or delivery directories',async t=>{
  const f=await fixture(t);
  const live=await f.store.put('pi','fixture/v1','live'),historical=await f.store.put('pi','pibo-resources/v1','historic'),orphan=await f.store.put('pi','fixture/v1','orphan');
- f.add({piboSessionPrefixResourceDependencies:[historical]});
+ const child=await f.store.put('pi','fixture/v1','native child');
+ f.add({piboSessionPrefixResourceDependencies:[historical],piboSessionPrefixNativeChildren:[{nativeSessionId:'child',nativeSessionFile:join(f.root,'child.jsonl'),prefix:{...prefix(child),nativeSessionId:'child'}}]});
  const other=join(f.root,'other.sqlite'),db=new DatabaseSync(other);t.after(()=>db.close());
  db.exec('CREATE TABLE pibo_session_runtime_bindings(metadata_json TEXT)');
  db.prepare('INSERT INTO pibo_session_runtime_bindings VALUES(?)').run(JSON.stringify({piboSessionPrefix:prefix(live)}));
  await mkdir(join(f.root,'resources',orphan.digest),{recursive:true});
  const input={root:f.root,databases:[f.path,other]};
- assert.deepEqual(await collectUnreferencedPrefixes(input),{candidates:1,bytes:6,deleted:0,referenced:2});
+ assert.deepEqual(await collectUnreferencedPrefixes(input),{candidates:1,bytes:6,deleted:0,referenced:3});
  const inode=(await stat(join(f.root,'ownership','maintenance.sqlite'))).ino;
  assert.equal((await collectUnreferencedPrefixes({...input,apply:true})).deleted,1);
  await assert.rejects(f.store.read(orphan,orphan),/recovery required/);

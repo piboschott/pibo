@@ -1,3 +1,4 @@
+import { readNativePrefixChildren } from "./prefix-children.js";
 import { readPrefixResourceDependencies, readPrefixArtifactDependencies, nativeArtifactDirectories } from "./prefix-dependencies.js";
 import { isDeepStrictEqual } from "node:util";
 import { readPrefixRebaseline } from "./prefix-rebaseline.js";
@@ -185,6 +186,8 @@ export function assertRuntimeSessionBindingTransition(
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
 	const previousDependencies = readPrefixResourceDependencies(current.metadata);
 	const nextDependencies = readPrefixResourceDependencies(next.metadata);
+	const previousChildren = readNativePrefixChildren(current.metadata);
+	const nextChildren = readNativePrefixChildren(next.metadata);
 	const previousArtifacts = readPrefixArtifactDependencies(current.metadata);
 	const nextArtifacts = readPrefixArtifactDependencies(next.metadata);
 	const previousRebaseline = readPrefixRebaseline(current.metadata);
@@ -229,6 +232,20 @@ export function assertRuntimeSessionBindingTransition(
   const sourceFile = typeof current.metadata?.nativeSessionFile === "string" ? current.metadata.nativeSessionFile : current.locator?.kind === "local-file" ? current.locator.value : undefined;
   if (nativeArtifactDirectories(current.adapterId, sourceFile, current.metadata).some(path => !nextArtifacts.includes(path))) {
    throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "prefix refresh must retain native artifacts");
+  }
+ }
+ if (startsRuntimeTransition && nextRebaseline.reason === "explicit-refresh" && previousChildren.some(child =>
+  !nextChildren.some(nextChild => isDeepStrictEqual(child,nextChild)))) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"prefix refresh must retain native child references");
+ if (!startsRuntimeTransition && !restoresRuntimeTransition) {
+  for (const child of previousChildren) {
+   const target = nextChildren.find(item => item.nativeSessionId === child.nativeSessionId);
+   if (!target || child.nativeSessionFile !== target.nativeSessionFile) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native child operating state cannot be discarded");
+   const binding = (value: typeof child): RuntimeSessionBinding => ({...current,nativeSessionId:value.nativeSessionId,adapterId:value.prefix.capsule.adapterId,
+    metadata:{piboSessionPrefix:value.prefix as unknown as PiboJsonObject,...(value.transition?{piboSessionPrefixTransition:value.transition as unknown as PiboJsonObject}:{})}});
+   assertRuntimeSessionBindingTransition(binding(child),binding(target));
+  }
+  for (const child of nextChildren) if (!previousChildren.some(item => item.nativeSessionId === child.nativeSessionId)) {
+   if (!previousPrefix || child.nativeSessionId === next.nativeSessionId || child.prefix.capsule.adapterId !== next.adapterId || child.prefix.epoch !== 1 || child.prefix.reason !== "initial" || child.transition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native child must start with its own initial sealed prefix");
   }
  }
 	const previousTransition = readPrefixTransition(current.metadata);

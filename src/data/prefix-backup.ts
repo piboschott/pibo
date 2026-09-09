@@ -1,3 +1,4 @@
+import { readNativePrefixChildren } from "../sessions/prefix-children.js";
 import { PrefixMaintenanceLease } from "../sessions/prefix-maintenance.js";
 import { DatabaseSync, backup } from "node:sqlite";
 import { constants, createReadStream } from "node:fs";
@@ -25,7 +26,7 @@ function bindings(database: string): Binding[] {
 			if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
 			for (const row of db.prepare(`SELECT pibo_session_id,runtime_adapter_id,native_session_id,locator_json,metadata_json,revision FROM ${table} ORDER BY pibo_session_id`).iterate() as Iterable<Binding>) {
 				const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
-				if (readPrefixArtifactDependencies(metadata).length || readPrefixResourceDependencies(metadata).length || readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
+				if (readNativePrefixChildren(metadata).length || readPrefixArtifactDependencies(metadata).length || readPrefixResourceDependencies(metadata).length || readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
 				if (rows.length > MAX_FILES) throw Error("Protected session backup exceeds count quota");
 			}
 		}
@@ -33,11 +34,22 @@ function bindings(database: string): Binding[] {
 	} finally { db.close(); }
 }
 function referencedBindings(rows: Binding[]): Binding[] {
+ let total = 0;
 	return rows.flatMap(row => {
 		const source = readPrefixRebaseline(JSON.parse(row.metadata_json))?.sourceBinding;
-		return source ? [row, { pibo_session_id: source.piboSessionId, runtime_adapter_id: source.adapterId,
+		const children = readNativePrefixChildren(JSON.parse(row.metadata_json)).map(child => ({
+   pibo_session_id:row.pibo_session_id,runtime_adapter_id:child.prefix.capsule.adapterId,native_session_id:child.nativeSessionId,locator_json:null,
+   metadata_json:JSON.stringify({piboSessionPrefix:child.prefix,nativeSessionFile:child.nativeSessionFile}),revision:row.revision
+  }));
+  const sourceChildren = source ? readNativePrefixChildren(source.metadata).map(child => ({
+   pibo_session_id:row.pibo_session_id,runtime_adapter_id:child.prefix.capsule.adapterId,native_session_id:child.nativeSessionId,locator_json:null,
+   metadata_json:JSON.stringify({piboSessionPrefix:child.prefix,nativeSessionFile:child.nativeSessionFile}),revision:row.revision
+  })) : [];
+		total += 1 + children.length + sourceChildren.length + Number(Boolean(source));
+  if (total > MAX_FILES) throw Error("Protected native reference inventory exceeds count quota");
+		return source ? [row, ...children, ...sourceChildren, { pibo_session_id: source.piboSessionId, runtime_adapter_id: source.adapterId,
 			native_session_id: source.nativeSessionId ?? null, locator_json: source.locator ? JSON.stringify(source.locator) : null,
-			metadata_json: JSON.stringify(source.metadata ?? {}), revision: source.revision! }] : [row];
+			metadata_json: JSON.stringify(source.metadata ?? {}), revision: source.revision! }] : [row,...children];
 	});
 }
 function child(home: string, path: string): string {

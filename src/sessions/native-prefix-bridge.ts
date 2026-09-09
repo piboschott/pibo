@@ -12,7 +12,8 @@ export class NativePrefixBridge {
 	private readonly token = randomBytes(32).toString("hex");
 	private server?: Server;
 	private endpoint?: string;
-	private active = false;
+	private queued = 0;
+	private operationTail = Promise.resolve();
 	private nativeControl?: string;
 	private derivation?: { nonce: string; source: string; resolve(value: NativePrefixDerivation): void; reject(error: Error): void };
 
@@ -67,9 +68,14 @@ export class NativePrefixBridge {
 			await this.startup.accept(request, response);
 			return;
 		}
-		if (this.active) { response.writeHead(409).end(); request.resume(); return; }
-		this.active = true;
+		if (this.queued >= 64) { response.writeHead(503).end(); request.resume(); return; }
+		this.queued++;
+		const previous = this.operationTail;
+		let release!: () => void;
+		this.operationTail = new Promise<void>(resolve => { release = resolve; });
+		await previous;
 		try {
+			if (!this.server || response.destroyed) throw new Error("Native prefix bridge closed");
 			if (request.method === "POST" && request.url === "/control" && !this.nativeControl) {
 				const chunks: Buffer[] = []; let bytes = 0;
 				for await (const chunk of request) { bytes += chunk.length; if (bytes > 1024) throw new Error("Native control address exceeds limit"); chunks.push(chunk); }
@@ -98,6 +104,41 @@ export class NativePrefixBridge {
 					return;
 				}
 			}
+   const childRoute = /^\/children\/([^/]+)\/(snapshot|seal|compaction-begin|compaction-finish)$/.exec(request.url ?? "");
+   if (childRoute) {
+    const nativeSessionId = decodeURIComponent(childRoute[1]!);
+    if (!nativeSessionId || nativeSessionId.length > 1024 || /[\r\n\0]/.test(nativeSessionId)) throw new Error("Invalid native child identity");
+    if (request.method === "GET" && childRoute[2] === "snapshot") {
+     const restored = await this.controller.restoreNativeChild(nativeSessionId,this.codec);
+     if (restored) {
+      response.setHeader("x-native-child-state",Buffer.from(JSON.stringify(restored.child)).toString("base64url"));
+      response.setHeader("content-type","application/octet-stream");
+     }
+     response.writeHead(restored ? 200 : 404).end(restored?.payload);return;
+    }
+    if (request.method === "POST" && childRoute[2] === "seal") {
+     const locator = request.headers["x-native-session-file"], historical = request.headers["x-native-has-history"];
+     if (typeof locator !== "string" || locator.length > 8192 || !/^[A-Za-z0-9_-]+$/.test(locator) || !["true","false"].includes(String(historical))) throw new Error("Invalid native child dispatch receipt");
+     const nativeSessionFile = Buffer.from(locator,"base64url").toString("utf8");
+     if (!isAbsolute(nativeSessionFile) || nativeSessionFile.length > 4096) throw new Error("Invalid native child file");
+     const chunks: Buffer[] = [];let bytes = 0;
+     for await (const chunk of request) {bytes += chunk.length;if (bytes > MAX_PREFIX_CAPSULE_BYTES) throw new Error("Native child capsule exceeds limit");chunks.push(chunk);}
+     const child = await this.controller.sealNativeChild({nativeSessionId,nativeSessionFile,codec:this.codec,payload:new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)),hasHistoricalModelInput:historical === "true"});
+     response.setHeader("content-type","application/json");response.writeHead(200).end(JSON.stringify({digest:child.prefix.capsule.digest,epoch:child.prefix.epoch}));return;
+    }
+    if (request.method === "POST" && childRoute[2]!.startsWith("compaction-")) {
+     const chunks: Buffer[] = [];let bytes=0;
+     for await (const chunk of request) {bytes+=chunk.length;if(bytes>4096) throw new Error("Native child transition exceeds limit");chunks.push(chunk);}
+     const operation=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)));
+     if (!operation || typeof operation!=="object" || Array.isArray(operation)) throw new Error("Invalid native child transition");
+     if (childRoute[2] === "compaction-begin") {
+      if (Object.keys(operation).some(key=>key!=="sourceHead") || operation.sourceHead!==null && (typeof operation.sourceHead!=="string" || !operation.sourceHead || operation.sourceHead.length>256 || /[\x00-\x1f\x7f]/.test(operation.sourceHead))) throw new Error("Invalid native child source head");
+     } else if (Object.keys(operation).some(key=>!["id","changed"].includes(key)) || typeof operation.id!=="string" || operation.id.length>128 || typeof operation.changed!=="boolean") throw new Error("Invalid native child completion");
+     const child=await this.controller.mutateNativeChildCompaction(nativeSessionId,operation);
+     response.setHeader("content-type","application/json");response.writeHead(200).end(JSON.stringify(child.transition));return;
+    }
+    response.writeHead(405).end();request.resume();return;
+   }
 			if (request.method === "GET" && request.url === "/rebaseline") {
 				const pending = this.controller.rebaseline;
 				response.setHeader("content-type", "application/json");
@@ -165,7 +206,7 @@ export class NativePrefixBridge {
 			// Errors and raw native snapshot text never enter standard diagnostics.
 			if (!response.headersSent) response.writeHead(409).end("prefix-recovery-required");
 			else response.destroy();
-		} finally { this.active = false; }
+		} finally { this.queued--; release(); }
 	}
 
 	async dispose(): Promise<void> {
@@ -180,5 +221,6 @@ export class NativePrefixBridge {
 			server.close(error => { if (error) reject(error); else resolve(); });
 			server.closeAllConnections();
 		});
+		await this.operationTail;
 	}
 }
