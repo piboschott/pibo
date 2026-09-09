@@ -19,6 +19,8 @@ if (values.companion && sha(await readFile(values.companion)) !== "f9dc99ef25391
 	throw new Error("Companion is not the pinned official rust-v0.153.2 Linux x64 release");
 }
 const expected = {
+	"core/src/session/review.rs": "098eaf071d67eb10907817fd0e58ef3b9b6b48670078413587254d054fee92f5",
+	"core/src/thread_manager.rs": "8eb3a935ea20ab0686734c4a1155547e9f465ca9e0b7e6d9fec2c072cc8637ea",
 	"core/src/session/mod.rs": "2e4010b30003a0c3f319452c6cf453ca18de43faace9a4753f80bedaebd57075",
 	"core/src/session/turn_context.rs": "c73f046afb046ac495a023b254646360ad8df57418c7439e1d41cb4fa32b8a2b",
 	"core/src/session/step_settings.rs": "7181c4c43b62e818489e2b21c7d1eb7e736fdc08515074d33e068a00b27241ee",
@@ -57,24 +59,73 @@ const replace = (text, before, after) => {
 };
 const updated = { ...original };
 for (const path of ["core/src/session/mod.rs", "core/src/session/turn_context.rs"]) {
+	const identity = path.endsWith("/mod.rs") ? "&pibo_prefix_thread_id" : "&self.pibo_prefix_thread_id";
 	updated[path] = replace(updated[path], `        let model_info = models_manager
             .get_model_info(model.as_str(), &config.to_models_manager_config())
             .await;`, `        let model_info = crate::pibo_prefix::restore_model_info(models_manager
             .get_model_info(model.as_str(), &config.to_models_manager_config())
-            .await);`);
+            .await, ${identity});`);
 }
 updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session/step_settings.rs"], `        models_manager
             .get_model_info(self.collaboration_mode.model(), &config)
             .await`, `        crate::pibo_prefix::restore_model_info(models_manager
             .get_model_info(self.collaboration_mode.model(), &config)
-            .await)`);
+            .await, &overrides.pibo_prefix_thread_id)`);
 updated["core/src/session/mod.rs"] = replace(updated["core/src/session/mod.rs"],
 	"            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));",
 	`            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
         let base_instructions = if crate::pibo_prefix::is_active() {
             crate::pibo_prefix::select_base_instructions(base_instructions,
-                config.base_instructions.clone().unwrap_or_else(|| model_info.get_model_instructions(config.personality)))
+                config.base_instructions.clone().unwrap_or_else(|| model_info.get_model_instructions(config.personality)), &pibo_prefix_thread_id)
         } else { base_instructions };`);
+updated["core/src/session/mod.rs"] = replace(updated["core/src/session/mod.rs"],
+    "        } = args;\n        let (tx_sub, rx_sub)", `        } = args;
+        let mut reserved_thread_id = reserved_thread_id;
+        let pibo_prefix_thread_id = if crate::pibo_prefix::is_active() {
+            match &conversation_history {
+                InitialHistory::Resumed(history) => history.conversation_id.to_string(),
+                _ => reserved_thread_id.get_or_insert_with(ThreadId::new).to_string(),
+            }
+        } else { String::new() };
+        if crate::pibo_prefix::is_active() {
+            let parent = parent_thread_id.as_ref().map(ToString::to_string);
+            let source = forked_from_thread_id.as_ref().map(ToString::to_string);
+            crate::pibo_prefix::prepare_thread(&pibo_prefix_thread_id, session_source.is_non_root_agent(),
+                parent.as_deref(), source.as_deref(), matches!(&conversation_history, InitialHistory::Resumed(_)))
+                .await.map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: thread ownership".to_string()))?;
+        }
+        let (tx_sub, rx_sub)`);
+updated["core/src/session/mod.rs"] = replace(updated["core/src/session/mod.rs"],
+    "            model_info_overrides: config.to_models_manager_config().into(),",
+    "            model_info_overrides: self::step_settings::ModelInfoOverrides::from(config.to_models_manager_config()).with_prefix_thread_id(pibo_prefix_thread_id.clone()),");
+updated["core/src/session/review.rs"] = replace(updated["core/src/session/review.rs"],
+    "    let review_turn_context = TurnContext {", "    let review_turn_context = TurnContext {\n        pibo_prefix_thread_id: parent_turn_context.pibo_prefix_thread_id.clone(),");
+updated["core/src/session/turn_context.rs"] = replace(updated["core/src/session/turn_context.rs"],
+    "pub struct TurnContext {", "pub struct TurnContext {\n    pub(crate) pibo_prefix_thread_id: String,");
+updated["core/src/session/turn_context.rs"] = replace(updated["core/src/session/turn_context.rs"],
+    "        Self {\n            sub_id: self.sub_id.clone(),", "        Self {\n            pibo_prefix_thread_id: self.pibo_prefix_thread_id.clone(),\n            sub_id: self.sub_id.clone(),");
+updated["core/src/session/turn_context.rs"] = replace(updated["core/src/session/turn_context.rs"],
+    "        TurnContext {\n            sub_id,", "        TurnContext {\n            pibo_prefix_thread_id: thread_id.to_string(),\n            sub_id,");
+updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session/step_settings.rs"],
+    "pub(crate) struct ModelInfoOverrides {", "pub(crate) struct ModelInfoOverrides {\n    pub(crate) pibo_prefix_thread_id: String,");
+updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session/step_settings.rs"],
+    "            context_window: config.model_context_window,", "            pibo_prefix_thread_id: String::new(),\n            context_window: config.model_context_window,");
+updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session/step_settings.rs"],
+    "impl ModelInfoOverrides {", "impl ModelInfoOverrides {\n    pub(crate) fn with_prefix_thread_id(mut self, id: String) -> Self { self.pibo_prefix_thread_id = id; self }\n");
+const historyReadAnchor = `    pub(crate) async fn read_stored_thread(
+        &self,
+        params: ReadThreadParams,
+    ) -> CodexResult<StoredThread> {
+        let thread_id = params.thread_id;`;
+updated["core/src/thread_manager.rs"] = replace(updated["core/src/thread_manager.rs"], historyReadAnchor, historyReadAnchor + `
+        if params.include_history {
+            crate::pibo_prefix::before_history_read(&thread_id.to_string()).await
+                .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: history ownership".to_string()))?;
+        }`);
+updated["core/src/thread_manager.rs"] = replace(updated["core/src/thread_manager.rs"],
+    "        let requested_rollout_path = rollout_path.clone();", `        crate::pibo_prefix::before_history_file(&rollout_path).await
+            .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: history file ownership".to_string()))?;
+        let requested_rollout_path = rollout_path.clone();`);
 updated["core/src/lib.rs"] += "\n// Pinned Pibo native prefix contract.\npub mod pibo_prefix;\n";
 updated["core/Cargo.toml"] = replace(updated["core/Cargo.toml"], "[dependencies]\n",
 	"[dependencies]\nlibsqlite3-sys = { workspace = true }\nsha2 = { workspace = true }\n");
@@ -84,6 +135,7 @@ let cli = updated["cli/src/main.rs"];
 cli = replace(cli, "fn main() -> anyhow::Result<()> {", `fn main() -> anyhow::Result<()> {
     if std::env::args().any(|arg| arg == "--pibo-prefix-contract") {
         println!("{}", codex_core::pibo_prefix::CODEC);
+        println!("native-children-v1");
         return Ok(());
     }
     let prefix_args = codex_core::pibo_prefix::startup()
@@ -116,14 +168,14 @@ const prewarmHeader = `    pub async fn prewarm_websocket(
     ) -> Result<()> {`;
 client = replace(client, prewarmHeader, prewarmHeader + "\n        if crate::pibo_prefix::is_active() { return Ok(()); }");
 updated["core/src/client.rs"] = client;
-updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence(&step_context.settings.model_info) {
+updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence(&step_context.settings.model_info, &sess.thread_id.to_string()) {
         sess.try_ensure_rollout_materialized(PersistContext::Standard).await
             .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: native persistence".to_string()))?;
         sess.flush_rollout().await
             .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: native flush".to_string()))?;
         let path = sess.current_rollout_path().await.ok().flatten()
             .ok_or_else(|| CodexErr::Fatal("Pibo native prefix recovery required: native path".to_string()))?;
-        crate::pibo_prefix::sync_native(path).await
+        crate::pibo_prefix::sync_native(path, &sess.thread_id.to_string()).await
             .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: native durability".to_string()))?;
     }
     let mut stream = client_session
@@ -158,7 +210,7 @@ for (const [path, contents] of Object.entries(updated)) {
 const nativeGuard = join(root, "core/src/pibo_prefix.rs");
 const existingGuard = await readFile(nativeGuard).catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
 if (!existingGuard?.equals(guardSource)) await writeFile(nativeGuard, guardSource);
-const manifest = { upstreamCommit: "657a993cbee87acf52d14b758ce49dbd46d1b8eb", codec: "codex-0.153.2/responses/pibo-v1",
+const manifest = { capabilities: ["native-children-v1"], upstreamCommit: "657a993cbee87acf52d14b758ce49dbd46d1b8eb", codec: "codex-0.153.2/responses/pibo-v1",
 	guardSha256: sha(guardSource), files: Object.fromEntries(Object.entries(updated).map(([path, contents]) => [path, sha(contents)])) };
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 if (!values["prepare-only"]) {

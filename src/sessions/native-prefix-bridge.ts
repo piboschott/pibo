@@ -1,3 +1,4 @@
+import { readNativePrefixChildren, type NativePrefixChild } from "./prefix-children.js";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { MAX_PREFIX_CAPSULE_BYTES } from "./prefix-capsule.js";
@@ -18,7 +19,8 @@ export class NativePrefixBridge {
 	private derivation?: { nonce: string; source: string; resolve(value: NativePrefixDerivation): void; reject(error: Error): void };
 
 	constructor(private readonly controller: SessionPrefixController, private readonly codec: string,
-		private readonly startup?: NativePrefixStartupGate, private readonly restoreSnapshot?: (payload: string) => string) {}
+		private readonly startup?: NativePrefixStartupGate, private readonly restoreSnapshot?: (payload: string) => string,
+		private readonly recoverNativeChild?: (child: NativePrefixChild) => Promise<void>) {}
 
 	async derive(): Promise<NativePrefixDerivation> {
 		const source = this.controller.binding?.nativeSessionId;
@@ -104,34 +106,48 @@ export class NativePrefixBridge {
 					return;
 				}
 			}
-   const childRoute = /^\/children\/([^/]+)\/(snapshot|seal|compaction-begin|compaction-finish)$/.exec(request.url ?? "");
+   if (request.method === "GET" && request.url === "/inventory") {
+    const binding = this.controller.getRuntimeBinding();
+    const nativeSessionFile = typeof binding.metadata?.nativeSessionFile === "string" ? binding.metadata.nativeSessionFile : binding.locator?.kind === "local-file" ? binding.locator.value : undefined;
+    const children = readNativePrefixChildren(binding.metadata).filter(child=>child.prefix.capsule.adapterId===binding.adapterId).map(({nativeSessionId,nativeSessionFile})=>({nativeSessionId,nativeSessionFile}));
+    response.setHeader("content-type","application/json");response.writeHead(200).end(JSON.stringify({root:{nativeSessionId:binding.nativeSessionId,nativeSessionFile},children}));return;
+   }
+   const childRoute = /^\/children\/([^/]+)\/(snapshot|seal|transition|rebaseline|compaction-begin|compaction-finish|compaction\/begin|compaction\/finish)$/.exec(request.url ?? "");
    if (childRoute) {
     const nativeSessionId = decodeURIComponent(childRoute[1]!);
     if (!nativeSessionId || nativeSessionId.length > 1024 || /[\r\n\0]/.test(nativeSessionId)) throw new Error("Invalid native child identity");
     if (request.method === "GET" && childRoute[2] === "snapshot") {
-     const restored = await this.controller.restoreNativeChild(nativeSessionId,this.codec);
+     let restored = await this.controller.restoreNativeChild(nativeSessionId,this.codec);
+     if (restored && this.recoverNativeChild) {await this.recoverNativeChild(restored.child);restored=await this.controller.restoreNativeChild(nativeSessionId,this.codec);}
      if (restored) {
       response.setHeader("x-native-child-state",Buffer.from(JSON.stringify(restored.child)).toString("base64url"));
       response.setHeader("content-type","application/octet-stream");
      }
      response.writeHead(restored ? 200 : 404).end(restored?.payload);return;
     }
+    if (request.method === "GET" && childRoute[2] === "rebaseline") {response.writeHead(404).end();return;}
+    if (request.method === "GET" && childRoute[2] === "transition") {
+     const child=readNativePrefixChildren(this.controller.getRuntimeBinding().metadata).find(child=>child.nativeSessionId===nativeSessionId);
+     response.setHeader("content-type","application/json");response.writeHead(200).end(JSON.stringify(child?.transition ?? null));return;
+    }
     if (request.method === "POST" && childRoute[2] === "seal") {
      const locator = request.headers["x-native-session-file"], historical = request.headers["x-native-has-history"];
      if (typeof locator !== "string" || locator.length > 8192 || !/^[A-Za-z0-9_-]+$/.test(locator) || !["true","false"].includes(String(historical))) throw new Error("Invalid native child dispatch receipt");
+     const sourceNativeSessionId = request.headers["x-native-prefix-parent"];
+     if (sourceNativeSessionId !== undefined && (typeof sourceNativeSessionId !== "string" || !sourceNativeSessionId || sourceNativeSessionId.length>1024)) throw new Error("Invalid native child source");
      const nativeSessionFile = Buffer.from(locator,"base64url").toString("utf8");
      if (!isAbsolute(nativeSessionFile) || nativeSessionFile.length > 4096) throw new Error("Invalid native child file");
      const chunks: Buffer[] = [];let bytes = 0;
      for await (const chunk of request) {bytes += chunk.length;if (bytes > MAX_PREFIX_CAPSULE_BYTES) throw new Error("Native child capsule exceeds limit");chunks.push(chunk);}
-     const child = await this.controller.sealNativeChild({nativeSessionId,nativeSessionFile,codec:this.codec,payload:new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)),hasHistoricalModelInput:historical === "true"});
+     const child = await this.controller.sealNativeChild({nativeSessionId,nativeSessionFile,codec:this.codec,payload:new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)),hasHistoricalModelInput:historical === "true",...(typeof sourceNativeSessionId === "string" ? {sourceNativeSessionId} : {})});
      response.setHeader("content-type","application/json");response.writeHead(200).end(JSON.stringify({digest:child.prefix.capsule.digest,epoch:child.prefix.epoch}));return;
     }
-    if (request.method === "POST" && childRoute[2]!.startsWith("compaction-")) {
+    if (request.method === "POST" && childRoute[2]!.startsWith("compaction")) {
      const chunks: Buffer[] = [];let bytes=0;
      for await (const chunk of request) {bytes+=chunk.length;if(bytes>4096) throw new Error("Native child transition exceeds limit");chunks.push(chunk);}
      const operation=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks)));
      if (!operation || typeof operation!=="object" || Array.isArray(operation)) throw new Error("Invalid native child transition");
-     if (childRoute[2] === "compaction-begin") {
+     if (["compaction-begin","compaction/begin"].includes(childRoute[2]!)) {
       if (Object.keys(operation).some(key=>key!=="sourceHead") || operation.sourceHead!==null && (typeof operation.sourceHead!=="string" || !operation.sourceHead || operation.sourceHead.length>256 || /[\x00-\x1f\x7f]/.test(operation.sourceHead))) throw new Error("Invalid native child source head");
      } else if (Object.keys(operation).some(key=>!["id","changed"].includes(key)) || typeof operation.id!=="string" || operation.id.length>128 || typeof operation.changed!=="boolean") throw new Error("Invalid native child completion");
      const child=await this.controller.mutateNativeChildCompaction(nativeSessionId,operation);

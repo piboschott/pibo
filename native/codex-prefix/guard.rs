@@ -12,19 +12,26 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::collections::HashMap;
+use base64::Engine;
 use std::time::Duration;
 use uuid::Uuid;
 
 pub const CODEC: &str = "codex-0.153.2/responses/pibo-v1";
 const LIMIT: usize = 128 * 1024 * 1024;
-static STATE: OnceLock<Mutex<State>> = OnceLock::new();
+static STATE: OnceLock<Arc<Mutex<State>>> = OnceLock::new();
+static CHILDREN: OnceLock<Mutex<HashMap<String, Arc<Mutex<State>>>>> = OnceLock::new();
+static DERIVED: OnceLock<Mutex<HashMap<String, Arc<Mutex<State>>>>> = OnceLock::new();
 tokio::task_local! { static COMPACTION: (); }
 
 #[derive(Clone)]
 struct Connection {
     address: SocketAddr,
     token: String,
+    route: String,
+    native_file: Option<String>,
+    source_native_id: Option<String>,
 }
 struct Owner(*mut libsqlite3_sys::sqlite3);
 // Every connection uses SQLite FULLMUTEX and is retained behind STATE's mutex.
@@ -59,6 +66,102 @@ struct Snapshot {
     tools: Option<String>,
     configuration: Value,
     input_prefix: Vec<ResponseItem>,
+}
+
+
+fn state_for(native_id: &str, construction: bool) -> Option<Arc<Mutex<State>>> {
+    let root = STATE.get()?.clone();
+    if root.lock().ok()?.native_id.as_deref() == Some(native_id) { return Some(root); }
+    if let Some(child) = CHILDREN.get().and_then(|map| map.lock().ok()?.get(native_id).cloned()) { return Some(child); }
+    if construction { return DERIVED.get().and_then(|map| map.lock().ok()?.get(native_id).cloned()); }
+    None
+}
+
+async fn load_child(native_id: String, allow_new: bool, source: Option<String>) -> anyhow::Result<Arc<Mutex<State>>> {
+    Uuid::parse_str(&native_id)?;
+    if let Some(state) = state_for(&native_id, false) { return Ok(state); }
+    let root_state = STATE.get().ok_or_else(failure)?;
+    let (root, mut connection) = {
+        let root_state = root_state.lock().map_err(|_| failure())?;
+        (root_state.root.clone(), root_state.connection.clone())
+    };
+    // Claim the native identity before asking the host to recover or read history.
+    let owner = lock(&root, &serde_json::to_string(&["native", "codex-native", &native_id])?)?;
+    connection.route = format!("/children/{native_id}");
+    connection.native_file = None;
+    connection.source_native_id = None;
+    let read_connection = connection.clone();
+    let (status, bytes) = tokio::task::spawn_blocking(move || request(&read_connection,"GET","/snapshot",&[],None)).await??;
+    let snapshot: Option<Snapshot> = match status {
+        200 => Some(serde_json::from_slice(&bytes)?),
+        404 if allow_new => None,
+        _ => return Err(failure()),
+    };
+    if snapshot.as_ref().is_some_and(|snapshot| snapshot.format != 1 || snapshot.native_session_id != native_id) { return Err(failure()); }
+    if snapshot.is_none() { connection.source_native_id = source; }
+    let read_connection = connection.clone();
+    let (status, bytes) = tokio::task::spawn_blocking(move || request(&read_connection,"GET","/transition",&[],None)).await??;
+    let transition: Value = serde_json::from_slice(&bytes)?;
+    if status != 200 || transition["state"] == "pending" { return Err(failure()); }
+    let state = Arc::new(Mutex::new(State { connection, root, owners: vec![owner], native_id: Some(native_id.clone()), snapshot,
+        initial_rebaseline: None, refresh_base: false, sealing: false, failed: false }));
+    let mut children = CHILDREN.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|_| failure())?;
+    if children.len() >= 64 || children.contains_key(&native_id) { return Err(failure()); }
+    children.insert(native_id, state.clone());
+    Ok(state)
+}
+
+/// Called at the pinned native allocation boundary, never inferred from a provider payload.
+pub async fn prepare_thread(native_id: &str, child: bool, parent: Option<&str>, fork_source: Option<&str>, resumed: bool) -> anyhow::Result<()> {
+    let Some(root) = STATE.get() else { return Ok(()); };
+    Uuid::parse_str(native_id)?;
+    {
+        let mut root = root.lock().map_err(|_| failure())?;
+        if !child && root.native_id.is_none() {
+            let owner = lock(&root.root,&serde_json::to_string(&["native","codex-native",native_id])?)?;
+            root.owners.push(owner);root.native_id=Some(native_id.to_owned());return Ok(());
+        }
+        if root.native_id.as_deref() == Some(native_id) { return Ok(()); }
+    }
+    if child {
+        let source = if resumed { None } else {
+            Some(parent.or(fork_source).map(str::to_owned).or_else(|| root.lock().ok()?.native_id.clone()).ok_or_else(failure)?)
+        };
+        load_child(native_id.to_owned(), !resumed, source).await?;
+        return Ok(());
+    }
+    // Public native forks are construction-only in this process. Pibo publishes
+    // their independent binding and opens a new protected owner before dispatch.
+    let source = fork_source.and_then(|id| state_for(id,false)).ok_or_else(failure)?;
+    let mut derived = DERIVED.get_or_init(|| Mutex::new(HashMap::new())).lock().map_err(|_| failure())?;
+    if derived.len() >= 1024 { return Err(failure()); }
+    derived.insert(native_id.to_owned(),source);
+    Ok(())
+}
+
+pub async fn before_history_read(native_id: &str) -> anyhow::Result<()> {
+    if !is_active() || state_for(native_id,false).is_some() { return Ok(()); }
+    load_child(native_id.to_owned(),false,None).await?;
+    Ok(())
+}
+
+pub async fn before_history_file(path: &std::path::Path) -> anyhow::Result<()> {
+    let Some(root) = STATE.get() else { return Ok(()); };
+    if !path.is_absolute() || fs::canonicalize(path)? != path { return Err(failure()); }
+    let connection = {
+        let root = root.lock().map_err(|_| failure())?;
+        if root.connection.native_file.as_deref().is_some_and(|file| std::path::Path::new(file) == path) { return Ok(()); }
+        root.connection.clone()
+    };
+    let (status, bytes) = tokio::task::spawn_blocking(move || request(&connection,"GET","/inventory",&[],None)).await??;
+    if status != 200 || bytes.len() > 1024 * 1024 { return Err(failure()); }
+    let inventory: Value = serde_json::from_slice(&bytes)?;
+    let root = &inventory["root"];
+    let children = inventory["children"].as_array().ok_or_else(failure)?;
+    if children.len() > 64 { return Err(failure()); }
+    let record = std::iter::once(root).chain(children.iter()).find(|value|
+        value["nativeSessionFile"].as_str().is_some_and(|file| std::path::Path::new(file) == path)).ok_or_else(failure)?;
+    before_history_read(record["nativeSessionId"].as_str().ok_or_else(failure)?).await
 }
 
 // Cold, authorized native derivation. Preserve serde's exact tool-number and
@@ -205,6 +308,15 @@ fn request_authorized(
         if Uuid::parse_str(id).is_err() { return Err(failure()); }
         identity.push_str(&format!("x-prefix-rebaseline-id: {id}\r\n"));
     }
+    if !connection.route.is_empty() && path == "/seal" {
+        let file = connection.native_file.as_ref().ok_or_else(failure)?;
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(file.as_bytes());
+        identity.push_str(&format!("x-native-session-file: {encoded}\r\n"));
+        if let Some(parent) = &connection.source_native_id {
+            identity.push_str(&format!("x-native-prefix-parent: {parent}\r\n"));
+        }
+    }
+    let path = format!("{}{path}", connection.route);
     write!(
         socket,
         "{method} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nConnection: close\r\nContent-Length: {}\r\n{identity}\r\n",
@@ -310,7 +422,7 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
         .iter()
         .map(|identity| lock(&root, identity))
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let connection = Connection { address, token };
+    let connection = Connection { address, token, route: String::new(), native_file: None, source_native_id: None };
     let (status, body) = request(&connection, "GET", "/snapshot", &[], None)?;
     let mut snapshot: Option<Snapshot> = match status {
         404 => None,
@@ -382,7 +494,7 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
         }
     }
     STATE
-        .set(Mutex::new(State {
+        .set(Arc::new(Mutex::new(State {
             connection,
             root,
             owners,
@@ -392,7 +504,7 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
             refresh_base,
             sealing: false,
             failed: false,
-        }))
+        })))
         .map_err(|_| failure())?;
     let mut args = vec!["codex".to_string()];
     args.extend(activation.args);
@@ -429,8 +541,8 @@ pub fn is_active() -> bool {
     STATE.get().is_some()
 }
 
-pub fn restore_model_info(candidate: ModelInfo) -> ModelInfo {
-    let Some(state) = STATE.get() else { return candidate; };
+pub fn restore_model_info(candidate: ModelInfo, native_id: &str) -> ModelInfo {
+    let Some(state) = state_for(native_id, true) else { return candidate; };
     let state = state.lock().expect("Pibo prefix ownership poisoned");
     match &state.snapshot {
         Some(snapshot) if snapshot.model_info.slug == candidate.slug => snapshot.model_info.clone(),
@@ -440,8 +552,8 @@ pub fn restore_model_info(candidate: ModelInfo) -> ModelInfo {
 
 /// Cold thread construction restores the sealed native base even if config or
 /// the catalog has changed. An explicit refresh chooses today's native base.
-pub fn select_base_instructions(candidate: String, current: String) -> String {
-    let Some(state) = STATE.get() else { return candidate; };
+pub fn select_base_instructions(candidate: String, current: String, native_id: &str) -> String {
+    let Some(state) = state_for(native_id, true) else { return candidate; };
     let state = state.lock().expect("Pibo prefix ownership poisoned");
     if let Some(snapshot) = &state.snapshot {
         if !snapshot.model_info.use_responses_lite { return snapshot.instructions.clone(); }
@@ -456,15 +568,15 @@ pub fn select_base_instructions(candidate: String, current: String) -> String {
     if state.refresh_base { current } else { candidate }
 }
 
-pub fn needs_native_persistence(model: &ModelInfo) -> bool {
-    STATE
-        .get()
+pub fn needs_native_persistence(model: &ModelInfo, native_id: &str) -> bool {
+    state_for(native_id, false)
         .is_some_and(|state| state.lock().map_or(true, |state| state.snapshot.as_ref()
             .is_none_or(|snapshot| snapshot.model_info.slug != model.slug)))
 }
 
 /// First-dispatch barrier only; no extra native file scans on ordinary turns.
-pub async fn sync_native(path: PathBuf) -> anyhow::Result<()> {
+pub async fn sync_native(path: PathBuf, native_id: &str) -> anyhow::Result<()> {
+    let native_file = path.to_str().ok_or_else(failure)?.to_owned();
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let mut options = OpenOptions::new();
         options.read(true);
@@ -486,6 +598,7 @@ pub async fn sync_native(path: PathBuf) -> anyhow::Result<()> {
         Ok(())
     })
     .await??;
+    if let Some(state) = state_for(native_id, false) { state.lock().map_err(|_| failure())?.connection.native_file = Some(native_file); }
     Ok(())
 }
 
@@ -496,9 +609,9 @@ pub(crate) async fn compact<T>(
     operation: impl std::future::Future<Output = codex_protocol::error::Result<T>>,
 ) -> codex_protocol::error::Result<T> {
     use codex_protocol::error::CodexErr;
-    let Some(state) = STATE.get() else {
-        return operation.await;
-    };
+    if !is_active() { return operation.await; }
+    let native_id = sess.thread_id.to_string();
+    let state = state_for(&native_id, false).ok_or_else(|| CodexErr::Fatal("Pibo native child prefix missing".to_string()))?;
     let fatal = || CodexErr::Fatal("Pibo native prefix recovery required: compaction".to_string());
     let connection = {
         let state = state.lock().map_err(|_| fatal())?;
@@ -514,7 +627,7 @@ pub(crate) async fn compact<T>(
         .ok()
         .flatten()
         .ok_or_else(fatal)?;
-    sync_native(path.clone()).await.map_err(|_| fatal())?;
+    sync_native(path.clone(), &native_id).await.map_err(|_| fatal())?;
     let length = fs::metadata(&path).map_err(|_| fatal())?.len();
     let begin_connection = connection.clone();
     let body = serde_json::to_vec(&json!({"sourceHead": format!("offset:{length}")}))
@@ -541,7 +654,7 @@ pub(crate) async fn compact<T>(
     // dispatch stays closed until restart examines the native checkpoint.
     let result = COMPACTION.scope((), operation).await;
     sess.flush_rollout().await.map_err(|_| fatal())?;
-    sync_native(path.clone()).await.map_err(|_| fatal())?;
+    sync_native(path.clone(), &native_id).await.map_err(|_| fatal())?;
     if result.is_err() && fs::metadata(&path).map_err(|_| fatal())?.len() != length {
         return result;
     }
@@ -566,9 +679,8 @@ pub async fn validate(
     native_id: &str,
     prefix_length: usize,
 ) -> anyhow::Result<()> {
-    let Some(state) = STATE.get() else {
-        return Ok(());
-    };
+    if !is_active() { return Ok(()); }
+    let state = state_for(native_id, false).ok_or_else(failure)?;
     if COMPACTION.try_with(|_| ()).is_ok() {
         return Ok(());
     }
@@ -640,7 +752,7 @@ pub async fn validate(
         }
         // Only the first dispatch can capture. Never claim old assistant/tool
         // history as a newly created original, even with incomplete metadata.
-        if rebaseline.is_none() && request_value.input.iter().any(|item| !matches!(item,
+        if rebaseline.is_none() && state.connection.source_native_id.is_none() && request_value.input.iter().any(|item| !matches!(item,
             ResponseItem::Message { role, .. } if matches!(role.as_str(), "user" | "developer" | "system"))
             && !matches!(item, ResponseItem::AdditionalTools { .. })) { return Err(failure()); }
         let snapshot = Snapshot {

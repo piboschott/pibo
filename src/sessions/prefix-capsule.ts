@@ -20,7 +20,8 @@ export type PrefixCapsuleReference = {
 };
 
 export type SessionPrefixBinding = {
-	format: 1;
+	/** V2 fences readers that do not understand native children and pending transitions. */
+	format: 1 | 2;
 	epoch: number;
 	status: "sealed";
 	capsule: PrefixCapsuleReference;
@@ -57,7 +58,14 @@ export function validatePrefixReference(value: unknown): asserts value is Prefix
 export function readSessionPrefixBinding(metadata: PiboJsonObject | undefined): SessionPrefixBinding | undefined {
 	if (!metadata || !Object.hasOwn(metadata, SESSION_PREFIX_METADATA_KEY)) return undefined;
 	const value = metadata[SESSION_PREFIX_METADATA_KEY];
-	if (!record(value) || value.format !== 1 || value.status !== "sealed"
+	if (record(value) && value.format === 2 && value.status === "pending") {
+  const policy = metadata.piboSessionPrefixRebaseline;
+  if (!record(policy) || policy.format !== 1 || typeof value.transitionId !== "string" || value.transitionId !== policy.id
+   || !["runtime-change","explicit-refresh"].includes(String(policy.reason))
+   || Object.keys(value).some(key => !["format","status","transitionId"].includes(key))) throw new PrefixRecoveryRequiredError("invalid pending reader fence");
+  return undefined;
+ }
+	if (!record(value) || (value.format !== 1 && value.format !== 2) || value.status !== "sealed"
 		|| !Number.isSafeInteger(value.epoch) || Number(value.epoch) < 1
 		|| typeof value.nativeSessionId !== "string" || !value.nativeSessionId || value.nativeSessionId.length > 1024
 		|| (value.capsuleNativeSessionId !== undefined && (typeof value.capsuleNativeSessionId !== "string" || !value.capsuleNativeSessionId || value.capsuleNativeSessionId.length > 1024))
@@ -69,7 +77,7 @@ export function readSessionPrefixBinding(metadata: PiboJsonObject | undefined): 
 	// Binding comparison must not depend on property order introduced by a store.
 	const capsule = value.capsule;
 	return {
-		format: 1, epoch: Number(value.epoch), status: "sealed",
+		format: value.format, epoch: Number(value.epoch), status: "sealed",
 		capsule: { format: 1, digest: capsule.digest, bytes: capsule.bytes, adapterId: capsule.adapterId, codec: capsule.codec },
 		reason: value.reason as SessionPrefixBinding["reason"], nativeSessionId: value.nativeSessionId,
 		...(typeof value.capsuleNativeSessionId === "string" ? { capsuleNativeSessionId: value.capsuleNativeSessionId } : {}),
@@ -86,7 +94,7 @@ export function readSessionPrefixResourceReference(metadata: PiboJsonObject | un
 
 /** A reader without a complete restore path must never fall back to rebuilding. */
 export function rejectUnsupportedPrefixRestore(metadata: PiboJsonObject | undefined): void {
-	if (readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata)
+	if (metadata && Object.hasOwn(metadata, SESSION_PREFIX_METADATA_KEY) || readSessionPrefixResourceReference(metadata)
 		|| metadata && Object.hasOwn(metadata, SESSION_PREFIX_TRANSITION_KEY)) {
 		throw new PrefixRecoveryRequiredError("this runtime open path does not yet support the sealed prefix; use a compatible reader");
 	}

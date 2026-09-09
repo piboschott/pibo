@@ -5,7 +5,7 @@ import { PrefixRecoveryRequiredError } from "../../sessions/prefix-capsule.js";
 import type { SessionPrefixController } from "../../sessions/prefix-session.js";
 
 /** Cold recovery only, while the native child holds both session locks. */
-export async function recoverCodexPrefixCompaction(controller: SessionPrefixController): Promise<void> {
+export async function recoverCodexPrefixCompaction(controller: Pick<SessionPrefixController, "transition" | "getRuntimeBinding" | "finishCompaction">): Promise<void> {
 	const transition = controller.transition;
 	if (transition?.state !== "pending") return;
 	const binding = controller.getRuntimeBinding();

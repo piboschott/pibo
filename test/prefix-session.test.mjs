@@ -112,3 +112,30 @@ test("old history is never retrospectively sealed as an original prompt", async 
 	await assert.rejects(controller.seal({ codec: "v1", payload: "today's prompt", nativeSessionId: session.piSessionId, evidence: "adapter-inputs", hasHistoricalModelInput: true }), /legacy history/);
 	assert.equal(sessions.get(session.id).runtimeBinding.metadata.piboSessionPrefix, undefined);
 });
+
+for (const Store of [SqlitePiboSessionStore, PiboDataSessionStore]) for (const pendingModel of [false,true]) test(`${Store.name}: legacy reader migration retains exact bytes and epoch and cannot downgrade; pendingModel=${pendingModel}`, async t => {
+ const root=await mkdtemp(join(tmpdir(),"pibo-reader-migration-"));
+ const sessions=new Store(join(root,"sessions.sqlite"));
+ t.after(async()=>{sessions.close();await rm(root,{recursive:true,force:true});});
+ const session=sessions.create({channel:"test",kind:"chat",profile:"base"});
+ const store=new PrefixCapsuleStore(join(root,"prefixes"));
+ const payload="original model bytes\r\n", capsule=await store.put(session.runtimeBinding.adapterId,"pi-v1",payload);
+ const prefix={format:1,epoch:1,status:"sealed",capsule,reason:"initial",nativeSessionId:session.piSessionId,evidence:"adapter-inputs"};
+ let binding=sessions.updateRuntimeBinding(session.id,{...session.runtimeBinding,state:"bound",metadata:{piboSessionPrefix:prefix}},{expectedRevision:1});
+ // Store mutation returns a session record; use the authoritative binding.
+ binding=sessions.get(session.id).runtimeBinding;
+ const transitionId="11111111-1111-4111-8111-111111111111";
+ if(pendingModel){
+  const policy={format:1,id:transitionId,reason:"model-change",targetAdapterId:binding.adapterId,sourceBinding:binding,previousModel:{provider:"fixture",id:"one"},targetModel:{provider:"fixture",id:"two"}};
+  sessions.updateRuntimeBinding(session.id,{...binding,metadata:{...binding.metadata,piboSessionPrefixRebaseline:policy}},{expectedRevision:binding.revision});
+  binding=sessions.get(session.id).runtimeBinding;
+ }
+ const controller=new SessionPrefixController({store,getBinding:()=>binding,persistence:createAgentRuntimeBindingPersistence(sessions,{piboSessionId:session.id,onPersisted:next=>{binding=next;}})});
+ assert.equal(await controller.restore("pi-v1"),payload);
+ assert.deepEqual(controller.binding,{...prefix,format:2});
+ const revision=binding.revision;
+ assert.equal(await controller.restore("pi-v1"),payload);
+ assert.equal(binding.revision,revision,"migration publishes only once");
+ if(pendingModel){await controller.abortModelChange(transitionId);assert.deepEqual(controller.binding,{...prefix,format:2});}
+ assert.throws(()=>sessions.updateRuntimeBinding(session.id,{...binding,metadata:{...binding.metadata,piboSessionPrefix:prefix}},{expectedRevision:binding.revision}),/immutable/);
+});

@@ -35,3 +35,11 @@ test("prefix inventory exposes pending native transitions and permits older reso
 	assert.equal(inspectSessionPrefix({ ...input, metadata: { piboSessionPrefix: { ...prefix, epoch: 3, reason: "model-change" },
 		piboSessionPrefixTransition: { ...pending, state: "completed" } } }).status, "sealed");
 });
+
+test("pending runtime reader fence is visible and malformed policy never looks like legacy history",()=>{
+ const id="11111111-1111-4111-8111-111111111111";
+ const policy={format:1,id,reason:"runtime-change",targetAdapterId:"orp",sourceBinding:{piboSessionId:"ps_fixture",runtimeInstanceId:"pi",adapterId:"pi",revision:2,nativeSessionId:"native",state:"bound",metadata:{piboSessionPrefix:prefix}}};
+ const metadata={piboSessionPrefix:{format:2,status:"pending",transitionId:id},piboSessionPrefixRebaseline:policy};
+ assert.deepEqual(inspectSessionPrefix({adapterId:"orp",state:"unbound",metadata}),{status:"transition-pending",verification:"metadata-only",reason:"runtime-change"});
+ assert.equal(inspectSessionPrefix({adapterId:"orp",metadata:{...metadata,piboSessionPrefixRebaseline:{...policy,sourceBinding:{}}}}).status,"recovery-required");
+});

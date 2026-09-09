@@ -1,3 +1,4 @@
+import { readPrefixRebaseline } from "./prefix-rebaseline.js";
 import type { PiboJsonObject } from "../core/events.js";
 import { readSessionPrefixBinding, SESSION_PREFIX_RESOURCES_KEY, validatePrefixReference } from "./prefix-capsule.js";
 import { readPrefixTransition } from "./prefix-transition.js";
@@ -26,6 +27,7 @@ export function inspectSessionPrefix(input: {
 		const metadata = input.metadata as PiboJsonObject | undefined;
 		const prefix = readSessionPrefixBinding(metadata);
 		const transition = readPrefixTransition(metadata);
+		const rebaseline = readPrefixRebaseline(metadata);
 		const resources = metadata?.[SESSION_PREFIX_RESOURCES_KEY];
 		if (resources !== undefined) {
 			validatePrefixReference(resources);
@@ -33,13 +35,14 @@ export function inspectSessionPrefix(input: {
 		}
 		if (!prefix) {
 			if (transition) throw new Error("orphan transition");
+			if (rebaseline) return {status:"transition-pending",verification,reason:rebaseline.reason};
 			return { status: resources ? "preparing" : input.state === "unbound" ? "uninitialized" : "legacy-unverified", verification };
 		}
 		if (prefix.capsule.adapterId !== input.adapterId || prefix.nativeSessionId !== input.nativeSessionId) throw new Error("identity");
 		if (transition && (transition.nativeSessionId !== prefix.nativeSessionId
 			|| (transition.state === "pending" ? transition.fromEpoch !== prefix.epoch
 				: transition.fromEpoch + Number(transition.state === "completed") > prefix.epoch))) throw new Error("epoch");
-		return { status: transition?.state === "pending" ? "transition-pending" : "sealed", verification,
+		return { status: transition?.state === "pending" || rebaseline ? "transition-pending" : "sealed", verification,
 			epoch: prefix.epoch, digest: prefix.capsule.digest, codec: prefix.capsule.codec, evidence: prefix.evidence, reason: prefix.reason };
 	} catch {
 		// Corrupt metadata and its raw payload must not turn into an implicit legacy session.

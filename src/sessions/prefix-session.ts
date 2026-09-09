@@ -45,6 +45,7 @@ export class SessionPrefixController {
 	private ownership?: PrefixSessionOwnership;
 	private readonly transitionWaiters = new Set<() => void>();
 	private transitionFailureId?: string;
+	private readerUpgrade?: Promise<void>;
 
 	async acquireOwnership(): Promise<() => void> {
 		if (!this.ownership) {
@@ -168,6 +169,7 @@ export class SessionPrefixController {
 
 	/** Durable authorization precedes any explicit native configuration mutation. */
 	async beginModelChange(previousModel: PrefixModelSelection, targetModel: PrefixModelSelection): Promise<PrefixRebaseline | undefined> {
+		await this.ensureCurrentReader();
 		const runtime = this.transitionBinding();
 		if (previousModel.provider === targetModel.provider && previousModel.id === targetModel.id) return undefined;
 		if (!readSessionPrefixBinding(runtime.metadata)) return undefined;
@@ -185,7 +187,7 @@ export class SessionPrefixController {
 	async abortModelChange(id: string): Promise<void> {
 		const runtime = this.transitionBinding(), pending = readPrefixRebaseline(runtime.metadata);
 		if (!pending || pending.id !== id || pending.reason !== "model-change") throw new PrefixRecoveryRequiredError("model transition is no longer pending");
-		if (JSON.stringify(readSessionPrefixBinding(runtime.metadata)) !== JSON.stringify(readSessionPrefixBinding(pending.sourceBinding.metadata))) throw new PrefixRecoveryRequiredError("model transition already changed its prefix");
+		if (JSON.stringify({...readSessionPrefixBinding(runtime.metadata),format:2}) !== JSON.stringify({...readSessionPrefixBinding(pending.sourceBinding.metadata),format:2})) throw new PrefixRecoveryRequiredError("model transition already changed its prefix");
 		const metadata = { ...runtime.metadata }; delete metadata[SESSION_PREFIX_REBASELINE_KEY];
 		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
 		this.options.onPersisted?.(structuredClone(persisted));
@@ -254,7 +256,27 @@ export class SessionPrefixController {
 		return this.inferenceEvidence ? { ...this.inferenceEvidence } : undefined;
 	}
 
+
+ /** Audited reader migration changes no model bytes or cache epoch. */
+ private async ensureCurrentReader(): Promise<void> {
+  const prefix = this.binding, pending = this.rebaseline;
+  const needsFence = !prefix && pending && pending.reason !== "model-change" && this.options.getBinding().metadata?.piboSessionPrefix === undefined;
+  if (prefix?.format !== 1 && !needsFence) return;
+  if (this.readerUpgrade) return this.readerUpgrade;
+  this.readerUpgrade = withPrefixPublication(this.store.root,async()=>{
+   const runtime = this.transitionBinding();
+   const currentPrefix = readSessionPrefixBinding(runtime.metadata), currentPending = readPrefixRebaseline(runtime.metadata);
+   if (currentPrefix?.format === 2 || !currentPrefix && runtime.metadata?.piboSessionPrefix !== undefined) return;
+   if (!currentPrefix && !currentPending) throw new PrefixRecoveryRequiredError("reader migration lost its protected source");
+   const metadata = {...runtime.metadata,piboSessionPrefix:currentPrefix ? {...currentPrefix,format:2} as unknown as PiboJsonObject : {format:2,status:"pending",transitionId:currentPending!.id}};
+   const persisted = await this.options.persistence.compareAndSet({...runtime,metadata},runtime.revision!);
+   this.options.onPersisted?.(structuredClone(persisted));
+  });
+  try {await this.readerUpgrade;} finally {this.readerUpgrade=undefined;}
+ }
+
 	async restoreResources(): Promise<RestoredPrefixResources | undefined> {
+		await this.ensureCurrentReader();
 		const runtime = this.options.getBinding();
 		if (!this.historicalResourcesRestored) {
 			for (const reference of readPrefixResourceDependencies(runtime.metadata)) await new PrefixResourceBundleStore(this.store).restore(reference);
@@ -292,6 +314,7 @@ export class SessionPrefixController {
 	}
 
 	async restore(codec: string): Promise<string | undefined> {
+		await this.ensureCurrentReader();
 		const runtime = this.options.getBinding();
 		const prefix = readSessionPrefixBinding(runtime.metadata);
 		if (!prefix) return undefined;
@@ -318,7 +341,7 @@ export class SessionPrefixController {
 			const source = readSessionPrefixBinding(pending.sourceBinding.metadata)!;
 			this.preparing = withPrefixPublication(this.store.root, async () => {
 				const capsule = await this.store.put(runtime.adapterId, input.codec, input.payload);
-				const prefix: SessionPrefixBinding = { format: 1, epoch: source.epoch + 1, status: "sealed", capsule,
+				const prefix: SessionPrefixBinding = { format: 2, epoch: source.epoch + 1, status: "sealed", capsule,
 					reason: pending.reason, nativeSessionId: input.nativeSessionId, evidence: input.evidence };
 				const metadata: PiboJsonObject = { ...runtime.metadata, [SESSION_PREFIX_METADATA_KEY]: prefix as unknown as PiboJsonObject };
 				delete metadata[SESSION_PREFIX_REBASELINE_KEY];
@@ -335,7 +358,7 @@ export class SessionPrefixController {
 			if (previous.nativeSessionId !== input.nativeSessionId || await this.restore(input.codec) !== input.payload) {
 				throw new PrefixRecoveryRequiredError("attempted to replace an already sealed prefix");
 			}
-			return previous;
+			return this.binding!;
 		}
 		if (input.hasHistoricalModelInput) throw new PrefixRecoveryRequiredError("legacy history has no proven original prefix; explicit rebaseline is required");
 		const runtime = structuredClone(this.options.getBinding());
@@ -345,7 +368,7 @@ export class SessionPrefixController {
 		this.preparing = withPrefixPublication(this.store.root, async () => {
 			const capsule = await this.store.put(runtime.adapterId, input.codec, input.payload);
 			const prefix: SessionPrefixBinding = {
-				format: 1, epoch: 1, status: "sealed", capsule, reason: "initial",
+				format: 2, epoch: 1, status: "sealed", capsule, reason: "initial",
 				nativeSessionId: input.nativeSessionId, evidence: input.evidence,
 			};
 			const persisted = await this.options.persistence.compareAndSet({
@@ -369,7 +392,7 @@ export class SessionPrefixController {
   return {child,payload:await this.store.read(child.prefix.capsule,{adapterId:runtime.adapterId,codec})};
  }
 
- async sealNativeChild(input: { nativeSessionId: string; nativeSessionFile: string; codec: string; payload: string; hasHistoricalModelInput: boolean }): Promise<NativePrefixChild> {
+ async sealNativeChild(input: { nativeSessionId: string; nativeSessionFile: string; codec: string; payload: string; hasHistoricalModelInput: boolean; sourceNativeSessionId?: string }): Promise<NativePrefixChild> {
   return withPrefixPublication(this.store.root, async () => {
    const runtime = this.transitionBinding();
    if (!this.binding || runtime.nativeSessionId === input.nativeSessionId) throw new PrefixRecoveryRequiredError("native child requires a stable sealed parent");
@@ -378,11 +401,14 @@ export class SessionPrefixController {
     if (existing.child.nativeSessionFile !== input.nativeSessionFile || existing.payload !== input.payload) throw new PrefixRecoveryRequiredError("native child prefix cannot be replaced implicitly");
     return existing.child;
    }
-   if (input.hasHistoricalModelInput) throw new PrefixRecoveryRequiredError("native child history has no original prefix");
+   if (input.sourceNativeSessionId !== undefined && input.sourceNativeSessionId !== runtime.nativeSessionId
+    && !readNativePrefixChildren(runtime.metadata).some(child=>child.nativeSessionId===input.sourceNativeSessionId)) throw new PrefixRecoveryRequiredError("native child source has no sealed prefix");
+   if (input.hasHistoricalModelInput && !input.sourceNativeSessionId) throw new PrefixRecoveryRequiredError("native child history has no original prefix");
    const capsule = await this.store.put(runtime.adapterId,input.codec,input.payload);
    const child: NativePrefixChild = {nativeSessionId:input.nativeSessionId,nativeSessionFile:input.nativeSessionFile,
+    ...(input.sourceNativeSessionId ? {sourceNativeSessionId:input.sourceNativeSessionId} : {}),
     prefix:{format:1,epoch:1,status:"sealed",capsule,reason:"initial",nativeSessionId:input.nativeSessionId,evidence:"provider-request"}};
-   const metadata = withNativePrefixChild(runtime.metadata,child);
+   const metadata = withNativePrefixChild({...runtime.metadata,piboSessionPrefix:{...this.binding!,format:2} as unknown as PiboJsonObject},child);
    const persisted = await this.options.persistence.compareAndSet({...runtime,metadata},runtime.revision!);
    this.options.onPersisted?.(structuredClone(persisted));
    return child;

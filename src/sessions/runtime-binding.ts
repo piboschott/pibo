@@ -182,6 +182,7 @@ export function assertRuntimeSessionBindingTransition(
 	const mode = options.mode ?? "normal";
 	const previousPrefix = readSessionPrefixBinding(current.metadata);
 	const nextPrefix = readSessionPrefixBinding(next.metadata);
+	const upgradesReader = previousPrefix?.format === 1 && nextPrefix?.format === 2 && isDeepStrictEqual({...previousPrefix,format:2},nextPrefix);
 	const previousResources = readSessionPrefixResourceReference(current.metadata);
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
 	const previousDependencies = readPrefixResourceDependencies(current.metadata);
@@ -205,7 +206,7 @@ export function assertRuntimeSessionBindingTransition(
 	if (!previousRebaseline && nextRebaseline) {
 		if (!previousPrefix || !isDeepStrictEqual(nextRebaseline.sourceBinding, current)
 			|| nextRebaseline.reason !== "model-change" && !startsRuntimeTransition
-			|| nextRebaseline.reason === "model-change" && !isDeepStrictEqual(previousPrefix, nextPrefix)
+			|| nextRebaseline.reason === "model-change" && !isDeepStrictEqual(previousPrefix, nextPrefix) && !upgradesReader
 			|| nextRebaseline.targetAdapterId !== next.adapterId
 			|| nextRebaseline.sourceBinding.piboSessionId !== next.piboSessionId
 			|| readPrefixTransition(current.metadata)?.state === "pending") {
@@ -239,7 +240,7 @@ export function assertRuntimeSessionBindingTransition(
  if (!startsRuntimeTransition && !restoresRuntimeTransition) {
   for (const child of previousChildren) {
    const target = nextChildren.find(item => item.nativeSessionId === child.nativeSessionId);
-   if (!target || child.nativeSessionFile !== target.nativeSessionFile) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native child operating state cannot be discarded");
+   if (!target || child.nativeSessionFile !== target.nativeSessionFile || child.sourceNativeSessionId !== target.sourceNativeSessionId) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native child operating state cannot be discarded");
    const binding = (value: typeof child): RuntimeSessionBinding => ({...current,nativeSessionId:value.nativeSessionId,adapterId:value.prefix.capsule.adapterId,
     metadata:{piboSessionPrefix:value.prefix as unknown as PiboJsonObject,...(value.transition?{piboSessionPrefixTransition:value.transition as unknown as PiboJsonObject}:{})}});
    assertRuntimeSessionBindingTransition(binding(child),binding(target));
@@ -248,6 +249,11 @@ export function assertRuntimeSessionBindingTransition(
    if (!previousPrefix || child.nativeSessionId === next.nativeSessionId || child.prefix.capsule.adapterId !== next.adapterId || child.prefix.epoch !== 1 || child.prefix.reason !== "initial" || child.transition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native child must start with its own initial sealed prefix");
   }
  }
+ if (nextRebaseline && nextRebaseline.reason !== "model-change" && !nextPrefix) {
+  const fence = next.metadata?.piboSessionPrefix;
+  if (!fence || typeof fence !== "object" || Array.isArray(fence) || fence.format !== 2 || fence.status !== "pending" || fence.transitionId !== nextRebaseline.id) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"pending prefix transition requires its reader fence");
+ }
+ if (nextChildren.length && nextPrefix?.format !== 2 && !nextRebaseline) throw new RuntimeSessionBindingTransitionError(current.piboSessionId,"native children require the current prefix reader format");
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);
 	if (previousTransition && !nextTransition && !startsRuntimeTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");
@@ -283,7 +289,7 @@ export function assertRuntimeSessionBindingTransition(
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "a sealed prefix cannot be silently discarded");
 		}
 		if (nextPrefix.epoch === previousPrefix.epoch) {
-			if (JSON.stringify(previousPrefix) !== JSON.stringify(nextPrefix)) {
+			if (JSON.stringify(previousPrefix) !== JSON.stringify(nextPrefix) && !upgradesReader) {
 				throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "a sealed prefix is immutable within its epoch");
 			}
 		} else if (nextPrefix.epoch !== previousPrefix.epoch + 1 || nextPrefix.reason === "initial") {

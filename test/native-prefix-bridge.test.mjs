@@ -255,5 +255,12 @@ test("native child dispatches seal independently and concurrent cold requests re
  assert.equal((await fresh.restoreNativeChild("child-a","native-fixture/v1")).child.prefix.epoch,2);
  assert.equal((await fresh.restoreNativeChild("child-b","native-fixture/v1")).child.prefix.epoch,1);
  assert.equal(f.controller.binding.epoch,1);
+ const inherited=await fetch(f.connection.endpoint+"/children/native-fork/seal",{method:"POST",headers:{...f.headers,"x-native-has-history":"true","x-native-prefix-parent":f.session.piSessionId,"x-native-session-file":Buffer.from(join(f.root,"native-fork.jsonl")).toString("base64url")},body:"new native child with inherited context"});
+ assert.equal(inherited.status,200);
+ const inventory=await (await fetch(f.connection.endpoint+"/inventory",{headers:f.headers})).json();
+ assert.equal(inventory.root.nativeSessionId,f.session.piSessionId);
+ assert.equal(inventory.children.length,3);
+ assert.equal(inventory.children.find(child=>child.nativeSessionId==="native-fork").nativeSessionFile,join(f.root,"native-fork.jsonl"));
+
 
 });

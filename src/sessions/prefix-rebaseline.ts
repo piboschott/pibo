@@ -30,7 +30,8 @@ export function preparePrefixRuntimeTransition(source: RuntimeSessionBinding, ta
 	const retained = retainHistory ? retainPrefixArtifactDependencies(retainPrefixResourceDependencies(target.metadata, source.metadata), source.metadata, source.adapterId, sourceFile) : target.metadata;
 	const children = retainHistory ? readNativePrefixChildren(source.metadata) : [];
 	const metadata = { ...retained, ...(children.length ? {[PREFIX_NATIVE_CHILDREN_KEY]:children as unknown as PiboJsonObject[]} : {}),
-		[SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject };
+		[SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject,
+		piboSessionPrefix: {format:2,status:"pending",transitionId:policy.id} };
 	readPrefixRebaseline(metadata);
 	return { ...target, metadata };
 }

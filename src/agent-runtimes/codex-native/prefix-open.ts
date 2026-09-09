@@ -11,6 +11,7 @@ import { buildCodexNativeProcessEnvironment, startCodexNativeAppServer,
 	type CodexNativeAppServerProcess, type CodexNativeSessionPaths } from "./process.js";
 
 export const CODEX_PREFIX_CODEC = "codex-0.153.2/responses/pibo-v1";
+export const CODEX_PREFIX_NATIVE_CONTRACT = CODEX_PREFIX_CODEC + "\nnative-children-v1";
 const execute = promisify(execFile);
 type Stage = {
 	gate: NativePrefixStartupGate;
@@ -34,11 +35,16 @@ export class CodexPrefixOpen {
 		if (this.closed || this.stage) throw new PrefixRecoveryRequiredError("Codex protected startup is already active");
 		const reported = await execute(this.config.executable, ["--pibo-prefix-contract"], { timeout: 5000, maxBuffer: 4096,
 			env: { PATH: process.env.PATH }, encoding: "utf8" }).catch(() => undefined);
-		if (reported?.stdout.trim() !== CODEX_PREFIX_CODEC) throw new PrefixRecoveryRequiredError("Codex requires the pinned native prefix contract build");
+		if (reported?.stdout.trim() !== CODEX_PREFIX_NATIVE_CONTRACT) throw new PrefixRecoveryRequiredError("Codex requires the pinned native prefix contract build");
 		await this.controller.restore(CODEX_PREFIX_CODEC);
 		const binding = this.controller.getRuntimeBinding();
 		const gate = new NativePrefixStartupGate();
-		const bridge = new NativePrefixBridge(this.controller, CODEX_PREFIX_CODEC, gate);
+		const bridge = new NativePrefixBridge(this.controller, CODEX_PREFIX_CODEC, gate, undefined, async child => {
+   await recoverCodexPrefixCompaction({transition:child.transition,
+    getRuntimeBinding:()=>({...this.controller.getRuntimeBinding(),nativeSessionId:child.nativeSessionId,metadata:{nativeSessionFile:child.nativeSessionFile}}),
+    finishCompaction:async(id,changed)=>{await this.controller.mutateNativeChildCompaction(child.nativeSessionId,{id,changed});},
+   });
+  });
 		const stage: Stage = { gate, bridge, abort: new AbortController(), activated: false };
 		this.stage = stage;
 		try {
