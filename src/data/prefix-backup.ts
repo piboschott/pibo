@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ensureDurableDirectory, PrefixCapsuleStore, readSessionPrefixBinding, readSessionPrefixResourceReference } from "../sessions/prefix-capsule.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
+import { readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
 import { PrefixSessionOwnership } from "../sessions/prefix-ownership.js";
 import type { PiboJsonObject } from "../core/events.js";
 
@@ -22,12 +23,20 @@ function bindings(database: string): Binding[] {
 			if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
 			for (const row of db.prepare(`SELECT pibo_session_id,runtime_adapter_id,native_session_id,locator_json,metadata_json,revision FROM ${table} ORDER BY pibo_session_id`).iterate() as Iterable<Binding>) {
 				const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
-				if (readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata)) rows.push(row);
+				if (readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
 				if (rows.length > MAX_FILES) throw Error("Protected session backup exceeds count quota");
 			}
 		}
 		return rows;
 	} finally { db.close(); }
+}
+function referencedBindings(rows: Binding[]): Binding[] {
+	return rows.flatMap(row => {
+		const source = readPrefixRebaseline(JSON.parse(row.metadata_json))?.sourceBinding;
+		return source ? [row, { pibo_session_id: source.piboSessionId, runtime_adapter_id: source.adapterId,
+			native_session_id: source.nativeSessionId ?? null, locator_json: source.locator ? JSON.stringify(source.locator) : null,
+			metadata_json: JSON.stringify(source.metadata ?? {}), revision: source.revision! }] : [row];
+	});
 }
 function child(home: string, path: string): string {
 	const name = relative(home, resolve(path));
@@ -60,7 +69,7 @@ async function hash(path: string, maximum: number, signal?: AbortSignal): Promis
 export async function ownPrefixBackup(source: string, home: string): Promise<{ release(): void; rows: Binding[] }> {
 	const rows = bindings(source);
 	if (!rows.length) return { rows, release() {} };
-	const owner = await PrefixSessionOwnership.acquire(join(home, "session-prefixes"), rows.flatMap(row => [
+	const owner = await PrefixSessionOwnership.acquire(join(home, "session-prefixes"), referencedBindings(rows).flatMap(row => [
 		JSON.stringify(["pibo", row.pibo_session_id]),
 		...(row.native_session_id ? [JSON.stringify(["native", row.runtime_adapter_id, row.native_session_id])] : []),
 	]));
@@ -77,7 +86,7 @@ export async function capturePrefixBackup(input: { root: string; database: strin
 	if (!rows.length) return undefined;
 	const paths = new Map<string, boolean>();
 	const capsules = new PrefixCapsuleStore(join(input.home, "session-prefixes"));
-	for (const row of rows) {
+	for (const row of referencedBindings(rows)) {
 		const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
 		const prefix = readSessionPrefixBinding(metadata);
 		const resources = readSessionPrefixResourceReference(metadata);
@@ -85,10 +94,12 @@ export async function capturePrefixBackup(input: { root: string; database: strin
 			await capsules.read(reference, reference);
 			paths.set(join(capsules.root, `${reference.digest}.capsule`), false);
 		}
-		if (!prefix) continue;
-		if (prefix.nativeSessionId !== row.native_session_id) throw Error("Protected native identity is inconsistent");
 		const locator = row.locator_json ? JSON.parse(row.locator_json) : undefined;
 		const native = typeof metadata.nativeSessionFile === "string" ? metadata.nativeSessionFile : locator?.kind === "local-file" ? locator.value : undefined;
+		// A reserved replacement ID has no native file until the runtime publishes
+		// its locator; the rollback transcript is retained independently above.
+		if (!prefix && !(readPrefixRebaseline(metadata) && native !== undefined)) continue;
+		if (prefix && prefix.nativeSessionId !== row.native_session_id) throw Error("Protected native identity is inconsistent");
 		if (typeof native !== "string" || !isAbsolute(native)) throw Error("Protected native session file is missing from its binding");
 		child(resolve(input.home), native);
 		if (await realpath(native) !== resolve(native)) throw Error("Protected native file contains a symlink");
@@ -145,16 +156,16 @@ export async function verifyPrefixBackup(root: string, database: string, maximum
 		bytes += digest.bytes;
 	}
 	const store = new PrefixCapsuleStore(join(root, "runtime", "session-prefixes"));
-	for (const row of rows) {
+	for (const row of referencedBindings(rows)) {
 		const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
 		const prefix = readSessionPrefixBinding(metadata), resources = readSessionPrefixResourceReference(metadata);
 		for (const ref of [prefix?.capsule, resources]) if (ref) {
 			if (!paths.has(`session-prefixes/${ref.digest}.capsule`)) throw Error("Protected capsule missing from archive catalog");
 			await store.read(ref, ref);
 		}
-		if (prefix) {
-			const locator = row.locator_json ? JSON.parse(row.locator_json) : undefined;
-			const native = typeof metadata.nativeSessionFile === "string" ? metadata.nativeSessionFile : locator?.kind === "local-file" ? locator.value : undefined;
+		const locator = row.locator_json ? JSON.parse(row.locator_json) : undefined;
+		const native = typeof metadata.nativeSessionFile === "string" ? metadata.nativeSessionFile : locator?.kind === "local-file" ? locator.value : undefined;
+		if (prefix || readPrefixRebaseline(metadata) && native !== undefined) {
 			if (typeof native !== "string" || !paths.has(child(value.home, native))) throw Error("Protected native history missing from archive catalog");
 		}
 	}

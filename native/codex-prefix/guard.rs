@@ -43,6 +43,7 @@ struct State {
     owners: Vec<Owner>,
     native_id: Option<String>,
     snapshot: Option<Snapshot>,
+    initial_rebaseline: Option<String>,
     sealing: bool,
     failed: bool,
 }
@@ -315,6 +316,20 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
         200 => Some(serde_json::from_slice(&body)?),
         _ => return Err(failure()),
     };
+    let initial_rebaseline = if snapshot.is_none() {
+        let (status, body) = request(&connection, "GET", "/rebaseline", &[], None)?;
+        match status {
+            404 => None,
+            200 => {
+                let value: Value = serde_json::from_slice(&body)?;
+                if value["reason"] != "runtime-change" { return Err(failure()); }
+                let id = value["id"].as_str().ok_or_else(failure)?;
+                Uuid::parse_str(id)?;
+                Some(id.to_owned())
+            },
+            _ => return Err(failure()),
+        }
+    } else { None };
     if let Ok(source) = std::env::var("PIBO_PREFIX_DERIVED_FROM") {
         derive_snapshot(
             snapshot.as_mut().ok_or_else(failure)?,
@@ -372,6 +387,7 @@ pub fn startup() -> anyhow::Result<Option<Vec<String>>> {
             owners,
             native_id,
             snapshot,
+            initial_rebaseline,
             sealing: false,
             failed: false,
         }))
@@ -554,7 +570,7 @@ pub async fn validate(
         let id = value["id"].as_str().ok_or_else(failure)?;
         Uuid::parse_str(id)?;
         Some(id.to_owned())
-    } else { None };
+    } else { state.lock().map_err(|_| failure())?.initial_rebaseline.clone() };
     let operation = {
         let mut state = state.lock().map_err(|_| failure())?;
         if state.failed
@@ -643,5 +659,6 @@ pub async fn validate(
         return Err(failure());
     }
     state.snapshot = Some(snapshot);
+    state.initial_rebaseline = None;
     Ok(())
 }

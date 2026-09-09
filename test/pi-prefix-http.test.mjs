@@ -357,6 +357,7 @@ test("normal Pi router preserves protected resources and binding when rollout is
 		const selected = await router.setLiveSessionActiveModel(childId, { provider: "openai-codex", id });
 		sessions.update(childId, { activeModel: selected });
 	};
+	await router.disposeAll(); router = open(false);
 	await select("gpt-5.4");
 	assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
 	await router.disposeAll(); router = open(false);
@@ -374,10 +375,29 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "model-aborted", source: "user", text: "Continue after cancelling the pending model change" }, 20000);
 	assert.equal(api.requests.at(-1).model, "gpt-5.4");
 
+	const previousRuntime = sessions.get(childId).runtimeBinding;
+	let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId,
+		expectedRevision: previousRuntime.revision, startFresh: true });
+	assert.equal(fresh.metadata.piboSessionPrefix, undefined);
+	assert.equal(fresh.metadata.piboSessionPrefixRebaseline.reason, "runtime-change");
+	const cancelled = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: fresh.revision });
+	assert.equal(cancelled.nativeSessionId, previousRuntime.nativeSessionId);
+	assert.deepEqual(cancelled.metadata.piboSessionPrefix, previousRuntime.metadata.piboSessionPrefix);
+	fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: cancelled.revision, startFresh: true });
+	await router.disposeAll(); router = open(false);
+	await assert.rejects(router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "fresh-missing-resource", source: "user", text: "Must not use missing resources" }, 20000), /Context file/);
+	assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
+	await writeFile(contextPath, "Current explicitly refreshed context");
+	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "fresh-runtime", source: "user", text: "Start the explicitly selected fresh native session" }, 20000);
+	const newRuntime = sessions.get(childId).runtimeBinding;
+	assert.notEqual(newRuntime.nativeSessionId, previousRuntime.nativeSessionId);
+	assert.equal(newRuntime.metadata.piboSessionPrefix.epoch, previousRuntime.metadata.piboSessionPrefix.epoch + 1);
+	assert.equal(newRuntime.metadata.piboSessionPrefix.reason, "runtime-change");
+	assert.equal(newRuntime.metadata.piboSessionPrefixRebaseline, undefined);
 
 	await router.disposeAll(); router = undefined;
 	await rm(nativePath);
 	router = open(false);
 	await assert.rejects(router.emitMessageAndWaitForReply({ type: "message", piboSessionId: session.id, id: "missing", source: "user", text: "must not dispatch" }, 20000), /missing|not found|recovery/i);
-	assert.equal(api.requests.length, 6);
+	assert.equal(api.requests.length, 7);
 });

@@ -1,5 +1,6 @@
 import { deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/prefix-derivation.js";
 import { SessionPrefixController } from "../sessions/prefix-session.js";
+import { preparePrefixRuntimeTransition, readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
 import { readSessionPrefixBinding, readSessionPrefixResourceReference, PrefixRecoveryRequiredError } from "../sessions/prefix-capsule.js";
 import { previouslyClearedMessages } from "./events.js";
@@ -1091,11 +1092,26 @@ export class PiboSessionRouter {
 		if (liveStatus && (liveStatus.processing || liveStatus.streaming || liveStatus.queuedMessages > 0)) {
 			throw new Error("A runtime binding can only be repaired or rebound while the session is idle.");
 		}
+		const pendingPrefix = readPrefixRebaseline(current.metadata);
+		if (pendingPrefix) {
+			if (pendingPrefix.reason !== "runtime-change" || input.runtimeInstanceId !== pendingPrefix.sourceBinding.runtimeInstanceId
+				|| input.startFresh === true || input.nativeSessionId || input.locator || readSessionPrefixBinding(current.metadata)) {
+				throw new PrefixRecoveryRequiredError("complete the pending runtime change or select the original runtime to cancel it");
+			}
+			await this.resetCachedSession(piboSessionId, "cancel pending runtime prefix transition");
+			const restored = this.persistSessionRuntimeBinding(session, pendingPrefix.sourceBinding,
+				{ expectedRevision: input.expectedRevision, mode: "rebind" });
+			this.sessionStore.update(piboSessionId, { activeModel: pendingPrefix.previousModel ?? null });
+			return structuredClone(restored);
+		}
 		const registry = this.resolveAgentRuntimeRegistry(input.runtimeInstanceId);
 		const adapter = registry.requireAgentRuntimeAdapter(input.runtimeInstanceId);
 		const switchingRuntime = current.runtimeInstanceId !== input.runtimeInstanceId
 			|| current.adapterId !== adapter.descriptor.id;
 		const startsNewNativeSession = switchingRuntime || input.startFresh === true;
+		if (startsNewNativeSession && readSessionPrefixBinding(current.metadata) && !adapter.canInitializePrefix) {
+			throw new PrefixRecoveryRequiredError("target runtime has no protected prefix contract");
+		}
 		const portableHistoryProvider = this.portableHistoryProvider;
 		if (startsNewNativeSession && (input.nativeSessionId || input.state === "bound" || input.locator)) {
 			throw new Error("Runtime switches create a new native session; nativeSessionId, bound state, and locator are not accepted.");
@@ -1160,15 +1176,16 @@ export class PiboSessionRouter {
 			piboSessionId,
 			runtimeInstanceId: input.runtimeInstanceId,
 			adapterId: adapter.descriptor.id,
-			nativeSessionId: startsNewNativeSession ? undefined : input.nativeSessionId,
+			nativeSessionId: startsNewNativeSession ? adapter.descriptor.id === "pi" ? randomUUID() : undefined : input.nativeSessionId,
 			state: requestedState,
 			protocol: adapter.descriptor.protocol?.name,
 			protocolVersion: current.runtimeInstanceId === input.runtimeInstanceId ? current.protocolVersion : undefined,
 			locator: startsNewNativeSession ? undefined : input.locator,
 			metadata: handoffMetadata
 				? withPortableHistoryHandoffMetadata({}, handoffMetadata)
-				: {},
+				: readSessionPrefixBinding(current.metadata) && !startsNewNativeSession ? current.metadata : {},
 		};
+		if (startsNewNativeSession) next = preparePrefixRuntimeTransition(current, next, session.activeModel ?? undefined);
 		if (next.state === "bound" && adapter.resolveBinding) {
 			next = await adapter.resolveBinding({ binding: next, workspace });
 		}
@@ -1238,7 +1255,9 @@ export class PiboSessionRouter {
 	}
 
 	async setLiveSessionActiveModel(piboSessionId: string, model: ModelProfile | undefined): Promise<ModelProfile | undefined> {
-		const session = this.sessions.get(piboSessionId);
+		const persisted = this.sessionStore.get(piboSessionId);
+		const session = this.sessions.get(piboSessionId) ?? (model && readSessionPrefixBinding(persisted?.runtimeBinding?.metadata)
+			? await this.getOrCreateSession(piboSessionId) : undefined);
 		if (!session) return model;
 		const status = session.getStatus();
 		if (status.processing || status.streaming || status.queuedMessages > 0) {
@@ -1659,7 +1678,7 @@ export class PiboSessionRouter {
 
 		const sealedPrefix = readSessionPrefixBinding(binding.metadata);
 		if (readPrefixTransition(binding.metadata) && !sealedPrefix) throw new PrefixRecoveryRequiredError("native transition has lost its sealed prefix");
-		const protectedPrefix = sealedPrefix || readSessionPrefixResourceReference(binding.metadata);
+		const protectedPrefix = sealedPrefix || readSessionPrefixResourceReference(binding.metadata) || readPrefixRebaseline(binding.metadata);
 		if (protectedPrefix && !runtimeAdapter.canInitializePrefix) {
 			throw new PrefixRecoveryRequiredError("configured adapter has no protected open contract");
 		}

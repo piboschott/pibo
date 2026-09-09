@@ -190,7 +190,7 @@ export async function installPiPrefixCodec(
 	let codec = controller.binding?.capsule.codec;
 	let facts = snapshot ? inferenceFacts(snapshot) : undefined;
 	const historical = session.sessionManager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant");
-	if (!snapshot && historical) throw new PrefixRecoveryRequiredError("Pi history has no captured original prefix");
+	if (!snapshot && historical && !controller.hasPendingRebaseline) throw new PrefixRecoveryRequiredError("Pi history has no captured original prefix");
 	if (snapshot && controller.binding?.nativeSessionId !== session.sessionId) throw new PrefixRecoveryRequiredError("restored Pi session identity changed");
 	await preparePiPrefixNativeState(session, Boolean(snapshot));
 	await resolvePiPrefixTransition(session, controller);
@@ -204,7 +204,7 @@ export async function installPiPrefixCodec(
 		if (session.isCompacting) return stream(model, context, options);
 		await resolvePiPrefixTransition(session, controller);
 		let rebaseline = controller.hasPendingRebaseline ? controller.rebaseline : undefined;
-		if (rebaseline && (rebaseline.targetModel?.provider !== model.provider || rebaseline.targetModel?.id !== model.id)) throw new PrefixRecoveryRequiredError("pending model transition does not authorize this selection");
+		if (rebaseline?.reason === "model-change" && (rebaseline.targetModel?.provider !== model.provider || rebaseline.targetModel?.id !== model.id)) throw new PrefixRecoveryRequiredError("pending model transition does not authorize this selection");
 		const requestCodec = codecForApi(model.api);
 		if (!rebaseline && codec && codec !== requestCodec) throw new PrefixRecoveryRequiredError("provider API change requires an explicit prefix epoch transition");
 		const modelConfiguration = modelInputConfiguration(model);

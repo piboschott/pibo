@@ -109,6 +109,7 @@ export function createInitialRuntimeSessionBinding(
 	const prefix = readSessionPrefixBinding(input.metadata);
 	const resources = readSessionPrefixResourceReference(input.metadata);
 	if (readPrefixTransition(input.metadata)) throw new RuntimeSessionBindingTransitionError(piboSessionId, "native transitions require an existing binding");
+	if (readPrefixRebaseline(input.metadata)) throw new RuntimeSessionBindingTransitionError(piboSessionId, "explicit transitions require an existing binding");
 	if (resources && resources.adapterId !== input.adapterId) {
 		throw new RuntimeSessionBindingTransitionError(piboSessionId, "resource and runtime binding disagree");
 	}
@@ -183,6 +184,13 @@ export function assertRuntimeSessionBindingTransition(
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
 	const previousRebaseline = readPrefixRebaseline(current.metadata);
 	const nextRebaseline = readPrefixRebaseline(next.metadata);
+	const operationalBinding = (binding: RuntimeSessionBinding) => Object.fromEntries(Object.entries(binding)
+		.filter(([key, value]) => value !== undefined && !["revision", "createdAt", "updatedAt"].includes(key)));
+	const startsRuntimeTransition = !previousRebaseline && nextRebaseline?.reason === "runtime-change"
+		&& mode === "rebind" && next.state === "unbound" && !nextPrefix && !nextResources;
+	const restoresRuntimeTransition = previousRebaseline?.reason === "runtime-change" && !nextRebaseline
+		&& !previousPrefix && mode === "rebind" && isDeepStrictEqual(
+			operationalBinding(next), operationalBinding(previousRebaseline.sourceBinding));
 	if (!previousRebaseline && nextRebaseline) {
 		if (!previousPrefix || !isDeepStrictEqual(nextRebaseline.sourceBinding, current)
 			|| nextRebaseline.targetAdapterId !== next.adapterId
@@ -192,7 +200,8 @@ export function assertRuntimeSessionBindingTransition(
 		}
 	} else if (previousRebaseline && nextRebaseline && !isDeepStrictEqual(previousRebaseline, nextRebaseline)) {
 		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "pending explicit prefix transition cannot be replaced");
-	} else if (previousRebaseline && !nextRebaseline && !isDeepStrictEqual(previousPrefix, nextPrefix)) {
+	} else if (previousRebaseline && !nextRebaseline && !restoresRuntimeTransition
+		&& (previousRebaseline.reason !== "model-change" || !isDeepStrictEqual(previousPrefix, nextPrefix))) {
 		const sourcePrefix = readSessionPrefixBinding(previousRebaseline.sourceBinding.metadata)!;
 		if (!nextPrefix || nextPrefix.epoch !== sourcePrefix.epoch + 1 || nextPrefix.reason !== previousRebaseline.reason) {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix completion must publish its next epoch");
@@ -200,8 +209,8 @@ export function assertRuntimeSessionBindingTransition(
 	}
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);
-	if (previousTransition && !nextTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");
-	if (JSON.stringify(previousTransition) !== JSON.stringify(nextTransition) && nextTransition) {
+	if (previousTransition && !nextTransition && !startsRuntimeTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");
+	if (!restoresRuntimeTransition && JSON.stringify(previousTransition) !== JSON.stringify(nextTransition) && nextTransition) {
 		if (previousTransition?.state === "pending") {
 			if (JSON.stringify({ ...previousTransition, state: nextTransition.state }) !== JSON.stringify(nextTransition)
 				|| nextTransition.state === "pending" || !previousPrefix || !nextPrefix
@@ -219,7 +228,7 @@ export function assertRuntimeSessionBindingTransition(
 	} else if (previousTransition?.state === "pending" && JSON.stringify(previousPrefix) !== JSON.stringify(nextPrefix)) {
 		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "pending native transition must be resolved before changing the epoch");
 	}
-	if ((previousResources || previousPrefix) && JSON.stringify(previousResources) !== JSON.stringify(nextResources)) {
+	if (!startsRuntimeTransition && !restoresRuntimeTransition && (previousResources || previousPrefix) && JSON.stringify(previousResources) !== JSON.stringify(nextResources)) {
 		if (!previousPrefix || !nextPrefix || nextPrefix.epoch !== previousPrefix.epoch + 1
 			|| !["explicit-refresh", "runtime-change"].includes(nextPrefix.reason)) {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "frozen resources require an explicit prefix transition");
@@ -228,7 +237,7 @@ export function assertRuntimeSessionBindingTransition(
 	if (nextResources && nextResources.adapterId !== next.adapterId) {
 		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "resource and runtime binding disagree");
 	}
-	if (previousPrefix) {
+	if (previousPrefix && !startsRuntimeTransition) {
 		if (!nextPrefix) {
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "a sealed prefix cannot be silently discarded");
 		}

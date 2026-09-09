@@ -8,6 +8,7 @@ import { PiboDataSessionStore } from '../dist/sessions/pibo-data-store.js';
 import { PrefixCapsuleStore } from '../dist/sessions/prefix-capsule.js';
 import { SessionPrefixController } from '../dist/sessions/prefix-session.js';
 import { createAgentRuntimeBindingPersistence } from '../dist/sessions/runtime-binding-persistence.js';
+import { preparePrefixRuntimeTransition } from '../dist/sessions/prefix-rebaseline.js';
 for (const Store of [SqlitePiboSessionStore,PiboDataSessionStore]) test(`${Store.name}: explicit model authorization survives restart and can be aborted without replacing the original prefix`,async t=>{
  const root=await mkdtemp(join(tmpdir(),'pibo-prefix-rebaseline-'));
  const sessions=new Store(join(root,'sessions.sqlite'));
@@ -36,5 +37,23 @@ for (const Store of [SqlitePiboSessionStore,PiboDataSessionStore]) test(`${Store
  assert.notEqual(replaced.capsule.digest,prefix.capsule.digest);
  assert.equal(make().rebaseline,undefined);assert.equal(await make().restore('fixture/v1'),'new model prefix');
  await assert.rejects(make().abortModelChange(second.id),/no longer pending/);
+
+ const source=sessions.get(session.id).runtimeBinding;
+ const target={...source,runtimeInstanceId:'omp-native',adapterId:'orp',state:'unbound',nativeSessionId:undefined,locator:undefined,metadata:{}};
+ const beginRuntime=()=>{const current=sessions.get(session.id).runtimeBinding;return sessions.updateRuntimeBinding(session.id,preparePrefixRuntimeTransition(current,target,nextModel),{expectedRevision:current.revision,mode:'rebind'});};
+ const runtimePending=beginRuntime();
+ assert.equal(make().binding,undefined);assert.equal(make().rebaseline.reason,'runtime-change');
+ assert.equal(await make().restore('omp-fixture/v1'),undefined);
+ assert.equal(make().rebaseline.sourceBinding.metadata.piboSessionPrefix.capsule.digest,replaced.capsule.digest);
+ assert.throws(()=>sessions.updateRuntimeBinding(session.id,{...runtimePending,metadata:{}},{expectedRevision:runtimePending.revision}),/next epoch/);
+ const restored=sessions.updateRuntimeBinding(session.id,source,{expectedRevision:runtimePending.revision,mode:'rebind'});
+ assert.deepEqual(restored.metadata.piboSessionPrefix,replaced);
+ const another=beginRuntime();
+ sessions.updateRuntimeBinding(session.id,{...another,state:'bound',nativeSessionId:'target-native'},{expectedRevision:another.revision});
+ const native=make();
+ const completed=await native.seal({codec:'omp-fixture/v1',payload:'new runtime prefix',nativeSessionId:'target-native',evidence:'adapter-inputs',hasHistoricalModelInput:true,rebaselineId:native.rebaseline.id});
+ assert.equal(completed.epoch,replaced.epoch+1);assert.equal(completed.reason,'runtime-change');
+ assert.equal(make().rebaseline,undefined);
+ assert.throws(()=>sessions.updateRuntimeBinding(session.id,source,{expectedRevision:sessions.get(session.id).runtimeBinding.revision,mode:'rebind'}),/epoch/);
 
 });

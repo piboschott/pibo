@@ -43,6 +43,14 @@ export default async function(pi) {
       || typeof snapshot.calendar.date !== "string" || typeof snapshot.calendar.cwd !== "string"
       || typeof snapshot.nativeSessionId !== "string")) return fatal();
     if (snapshot) freeze(snapshot);
+    let initialRebaseline;
+    if (!snapshot) {
+      const response = await fetch(endpoint + "/rebaseline", { headers: auth, signal: AbortSignal.timeout(4500) });
+      if (response.status === 200) {
+        initialRebaseline = await response.json();
+        if (initialRebaseline.reason !== "runtime-change" || typeof initialRebaseline.id !== "string") return fatal();
+      } else if (response.status !== 404) return fatal();
+    }
     // Bounded model capabilities affect native history conversion too. Do not
     // persist transport headers, credentials, pricing or conversation state.
     const modelCodecFields = ["id", "provider", "api", "identity", "requestModelId", "reasoningMode",
@@ -183,7 +191,7 @@ export default async function(pi) {
         const codex = api === "openai-codex-responses";
         if (signal?.aborted || !["openai-responses", "openai-codex-responses"].includes(api) || !calendar
           || !event.payload || !Array.isArray(event.payload.input)) return fatal();
-        let rebaseline;
+        let rebaseline = initialRebaseline;
         const modelChanged = snapshot && (snapshot.providerStatic.model !== event.payload.model
           || snapshot.modelSelection && (snapshot.modelSelection.provider !== ctx.model?.provider
             || snapshot.modelSelection.id !== ctx.model?.id));
@@ -252,6 +260,7 @@ export default async function(pi) {
           if (receipt.digest !== createHash("sha256").update(payload).digest("hex")
             || !Number.isSafeInteger(receipt.epoch) || receipt.epoch < 1) return fatal();
           freeze(snapshot);
+          initialRebaseline = undefined;
         }
         phase = "configuration";
         for (const field of configFields) {
@@ -298,6 +307,8 @@ export default async function(pi) {
     // before_provider_request hook. Do not replace its summarization envelope.
     const recoverBeforeInput = lifecycle(async (_event, ctx) => {
       phase = "ownership";
+      if (initialRebaseline?.sourceAdapterId === "orp"
+        && initialRebaseline.sourceNativeSessionId === ctx.sessionManager.getSessionId()) return fatal();
       await claimNativeIdentity(ctx.sessionManager.getSessionId());
       if (!snapshot) return;
       phase = "compaction-recovery";

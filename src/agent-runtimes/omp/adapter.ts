@@ -478,6 +478,7 @@ export class OmpSession implements AgentRuntimeSession {
 		// not exported here — we do not claim an inventory we do not observe.
 		return {
 			streaming: this.turn.streaming,
+			activeModel: this.thread.current.model,
 			enabledTools: hostInstalled,
 			cwd: this.cwd,
 			reasoning: {
@@ -581,7 +582,9 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 			piboSessionId: input.piboSession.id,
 			sessionGeneration: randomUUID(),
 		});
-		if (binding.state === "unbound") await resetOmpNativeSession(paths);
+		// Protected replacement retains the original transcript for cancellation.
+		// The CLI starts a new session unless an explicit --resume is supplied.
+		if (binding.state === "unbound" && !protectedOpen) await resetOmpNativeSession(paths);
 		if (input.historyHandoff?.mode === "import" && binding.state === "bound") {
 			throw new Error("OMP portable history import requires a new native session.");
 		}
@@ -673,6 +676,7 @@ class OmpAgentRuntimeAdapter implements AgentRuntimeAdapter {
 		});
 		try {
 			await hb.install();
+			if (input.activeModel) await setOmpModel(client, input.activeModel.provider, input.activeModel.id);
 			await threads.refresh();
 			if (protectedOpen && binding.nativeSessionId && threads.current.sessionId !== binding.nativeSessionId) {
 				throw new PrefixRecoveryRequiredError("OMP protected native session identity changed at startup");

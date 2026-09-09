@@ -181,6 +181,7 @@ enabled = false
 			await router.setLiveSessionActiveModel(childId, model);
 			sessions.update(childId, { activeModel: model });
 		};
+		await router.disposeAll(); router = undefined; open(false);
 		await select("gpt-5.4");
 		assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
 		await router.disposeAll(); router = undefined; open(false);
@@ -193,6 +194,21 @@ enabled = false
 		await select("gpt-5.4");
 		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
 		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
+		const previousRuntime = sessions.get(childId).runtimeBinding;
+		let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: previousRuntime.revision, startFresh: true });
+		const cancelled = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: fresh.revision });
+		assert.deepEqual(cancelled.metadata.piboSessionPrefix, previousRuntime.metadata.piboSessionPrefix);
+		fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: cancelled.revision, startFresh: true });
+		await router.disposeAll(); router = undefined; open(false);
+		await assert.rejects(prompt("Must not use missing current resources", "fresh-missing-resource", childId), /Context file/);
+		assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
+		await writeFile(context, "Current explicitly refreshed context");
+		await prompt("Start the explicitly selected fresh session", "fresh-runtime", childId);
+		const replacement = sessions.get(childId).runtimeBinding;
+		assert.notEqual(replacement.nativeSessionId, previousRuntime.nativeSessionId);
+		assert.equal(replacement.metadata.piboSessionPrefix.epoch, changedPrefix.epoch + 1);
+		assert.equal(replacement.metadata.piboSessionPrefix.reason, "runtime-change");
+		assert.equal(replacement.metadata.piboSessionPrefixRebaseline, undefined);
 	}
 	if (transport === "http" && !lite && !tokenBudget) {
 		const candidates = await router.getSessionForkCandidates(session.id);

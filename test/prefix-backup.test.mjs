@@ -8,8 +8,9 @@ import { PrefixCapsuleStore } from '../dist/sessions/prefix-capsule.js';
 import { PrefixResourceBundleStore } from '../dist/sessions/prefix-resources.js';
 import { PrefixSessionOwnership } from '../dist/sessions/prefix-ownership.js';
 import { createStorageBackup, verifyStorageBackup, restoreStorageBackup } from '../dist/data/storage-backup.js';
+import { preparePrefixRuntimeTransition } from '../dist/sessions/prefix-rebaseline.js';
 
-for (const adapter of ['pi','codex-native','orp']) test(`backup restores ${adapter} capsules, resources and native history at the original paths`, async t => {
+for (const adapter of ['pi','codex-native','orp']) for (const pending of [false,true]) test(`backup restores ${adapter} capsules, resources and native history at the original paths; pending=${pending}`, async t => {
  const root=await mkdtemp(join(tmpdir(),'pibo-prefix-backup-')),home=join(root,'home'),destination=join(root,'archive');
  await mkdir(home);t.after(()=>rm(root,{recursive:true,force:true}));
  const source=join(home,'sessions.sqlite'),native=join(home,'native-session'),capsules=new PrefixCapsuleStore(join(home,'session-prefixes'));
@@ -21,7 +22,9 @@ for (const adapter of ['pi','codex-native','orp']) test(`backup restores ${adapt
  const db=new DatabaseSync(source);
  db.exec('CREATE TABLE session_runtime_bindings(pibo_session_id TEXT,runtime_adapter_id TEXT,native_session_id TEXT,locator_json TEXT,metadata_json TEXT,revision INTEGER)');
  const metadata={piboSessionPrefix:{format:1,epoch:1,status:'sealed',capsule,reason:'initial',nativeSessionId:'native-1',evidence:'adapter-inputs'},piboSessionPrefixResources:resources.reference,nativeSessionFile:native};
- db.prepare('INSERT INTO session_runtime_bindings VALUES(?,?,?,?,?,?)').run('ps_fixture',adapter,'native-1',null,JSON.stringify(metadata),1);
+ const originalBinding={piboSessionId:'ps_fixture',runtimeInstanceId:adapter,adapterId:adapter,nativeSessionId:'native-1',state:'bound',revision:1,metadata};
+ const binding=pending?preparePrefixRuntimeTransition(originalBinding,{piboSessionId:'ps_fixture',runtimeInstanceId:'target',adapterId:'pi',state:'unbound',revision:2,metadata:{}}):originalBinding;
+ db.prepare('INSERT INTO session_runtime_bindings VALUES(?,?,?,?,?,?)').run('ps_fixture',binding.adapterId,binding.nativeSessionId??null,null,JSON.stringify(binding.metadata),binding.revision);
  await writeFile(join(home,'auth.json'),'fixture credential must not enter archive');
  let manifest;
  try{manifest=await createStorageBackup({source,payloadRoot:join(home,'payloads'),destination,maxBytes:16*1024*1024});}

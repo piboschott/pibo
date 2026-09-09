@@ -54,6 +54,7 @@ export class NativePrefixBridge {
 				const pending = this.controller.rebaseline;
 				response.setHeader("content-type", "application/json");
 				response.writeHead(pending ? 200 : 404).end(pending ? JSON.stringify({ id: pending.id, reason: pending.reason,
+					sourceAdapterId: pending.sourceBinding.adapterId, sourceNativeSessionId: pending.sourceBinding.nativeSessionId,
 					nativeSessionId: this.controller.getRuntimeBinding().nativeSessionId, targetModel: pending.targetModel }) : undefined);
 				return;
 			}

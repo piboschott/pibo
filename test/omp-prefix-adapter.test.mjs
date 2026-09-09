@@ -181,6 +181,7 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 			await router.setLiveSessionActiveModel(childId, selected);
 			sessions.update(childId, { activeModel: selected });
 		};
+		await router.disposeAll(); router = undefined; await open();
 		await select("prefix-second");
 		assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
 		await router.disposeAll(); router = undefined; await open();
@@ -193,6 +194,20 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 		await select("prefix-second");
 		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
 		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
+		const previousRuntime = sessions.get(childId).runtimeBinding;
+		let fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: previousRuntime.revision, startFresh: true });
+		const originalHistory = await readFile(previousRuntime.metadata.nativeSessionFile);
+		const cancelled = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: fresh.revision });
+		assert.deepEqual(cancelled.metadata.piboSessionPrefix, previousRuntime.metadata.piboSessionPrefix);
+		fresh = await router.rebindSessionRuntime(childId, { runtimeInstanceId: previousRuntime.runtimeInstanceId, expectedRevision: cancelled.revision, startFresh: true });
+		await router.disposeAll(); router = undefined; await open();
+		await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "fresh-runtime", source: "user", text: "Start the explicitly selected fresh session" }, 20000);
+		const replacement = sessions.get(childId).runtimeBinding;
+		assert.notEqual(replacement.nativeSessionId, previousRuntime.nativeSessionId);
+		assert.equal(replacement.metadata.piboSessionPrefix.epoch, changedPrefix.epoch + 1);
+		assert.equal(replacement.metadata.piboSessionPrefix.reason, "runtime-change");
+		assert.equal(replacement.metadata.piboSessionPrefixRebaseline, undefined);
+		assert.deepEqual(await readFile(previousRuntime.metadata.nativeSessionFile), originalHistory);
 	}
 	if (mode === "adapter") {
 		await prompt("third native turn before compaction ".repeat(5000), "precompact");
