@@ -81,8 +81,8 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 	await writeFile(join(home, "models.yml"), JSON.stringify({ providers: { fixture: {
 		baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: api === "openai-responses" ? api : "openai-codex-responses",
 		...(api === "openai-responses" ? { auth: "none" } : { apiKey: `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture-account" } })).toString("base64url")}.fixture` }),
-		models: [{ id: "prefix-fixture", name: "Prefix fixture", reasoning: false, input: ["text"], contextWindow: 500000, maxTokens: 1024,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+		models: ["prefix-fixture", "prefix-second"].map(id => ({ id, name: id, reasoning: false, input: ["text"], contextWindow: 500000, maxTokens: 1024,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
 	} } }));
 	const registry = PiboPluginRegistry.create({ plugins: [definePiboPlugin({ id: "prefix.omp.fixture", register(api) {
 		api.registerProfile({ name: "prefix-omp-fixture", create: () => new InitialSessionContextBuilder("prefix-omp-fixture")
@@ -175,6 +175,24 @@ for (const api of ["openai-responses", "openai-codex-responses", "openai-codex-r
 		assert.deepEqual(requests.at(-1).tools, requests[0].tools);
 		assert.deepEqual(requests.at(-1).input.slice(0, 1), requests[0].input.slice(0, 1));
 		assert.ok(JSON.stringify(requests.at(-1).input).includes(childId));
+		const originalPrefix = sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix;
+		const select = async id => {
+			const selected = { provider: "fixture", id };
+			await router.setLiveSessionActiveModel(childId, selected);
+			sessions.update(childId, { activeModel: selected });
+		};
+		await select("prefix-second");
+		assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
+		await router.disposeAll(); router = undefined; await open();
+		await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "changed-model", source: "user", text: "Use the selected model" }, 20000);
+		const changedPrefix = sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix;
+		assert.equal(changedPrefix.epoch, originalPrefix.epoch + 1);
+		assert.equal(requests.at(-1).model, "prefix-second");
+		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+		await select("prefix-fixture");
+		await select("prefix-second");
+		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
 	}
 	if (mode === "adapter") {
 		await prompt("third native turn before compaction ".repeat(5000), "precompact");

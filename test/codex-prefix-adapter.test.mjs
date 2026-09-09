@@ -69,6 +69,7 @@ for (const transport of ["http", "websocket"]) for (const lite of [false, true])
 	const catalogPath = join(home, "model-catalog.json");
 	const catalog = JSON.parse(await readFile(new URL("./fixtures/codex-prefix-model-catalog.json", import.meta.url), "utf8"));
 	catalog.models[0].use_responses_lite = lite;
+	catalog.models.push({ ...structuredClone(catalog.models[0]), slug: "gpt-5.4", display_name: "Second fixture model" });
 	await writeFile(catalogPath, JSON.stringify(catalog));
 	await writeFile(join(home, "config.toml"), `model = "gpt-5.5"
 model_provider = "fixture"
@@ -174,6 +175,24 @@ enabled = false
 		assert.equal(requests.at(-1).instructions, requests[0].instructions);
 		assert.deepEqual(requests.at(-1).tools, requests[0].tools);
 		assert.ok(JSON.stringify(requests.at(-1).input).includes(childId));
+		const originalPrefix = sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix;
+		const select = async id => {
+			const model = { provider: "openai-codex", id };
+			await router.setLiveSessionActiveModel(childId, model);
+			sessions.update(childId, { activeModel: model });
+		};
+		await select("gpt-5.4");
+		assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
+		await router.disposeAll(); router = undefined; open(false);
+		await prompt("Use the selected model", "child-model-change", childId);
+		assert.equal(requests.at(-1).model, "gpt-5.4");
+		const changedPrefix = sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix;
+		assert.equal(changedPrefix.epoch, originalPrefix.epoch + 1);
+		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+		await select("gpt-5.5");
+		await select("gpt-5.4");
+		assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+		assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
 	}
 	if (transport === "http" && !lite && !tokenBudget) {
 		const candidates = await router.getSessionForkCandidates(session.id);

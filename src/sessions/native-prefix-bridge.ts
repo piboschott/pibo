@@ -50,6 +50,13 @@ export class NativePrefixBridge {
 		if (this.active) { response.writeHead(409).end(); request.resume(); return; }
 		this.active = true;
 		try {
+			if (request.method === "GET" && request.url === "/rebaseline") {
+				const pending = this.controller.rebaseline;
+				response.setHeader("content-type", "application/json");
+				response.writeHead(pending ? 200 : 404).end(pending ? JSON.stringify({ id: pending.id, reason: pending.reason,
+					nativeSessionId: this.controller.getRuntimeBinding().nativeSessionId, targetModel: pending.targetModel }) : undefined);
+				return;
+			}
 			if (request.method === "GET" && request.url === "/transition") {
 				await this.controller.restore(this.codec);
 				response.setHeader("content-type", "application/json");
@@ -100,7 +107,8 @@ export class NativePrefixBridge {
 				return;
 			}
 			const prefix = await this.controller.seal({ codec: this.codec, payload, nativeSessionId: nativeSessionId as string,
-				evidence: "adapter-inputs", hasHistoricalModelInput: historical === "true" });
+				evidence: "adapter-inputs", hasHistoricalModelInput: historical === "true",
+				...(typeof request.headers["x-prefix-rebaseline-id"] === "string" ? { rebaselineId: request.headers["x-prefix-rebaseline-id"] } : {}) });
 			// Ack is deliberately after artifact publication AND the audited binding CAS.
 			response.setHeader("content-type", "application/json");
 			response.writeHead(200).end(JSON.stringify({ digest: prefix.capsule.digest, epoch: prefix.epoch }));

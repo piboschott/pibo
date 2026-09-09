@@ -11,7 +11,7 @@ export function deriveSessionPrefixMetadata(metadata: PiboJsonObject | undefined
 	if (!prefix) return metadata;
 	if (!targetId || targetId === sourceId || prefix.nativeSessionId !== sourceId) throw new PrefixRecoveryRequiredError("native derivation identity is inconsistent");
 	if (readPrefixTransition(metadata)?.state === "pending") throw new PrefixRecoveryRequiredError("cannot derive an unfinished prefix transition");
-	const derived = { ...metadata };
+	const derived: PiboJsonObject = { ...metadata, piboSessionPrefixDerived: true };
 	delete derived[SESSION_PREFIX_TRANSITION_KEY];
 	derived[SESSION_PREFIX_METADATA_KEY] = { ...prefix, nativeSessionId: targetId,
 		capsuleNativeSessionId: prefix.capsuleNativeSessionId ?? prefix.nativeSessionId,

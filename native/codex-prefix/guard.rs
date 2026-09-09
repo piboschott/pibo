@@ -179,6 +179,13 @@ fn request(
     body: &[u8],
     native: Option<&str>,
 ) -> anyhow::Result<(u16, Vec<u8>)> {
+    request_authorized(connection, method, path, body, native, None)
+}
+
+fn request_authorized(
+    connection: &Connection, method: &str, path: &str, body: &[u8],
+    native: Option<&str>, rebaseline: Option<&str>,
+) -> anyhow::Result<(u16, Vec<u8>)> {
     if body.len() > LIMIT {
         return Err(failure());
     }
@@ -189,9 +196,13 @@ fn request(
         5
     })))?;
     socket.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let identity = native
+    let mut identity = native
         .map(|id| format!("x-native-session-id: {id}\r\nx-native-has-history: false\r\n"))
         .unwrap_or_default();
+    if let Some(id) = rebaseline {
+        if Uuid::parse_str(id).is_err() { return Err(failure()); }
+        identity.push_str(&format!("x-prefix-rebaseline-id: {id}\r\n"));
+    }
     write!(
         socket,
         "{method} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nConnection: close\r\nContent-Length: {}\r\n{identity}\r\n",
@@ -400,10 +411,20 @@ pub fn is_active() -> bool {
     STATE.get().is_some()
 }
 
-pub fn needs_native_persistence() -> bool {
+pub fn restore_model_info(candidate: ModelInfo) -> ModelInfo {
+    let Some(state) = STATE.get() else { return candidate; };
+    let state = state.lock().expect("Pibo prefix ownership poisoned");
+    match &state.snapshot {
+        Some(snapshot) if snapshot.model_info.slug == candidate.slug => snapshot.model_info.clone(),
+        _ => candidate,
+    }
+}
+
+pub fn needs_native_persistence(model: &ModelInfo) -> bool {
     STATE
         .get()
-        .is_some_and(|state| state.lock().map_or(true, |state| state.snapshot.is_none()))
+        .is_some_and(|state| state.lock().map_or(true, |state| state.snapshot.as_ref()
+            .is_none_or(|snapshot| snapshot.model_info.slug != model.slug)))
 }
 
 /// First-dispatch barrier only; no extra native file scans on ordinary turns.
@@ -515,6 +536,25 @@ pub async fn validate(
     if COMPACTION.try_with(|_| ()).is_ok() {
         return Ok(());
     }
+    // No IPC on ordinary dispatch. A different selected model requires the
+    // parent's durable, explicit authorization before replacing the capsule.
+    let authorization_connection = {
+        let state = state.lock().map_err(|_| failure())?;
+        state.snapshot.as_ref().filter(|snapshot| snapshot.model_info.slug != model.slug)
+            .map(|_| state.connection.clone())
+    };
+    let rebaseline = if let Some(connection) = authorization_connection {
+        let (status, body) = tokio::task::spawn_blocking(move ||
+            request(&connection, "GET", "/rebaseline", &[], None)).await??;
+        if status != 200 { return Err(failure()); }
+        let value: Value = serde_json::from_slice(&body)?;
+        if value["reason"] != "model-change" || value["nativeSessionId"] != native_id
+            || value["targetModel"]["provider"] != "openai-codex"
+            || value["targetModel"]["id"] != model.slug { return Err(failure()); }
+        let id = value["id"].as_str().ok_or_else(failure)?;
+        Uuid::parse_str(id)?;
+        Some(id.to_owned())
+    } else { None };
     let operation = {
         let mut state = state.lock().map_err(|_| failure())?;
         if state.failed
@@ -551,7 +591,7 @@ pub async fn validate(
             .input
             .get(..prefix_length)
             .ok_or_else(failure)?;
-        if let Some(snapshot) = &state.snapshot {
+        if let Some(snapshot) = &state.snapshot && rebaseline.is_none() {
             if snapshot.model_info != *model
                 || snapshot.instructions != request_value.instructions
                 || snapshot.tools.as_deref() != tools
@@ -564,7 +604,7 @@ pub async fn validate(
         }
         // Only the first dispatch can capture. Never claim old assistant/tool
         // history as a newly created original, even with incomplete metadata.
-        if request_value.input.iter().any(|item| !matches!(item,
+        if rebaseline.is_none() && request_value.input.iter().any(|item| !matches!(item,
             ResponseItem::Message { role, .. } if matches!(role.as_str(), "user" | "developer" | "system"))
             && !matches!(item, ResponseItem::AdditionalTools { .. })) { return Err(failure()); }
         let snapshot = Snapshot {
@@ -587,7 +627,7 @@ pub async fn validate(
     let digest = format!("{:x}", Sha256::digest(&bytes));
     let id = native_id.to_string();
     let result = tokio::task::spawn_blocking(move || {
-        request(&connection, "POST", "/seal", &bytes, Some(&id))
+        request_authorized(&connection, "POST", "/seal", &bytes, Some(&id), rebaseline.as_deref())
     })
     .await;
     let mut state = state.lock().map_err(|_| failure())?;

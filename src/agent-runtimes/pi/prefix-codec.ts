@@ -203,11 +203,13 @@ export async function installPiPrefixCodec(
 		// Compaction uses a separate summarization prompt and must retain native semantics.
 		if (session.isCompacting) return stream(model, context, options);
 		await resolvePiPrefixTransition(session, controller);
+		let rebaseline = controller.hasPendingRebaseline ? controller.rebaseline : undefined;
+		if (rebaseline && (rebaseline.targetModel?.provider !== model.provider || rebaseline.targetModel?.id !== model.id)) throw new PrefixRecoveryRequiredError("pending model transition does not authorize this selection");
 		const requestCodec = codecForApi(model.api);
-		if (codec && codec !== requestCodec) throw new PrefixRecoveryRequiredError("provider API change requires an explicit prefix epoch transition");
+		if (!rebaseline && codec && codec !== requestCodec) throw new PrefixRecoveryRequiredError("provider API change requires an explicit prefix epoch transition");
 		const modelConfiguration = modelInputConfiguration(model);
-		if (snapshot && !isDeepStrictEqual(snapshot.modelConfiguration, modelConfiguration)) throw new PrefixRecoveryRequiredError("model input configuration changed; explicit transition required");
-		if (snapshot && snapshot.providerStatic.model !== model.id) throw new PrefixRecoveryRequiredError("model change requires an explicit prefix epoch transition");
+		if (!rebaseline && snapshot && !isDeepStrictEqual(snapshot.modelConfiguration, modelConfiguration)) throw new PrefixRecoveryRequiredError("model input configuration changed; explicit transition required");
+		if (!rebaseline && snapshot && snapshot.providerStatic.model !== model.id) throw new PrefixRecoveryRequiredError("model change requires an explicit prefix epoch transition");
 		if (snapshot) {
 			assertLocalToolCompatibility(snapshot, session.agent.state.tools);
 			assertLocalToolCompatibility(snapshot, context.tools);
@@ -231,7 +233,7 @@ export async function installPiPrefixCodec(
 				}
 				const embeddedPrefixLength = requestCodec === PI_RESPONSES_PREFIX_CODEC ? inputPrefixLength(transformed.input) : undefined;
 				if (embeddedPrefixLength !== undefined && Object.isFrozen(transformed.input)) throw new PrefixRecoveryRequiredError("provider input envelope cannot restore its prefix");
-				if (!snapshot) {
+				if (!snapshot || rebaseline) {
 					const providerStatic: Record<string, unknown> = {};
 					for (const key of Object.keys(transformed)) if (key !== "input") providerStatic[key] = structuredClone(transformed[key]);
 					const captured: PiPrefixSnapshot = {
@@ -244,7 +246,9 @@ export async function installPiPrefixCodec(
 					await controller.seal({
 						codec: requestCodec, payload: JSON.stringify(captured), nativeSessionId: session.sessionId,
 						evidence: "adapter-inputs", hasHistoricalModelInput: historical,
+						...(rebaseline ? { rebaselineId: rebaseline.id } : {}),
 					});
+					rebaseline = undefined;
 					snapshot = deepFreeze(captured);
 					codec = requestCodec;
 					facts = inferenceFacts(snapshot);

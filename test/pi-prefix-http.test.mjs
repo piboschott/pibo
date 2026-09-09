@@ -284,7 +284,7 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	const modelRuntime = await ModelRuntime.create({ credentials, allowModelNetwork: false });
 	modelRuntime.registerProvider("openai-codex", { api: "openai-codex-responses", baseUrl: api.baseUrl,
 		streamSimple: (model, context, options) => streamNativeCodex({ ...model, baseUrl: api.baseUrl }, context, { ...options, transport: "sse" }),
-		models: [{ id: "gpt-5.5", name: "Fixture", reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 500000, maxTokens: 1024 }] });
+		models: ["gpt-5.5", "gpt-5.4"].map(id => ({ id, name: "Fixture", reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 500000, maxTokens: 1024 })) });
 	const profileName = "prefix-router-fixture";
 	const registry = PiboPluginRegistry.create({ plugins: [definePiboPlugin({ id: "prefix.router.fixture", register(registration) {
 		registration.registerProfile({ name: profileName, create: () => new InitialSessionContextBuilder(profileName)
@@ -353,10 +353,31 @@ test("normal Pi router preserves protected resources and binding when rollout is
 	assert.equal(api.requests.at(-1).instructions, before.instructions);
 	assert.deepEqual(api.requests.at(-1).tools, before.tools);
 	assert.ok(JSON.stringify(api.requests.at(-1).input).includes(childId));
+	const select = async id => {
+		const selected = await router.setLiveSessionActiveModel(childId, { provider: "openai-codex", id });
+		sessions.update(childId, { activeModel: selected });
+	};
+	await select("gpt-5.4");
+	assert.ok(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline);
+	await router.disposeAll(); router = open(false);
+	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "model-changed", source: "user", text: "Continue with the explicitly selected model" }, 20000);
+	const changedPrefix = sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix;
+	assert.equal(changedPrefix.epoch, child.runtimeBinding.metadata.piboSessionPrefix.epoch + 1);
+	assert.equal(changedPrefix.reason, "model-change");
+	assert.equal(api.requests.at(-1).model, "gpt-5.4");
+	assert.equal(api.requests.at(-1).instructions, before.instructions);
+	assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+	await select("gpt-5.5");
+	await select("gpt-5.4"); // Choosing the original model aborts before any new dispatch.
+	assert.equal(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefixRebaseline, undefined);
+	assert.deepEqual(sessions.get(childId).runtimeBinding.metadata.piboSessionPrefix, changedPrefix);
+	await router.emitMessageAndWaitForReply({ type: "message", piboSessionId: childId, id: "model-aborted", source: "user", text: "Continue after cancelling the pending model change" }, 20000);
+	assert.equal(api.requests.at(-1).model, "gpt-5.4");
+
 
 	await router.disposeAll(); router = undefined;
 	await rm(nativePath);
 	router = open(false);
 	await assert.rejects(router.emitMessageAndWaitForReply({ type: "message", piboSessionId: session.id, id: "missing", source: "user", text: "must not dispatch" }, 20000), /missing|not found|recovery/i);
-	assert.equal(api.requests.length, 4);
+	assert.equal(api.requests.length, 6);
 });

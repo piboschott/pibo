@@ -510,10 +510,11 @@ export class CodexNativeThreadSession implements AgentRuntimeSession {
 				this.assertIdle();
 				return this.settings.setFastMode(enabled);
 			},
-			setModel: async (model) => {
-				this.assertIdle();
-				return this.settings.setModel(model);
-			},
+			setModel: async (model) => this.runIdleOperation(async () => {
+				if (!this.prefixController) return this.settings.setModel(model);
+				return this.prefixController.changeModel(this.settings.activeModel, model,
+					async next => this.settings.setModel(next));
+			}),
 			compact: async (customInstructions) => await this.runIdleOperation(async () => {
 				const customInstructionsRequested = Boolean(customInstructions?.trim());
 				if (customInstructionsRequested) {

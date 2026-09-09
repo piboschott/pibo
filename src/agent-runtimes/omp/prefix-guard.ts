@@ -43,6 +43,17 @@ export default async function(pi) {
       || typeof snapshot.calendar.date !== "string" || typeof snapshot.calendar.cwd !== "string"
       || typeof snapshot.nativeSessionId !== "string")) return fatal();
     if (snapshot) freeze(snapshot);
+    // Bounded model capabilities affect native history conversion too. Do not
+    // persist transport headers, credentials, pricing or conversation state.
+    const modelCodecFields = ["id", "provider", "api", "identity", "requestModelId", "reasoningMode",
+      "requiresGlyphTokenization", "requiresCursorToolSchemaProjection", "reasoning", "input",
+      "imageInputDecoder", "supportsTools", "supportsComputerUse", "contextWindow", "maxTokens",
+      "omitMaxOutputTokens", "useResponsesLite", "toolMode", "thinking", "compat"];
+    const modelCodec = model => {
+      const value = Object.fromEntries(modelCodecFields.filter(key => model[key] !== undefined).map(key => [key, model[key]]));
+      if (JSON.stringify(value).length > 65536) return fatal();
+      return value;
+    };
 
     const transitionResponse = await fetch(endpoint + "/transition", { headers: auth, signal: AbortSignal.timeout(4500) });
     if (transitionResponse.status !== 200) return fatal();
@@ -172,11 +183,28 @@ export default async function(pi) {
         const codex = api === "openai-codex-responses";
         if (signal?.aborted || !["openai-responses", "openai-codex-responses"].includes(api) || !calendar
           || !event.payload || !Array.isArray(event.payload.input)) return fatal();
-        if (snapshot && (snapshot.api ?? "openai-responses") !== api) return fatal();
+        let rebaseline;
+        const modelChanged = snapshot && (snapshot.providerStatic.model !== event.payload.model
+          || snapshot.modelSelection && (snapshot.modelSelection.provider !== ctx.model?.provider
+            || snapshot.modelSelection.id !== ctx.model?.id));
+        if (modelChanged) {
+          phase = "explicit-model-change";
+          const authorization = await fetch(endpoint + "/rebaseline", { headers: auth, signal: AbortSignal.timeout(4500) });
+          if (authorization.status !== 200) return fatal();
+          rebaseline = await authorization.json();
+          if (rebaseline.reason !== "model-change" || rebaseline.nativeSessionId !== snapshot.nativeSessionId
+            || rebaseline.targetModel?.provider !== ctx.model?.provider || rebaseline.targetModel?.id !== ctx.model?.id
+            || typeof rebaseline.id !== "string") return fatal();
+        }
+        if (snapshot && !rebaseline && (snapshot.api ?? "openai-responses") !== api) return fatal();
+        const currentModelCodec = modelCodec(ctx.model);
+        if (snapshot?.modelCodec && !rebaseline
+          && JSON.stringify(snapshot.modelCodec) !== JSON.stringify(currentModelCodec)) return fatal();
         if (Object.entries(event.payload).some(([key, value]) => value !== undefined && key !== "input"
           && !providerFields.has(key) && !(codex && transportFields.has(key)))) return fatal();
         if (event.payload.type !== undefined && event.payload.type !== "response.create") return fatal();
         const chained = event.payload.previous_response_id !== undefined;
+        if (chained && rebaseline) return fatal();
         if (chained && (!snapshot || event.payload.type !== "response.create"
           || typeof event.payload.previous_response_id !== "string" || event.payload.previous_response_id.length > 1024)) return fatal();
         let inputPrefix;
@@ -193,16 +221,16 @@ export default async function(pi) {
           if (inputPrefix.length !== length) return fatal();
           validateInputPrefix(inputPrefix);
         }
-        if (snapshot && !chained && Boolean(snapshot.inputPrefix) !== Boolean(inputPrefix)) return fatal();
-        if (snapshot && !chained && codex && snapshot.responsesLite !== responsesLite) return fatal();
+        if (snapshot && !rebaseline && !chained && Boolean(snapshot.inputPrefix) !== Boolean(inputPrefix)) return fatal();
+        if (snapshot && !rebaseline && !chained && codex && snapshot.responsesLite !== responsesLite) return fatal();
         validateTools(event.payload.tools);
         const manager = ctx.sessionManager;
         const nativeSessionId = manager.getSessionId();
         if (snapshot && snapshot.nativeSessionId !== nativeSessionId) return fatal();
         await resolveTransition(manager);
-        if (!snapshot) {
+        if (!snapshot || rebaseline) {
           phase = "native-persistence";
-          const historical = manager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant");
+          const historical = !rebaseline && manager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant");
           if (historical || typeof manager.ensureOnDisk !== "function") return fatal();
           await manager.ensureOnDisk();
           await syncNative(manager);
@@ -210,11 +238,14 @@ export default async function(pi) {
           // objects internally; freezing those would break the next inference.
           const providerStatic = structuredClone(Object.fromEntries(Object.entries(event.payload).filter(([key, value]) => providerFields.has(key) && value !== undefined)));
           snapshot = { format: 2, api, nativeSessionId, calendar, providerStatic,
+            modelSelection: { provider: ctx.model.provider, id: ctx.model.id },
+            modelCodec: structuredClone(currentModelCodec),
             ...(inputPrefix ? { inputPrefix: structuredClone(inputPrefix), responsesLite } : {}) };
           const payload = JSON.stringify(snapshot);
           phase = "durable-seal";
           const ack = await fetch(endpoint + "/seal", { method: "POST", headers: {
             ...auth, "x-native-session-id": nativeSessionId, "x-native-has-history": "false",
+            ...(rebaseline ? { "x-prefix-rebaseline-id": rebaseline.id } : {}),
           }, body: payload, signal: AbortSignal.timeout(4500) });
           if (ack.status !== 200) return fatal();
           const receipt = await ack.json();

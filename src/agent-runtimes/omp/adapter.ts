@@ -338,8 +338,16 @@ export class OmpSession implements AgentRuntimeSession {
 				if (!provider || !modelId) {
 					throw new Error("OMP model switch requires a provider and model id.");
 				}
-				await setOmpModel(this.client, provider, modelId);
-				return { provider, id: modelId };
+				const apply = async (next: { provider: string; id: string }) => {
+					await setOmpModel(this.client, next.provider, next.id);
+					await this.thread.refresh();
+					return next;
+				};
+				if (!this.bundle.prefixController) return await apply({ provider, id: modelId });
+				await this.thread.refresh();
+				const previous = this.thread.current.model;
+				if (!previous) throw new PrefixRecoveryRequiredError("OMP did not report its current model before an explicit change");
+				return await this.bundle.prefixController.changeModel(previous, { provider, id: modelId }, apply);
 			}),
 			compact: async (customInstructions) => this.runIdleOperation(async () => {
 				return await this.client.request({ type: "compact", ...(customInstructions ? { customInstructions } : {}) }, "compact");

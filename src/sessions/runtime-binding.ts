@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { readPrefixRebaseline } from "./prefix-rebaseline.js";
 import type { PiboJsonObject } from "../core/events.js";
 import { DEFAULT_AGENT_RUNTIME_INSTANCE_ID } from "../core/profiles.js";
 import { readSessionPrefixBinding, readSessionPrefixResourceReference } from "./prefix-capsule.js";
@@ -179,6 +181,23 @@ export function assertRuntimeSessionBindingTransition(
 	const nextPrefix = readSessionPrefixBinding(next.metadata);
 	const previousResources = readSessionPrefixResourceReference(current.metadata);
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
+	const previousRebaseline = readPrefixRebaseline(current.metadata);
+	const nextRebaseline = readPrefixRebaseline(next.metadata);
+	if (!previousRebaseline && nextRebaseline) {
+		if (!previousPrefix || !isDeepStrictEqual(nextRebaseline.sourceBinding, current)
+			|| nextRebaseline.targetAdapterId !== next.adapterId
+			|| nextRebaseline.sourceBinding.piboSessionId !== next.piboSessionId
+			|| readPrefixTransition(current.metadata)?.state === "pending") {
+			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix transition must start from the current durable binding");
+		}
+	} else if (previousRebaseline && nextRebaseline && !isDeepStrictEqual(previousRebaseline, nextRebaseline)) {
+		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "pending explicit prefix transition cannot be replaced");
+	} else if (previousRebaseline && !nextRebaseline && !isDeepStrictEqual(previousPrefix, nextPrefix)) {
+		const sourcePrefix = readSessionPrefixBinding(previousRebaseline.sourceBinding.metadata)!;
+		if (!nextPrefix || nextPrefix.epoch !== sourcePrefix.epoch + 1 || nextPrefix.reason !== previousRebaseline.reason) {
+			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix completion must publish its next epoch");
+		}
+	}
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);
 	if (previousTransition && !nextTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");

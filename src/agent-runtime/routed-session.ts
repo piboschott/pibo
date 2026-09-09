@@ -288,7 +288,8 @@ export class RuntimeRoutedSession {
 		private readonly pluginRegistry: PiboPluginRegistry,
 		private readonly options: RuntimeRoutedSessionOptions = {},
 	) {
-		this.derivedIdentitySuffix = readSessionPrefixBinding(runtimeSession.getBinding().metadata)?.capsuleNativeSessionId
+		const bindingMetadata = runtimeSession.getBinding().metadata;
+		this.derivedIdentitySuffix = readSessionPrefixBinding(bindingMetadata)?.capsuleNativeSessionId || bindingMetadata?.piboSessionPrefixDerived === true
 			? derivedSessionIdentityText(piboSessionId) : "";
 		this.toolMetrics = new ToolCallMetricsCollector(options.getToolMetricTokenCalculation);
 		this.runtime = runtimeSession.getNativeCompatibilityHandle?.() ?? runtimeSession;

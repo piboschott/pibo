@@ -1,3 +1,4 @@
+import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
 import type { AgentRuntimeBindingPersistence } from "../agent-runtime/types.js";
 import { randomUUID } from "node:crypto";
 import type { CacheInferenceEvidence } from "../shared/cache-diagnostics.js";
@@ -62,6 +63,10 @@ export class SessionPrefixController {
 			throw new PrefixRecoveryRequiredError("durable audited binding persistence is unavailable");
 		}
 		const metadata = options.getBinding().metadata;
+		const rebaseline = readPrefixRebaseline(metadata);
+		if (rebaseline && (rebaseline.sourceBinding.piboSessionId !== options.getBinding().piboSessionId || rebaseline.targetAdapterId !== options.getBinding().adapterId)) {
+			throw new PrefixRecoveryRequiredError("explicit transition belongs to another session or adapter");
+		}
 		if (readPrefixTransition(metadata) && !readSessionPrefixBinding(metadata)) {
 			throw new PrefixRecoveryRequiredError("native transition has lost its sealed prefix");
 		}
@@ -83,7 +88,7 @@ export class SessionPrefixController {
 	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
 		const persisted = this.options.getBinding();
 		const metadata = { ...binding.metadata };
-		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY]) {
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY]) {
 			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
 			else delete metadata[key];
 		}
@@ -97,7 +102,7 @@ export class SessionPrefixController {
 		const current = this.options.readCurrentBinding?.() ?? expected;
 		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
 			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
-			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY].some(key =>
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY].some(key =>
 				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
 			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
 		}
@@ -126,8 +131,62 @@ export class SessionPrefixController {
 		});
 	}
 
+	get rebaseline(): PrefixRebaseline | undefined { return readPrefixRebaseline(this.options.getBinding().metadata); }
+
+	get hasPendingRebaseline(): boolean { return this.options.getBinding().metadata?.[SESSION_PREFIX_REBASELINE_KEY] !== undefined; }
+
+	async changeModel<T>(previous: PrefixModelSelection, target: PrefixModelSelection, apply: (model: PrefixModelSelection) => Promise<T>): Promise<T> {
+		const same = (a: PrefixModelSelection | undefined, b: PrefixModelSelection) => a?.provider === b.provider && a.id === b.id;
+		const existing = this.rebaseline;
+		if (existing) {
+			if (existing.reason !== "model-change") throw new PrefixRecoveryRequiredError("another explicit prefix transition is pending");
+			if (same(existing.previousModel, target)) {
+				const result = await apply(target);
+				await this.abortModelChange(existing.id);
+				return result;
+			}
+			if (same(existing.targetModel, target)) return await apply(target);
+			throw new PrefixRecoveryRequiredError("complete the pending model change or select the original model to cancel it");
+		}
+		const pending = await this.beginModelChange(previous, target);
+		try { return await apply(target); }
+		catch (error) {
+			if (pending) {
+				try { await apply(previous); await this.abortModelChange(pending.id); }
+				catch (rollback) { throw new AggregateError([error, rollback], "Model change failed and requires recovery"); }
+			}
+			throw error;
+		}
+	}
+
+	/** Durable authorization precedes any explicit native configuration mutation. */
+	async beginModelChange(previousModel: PrefixModelSelection, targetModel: PrefixModelSelection): Promise<PrefixRebaseline | undefined> {
+		const runtime = this.transitionBinding();
+		if (previousModel.provider === targetModel.provider && previousModel.id === targetModel.id) return undefined;
+		if (!readSessionPrefixBinding(runtime.metadata)) return undefined;
+		if (this.rebaseline || this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("another prefix transition is pending");
+		const transition: PrefixRebaseline = { format: 1, id: randomUUID(), reason: "model-change",
+			targetAdapterId: runtime.adapterId, sourceBinding: runtime, previousModel, targetModel };
+		const metadata = { ...runtime.metadata, [SESSION_PREFIX_REBASELINE_KEY]: transition as unknown as PiboJsonObject };
+		readPrefixRebaseline(metadata);
+		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
+		this.options.onPersisted?.(structuredClone(persisted));
+		return transition;
+	}
+
+	/** Caller has restored the original native configuration; no new dispatch occurred. */
+	async abortModelChange(id: string): Promise<void> {
+		const runtime = this.transitionBinding(), pending = readPrefixRebaseline(runtime.metadata);
+		if (!pending || pending.id !== id || pending.reason !== "model-change") throw new PrefixRecoveryRequiredError("model transition is no longer pending");
+		if (JSON.stringify(readSessionPrefixBinding(runtime.metadata)) !== JSON.stringify(readSessionPrefixBinding(pending.sourceBinding.metadata))) throw new PrefixRecoveryRequiredError("model transition already changed its prefix");
+		const metadata = { ...runtime.metadata }; delete metadata[SESSION_PREFIX_REBASELINE_KEY];
+		const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
+		this.options.onPersisted?.(structuredClone(persisted));
+	}
+
 	async beginCompaction(sourceHead: string | null): Promise<PrefixTransition | undefined> {
 		const runtime = this.transitionBinding();
+		if (this.rebaseline) throw new PrefixRecoveryRequiredError("an explicit prefix transition is pending");
 		const prefix = readSessionPrefixBinding(runtime.metadata);
 		if (!prefix) return undefined;
 		if (this.transition?.state === "pending") throw new PrefixRecoveryRequiredError("a native prefix transition is already pending");
@@ -233,11 +292,31 @@ export class SessionPrefixController {
 		return payload;
 	}
 
-	async seal(input: { codec: string; payload: string; nativeSessionId: string; evidence: SessionPrefixBinding["evidence"]; hasHistoricalModelInput: boolean }): Promise<SessionPrefixBinding> {
+	async seal(input: { codec: string; payload: string; nativeSessionId: string; evidence: SessionPrefixBinding["evidence"]; hasHistoricalModelInput: boolean; rebaselineId?: string }): Promise<SessionPrefixBinding> {
 		if (this.preparing) {
 			await this.preparing;
 			return this.seal(input);
 		}
+		const pending = this.rebaseline;
+		if (pending) {
+			if (input.rebaselineId !== pending.id) throw new PrefixRecoveryRequiredError("explicit prefix transition requires its dispatch authorization");
+			const runtime = this.transitionBinding();
+			if (!runtime.nativeSessionId || runtime.nativeSessionId !== input.nativeSessionId || runtime.revision === undefined) throw new PrefixRecoveryRequiredError("explicit transition requires a durably bound native session");
+			const source = readSessionPrefixBinding(pending.sourceBinding.metadata)!;
+			this.preparing = (async () => {
+				const capsule = await this.store.put(runtime.adapterId, input.codec, input.payload);
+				const prefix: SessionPrefixBinding = { format: 1, epoch: source.epoch + 1, status: "sealed", capsule,
+					reason: pending.reason, nativeSessionId: input.nativeSessionId, evidence: input.evidence };
+				const metadata: PiboJsonObject = { ...runtime.metadata, [SESSION_PREFIX_METADATA_KEY]: prefix as unknown as PiboJsonObject };
+				delete metadata[SESSION_PREFIX_REBASELINE_KEY];
+				const persisted = await this.options.persistence.compareAndSet({ ...runtime, metadata }, runtime.revision!);
+				this.options.onPersisted?.(structuredClone(persisted));
+				this.sealedPayload = { digest: capsule.digest, payload: input.payload };
+				return prefix;
+			})();
+			try { return await this.preparing; } finally { this.preparing = undefined; }
+		}
+		if (input.rebaselineId) throw new PrefixRecoveryRequiredError("explicit prefix transition is no longer pending");
 		const previous = this.binding;
 		if (previous) {
 			if (previous.nativeSessionId !== input.nativeSessionId || await this.restore(input.codec) !== input.payload) {

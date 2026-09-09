@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { SessionPrefixController } from "../../sessions/prefix-session.js";
 import { PrefixRecoveryRequiredError } from "../../sessions/prefix-capsule.js";
 import { NativePrefixBridge } from "../../sessions/native-prefix-bridge.js";
@@ -68,16 +66,7 @@ export class CodexPrefixOpen {
 		const stage = this.stage;
 		if (!stage?.paths || !stage.args || !stage.connecting) throw new PrefixRecoveryRequiredError("Codex native ownership is unavailable");
 		const args = [...stage.args];
-		const restored = await this.controller.restore(CODEX_PREFIX_CODEC);
-		if (restored) {
-			const snapshot = JSON.parse(restored);
-			if (!snapshot.modelInfo || typeof snapshot.modelInfo !== "object" || Array.isArray(snapshot.modelInfo)) {
-				throw new PrefixRecoveryRequiredError("Codex frozen model catalog is unavailable");
-			}
-			const catalog = join(stage.paths.generationRoot, "prefix-model-catalog.json");
-			await writeFile(catalog, JSON.stringify({ models: [snapshot.modelInfo] }), { mode: 0o600 });
-			args.push("-c", `model_catalog_json=${JSON.stringify(catalog)}`);
-		}
+		await this.controller.restore(CODEX_PREFIX_CODEC);
 		const environment = buildCodexNativeProcessEnvironment({ config: this.config, paths: stage.paths, resourceEnvironment });
 		const activationEnvironment = Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 		stage.activated = true;

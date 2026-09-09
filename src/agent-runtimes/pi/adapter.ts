@@ -423,7 +423,7 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 			this.bindingNativeSessionId = this.runtime.session.sessionId;
 			this.nativePresenceExpected = this.runtime.session.sessionManager.buildSessionContext().messages.length > 0;
 		}
-		return {
+		const binding: RuntimeSessionBinding = {
 			...structuredClone(this.binding),
 			...(persisted ? { revision: persisted.revision, updatedAt: persisted.updatedAt } : {}),
 			nativeSessionId: this.runtime.session.sessionId,
@@ -437,6 +437,7 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 				nativePresenceExpected: persistent && this.nativePresenceExpected,
 			},
 		};
+		return this.prefixController?.mergeRuntimeBinding(binding) ?? binding;
 	}
 
 	subscribe(listener: (event: AgentRuntimeSemanticEvent) => void): () => void {
@@ -613,7 +614,12 @@ class PiAgentRuntimeSession implements AgentRuntimeSession {
 			},
 			getFastMode: () => this.routed.getFastMode(),
 			setFastMode: (enabled) => this.routed.setFastMode(enabled),
-			setModel: async (model: ModelProfile) => await this.routed.setModel(model),
+			setModel: async (model: ModelProfile) => {
+				const previous = this.runtime.session.model;
+				if (!this.prefixController || !previous) return await this.routed.setModel(model);
+				if (!this.runtime.session.modelRuntime.getModel(model.provider, model.id)) throw new Error(`Unknown model ${model.provider}/${model.id}`);
+				return await this.prefixController.changeModel({ provider: previous.provider, id: previous.id }, model, next => this.routed.setModel(next));
+			},
 			compact: async (customInstructions) => await this.routed.compact(customInstructions),
 		};
 	}

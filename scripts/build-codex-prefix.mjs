@@ -19,6 +19,9 @@ if (values.companion && sha(await readFile(values.companion)) !== "f9dc99ef25391
 	throw new Error("Companion is not the pinned official rust-v0.153.2 Linux x64 release");
 }
 const expected = {
+	"core/src/session/mod.rs": "2e4010b30003a0c3f319452c6cf453ca18de43faace9a4753f80bedaebd57075",
+	"core/src/session/turn_context.rs": "c73f046afb046ac495a023b254646360ad8df57418c7439e1d41cb4fa32b8a2b",
+	"core/src/session/step_settings.rs": "7181c4c43b62e818489e2b21c7d1eb7e736fdc08515074d33e068a00b27241ee",
 	"core/src/client.rs": "e77f1dfd562f2c21c1e30a95870bd171d56b1bb46361d07dd82f32992fca28f2",
 	"cli/src/main.rs": "beab9cd5ea1cbf6e8762397e39fcdec9f263b675365cd206fd808501a2102c14",
 	"core/src/lib.rs": "24134800faba981882f7d0c279a5767643a35517668c4a335ad8090e5c4bbea6",
@@ -53,6 +56,18 @@ const replace = (text, before, after) => {
 	return text.replace(before, after);
 };
 const updated = { ...original };
+for (const path of ["core/src/session/mod.rs", "core/src/session/turn_context.rs"]) {
+	updated[path] = replace(updated[path], `        let model_info = models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await;`, `        let model_info = crate::pibo_prefix::restore_model_info(models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await);`);
+}
+updated["core/src/session/step_settings.rs"] = replace(updated["core/src/session/step_settings.rs"], `        models_manager
+            .get_model_info(self.collaboration_mode.model(), &config)
+            .await`, `        crate::pibo_prefix::restore_model_info(models_manager
+            .get_model_info(self.collaboration_mode.model(), &config)
+            .await)`);
 updated["core/src/lib.rs"] += "\n// Pinned Pibo native prefix contract.\npub mod pibo_prefix;\n";
 updated["core/Cargo.toml"] = replace(updated["core/Cargo.toml"], "[dependencies]\n",
 	"[dependencies]\nlibsqlite3-sys = { workspace = true }\nsha2 = { workspace = true }\n");
@@ -94,7 +109,7 @@ const prewarmHeader = `    pub async fn prewarm_websocket(
     ) -> Result<()> {`;
 client = replace(client, prewarmHeader, prewarmHeader + "\n        if crate::pibo_prefix::is_active() { return Ok(()); }");
 updated["core/src/client.rs"] = client;
-updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence() {
+updated["core/src/session/turn.rs"] = replace(updated["core/src/session/turn.rs"], "    let mut stream = client_session\n        .stream(", `    if crate::pibo_prefix::needs_native_persistence(&step_context.settings.model_info) {
         sess.try_ensure_rollout_materialized(PersistContext::Standard).await
             .map_err(|_| CodexErr::Fatal("Pibo native prefix recovery required: native persistence".to_string()))?;
         sess.flush_rollout().await

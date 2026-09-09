@@ -17,7 +17,16 @@ export type OmpSessionSnapshot = {
 	sessionFile?: string;
 	messageCount: number;
 	cwd: string;
+	model?: { provider: string; id: string };
 };
+
+function readModel(value: unknown): OmpSessionSnapshot["model"] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const model = value as Record<string, unknown>;
+	return typeof model.provider === "string" && model.provider.length > 0 && model.provider.length <= 256
+		&& typeof model.id === "string" && model.id.length > 0 && model.id.length <= 256
+		? { provider: model.provider, id: model.id } : undefined;
+}
 
 function isUnsupportedForkCommand(error: unknown): boolean {
 	if (!(error instanceof OmpRpcResponseError)) return false;
@@ -68,6 +77,7 @@ export class OmpThreadController {
 			sessionName: typeof restored.sessionName === "string" ? restored.sessionName : undefined,
 			messageCount: typeof restored.messageCount === "number" ? restored.messageCount : 0,
 			cwd: this.cwd,
+			model: readModel(restored.model),
 		};
 	}
 
@@ -100,6 +110,7 @@ export class OmpThreadController {
 				sessionFile: typeof record.sessionFile === "string" ? record.sessionFile : undefined,
 				messageCount: typeof record.messageCount === "number" ? record.messageCount : 0,
 				cwd: this.cwd,
+				model: readModel(record.model),
 			};
 		}
 	}
