@@ -1,5 +1,5 @@
 import { readPrefixRebaseline, SESSION_PREFIX_REBASELINE_KEY, type PrefixRebaseline, type PrefixModelSelection } from "./prefix-rebaseline.js";
-import { readPrefixResourceDependencies, PREFIX_RESOURCE_DEPENDENCIES_KEY } from "./prefix-dependencies.js";
+import { readPrefixArtifactDependencies, PREFIX_ARTIFACT_DEPENDENCIES_KEY, readPrefixResourceDependencies, PREFIX_RESOURCE_DEPENDENCIES_KEY } from "./prefix-dependencies.js";
 import type { AgentRuntimeBindingPersistence } from "../agent-runtime/types.js";
 import { randomUUID } from "node:crypto";
 import type { CacheInferenceEvidence } from "../shared/cache-diagnostics.js";
@@ -66,6 +66,7 @@ export class SessionPrefixController {
 		}
 		const metadata = options.getBinding().metadata;
 		readPrefixResourceDependencies(metadata);
+		readPrefixArtifactDependencies(metadata);
 		const rebaseline = readPrefixRebaseline(metadata);
 		if (rebaseline && (rebaseline.sourceBinding.piboSessionId !== options.getBinding().piboSessionId || rebaseline.targetAdapterId !== options.getBinding().adapterId)) {
 			throw new PrefixRecoveryRequiredError("explicit transition belongs to another session or adapter");
@@ -91,7 +92,7 @@ export class SessionPrefixController {
 	mergeRuntimeBinding(binding: RuntimeSessionBinding): RuntimeSessionBinding {
 		const persisted = this.options.getBinding();
 		const metadata = { ...binding.metadata };
-		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY]) {
+		for (const key of [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY]) {
 			if (persisted.metadata?.[key] !== undefined) metadata[key] = structuredClone(persisted.metadata[key]);
 			else delete metadata[key];
 		}
@@ -105,7 +106,7 @@ export class SessionPrefixController {
 		const current = this.options.readCurrentBinding?.() ?? expected;
 		if (current.piboSessionId !== expected.piboSessionId || current.nativeSessionId !== expected.nativeSessionId
 			|| current.adapterId !== expected.adapterId || current.runtimeInstanceId !== expected.runtimeInstanceId
-			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY].some(key =>
+			|| [SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_RESOURCES_KEY, SESSION_PREFIX_TRANSITION_KEY, SESSION_PREFIX_REBASELINE_KEY, PREFIX_RESOURCE_DEPENDENCIES_KEY, PREFIX_ARTIFACT_DEPENDENCIES_KEY].some(key =>
 				JSON.stringify(current.metadata?.[key]) !== JSON.stringify(expected.metadata?.[key]))) {
 			throw new PrefixRecoveryRequiredError("protected transition binding changed concurrently");
 		}

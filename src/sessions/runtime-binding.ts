@@ -1,4 +1,4 @@
-import { readPrefixResourceDependencies } from "./prefix-dependencies.js";
+import { readPrefixResourceDependencies, readPrefixArtifactDependencies, nativeArtifactDirectories } from "./prefix-dependencies.js";
 import { isDeepStrictEqual } from "node:util";
 import { readPrefixRebaseline } from "./prefix-rebaseline.js";
 import type { PiboJsonObject } from "../core/events.js";
@@ -185,6 +185,8 @@ export function assertRuntimeSessionBindingTransition(
 	const nextResources = readSessionPrefixResourceReference(next.metadata);
 	const previousDependencies = readPrefixResourceDependencies(current.metadata);
 	const nextDependencies = readPrefixResourceDependencies(next.metadata);
+	const previousArtifacts = readPrefixArtifactDependencies(current.metadata);
+	const nextArtifacts = readPrefixArtifactDependencies(next.metadata);
 	const previousRebaseline = readPrefixRebaseline(current.metadata);
 	const nextRebaseline = readPrefixRebaseline(next.metadata);
 	const operationalBinding = (binding: RuntimeSessionBinding) => Object.fromEntries(Object.entries(binding)
@@ -215,7 +217,7 @@ export function assertRuntimeSessionBindingTransition(
 			throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "explicit prefix completion must publish its next epoch");
 		}
 	}
-	if (!startsRuntimeTransition && !restoresRuntimeTransition && !isDeepStrictEqual(previousDependencies, nextDependencies)) {
+	if (!startsRuntimeTransition && !restoresRuntimeTransition && (!isDeepStrictEqual(previousDependencies, nextDependencies) || !isDeepStrictEqual(previousArtifacts, nextArtifacts))) {
 		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "historical resource references require an explicit runtime transition");
 	}
 	if (startsRuntimeTransition && nextRebaseline.reason === "explicit-refresh"
@@ -223,6 +225,12 @@ export function assertRuntimeSessionBindingTransition(
 			!nextDependencies.some(nextReference => isDeepStrictEqual(reference, nextReference)))) {
 		throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "prefix refresh must retain historical resources");
 	}
+	if (startsRuntimeTransition && nextRebaseline.reason === "explicit-refresh") {
+  const sourceFile = typeof current.metadata?.nativeSessionFile === "string" ? current.metadata.nativeSessionFile : current.locator?.kind === "local-file" ? current.locator.value : undefined;
+  if (nativeArtifactDirectories(current.adapterId, sourceFile, current.metadata).some(path => !nextArtifacts.includes(path))) {
+   throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "prefix refresh must retain native artifacts");
+  }
+ }
 	const previousTransition = readPrefixTransition(current.metadata);
 	const nextTransition = readPrefixTransition(next.metadata);
 	if (previousTransition && !nextTransition && !startsRuntimeTransition) throw new RuntimeSessionBindingTransitionError(current.piboSessionId, "native transition receipt cannot be discarded");

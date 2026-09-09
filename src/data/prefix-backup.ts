@@ -1,12 +1,12 @@
 import { DatabaseSync, backup } from "node:sqlite";
 import { constants, createReadStream } from "node:fs";
-import { copyFile, open, readFile, realpath, rename } from "node:fs/promises";
+import { copyFile, open, readFile, realpath, rename, lstat, opendir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { ensureDurableDirectory, PrefixCapsuleStore, readSessionPrefixBinding, readSessionPrefixResourceReference } from "../sessions/prefix-capsule.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
 import { readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
-import { readPrefixResourceDependencies } from "../sessions/prefix-dependencies.js";
+import { readPrefixResourceDependencies, readPrefixArtifactDependencies, nativeArtifactDirectories } from "../sessions/prefix-dependencies.js";
 import { PrefixSessionOwnership } from "../sessions/prefix-ownership.js";
 import type { PiboJsonObject } from "../core/events.js";
 
@@ -24,7 +24,7 @@ function bindings(database: string): Binding[] {
 			if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
 			for (const row of db.prepare(`SELECT pibo_session_id,runtime_adapter_id,native_session_id,locator_json,metadata_json,revision FROM ${table} ORDER BY pibo_session_id`).iterate() as Iterable<Binding>) {
 				const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
-				if (readPrefixResourceDependencies(metadata).length || readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
+				if (readPrefixArtifactDependencies(metadata).length || readPrefixResourceDependencies(metadata).length || readSessionPrefixBinding(metadata) || readSessionPrefixResourceReference(metadata) || readPrefixTransition(metadata) || readPrefixRebaseline(metadata)) rows.push(row);
 				if (rows.length > MAX_FILES) throw Error("Protected session backup exceeds count quota");
 			}
 		}
@@ -109,6 +109,32 @@ export async function capturePrefixBackup(input: { root: string; database: strin
 		try { await file.read(header, 0, header.length, 0); } finally { await file.close(); }
 		paths.set(native, header.toString() === "SQLite format 3\0");
 	}
+
+ // Traverse only native-owned artifact roots, never a runtime/authentication home.
+ let artifactEntries = 0;
+ for (const row of referencedBindings(rows)) {
+  const metadata = JSON.parse(row.metadata_json) as PiboJsonObject;
+  const locator = row.locator_json ? JSON.parse(row.locator_json) : undefined;
+  const native = typeof metadata.nativeSessionFile === "string" ? metadata.nativeSessionFile : locator?.kind === "local-file" ? locator.value : undefined;
+  for (const directory of nativeArtifactDirectories(row.runtime_adapter_id, native, metadata)) {
+   child(resolve(input.home), directory);
+   const visit = async (path: string, depth: number): Promise<void> => {
+    input.signal?.throwIfAborted();
+    if (++artifactEntries > MAX_FILES || depth > 64 || paths.size >= MAX_FILES) throw Error("Protected native artifacts exceed count quota");
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink() || await realpath(path) !== resolve(path)) throw Error("Protected native artifact contains a symlink");
+    if (stat.isDirectory()) {
+     for await (const entry of await opendir(path)) await visit(join(path, entry.name), depth + 1);
+    } else if (stat.isFile()) paths.set(path, false);
+    else throw Error("Protected native artifact is not a regular file");
+   };
+   try { await lstat(directory); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+    throw error;
+   }
+   await visit(directory, 0);
+  }
+ }
 	if (paths.size > MAX_FILES) throw Error("Protected runtime backup exceeds count quota");
 	const result: PrefixBackup = { format: 1, home: resolve(input.home), files: [], bytes: 0, sessions: rows.length };
 	for (const [source, sqlite] of [...paths].sort(([a], [b]) => a.localeCompare(b))) {

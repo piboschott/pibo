@@ -1,6 +1,8 @@
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { createHash } from "node:crypto";
+import { retainPrefixArtifactDependencies } from "./prefix-dependencies.js";
+import { constants, createReadStream } from "node:fs";
+import { open, lstat, opendir, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { PiboJsonObject } from "../core/events.js";
 import { ensureDurableDirectory, PrefixRecoveryRequiredError, readSessionPrefixBinding, SESSION_PREFIX_METADATA_KEY, SESSION_PREFIX_TRANSITION_KEY, type SessionPrefixBinding } from "./prefix-capsule.js";
 import { readPrefixTransition } from "./prefix-transition.js";
@@ -11,7 +13,8 @@ export function deriveSessionPrefixMetadata(metadata: PiboJsonObject | undefined
 	if (!prefix) return metadata;
 	if (!targetId || targetId === sourceId || prefix.nativeSessionId !== sourceId) throw new PrefixRecoveryRequiredError("native derivation identity is inconsistent");
 	if (readPrefixTransition(metadata)?.state === "pending") throw new PrefixRecoveryRequiredError("cannot derive an unfinished prefix transition");
-	const derived: PiboJsonObject = { ...metadata, piboSessionPrefixDerived: true };
+	const sourceFile = typeof metadata?.nativeSessionFile === "string" ? metadata.nativeSessionFile : undefined;
+	const derived: PiboJsonObject = { ...retainPrefixArtifactDependencies(metadata, metadata, prefix.capsule.adapterId, sourceFile), piboSessionPrefixDerived: true };
 	delete derived[SESSION_PREFIX_TRANSITION_KEY];
 	derived[SESSION_PREFIX_METADATA_KEY] = { ...prefix, nativeSessionId: targetId,
 		capsuleNativeSessionId: prefix.capsuleNativeSessionId ?? prefix.nativeSessionId,
@@ -47,4 +50,38 @@ export async function syncDerivedNativeFile(path: string | undefined): Promise<v
 	try { if (!(await file.stat()).isFile()) throw new PrefixRecoveryRequiredError("derived native history is not a regular file"); await file.sync(); }
 	finally { await file.close(); }
 	await ensureDurableDirectory(dirname(path));
+}
+
+/** OMP's native fork logs artifact-copy failures; publication must verify the copy. */
+export async function syncDerivedOmpArtifacts(sourceFile: string | undefined, targetFile: string | undefined, copied: boolean): Promise<void> {
+ if (!sourceFile?.endsWith(".jsonl") || !targetFile?.endsWith(".jsonl")) throw new PrefixRecoveryRequiredError("unsupported OMP native artifact layout");
+ const inspect = async (root: string): Promise<Map<string, string>> => {
+  const files = new Map<string, string>(); let count = 0, bytes = 0;
+  try { await lstat(root); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return files; throw error; }
+  const visit = async (path: string, depth: number): Promise<void> => {
+   if (++count > 100000 || depth > 64) throw new PrefixRecoveryRequiredError("native artifact tree exceeds bounds");
+   const stat = await lstat(path);
+   if (stat.isSymbolicLink() || await realpath(path) !== resolve(path)) throw new PrefixRecoveryRequiredError("native artifact symlinks cannot be published");
+   if (stat.isDirectory()) {
+    for await (const entry of await opendir(path)) await visit(join(path, entry.name), depth + 1);
+    const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); }
+   } else if (stat.isFile()) {
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+     if (!(await handle.stat()).isFile()) throw new PrefixRecoveryRequiredError("native artifact changed type");
+     const digest = createHash("sha256");
+     for await (const chunk of createReadStream(path, {fd: handle.fd, autoClose: false})) {
+      bytes += chunk.length;
+      if (bytes > 512 * 1024 * 1024) throw new PrefixRecoveryRequiredError("native artifact copy exceeds byte quota");
+      digest.update(chunk);
+     }
+     await handle.sync(); files.set(relative(root, path), digest.digest("hex"));
+    } finally { await handle.close(); }
+   } else throw new PrefixRecoveryRequiredError("native artifact is not a regular file");
+  };
+  await visit(root, 0); return files;
+ };
+ const source = await inspect(sourceFile.slice(0, -6));
+ const target = await inspect(targetFile.slice(0, -6));
+ if (copied && [...source].some(([path, digest]) => target.get(path) !== digest)) throw new PrefixRecoveryRequiredError("native artifact copy is incomplete");
 }

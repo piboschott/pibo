@@ -2,7 +2,7 @@ import type { PiboJsonObject } from "../core/events.js";
 import { randomUUID } from "node:crypto";
 import type { RuntimeSessionBinding } from "./runtime-binding.js";
 import { PrefixRecoveryRequiredError, readSessionPrefixBinding } from "./prefix-capsule.js";
-import { retainPrefixResourceDependencies } from "./prefix-dependencies.js";
+import { retainPrefixResourceDependencies, retainPrefixArtifactDependencies } from "./prefix-dependencies.js";
 
 export const SESSION_PREFIX_REBASELINE_KEY = "piboSessionPrefixRebaseline";
 export type PrefixModelSelection = { provider: string; id: string };
@@ -25,7 +25,9 @@ export function preparePrefixRuntimeTransition(source: RuntimeSessionBinding, ta
 	if (readPrefixRebaseline(source.metadata)) throw new PrefixRecoveryRequiredError("another explicit prefix transition is pending");
 	const policy: PrefixRebaseline = { format: 1, id: randomUUID(), reason,
 		targetAdapterId: target.adapterId, sourceBinding: structuredClone(source), ...(previousModel ? { previousModel } : {}) };
-	const metadata = { ...(retainHistory ? retainPrefixResourceDependencies(target.metadata, source.metadata) : target.metadata),
+	const sourceFile = typeof source.metadata?.nativeSessionFile === "string" ? source.metadata.nativeSessionFile : source.locator?.kind === "local-file" ? source.locator.value : undefined;
+	const retained = retainHistory ? retainPrefixArtifactDependencies(retainPrefixResourceDependencies(target.metadata, source.metadata), source.metadata, source.adapterId, sourceFile) : target.metadata;
+	const metadata = { ...retained,
 		[SESSION_PREFIX_REBASELINE_KEY]: policy as unknown as PiboJsonObject };
 	readPrefixRebaseline(metadata);
 	return { ...target, metadata };

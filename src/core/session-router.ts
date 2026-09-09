@@ -1,4 +1,5 @@
-import { deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/prefix-derivation.js";
+import { retainPrefixArtifactDependencies } from "../sessions/prefix-dependencies.js";
+import { syncDerivedOmpArtifacts, deriveSessionPrefixMetadata, syncDerivedNativeFile } from "../sessions/prefix-derivation.js";
 import { SessionPrefixController } from "../sessions/prefix-session.js";
 import { preparePrefixRuntimeTransition, readPrefixRebaseline } from "../sessions/prefix-rebaseline.js";
 import { readPrefixTransition } from "../sessions/prefix-transition.js";
@@ -2138,6 +2139,7 @@ export class PiboSessionRouter {
 
 		if (event.action === "session.prefix.refresh") {
 			try {
+				if (previousBinding.adapterId === "orp") await syncDerivedOmpArtifacts(result.previous.sessionFile, result.current.sessionFile, true);
 				if (!readSessionPrefixBinding(previousBinding.metadata) || readPrefixRebaseline(previousBinding.metadata)) throw new PrefixRecoveryRequiredError("prefix refresh requires an unchanged sealed source");
 				const sourceFile = typeof previousBinding.metadata?.nativeSessionFile === "string" ? previousBinding.metadata.nativeSessionFile
 					: previousBinding.locator?.kind === "local-file" ? previousBinding.locator.value : undefined;
@@ -2191,7 +2193,11 @@ export class PiboSessionRouter {
 		currentBinding: RuntimeSessionBinding,
 	): Promise<PiboSession> {
 		const source = this.resolvePiboSession(result.piboSessionId);
-		const prefixMetadata = deriveSessionPrefixMetadata(currentBinding.metadata, result.previous.piSessionId ?? "", currentBinding.nativeSessionId ?? "");
+		let prefixMetadata = deriveSessionPrefixMetadata(currentBinding.metadata, result.previous.piSessionId ?? "", currentBinding.nativeSessionId ?? "");
+		if (readSessionPrefixBinding(prefixMetadata)) {
+			prefixMetadata = retainPrefixArtifactDependencies(prefixMetadata, source.runtimeBinding?.metadata, currentBinding.adapterId, result.previous.sessionFile);
+			if (currentBinding.adapterId === "orp") await syncDerivedOmpArtifacts(result.previous.sessionFile, result.current.sessionFile, false);
+		}
 		if (readSessionPrefixBinding(prefixMetadata)) await syncDerivedNativeFile(result.current.sessionFile);
 		const derivedMetadata = prefixMetadata && currentBinding.adapterId !== "pi" && result.current.sessionFile
 			? { ...prefixMetadata, nativeSessionFile: result.current.sessionFile } : prefixMetadata;
